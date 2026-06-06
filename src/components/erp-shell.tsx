@@ -15,15 +15,15 @@ import {
 import type { ReactNode } from "react";
 
 const navigation = [
-  { label: "대시보드", icon: Home, active: true },
-  { label: "조합원", icon: Users },
-  { label: "회계/자금", icon: Wallet },
-  { label: "총회", icon: CalendarCheck },
-  { label: "토지", icon: Map },
-  { label: "수지분석", icon: BarChart3 },
-  { label: "문서/공지", icon: FileText },
-  { label: "연동", icon: Landmark },
-  { label: "설정", icon: Settings },
+  { label: "대시보드", icon: Home, href: "/", active: true },
+  { label: "조합원", icon: Users, href: "/members" },
+  { label: "회계/자금", icon: Wallet, href: "#" },
+  { label: "총회", icon: CalendarCheck, href: "#" },
+  { label: "토지", icon: Map, href: "#" },
+  { label: "수지분석", icon: BarChart3, href: "#" },
+  { label: "문서/공지", icon: FileText, href: "#" },
+  { label: "연동", icon: Landmark, href: "#" },
+  { label: "설정", icon: Settings, href: "#" },
 ];
 
 type ErpShellProps = {
@@ -53,7 +53,7 @@ export function ErpShell({ children }: ErpShellProps) {
                   ? "flex items-center gap-3 rounded-xl bg-[var(--color-morning-tint)] px-3 py-2.5 text-sm font-semibold text-[var(--color-midnight-ink)]"
                   : "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
               }
-              href="#"
+              href={item.href}
               key={item.label}
             >
               <item.icon className="size-4" />
