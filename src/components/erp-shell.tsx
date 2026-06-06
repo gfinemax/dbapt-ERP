@@ -15,9 +15,9 @@ import {
 import type { ReactNode } from "react";
 
 const navigation = [
-  { label: "대시보드", icon: Home, href: "/", active: true },
+  { label: "대시보드", icon: Home, href: "/" },
   { label: "조합원", icon: Users, href: "/members" },
-  { label: "회계/자금", icon: Wallet, href: "#" },
+  { label: "회계/자금", icon: Wallet, href: "/finance" },
   { label: "총회", icon: CalendarCheck, href: "#" },
   { label: "토지", icon: Map, href: "#" },
   { label: "수지분석", icon: BarChart3, href: "#" },
@@ -27,10 +27,11 @@ const navigation = [
 ];
 
 type ErpShellProps = {
+  activeLabel?: string;
   children: ReactNode;
 };
 
-export function ErpShell({ children }: ErpShellProps) {
+export function ErpShell({ activeLabel = "대시보드", children }: ErpShellProps) {
   return (
     <div className="min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)]">
       <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/92 px-4 py-5 backdrop-blur xl:block">
@@ -45,21 +46,25 @@ export function ErpShell({ children }: ErpShellProps) {
         </div>
 
         <nav className="space-y-1">
-          {navigation.map((item) => (
-            <a
-              aria-current={item.active ? "page" : undefined}
-              className={
-                item.active
-                  ? "flex items-center gap-3 rounded-xl bg-[var(--color-morning-tint)] px-3 py-2.5 text-sm font-semibold text-[var(--color-midnight-ink)]"
-                  : "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
-              }
-              href={item.href}
-              key={item.label}
-            >
-              <item.icon className="size-4" />
-              {item.label}
-            </a>
-          ))}
+          {navigation.map((item) => {
+            const isActive = item.label === activeLabel;
+
+            return (
+              <a
+                aria-current={isActive ? "page" : undefined}
+                className={
+                  isActive
+                    ? "flex items-center gap-3 rounded-xl bg-[var(--color-morning-tint)] px-3 py-2.5 text-sm font-semibold text-[var(--color-midnight-ink)]"
+                    : "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
+                }
+                href={item.href}
+                key={item.label}
+              >
+                <item.icon className="size-4" />
+                {item.label}
+              </a>
+            );
+          })}
         </nav>
       </aside>
 
