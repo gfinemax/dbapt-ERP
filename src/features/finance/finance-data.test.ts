@@ -11,6 +11,7 @@ import {
 describe("finance data", () => {
   it("keeps regional housing association accounting rows in display order", () => {
     expect(financeTransactions.map((transaction) => transaction.voucherNo)).toEqual([
+      "PV-2025-0002",
       "JV-2026-0412",
       "JV-2026-0411",
       "JV-2026-0410",
@@ -19,14 +20,14 @@ describe("finance data", () => {
   });
 
   it("defines finance filters for voucher and payment workflows", () => {
-    expect(financeFilters).toEqual(["전체", "입금", "출금", "승인대기", "증빙미첨부", "연동미매칭"]);
+    expect(financeFilters).toEqual(["전체", "매입", "입금", "출금", "승인대기", "증빙미첨부", "연동미매칭"]);
   });
 
   it("summarizes inflow, outflow, pending approvals, and unmatched integrations", () => {
     expect(getFinanceSummary()).toEqual({
       totalInflow: 380000000,
-      totalOutflow: 1447500000,
-      pendingApprovals: 2,
+      totalOutflow: 1447610000,
+      pendingApprovals: 3,
       unmatchedIntegrations: 9,
     });
   });

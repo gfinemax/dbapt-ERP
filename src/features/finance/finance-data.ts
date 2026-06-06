@@ -1,4 +1,4 @@
-export type FinanceTransactionType = "입금" | "출금";
+export type FinanceTransactionType = "입금" | "출금" | "매입";
 export type FinanceApprovalStatus = "승인완료" | "승인대기" | "검토중";
 export type FinanceEvidenceStatus = "첨부완료" | "증빙미첨부" | "검토필요";
 export type IntegrationMatchStatus = "매칭완료" | "연동미매칭" | "수기입력";
@@ -34,9 +34,27 @@ export type BankCardConnection = {
   balance: number;
 };
 
-export const financeFilters = ["전체", "입금", "출금", "승인대기", "증빙미첨부", "연동미매칭"];
+export const financeFilters = ["전체", "매입", "입금", "출금", "승인대기", "증빙미첨부", "연동미매칭"];
 
 export const financeTransactions: FinanceTransaction[] = [
+  {
+    id: "finance-0401",
+    voucherNo: "PV-2025-0002",
+    date: "2025-04-01",
+    type: "매입",
+    vendor: "주식회사 흥부상사",
+    accountTitle: "비품",
+    description: "컴퓨터 2대 외상 매입",
+    supplyAmount: 100000,
+    vat: 10000,
+    totalAmount: 110000,
+    paymentBook: "거래처 외상",
+    paymentMethod: "외상",
+    evidenceStatus: "첨부완료",
+    approvalStatus: "승인대기",
+    integrationStatus: "수기입력",
+    linkedModule: "거래전표증빙문서",
+  },
   {
     id: "finance-0412",
     voucherNo: "JV-2026-0412",
@@ -157,7 +175,7 @@ export function getFinanceSummary() {
       .filter((transaction) => transaction.type === "입금")
       .reduce((sum, transaction) => sum + transaction.totalAmount, 0),
     totalOutflow: financeTransactions
-      .filter((transaction) => transaction.type === "출금")
+      .filter((transaction) => transaction.type === "출금" || transaction.type === "매입")
       .reduce((sum, transaction) => sum + transaction.totalAmount, 0),
     pendingApprovals: financeTransactions.filter((transaction) => transaction.approvalStatus === "승인대기").length,
     unmatchedIntegrations: bankCardConnections.reduce((sum, connection) => sum + connection.unmatchedCount, 0),

@@ -24,7 +24,7 @@ function StatusBadge({ value }: { value: string }) {
 
 export function MemberListPage() {
   return (
-    <ErpShell>
+    <ErpShell activeLabel="조합원관리">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="flex flex-col gap-4 rounded-[28px] border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div>

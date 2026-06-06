@@ -1,74 +1,342 @@
+"use client";
+
 import {
   BarChart3,
   Bell,
+  BookOpen,
   Building2,
   CalendarCheck,
+  ChevronLeft,
+  ChevronRight,
+  CircleHelp,
+  CreditCard,
+  FileCheck2,
   FileText,
   Home,
-  Landmark,
+  LogOut,
   Map,
+  ReceiptText,
   Search,
   Settings,
   Users,
   Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
-const navigation = [
+const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
   { label: "조합원", icon: Users, href: "/members" },
   { label: "회계/자금", icon: Wallet, href: "/finance" },
   { label: "총회", icon: CalendarCheck, href: "#" },
   { label: "토지", icon: Map, href: "#" },
+  { label: "계약/분양", icon: FileCheck2, href: "#" },
   { label: "수지분석", icon: BarChart3, href: "#" },
   { label: "문서/공지", icon: FileText, href: "#" },
-  { label: "연동", icon: Landmark, href: "#" },
+  { label: "연동", icon: CreditCard, href: "#" },
   { label: "설정", icon: Settings, href: "#" },
 ];
 
+type DetailMenuItem = {
+  href?: string;
+  label: string;
+};
+
+type WorkspaceMenu = {
+  defaultDetailLabel?: string;
+  href: string;
+  items: DetailMenuItem[];
+  label: string;
+};
+
+const workspaceMenus: Record<string, WorkspaceMenu[]> = {
+  "회계/자금": [
+    {
+      defaultDetailLabel: "거래처등록",
+      href: "/basic-info",
+      label: "기초정보",
+      items: [
+        { label: "거래처등록", href: "/basic-info?section=partners" },
+        { label: "품목등록", href: "/basic-info?section=items" },
+        { label: "은행통장 등록", href: "/basic-info?section=bank-accounts" },
+        { label: "신용카드 등록", href: "/basic-info?section=cards" },
+        { label: "계정과목 등록" },
+        { label: "초기잔액 등록" },
+      ],
+    },
+    {
+      defaultDetailLabel: "매입매출거래입력",
+      href: "/finance",
+      label: "거래전표증빙문서",
+      items: [
+        { label: "매입매출거래입력", href: "/finance" },
+        { label: "일반대체전표입력" },
+        { label: "고정자산전표입력" },
+        { label: "영수증/증빙관리" },
+        { label: "세금계산서/계산서" },
+        { label: "거래명세표" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "입출금",
+      items: [
+        { label: "조합원 분담금" },
+        { label: "토지비 지급" },
+        { label: "신탁계좌 관리" },
+        { label: "업무대행비" },
+        { label: "시공/설계/감리비" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "채권/채무",
+      items: [
+        { label: "거래처 원장" },
+        { label: "채권 잔액" },
+        { label: "채무 잔액" },
+        { label: "미납/연체 관리" },
+        { label: "지급 예정표" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "예산/결산",
+      items: [
+        { label: "예산 대비 집행" },
+        { label: "사업비 집행률" },
+        { label: "월별 결산" },
+        { label: "계정별 집계" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "은행/카드",
+      items: [
+        { label: "은행 거래내역" },
+        { label: "카드 사용내역" },
+        { label: "계좌 연동 설정" },
+        { label: "카드 연동 설정" },
+        { label: "전표 자동매칭" },
+        { label: "미매칭 내역" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "인사/급여",
+      items: [
+        { label: "임직원 등록" },
+        { label: "급여대장" },
+        { label: "원천세 자료" },
+        { label: "4대보험" },
+        { label: "퇴직금 정산" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "세무신고",
+      items: [
+        { label: "부가세 신고" },
+        { label: "원천세 신고" },
+        { label: "법인세 자료" },
+        { label: "전자세금계산서" },
+        { label: "신고자료 내보내기" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "부가서비스",
+      items: [
+        { label: "전자계약" },
+        { label: "전자결재" },
+        { label: "온라인문의" },
+        { label: "도움말" },
+        { label: "환경설정" },
+      ],
+    },
+    {
+      href: "/finance",
+      label: "보고서",
+      items: [
+        { label: "자금일보" },
+        { label: "월간 자금현황" },
+        { label: "예산 집행 보고서" },
+        { label: "증빙 누락 보고서" },
+      ],
+    },
+  ],
+};
+
+const defaultWorkspaceLabels: Record<string, string> = {
+  "회계/자금": "거래전표증빙문서",
+};
+
+const quickMenus = ["조합원 등록", "분담금 입금처리", "은행 거래내역", "카드내역", "지출 전표", "증빙 미첨부", "승인대기", "미납 조합원"];
+
+function normalizeActiveLabel(activeLabel: string) {
+  if (activeLabel === "조합원관리") {
+    return "조합원";
+  }
+
+  if (activeLabel === "총회/의결") {
+    return "총회";
+  }
+
+  if (activeLabel === "토지관리") {
+    return "토지";
+  }
+
+  return activeLabel;
+}
+
 type ErpShellProps = {
+  activeDetailLabel?: string;
   activeLabel?: string;
+  activeWorkspaceLabel?: string;
   children: ReactNode;
 };
 
-export function ErpShell({ activeLabel = "대시보드", children }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children }: ErpShellProps) {
+  const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+  const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
+  const sidebarToggleText = isSidebarOpen ? "닫기" : "메뉴";
+  const sidebarToggleLetters = Array.from(sidebarToggleText);
+  const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
+  const selectedMenu = normalizeActiveLabel(activeLabel);
+  const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];
+  const selectedWorkspaceLabel = activeWorkspaceLabel ?? defaultWorkspaceLabels[selectedMenu] ?? currentWorkspaceMenus[0]?.label;
+  const selectedWorkspace = currentWorkspaceMenus.find((workspace) => workspace.label === selectedWorkspaceLabel) ?? currentWorkspaceMenus[0];
+  const currentDetailMenus = selectedWorkspace?.items ?? [];
+  const hasDetailMenus = currentDetailMenus.length > 0;
+  const [fullMenuFor, setFullMenuFor] = useState<string | null>(null);
+  const isDetailMode = hasDetailMenus && fullMenuFor !== selectedMenu;
+  const selectedDetailMenu = activeDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
+
   return (
     <div className="min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)]">
-      <aside className="fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/92 px-4 py-5 backdrop-blur xl:block">
-        <div className="mb-7 flex items-center gap-3 px-2">
-          <div className="flex size-10 items-center justify-center rounded-2xl bg-[var(--color-pressed-charcoal)] text-white">
-            <Building2 className="size-5" />
+      <aside
+        aria-label="사이드바"
+        className={`fixed inset-y-0 left-0 z-20 hidden w-64 border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/92 px-4 py-5 backdrop-blur transition-transform duration-300 ease-out md:block ${
+          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        }`}
+      >
+        {isDetailMode && hasDetailMenus ? (
+          <div className="mb-7 px-2">
+            <button
+              className="mb-4 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-bold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
+              onClick={() => setFullMenuFor(selectedMenu)}
+              type="button"
+            >
+              <ChevronLeft className="size-3.5" />
+              전체 메뉴
+            </button>
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
+                <ReceiptText className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">{selectedMenu}</p>
+                <p className="text-xs text-[var(--color-stone)]">{selectedWorkspace?.label ?? "상세 업무 메뉴"}</p>
+              </div>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-semibold">Daebang ERP</p>
-            <p className="text-xs text-[var(--color-stone)]">지역주택조합 통합관리</p>
+        ) : (
+          <div className="mb-7 flex items-center gap-3 px-2">
+            <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
+              <Building2 className="size-5" />
+            </div>
+            <div>
+              <p className="text-sm font-semibold">Daebang ERP</p>
+              <p className="text-xs text-[var(--color-stone)]">지역주택조합 통합관리</p>
+            </div>
+          </div>
+        )}
+
+        {isDetailMode && hasDetailMenus ? (
+          <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">
+            <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">해당 업무 상세 메뉴</p>
+            {currentDetailMenus.map((item) => {
+              const isActive = item.label === selectedDetailMenu;
+
+              return (
+                <a
+                  aria-current={isActive ? "page" : undefined}
+                  className={
+                    isActive
+                      ? "flex items-center gap-2 rounded-lg bg-[var(--color-morning-tint)] px-3 py-2 text-sm font-semibold text-[var(--color-midnight-ink)]"
+                      : "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
+                  }
+                  href={item.href ?? "#"}
+                  key={item.label}
+                >
+                  <ReceiptText className="size-3.5 shrink-0" />
+                  {item.label}
+                </a>
+              );
+            })}
+          </nav>
+        ) : (
+          <nav aria-label="전체 메뉴" className="space-y-1">
+            <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">전체 메뉴</p>
+            {primaryNavigation.map((item) => {
+              const isActive = item.label === selectedMenu;
+
+              return (
+                <a
+                  aria-current={isActive ? "page" : undefined}
+                  className={
+                    isActive
+                      ? "flex items-center gap-2 rounded-lg bg-[var(--color-morning-tint)] px-3 py-2 text-sm font-semibold text-[var(--color-midnight-ink)]"
+                      : "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
+                  }
+                  href={item.href}
+                  key={item.label}
+                >
+                  <item.icon className="size-3.5 shrink-0" />
+                  {item.label}
+                </a>
+              );
+            })}
+          </nav>
+        )}
+
+        <div className="mt-6 border-t border-[var(--color-soft-border)] pt-4">
+          <div className="mb-2 flex items-center justify-between px-2">
+            <p className="text-xs font-bold text-[var(--color-fog)]">퀵메뉴</p>
+            <Settings className="size-3.5 text-[var(--color-fog)]" />
+          </div>
+          <div className="grid grid-cols-2 gap-1.5">
+            {quickMenus.map((item) => (
+              <button
+                className="min-h-9 rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
+                key={item}
+                type="button"
+              >
+                {item}
+              </button>
+            ))}
           </div>
         </div>
-
-        <nav className="space-y-1">
-          {navigation.map((item) => {
-            const isActive = item.label === activeLabel;
-
-            return (
-              <a
-                aria-current={isActive ? "page" : undefined}
-                className={
-                  isActive
-                    ? "flex items-center gap-3 rounded-xl bg-[var(--color-morning-tint)] px-3 py-2.5 text-sm font-semibold text-[var(--color-midnight-ink)]"
-                    : "flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium text-[var(--color-stone)] transition hover:bg-white hover:text-[var(--color-midnight-ink)]"
-                }
-                href={item.href}
-                key={item.label}
-              >
-                <item.icon className="size-4" />
-                {item.label}
-              </a>
-            );
-          })}
-        </nav>
       </aside>
 
-      <div className="xl:pl-64">
+      <button
+        aria-label={sidebarToggleLabel}
+        aria-pressed={!isSidebarOpen}
+        className={`fixed top-1/2 z-30 hidden h-36 w-9 -translate-y-1/2 flex-col items-center justify-center gap-2 rounded-r-md border border-l-0 border-[rgba(16,20,24,0.16)] bg-[#8BEA00] text-[#101418] shadow-[0_8px_20px_rgba(16,20,24,0.18)] transition-[left,background-color] duration-300 ease-out hover:bg-[#6FD100] md:flex ${
+          isSidebarOpen ? "left-64" : "left-0"
+        }`}
+        onClick={() => setIsSidebarOpen((current) => !current)}
+        type="button"
+      >
+        <SidebarToggleIcon className="size-4 shrink-0 stroke-[3]" />
+        <span className="flex flex-col items-center gap-1.5 text-xs font-black tracking-normal">
+          {sidebarToggleLetters.map((letter) => (
+            <span key={letter}>{letter}</span>
+          ))}
+        </span>
+      </button>
+
+      <div className={`transition-[padding] duration-300 ease-out ${isSidebarOpen ? "md:pl-64" : "md:pl-0"}`}>
         <header className="sticky top-0 z-10 border-b border-[var(--color-soft-border)] bg-[var(--color-sky-wash)]/86 backdrop-blur">
           <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
@@ -82,6 +350,14 @@ export function ErpShell({ activeLabel = "대시보드", children }: ErpShellPro
             </div>
 
             <div className="flex items-center gap-2">
+              <a className="hidden items-center gap-1.5 rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] px-3 py-2 text-sm font-semibold text-[var(--color-stone)] lg:flex" href="#">
+                <CircleHelp className="size-4" />
+                온라인문의
+              </a>
+              <a className="hidden items-center gap-1.5 rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] px-3 py-2 text-sm font-semibold text-[var(--color-stone)] lg:flex" href="#">
+                <BookOpen className="size-4" />
+                도움말
+              </a>
               <button
                 aria-label="알림"
                 className="flex size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] text-[var(--color-stone)]"
@@ -92,8 +368,36 @@ export function ErpShell({ activeLabel = "대시보드", children }: ErpShellPro
               <div className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white">
                 관리자
               </div>
+              <a aria-label="로그아웃" className="hidden size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] text-[var(--color-stone)] lg:flex" href="#">
+                <LogOut className="size-4" />
+              </a>
             </div>
           </div>
+
+          {currentWorkspaceMenus.length > 0 ? (
+            <div className="border-t border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/74 px-4 py-2 sm:px-6 lg:px-8">
+              <nav aria-label={`${selectedMenu} 업무 탭`} className="flex items-center gap-2 overflow-x-auto">
+                {currentWorkspaceMenus.map((workspace) => {
+                  const isActive = workspace.label === selectedWorkspace?.label;
+
+                  return (
+                    <a
+                      aria-current={isActive ? "page" : undefined}
+                      className={
+                        isActive
+                          ? "flex shrink-0 items-center gap-2 rounded-md bg-[var(--color-pressed-charcoal)] px-3 py-2 text-xs font-bold text-white"
+                          : "flex shrink-0 items-center gap-2 rounded-md border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
+                      }
+                      href={workspace.href}
+                      key={workspace.label}
+                    >
+                      {workspace.label}
+                    </a>
+                  );
+                })}
+              </nav>
+            </div>
+          ) : null}
         </header>
 
         <main className="px-4 py-6 sm:px-6 lg:px-8">{children}</main>
