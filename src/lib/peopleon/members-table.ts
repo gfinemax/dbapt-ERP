@@ -4,8 +4,17 @@ export type PeopleOnMembersTableParams = Record<string, string | string[] | unde
 
 export type PeopleOnMembersTableResponse = {
   filters?: unknown;
-  pagination?: unknown;
+  pagination?: PeopleOnMembersPagination;
   rows: Member[];
+};
+
+export type PeopleOnMembersPagination = {
+  hasNext: boolean;
+  hasPrevious: boolean;
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
 };
 
 type PeopleOnFetchResponse = Pick<Response, "json" | "ok" | "status">;
@@ -95,6 +104,59 @@ function buildPeopleOnUrl(baseUrl: string, params: PeopleOnMembersTableParams) {
   return url.toString();
 }
 
+function readNumber(row: PeopleOnMemberRow, keys: string[], fallback: number) {
+  for (const key of keys) {
+    const value = row[key];
+
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return value;
+    }
+
+    if (typeof value === "string" && value.trim()) {
+      const parsed = Number(value);
+
+      if (Number.isFinite(parsed)) {
+        return parsed;
+      }
+    }
+  }
+
+  return fallback;
+}
+
+function readBoolean(row: PeopleOnMemberRow, keys: string[], fallback: boolean) {
+  for (const key of keys) {
+    const value = row[key];
+
+    if (typeof value === "boolean") {
+      return value;
+    }
+  }
+
+  return fallback;
+}
+
+function mapPeopleOnPagination(value: unknown): PeopleOnMembersPagination | undefined {
+  if (!value || typeof value !== "object") {
+    return undefined;
+  }
+
+  const source = value as PeopleOnMemberRow;
+  const page = readNumber(source, ["page"], 1);
+  const pageSize = readNumber(source, ["pageSize", "page_size"], 50);
+  const totalCount = readNumber(source, ["totalCount", "total_count", "total"], 0);
+  const totalPages = readNumber(source, ["totalPages", "total_pages"], Math.max(1, Math.ceil(totalCount / pageSize)));
+
+  return {
+    hasNext: readBoolean(source, ["hasNext", "has_next"], page < totalPages),
+    hasPrevious: readBoolean(source, ["hasPrevious", "has_previous"], page > 1),
+    page,
+    pageSize,
+    totalCount,
+    totalPages,
+  };
+}
+
 export async function fetchPeopleOnMembersTable(
   params: PeopleOnMembersTableParams = {},
   options: PeopleOnClientOptions = {},
@@ -124,7 +186,7 @@ export async function fetchPeopleOnMembersTable(
 
   return {
     filters: payload?.filters,
-    pagination: payload?.pagination,
+    pagination: mapPeopleOnPagination(payload?.pagination),
     rows,
   };
 }

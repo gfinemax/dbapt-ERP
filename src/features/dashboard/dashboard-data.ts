@@ -157,9 +157,9 @@ export const depositBalanceWidget: DepositBalanceWidget = {
 
 export const dashboardStats: DashboardStat[] = [
   {
-    label: "전체 조합원",
-    value: "1,248명",
-    description: "peopleON 원장 기준",
+    label: "등기조합원",
+    value: "116명",
+    description: "peopleON 등기조합원 기준",
     kind: "count",
     tone: "blue",
   },
@@ -195,6 +195,19 @@ export const dashboardStats: DashboardStat[] = [
     tone: "purple",
   },
 ];
+
+export function buildDashboardStats(registeredMemberCount: number | null | undefined = 116): DashboardStat[] {
+  const count = typeof registeredMemberCount === "number" && Number.isFinite(registeredMemberCount) ? registeredMemberCount : 116;
+
+  return dashboardStats.map((stat) =>
+    stat.kind === "count"
+      ? {
+          ...stat,
+          value: `${count.toLocaleString()}명`,
+        }
+      : stat,
+  );
+}
 
 export const dashboardModules: DashboardModule[] = [
   {

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildDashboardStats,
   cashFlowWidget,
   dashboardModules,
   dashboardStats,
@@ -21,12 +22,22 @@ describe("dashboard data", () => {
 
   it("keeps the key dashboard stats available for the first screen", () => {
     expect(dashboardStats.map((stat) => stat.label)).toEqual([
-      "전체 조합원",
+      "등기조합원",
       "납부율",
       "예산 집행률",
       "토지 확보율",
       "다음 총회",
     ]);
+  });
+
+  it("formats the registered member count from peopleON pagination", () => {
+    const stats = buildDashboardStats(116);
+
+    expect(stats[0]).toMatchObject({
+      description: "peopleON 등기조합원 기준",
+      label: "등기조합원",
+      value: "116명",
+    });
   });
 
   it("tracks all five integration sources", () => {

@@ -7,7 +7,8 @@ type MembersRouteProps = {
 
 export default async function MembersRoute({ searchParams }: MembersRouteProps) {
   const params = (await searchParams) ?? {};
-  const peopleOnMembers = await fetchPeopleOnMembersTable({ tier: "등기조합원", ...params }).catch(() => null);
+  const query = { tier: "등기조합원", ...params };
+  const peopleOnMembers = await fetchPeopleOnMembersTable(query).catch(() => null);
 
-  return <MemberListPage initialMembers={peopleOnMembers?.rows} />;
+  return <MemberListPage initialMembers={peopleOnMembers?.rows} pagination={peopleOnMembers?.pagination} query={query} />;
 }

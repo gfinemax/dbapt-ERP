@@ -21,9 +21,9 @@ import {
   cashFlowWidget,
   dashboardActivity,
   dashboardModules,
-  dashboardStats,
   dashboardTasks,
   dashboardWarnings,
+  buildDashboardStats,
   depositBalanceWidget,
   integrationStatuses,
   type DashboardStat,
@@ -65,7 +65,11 @@ function isPercentStat(stat: DashboardStat): stat is Extract<DashboardStat, { ki
   return stat.kind === "percent";
 }
 
-export function DashboardPage() {
+type DashboardPageProps = {
+  dashboardStats?: DashboardStat[];
+};
+
+export function DashboardPage({ dashboardStats: stats = buildDashboardStats() }: DashboardPageProps = {}) {
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
 
   return (
@@ -99,7 +103,7 @@ export function DashboardPage() {
           </div>
         </section>
 
-        <DashboardKpiSummary />
+        <DashboardKpiSummary dashboardStats={stats} />
 
         <CashFlowProcessingWidget onOpenSettings={() => setIsPeriodModalOpen(true)} />
         <DepositBalanceWidget />
@@ -249,7 +253,7 @@ export function DashboardPage() {
   );
 }
 
-function DashboardKpiSummary() {
+function DashboardKpiSummary({ dashboardStats }: { dashboardStats: DashboardStat[] }) {
   const percentStats = dashboardStats.filter(isPercentStat);
   const tableStats = dashboardStats.filter((stat) => !isPercentStat(stat));
 

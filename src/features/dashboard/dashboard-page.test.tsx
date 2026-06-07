@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
+import { buildDashboardStats } from "./dashboard-data";
 import { DashboardPage } from "./dashboard-page";
 
 describe("DashboardPage", () => {
@@ -20,14 +21,23 @@ describe("DashboardPage", () => {
 
     const kpiPanel = screen.getByRole("region", { name: "핵심 운영 지표" });
 
-    expect(within(kpiPanel).getByText("전체 조합원")).toBeInTheDocument();
-    expect(within(kpiPanel).getByText("1,248명")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("등기조합원")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("116명")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("다음 총회")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("D-12")).toBeInTheDocument();
     expect(within(kpiPanel).getByRole("progressbar", { name: "납부율 82.4%" })).toHaveAttribute("aria-valuenow", "82.4");
     expect(within(kpiPanel).getByRole("progressbar", { name: "예산 집행률 64.8%" })).toHaveAttribute("aria-valuenow", "64.8");
     expect(within(kpiPanel).getByRole("progressbar", { name: "토지 확보율 71.2%" })).toHaveAttribute("aria-valuenow", "71.2");
     expect(within(kpiPanel).getByRole("table", { name: "핵심 운영 지표 요약" })).toBeInTheDocument();
+  });
+
+  it("renders the registered member count supplied by the route", () => {
+    render(<DashboardPage dashboardStats={buildDashboardStats(371)} />);
+
+    const kpiPanel = screen.getByRole("region", { name: "핵심 운영 지표" });
+
+    expect(within(kpiPanel).getByText("등기조합원")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("371명")).toBeInTheDocument();
   });
 
   it("renders the cash flow and voucher processing widget with period settings", () => {

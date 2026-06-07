@@ -95,6 +95,43 @@ describe("peopleON members table client", () => {
     expect(result?.rows[0].memberNo).toBe("P-0001");
   });
 
+  it("normalizes snake case peopleON pagination metadata", async () => {
+    const fetcher = vi.fn().mockResolvedValue({
+      json: async () => ({
+        pagination: {
+          has_next: true,
+          has_previous: false,
+          page: 1,
+          page_size: 50,
+          total_count: 116,
+          total_pages: 3,
+        },
+        rows: [],
+      }),
+      ok: true,
+    });
+
+    const result = await fetchPeopleOnMembersTable(
+      { page: "1", pageSize: "50", tier: "등기조합원" },
+      {
+        env: {
+          PEOPLEON_MEMBERS_API_KEY: "members-key",
+          PEOPLEON_MEMBERS_TABLE_URL: "http://localhost:3001/api/members/table",
+        },
+        fetcher,
+      },
+    );
+
+    expect(result?.pagination).toEqual({
+      hasNext: true,
+      hasPrevious: false,
+      page: 1,
+      pageSize: 50,
+      totalCount: 116,
+      totalPages: 3,
+    });
+  });
+
   it("accepts the members table specific api key environment variable", async () => {
     const fetcher = vi.fn().mockResolvedValue({
       json: async () => ({ rows: [] }),
