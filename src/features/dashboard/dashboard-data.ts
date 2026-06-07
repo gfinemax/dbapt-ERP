@@ -1,11 +1,20 @@
 export type Tone = "blue" | "orange" | "purple" | "mustard" | "green" | "neutral";
 
-export type DashboardStat = {
+type DashboardBaseStat = {
   label: string;
   value: string;
   description: string;
   tone: Tone;
 };
+
+export type DashboardStat =
+  | (DashboardBaseStat & {
+      kind: "count" | "deadline";
+    })
+  | (DashboardBaseStat & {
+      kind: "percent";
+      percent: number;
+    });
 
 export type DashboardModule = {
   name: string;
@@ -59,6 +68,8 @@ export type CashFlowStatusGroup = {
   tone: "income" | "expense";
 };
 
+export type CashFlowViewMode = "일별" | "월별" | "분기별";
+
 export type CashFlowWidget = {
   chart: {
     daily: CashFlowPoint[];
@@ -70,7 +81,7 @@ export type CashFlowWidget = {
   periodRange: string;
   statusGroups: CashFlowStatusGroup[];
   title: string;
-  viewModes: string[];
+  viewModes: CashFlowViewMode[];
 };
 
 export type DepositBalanceWidget = {
@@ -149,30 +160,38 @@ export const dashboardStats: DashboardStat[] = [
     label: "전체 조합원",
     value: "1,248명",
     description: "peopleON 원장 기준",
+    kind: "count",
     tone: "blue",
   },
   {
     label: "납부율",
     value: "82.4%",
     description: "분담금 납부 완료 비율",
+    kind: "percent",
+    percent: 82.4,
     tone: "green",
   },
   {
     label: "예산 집행률",
     value: "64.8%",
     description: "승인 지출 기준",
+    kind: "percent",
+    percent: 64.8,
     tone: "mustard",
   },
   {
     label: "토지 확보율",
     value: "71.2%",
     description: "db-landon 필지 기준",
+    kind: "percent",
+    percent: 71.2,
     tone: "orange",
   },
   {
     label: "다음 총회",
     value: "D-12",
     description: "2026 정기총회 준비중",
+    kind: "deadline",
     tone: "purple",
   },
 ];

@@ -2,7 +2,7 @@ import { Download, Filter, Plus, Search } from "lucide-react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
-import { memberFilters, members } from "./member-data";
+import { memberFilters, members, type Member } from "./member-data";
 
 const badgeClasses: Record<string, string> = {
   정상: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
@@ -22,7 +22,7 @@ function StatusBadge({ value }: { value: string }) {
   );
 }
 
-export function MemberListPage() {
+export function MemberListPage({ initialMembers = members }: { initialMembers?: Member[] }) {
   return (
     <ErpShell activeLabel="조합원관리">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
@@ -90,7 +90,7 @@ export function MemberListPage() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-soft-border)]">
-                {members.map((member) => (
+                {initialMembers.map((member) => (
                   <tr className="bg-white/70" key={member.id}>
                     <td className="px-4 py-4 font-semibold">{member.memberNo}</td>
                     <td className="px-4 py-4">{member.name}</td>

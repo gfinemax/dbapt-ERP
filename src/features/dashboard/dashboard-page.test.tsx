@@ -15,6 +15,21 @@ describe("DashboardPage", () => {
     expect(screen.getAllByText("연동 상태").length).toBeGreaterThan(0);
   });
 
+  it("renders a compact KPI panel with circular progress indicators", () => {
+    render(<DashboardPage />);
+
+    const kpiPanel = screen.getByRole("region", { name: "핵심 운영 지표" });
+
+    expect(within(kpiPanel).getByText("전체 조합원")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("1,248명")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("다음 총회")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("D-12")).toBeInTheDocument();
+    expect(within(kpiPanel).getByRole("progressbar", { name: "납부율 82.4%" })).toHaveAttribute("aria-valuenow", "82.4");
+    expect(within(kpiPanel).getByRole("progressbar", { name: "예산 집행률 64.8%" })).toHaveAttribute("aria-valuenow", "64.8");
+    expect(within(kpiPanel).getByRole("progressbar", { name: "토지 확보율 71.2%" })).toHaveAttribute("aria-valuenow", "71.2");
+    expect(within(kpiPanel).getByRole("table", { name: "핵심 운영 지표 요약" })).toBeInTheDocument();
+  });
+
   it("renders the cash flow and voucher processing widget with period settings", () => {
     render(<DashboardPage />);
 
@@ -35,6 +50,25 @@ describe("DashboardPage", () => {
     expect(screen.getByText("2026년 01월 01일 ~ 2026년 12월 31일")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "1년" })).toHaveClass("bg-[var(--color-deep-cobalt)]");
     expect(within(screen.getByRole("dialog", { name: "조회기간 설정" })).getByLabelText("은행/카드 거래내역")).toBeChecked();
+  });
+
+  it("switches the cash flow chart between daily, monthly, and quarterly views", () => {
+    render(<DashboardPage />);
+
+    expect(screen.getByRole("button", { name: "월별" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("11월")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "일별" }));
+
+    expect(screen.getByRole("button", { name: "일별" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "월별" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("6월 1일")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "분기별" }));
+
+    expect(screen.getByRole("button", { name: "분기별" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "일별" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByText("1/4분기")).toBeInTheDocument();
   });
 
   it("uses compact typography in the cash flow widget", () => {

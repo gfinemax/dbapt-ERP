@@ -26,6 +26,8 @@ import {
   dashboardWarnings,
   depositBalanceWidget,
   integrationStatuses,
+  type DashboardStat,
+  type CashFlowViewMode,
   type Tone,
 } from "./dashboard-data";
 
@@ -43,6 +45,25 @@ const statusClasses = {
   지연: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
   확인: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
 };
+
+const cashFlowChartKeys: Record<CashFlowViewMode, keyof typeof cashFlowWidget.chart> = {
+  일별: "daily",
+  월별: "monthly",
+  분기별: "quarterly",
+};
+
+const ringClasses: Record<Tone, string> = {
+  blue: "text-[var(--color-deep-cobalt)]",
+  orange: "text-[var(--color-tangerine)]",
+  purple: "text-[var(--color-amethyst)]",
+  mustard: "text-[var(--color-mustard)]",
+  green: "text-[var(--color-green-ink)]",
+  neutral: "text-[var(--color-stone)]",
+};
+
+function isPercentStat(stat: DashboardStat): stat is Extract<DashboardStat, { kind: "percent" }> {
+  return stat.kind === "percent";
+}
 
 export function DashboardPage() {
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
@@ -78,26 +99,7 @@ export function DashboardPage() {
           </div>
         </section>
 
-        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {dashboardStats.map((stat) => (
-            <article
-              className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5"
-              key={stat.label}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <p className="text-sm font-semibold text-[var(--color-stone)]">
-                  {stat.label}
-                </p>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses[stat.tone]}`}
-                >
-                  {stat.description}
-                </span>
-              </div>
-              <p className="mt-4 text-3xl font-bold tracking-normal">{stat.value}</p>
-            </article>
-          ))}
-        </section>
+        <DashboardKpiSummary />
 
         <CashFlowProcessingWidget onOpenSettings={() => setIsPeriodModalOpen(true)} />
         <DepositBalanceWidget />
@@ -247,9 +249,107 @@ export function DashboardPage() {
   );
 }
 
+function DashboardKpiSummary() {
+  const percentStats = dashboardStats.filter(isPercentStat);
+  const tableStats = dashboardStats.filter((stat) => !isPercentStat(stat));
+
+  return (
+    <section
+      aria-label="핵심 운영 지표"
+      className="grid gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-4 shadow-[var(--shadow-air)] xl:grid-cols-[minmax(320px,0.85fr)_1.15fr]"
+    >
+      <div className="min-w-0">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-base font-bold">핵심 운영 지표</h2>
+          <span className="rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]">
+            실시간 요약
+          </span>
+        </div>
+        <div className="overflow-hidden rounded-lg border border-[var(--color-soft-border)]">
+          <table aria-label="핵심 운영 지표 요약" className="w-full table-fixed text-left text-sm">
+            <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
+              <tr>
+                <th className="px-3 py-2 font-bold" scope="col">지표</th>
+                <th className="px-3 py-2 font-bold" scope="col">값</th>
+                <th className="px-3 py-2 font-bold" scope="col">기준</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-soft-border)] bg-white">
+              {tableStats.map((stat) => (
+                <tr key={stat.label}>
+                  <th className="px-3 py-2 text-xs font-bold text-[var(--color-stone)]" scope="row">{stat.label}</th>
+                  <td className="px-3 py-2 text-lg font-bold tracking-normal">{stat.value}</td>
+                  <td className="truncate px-3 py-2 text-xs font-semibold">
+                    <span className={`rounded-full px-2 py-1 ${toneClasses[stat.tone]}`}>{stat.description}</span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-3">
+        {percentStats.map((stat) => (
+          <CircularKpi key={stat.label} stat={stat} />
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function CircularKpi({ stat }: { stat: Extract<DashboardStat, { kind: "percent" }> }) {
+  const radius = 31;
+  const circumference = 2 * Math.PI * radius;
+  const progressOffset = circumference - (stat.percent / 100) * circumference;
+
+  return (
+    <article className="grid min-h-28 grid-cols-[82px_1fr] items-center gap-3 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-3">
+      <div
+        aria-label={`${stat.label} ${stat.value}`}
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={stat.percent}
+        className={`relative size-20 ${ringClasses[stat.tone]}`}
+        role="progressbar"
+      >
+        <svg aria-hidden="true" className="size-20 -rotate-90" viewBox="0 0 80 80">
+          <circle
+            className="stroke-[var(--color-cloud-veil)]"
+            cx="40"
+            cy="40"
+            fill="none"
+            r={radius}
+            strokeWidth="8"
+          />
+          <circle
+            cx="40"
+            cy="40"
+            fill="none"
+            r={radius}
+            stroke="currentColor"
+            strokeDasharray={circumference}
+            strokeDashoffset={progressOffset}
+            strokeLinecap="round"
+            strokeWidth="8"
+          />
+        </svg>
+        <span className="absolute inset-0 flex items-center justify-center text-sm font-bold text-[var(--color-midnight-ink)]">
+          {stat.value}
+        </span>
+      </div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold">{stat.label}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">{stat.description}</p>
+      </div>
+    </article>
+  );
+}
+
 function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const monthlyPoints = cashFlowWidget.chart.monthly;
-  const maxAmount = Math.max(...monthlyPoints.flatMap((point) => [point.income, point.expense]), 1);
+  const [selectedViewMode, setSelectedViewMode] = useState<CashFlowViewMode>("월별");
+  const selectedPoints = cashFlowWidget.chart[cashFlowChartKeys[selectedViewMode]];
+  const maxAmount = Math.max(...selectedPoints.flatMap((point) => [point.income, point.expense]), 1);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
@@ -278,9 +378,10 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
             <div className="flex overflow-hidden rounded-md border border-[var(--color-soft-border)] bg-white">
               {cashFlowWidget.viewModes.map((mode) => (
                 <button
-                  aria-pressed={mode === "월별"}
-                  className={`min-h-8 px-3 text-xs font-bold ${mode === "월별" ? "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]" : "text-[var(--color-stone)]"}`}
+                  aria-pressed={mode === selectedViewMode}
+                  className={`min-h-8 px-3 text-xs font-bold ${mode === selectedViewMode ? "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]" : "text-[var(--color-stone)]"}`}
                   key={mode}
+                  onClick={() => setSelectedViewMode(mode)}
                   type="button"
                 >
                   {mode}
@@ -294,7 +395,7 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
 
           <div className="mt-10 h-56">
             <div className="flex h-full items-end justify-between gap-4 border-b border-[var(--color-soft-border)] px-2">
-              {monthlyPoints.map((point) => {
+              {selectedPoints.map((point) => {
                 const incomeHeight = Math.max((point.income / maxAmount) * 170, point.income > 0 ? 24 : 0);
                 const expenseHeight = Math.max((point.expense / maxAmount) * 170, point.expense > 0 ? 18 : 0);
                 return (
