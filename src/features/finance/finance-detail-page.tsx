@@ -64,12 +64,12 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
 
             <div className="mt-6 overflow-hidden rounded-xl border border-[var(--color-soft-border)]">
               <table className="w-full min-w-[720px] border-collapse text-sm">
-                <thead className="bg-[var(--color-cloud-veil)] text-left text-xs font-semibold text-[var(--color-stone)]">
+                <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
-                    <th className="px-4 py-3">구분</th>
-                    <th className="px-4 py-3 text-right">공급가</th>
-                    <th className="px-4 py-3 text-right">부가세</th>
-                    <th className="px-4 py-3 text-right">합계금액</th>
+                    <th className="px-4 py-3 text-center">구분</th>
+                    <th className="px-4 py-3 text-center">공급가</th>
+                    <th className="px-4 py-3 text-center">부가세</th>
+                    <th className="px-4 py-3 text-center">합계금액</th>
                   </tr>
                 </thead>
                 <tbody>

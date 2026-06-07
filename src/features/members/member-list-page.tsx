@@ -78,15 +78,15 @@ export function MemberListPage() {
             <table className="w-full min-w-[980px] border-collapse text-left text-sm">
               <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                 <tr>
-                  <th className="px-4 py-3">조합원번호</th>
-                  <th className="px-4 py-3">이름</th>
-                  <th className="px-4 py-3">연락처</th>
-                  <th className="px-4 py-3">동/호수</th>
-                  <th className="px-4 py-3">계약</th>
-                  <th className="px-4 py-3">납부</th>
-                  <th className="px-4 py-3">서류</th>
-                  <th className="px-4 py-3">연동</th>
-                  <th className="px-4 py-3 text-right">작업</th>
+                  <th className="px-4 py-3 text-center">조합원번호</th>
+                  <th className="px-4 py-3 text-center">이름</th>
+                  <th className="px-4 py-3 text-center">연락처</th>
+                  <th className="px-4 py-3 text-center">동/호수</th>
+                  <th className="px-4 py-3 text-center">계약</th>
+                  <th className="px-4 py-3 text-center">납부</th>
+                  <th className="px-4 py-3 text-center">서류</th>
+                  <th className="px-4 py-3 text-center">연동</th>
+                  <th className="px-4 py-3 text-center">작업</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-soft-border)]">

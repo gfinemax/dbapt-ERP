@@ -27,11 +27,13 @@ describe("BusinessPartnerPage", () => {
     render(<BusinessPartnerPage initialSection="bank-accounts" />);
 
     expect(screen.getByRole("heading", { name: "은행통장 등록" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "개설일" })).toBeInTheDocument();
     expect(screen.getByText("국민은행 신탁계좌")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "은행통장 추가" }));
 
     expect(screen.getByRole("dialog", { name: "은행통장 등록" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("개설일"), { target: { value: "2026-06-07" } });
     fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "추가 운영계좌" } });
     fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "111-222-333333" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
@@ -39,17 +41,53 @@ describe("BusinessPartnerPage", () => {
     expect(screen.queryByRole("dialog", { name: "은행통장 등록" })).not.toBeInTheDocument();
     expect(screen.getByText("추가 운영계좌")).toBeInTheDocument();
     expect(screen.getByText("111-222-333333")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-07")).toBeInTheDocument();
+  });
+
+  it("uses the server bank account creator when Supabase persistence is configured", async () => {
+    const createdAccount = {
+      accountName: "Supabase 운영계좌",
+      accountNo: "222-333-444444",
+      accountType: "운영계좌" as const,
+      bankName: "우리은행",
+      createdAt: "2026-06-07",
+      id: "bank-db-003",
+      lastSyncedAt: "미연동",
+      status: "확인필요" as const,
+      unmatchedCount: 0,
+      usageStatus: "사용" as const,
+    };
+
+    render(
+      <BusinessPartnerPage
+        createBankAccount={async () => createdAccount}
+        initialBankAccounts={[]}
+        initialSection="bank-accounts"
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "은행통장 추가" }));
+    fireEvent.change(screen.getByLabelText("개설일"), { target: { value: "2026-06-07" } });
+    fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "Supabase 운영계좌" } });
+    fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "222-333-444444" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(await screen.findByText("Supabase 운영계좌")).toBeInTheDocument();
+    expect(screen.getByText("222-333-444444")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-07")).toBeInTheDocument();
   });
 
   it("renders credit card registration list and adds a card from the modal", () => {
     render(<BusinessPartnerPage initialSection="cards" />);
 
     expect(screen.getByRole("heading", { name: "신용카드 등록" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "카드 발급일" })).toBeInTheDocument();
     expect(screen.getAllByText("법인카드").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByRole("button", { name: "신용카드 추가" }));
 
     expect(screen.getByRole("dialog", { name: "신용카드 등록" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("카드 발급일"), { target: { value: "2026-06-07" } });
     fireEvent.change(screen.getByLabelText("카드명"), { target: { value: "추가 법인카드" } });
     fireEvent.change(screen.getByLabelText("카드번호"), { target: { value: "4444-5555-6666-7777" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
@@ -57,5 +95,6 @@ describe("BusinessPartnerPage", () => {
     expect(screen.queryByRole("dialog", { name: "신용카드 등록" })).not.toBeInTheDocument();
     expect(screen.getByText("추가 법인카드")).toBeInTheDocument();
     expect(screen.getByText("****-****-****-7777")).toBeInTheDocument();
+    expect(screen.getByText("2026-06-07")).toBeInTheDocument();
   });
 });

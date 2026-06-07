@@ -40,6 +40,110 @@ export type DashboardActivity = {
   text: string;
 };
 
+export type CashFlowPoint = {
+  expense: number;
+  income: number;
+  label: string;
+};
+
+export type CashFlowStatusItem = {
+  amount: string;
+  countLabel: string;
+  label: string;
+  status: string;
+};
+
+export type CashFlowStatusGroup = {
+  items: CashFlowStatusItem[];
+  title: string;
+  tone: "income" | "expense";
+};
+
+export type CashFlowWidget = {
+  chart: {
+    daily: CashFlowPoint[];
+    monthly: CashFlowPoint[];
+    quarterly: CashFlowPoint[];
+  };
+  generatedAt: string;
+  periodLabel: string;
+  periodRange: string;
+  statusGroups: CashFlowStatusGroup[];
+  title: string;
+  viewModes: string[];
+};
+
+export type DepositBalanceWidget = {
+  accounts: {
+    amount: string;
+    bankName: string;
+  }[];
+  title: string;
+  totalAmount: string;
+};
+
+export const cashFlowWidget: CashFlowWidget = {
+  title: "자금 입출금 및 전표처리 현황",
+  generatedAt: "2026/06/07 11:13:03",
+  periodLabel: "2026-06",
+  periodRange: "2026년 01월 01일 ~ 2026년 12월 31일",
+  viewModes: ["일별", "월별", "분기별"],
+  chart: {
+    daily: [
+      { label: "6월 1일", income: 0, expense: 0 },
+      { label: "6월 2일", income: 0, expense: 0 },
+      { label: "6월 3일", income: 0, expense: 0 },
+      { label: "6월 4일", income: 0, expense: 0 },
+      { label: "6월 5일", income: 0, expense: 0 },
+      { label: "6월 6일", income: 0, expense: 0 },
+      { label: "6월 7일", income: 0, expense: 0 },
+    ],
+    monthly: [
+      { label: "11월", income: 0, expense: 0 },
+      { label: "12월", income: 0, expense: 0 },
+      { label: "1월", income: 0, expense: 0 },
+      { label: "2월", income: 102753, expense: 0 },
+      { label: "3월", income: 0, expense: 8266 },
+      { label: "4월", income: 0, expense: 0 },
+    ],
+    quarterly: [
+      { label: "1/4분기", income: 102753, expense: 20238 },
+      { label: "2/4분기", income: 0, expense: 0 },
+      { label: "3/4분기", income: 0, expense: 0 },
+      { label: "4/4분기", income: 0, expense: 0 },
+    ],
+  },
+  statusGroups: [
+    {
+      title: "수입",
+      tone: "income",
+      items: [
+        { label: "조합원 분담금", amount: "0원", countLabel: "0건", status: "미처리" },
+        { label: "차입금", amount: "0원", countLabel: "0건", status: "미분류" },
+        { label: "기타수입", amount: "0원", countLabel: "0건", status: "확인필요" },
+        { label: "미분류 입금", amount: "0원", countLabel: "0건", status: "확인필요" },
+      ],
+    },
+    {
+      title: "지출",
+      tone: "expense",
+      items: [
+        { label: "토지비", amount: "0원", countLabel: "0건", status: "증빙누락" },
+        { label: "외주용역비", amount: "3,000,000원", countLabel: "1건", status: "전표미처리" },
+        { label: "운영비", amount: "8,266,110원", countLabel: "2건", status: "증빙누락" },
+        { label: "금융비용", amount: "0원", countLabel: "0건", status: "전표미처리" },
+        { label: "기타지출", amount: "1,000,000원", countLabel: "1건", status: "확인필요" },
+      ],
+    },
+  ],
+};
+
+export const depositBalanceWidget: DepositBalanceWidget = {
+  title: "입출식예금 잔액",
+  totalAmount: "1,436,936원",
+  accounts: [{ bankName: "신협", amount: "1,436,936원" }],
+};
+
 export const dashboardStats: DashboardStat[] = [
   {
     label: "전체 조합원",

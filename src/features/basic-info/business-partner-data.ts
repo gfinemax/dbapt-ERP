@@ -23,6 +23,7 @@ export type RegisteredBankAccount = {
   accountNo: string;
   accountType: "신탁계좌" | "운영계좌" | "토지비계좌";
   bankName: string;
+  createdAt: string;
   id: string;
   lastSyncedAt: string;
   status: "정상" | "확인필요";
@@ -30,11 +31,14 @@ export type RegisteredBankAccount = {
   usageStatus: "사용" | "사용안함";
 };
 
+export type BankAccountInput = Pick<RegisteredBankAccount, "accountName" | "accountNo" | "accountType" | "bankName" | "createdAt">;
+
 export type RegisteredCreditCard = {
   cardCompany: string;
   cardName: string;
   cardNo: string;
   cardType: "법인카드" | "업무대행카드";
+  createdAt: string;
   id: string;
   lastSyncedAt: string;
   limitAmount: number;
@@ -121,6 +125,7 @@ export const registeredBankAccounts: RegisteredBankAccount[] = [
     accountNo: "123456-78-901234",
     accountType: "신탁계좌",
     bankName: "KB국민은행",
+    createdAt: "2026-06-01",
     id: "bank-001",
     lastSyncedAt: "2026-06-06 08:10",
     status: "정상",
@@ -132,6 +137,7 @@ export const registeredBankAccounts: RegisteredBankAccount[] = [
     accountNo: "987654-32-100000",
     accountType: "운영계좌",
     bankName: "KB국민은행",
+    createdAt: "2026-06-02",
     id: "bank-002",
     lastSyncedAt: "2026-06-06 08:08",
     status: "정상",
@@ -146,6 +152,7 @@ export const registeredCreditCards: RegisteredCreditCard[] = [
     cardName: "법인카드",
     cardNo: "****-****-****-5521",
     cardType: "법인카드",
+    createdAt: "2026-06-03",
     id: "card-001",
     lastSyncedAt: "2026-06-05 18:30",
     limitAmount: 30000000,
@@ -158,6 +165,7 @@ export const registeredCreditCards: RegisteredCreditCard[] = [
     cardName: "업무대행 카드",
     cardNo: "****-****-****-9010",
     cardType: "업무대행카드",
+    createdAt: "2026-06-04",
     id: "card-002",
     lastSyncedAt: "2026-06-05 17:45",
     limitAmount: 15000000,

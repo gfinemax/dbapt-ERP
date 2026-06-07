@@ -13,12 +13,14 @@ import {
   getBusinessPartnerSummary,
   registeredBankAccounts,
   registeredCreditCards,
+  type BankAccountInput,
   type RegisteredBankAccount,
   type RegisteredCreditCard,
 } from "./business-partner-data";
 
 export type BasicInfoSection = "partners" | "items" | "bank-accounts" | "cards";
 type ModalType = "bank-account" | "card" | null;
+type CreateBankAccount = (input: BankAccountInput) => Promise<RegisteredBankAccount>;
 
 const badgeClasses: Record<string, string> = {
   매출: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
@@ -57,10 +59,19 @@ function maskCardNo(cardNo: string) {
   return `****-****-****-${lastFour}`;
 }
 
-export function BusinessPartnerPage({ initialSection }: { initialSection?: BasicInfoSection } = {}) {
+export function BusinessPartnerPage({
+  createBankAccount,
+  initialBankAccounts,
+  initialSection,
+}: {
+  createBankAccount?: CreateBankAccount;
+  initialBankAccounts?: RegisteredBankAccount[];
+  initialSection?: BasicInfoSection;
+} = {}) {
   const activeSection = initialSection ?? "partners";
-  const [bankAccounts, setBankAccounts] = useState<RegisteredBankAccount[]>(registeredBankAccounts);
+  const [bankAccounts, setBankAccounts] = useState<RegisteredBankAccount[]>(initialBankAccounts ?? registeredBankAccounts);
   const [creditCards, setCreditCards] = useState<RegisteredCreditCard[]>(registeredCreditCards);
+  const [modalError, setModalError] = useState<string | null>(null);
   const [modalType, setModalType] = useState<ModalType>(null);
   const activeDetailLabel = detailLabels[activeSection];
 
@@ -79,10 +90,17 @@ export function BusinessPartnerPage({ initialSection }: { initialSection?: Basic
       {modalType === "bank-account" ? (
         <BankAccountModal
           onClose={() => setModalType(null)}
-          onSave={(account) => {
-            setBankAccounts((current) => [...current, account]);
-            setModalType(null);
+          onSave={async (input) => {
+            setModalError(null);
+            try {
+              const account = createBankAccount ? await createBankAccount(input) : buildLocalBankAccount(input);
+              setBankAccounts((current) => [...current, account]);
+              setModalType(null);
+            } catch (error) {
+              setModalError(error instanceof Error ? error.message : "은행통장 저장에 실패했습니다.");
+            }
           }}
+          saveError={modalError}
         />
       ) : null}
 
@@ -199,18 +217,18 @@ function PartnerSection() {
           <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
-                <th className="px-4 py-3">코드</th>
-                <th className="px-4 py-3">유형</th>
-                <th className="px-4 py-3">사업자구분</th>
-                <th className="px-4 py-3">거래처명</th>
-                <th className="px-4 py-3">사업자(주민)번호</th>
-                <th className="px-4 py-3">대표자</th>
-                <th className="px-4 py-3">업태</th>
-                <th className="px-4 py-3">종목</th>
-                <th className="px-4 py-3">프로젝트</th>
-                <th className="px-4 py-3">채권/채무</th>
-                <th className="px-4 py-3 text-right">잔액</th>
-                <th className="px-4 py-3">정보</th>
+                <th className="px-4 py-3 text-center">코드</th>
+                <th className="px-4 py-3 text-center">유형</th>
+                <th className="px-4 py-3 text-center">사업자구분</th>
+                <th className="px-4 py-3 text-center">거래처명</th>
+                <th className="px-4 py-3 text-center">사업자(주민)번호</th>
+                <th className="px-4 py-3 text-center">대표자</th>
+                <th className="px-4 py-3 text-center">업태</th>
+                <th className="px-4 py-3 text-center">종목</th>
+                <th className="px-4 py-3 text-center">프로젝트</th>
+                <th className="px-4 py-3 text-center">채권/채무</th>
+                <th className="px-4 py-3 text-center">잔액</th>
+                <th className="px-4 py-3 text-center">정보</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
@@ -259,14 +277,15 @@ function BankAccountSection({ accounts, onAdd }: { accounts: RegisteredBankAccou
           <table className="w-full min-w-[980px] border-collapse text-left text-sm">
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
-                <th className="px-4 py-3">은행명</th>
-                <th className="px-4 py-3">계좌명</th>
-                <th className="px-4 py-3">계좌번호</th>
-                <th className="px-4 py-3">계좌구분</th>
-                <th className="px-4 py-3">사용여부</th>
-                <th className="px-4 py-3">최근 동기화</th>
-                <th className="px-4 py-3">연동상태</th>
-                <th className="px-4 py-3 text-right">미매칭</th>
+                <th className="px-4 py-3 text-center">은행명</th>
+                <th className="px-4 py-3 text-center">계좌명</th>
+                <th className="px-4 py-3 text-center">계좌번호</th>
+                <th className="px-4 py-3 text-center">계좌구분</th>
+                <th className="px-4 py-3 text-center">개설일</th>
+                <th className="px-4 py-3 text-center">사용여부</th>
+                <th className="px-4 py-3 text-center">최근 동기화</th>
+                <th className="px-4 py-3 text-center">연동상태</th>
+                <th className="px-4 py-3 text-center">미매칭</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
@@ -276,6 +295,7 @@ function BankAccountSection({ accounts, onAdd }: { accounts: RegisteredBankAccou
                   <td className="px-4 py-4 font-semibold">{account.accountName}</td>
                   <td className="px-4 py-4">{account.accountNo}</td>
                   <td className="px-4 py-4">{account.accountType}</td>
+                  <td className="px-4 py-4 text-[var(--color-stone)]">{account.createdAt}</td>
                   <td className="px-4 py-4">
                     <Badge value={account.usageStatus} />
                   </td>
@@ -309,15 +329,16 @@ function CreditCardSection({ cards, onAdd }: { cards: RegisteredCreditCard[]; on
           <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
-                <th className="px-4 py-3">카드사</th>
-                <th className="px-4 py-3">카드명</th>
-                <th className="px-4 py-3">카드번호</th>
-                <th className="px-4 py-3">카드구분</th>
-                <th className="px-4 py-3">사용여부</th>
-                <th className="px-4 py-3">결제은행</th>
-                <th className="px-4 py-3 text-right">사용한도</th>
-                <th className="px-4 py-3">최근 동기화</th>
-                <th className="px-4 py-3">연동상태</th>
+                <th className="px-4 py-3 text-center">카드사</th>
+                <th className="px-4 py-3 text-center">카드명</th>
+                <th className="px-4 py-3 text-center">카드번호</th>
+                <th className="px-4 py-3 text-center">카드구분</th>
+                <th className="px-4 py-3 text-center">카드 발급일</th>
+                <th className="px-4 py-3 text-center">사용여부</th>
+                <th className="px-4 py-3 text-center">결제은행</th>
+                <th className="px-4 py-3 text-center">사용한도</th>
+                <th className="px-4 py-3 text-center">최근 동기화</th>
+                <th className="px-4 py-3 text-center">연동상태</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
@@ -327,6 +348,7 @@ function CreditCardSection({ cards, onAdd }: { cards: RegisteredCreditCard[]; on
                   <td className="px-4 py-4 font-semibold">{card.cardName}</td>
                   <td className="px-4 py-4">{card.cardNo}</td>
                   <td className="px-4 py-4">{card.cardType}</td>
+                  <td className="px-4 py-4 text-[var(--color-stone)]">{card.createdAt}</td>
                   <td className="px-4 py-4">
                     <Badge value={card.usageStatus} />
                   </td>
@@ -380,27 +402,32 @@ function RegistrationHeader({
   );
 }
 
-function BankAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (account: RegisteredBankAccount) => void }) {
+function BankAccountModal({
+  onClose,
+  onSave,
+  saveError,
+}: {
+  onClose: () => void;
+  onSave: (input: BankAccountInput) => Promise<void>;
+  saveError: string | null;
+}) {
   const [form, setForm] = useState({
     accountName: "",
     accountNo: "",
     accountType: "운영계좌" as RegisteredBankAccount["accountType"],
     bankName: "우리은행",
+    createdAt: getTodayDate(),
   });
 
-  function submit(event: FormEvent<HTMLFormElement>) {
+  async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    onSave({
+    await onSave({
       accountName: form.accountName || "신규 운영계좌",
       accountNo: form.accountNo || "계좌번호 미입력",
       accountType: form.accountType,
       bankName: form.bankName || "우리은행",
-      id: `bank-${Date.now()}`,
-      lastSyncedAt: "미연동",
-      status: "확인필요",
-      unmatchedCount: 0,
-      usageStatus: "사용",
+      createdAt: form.createdAt || getTodayDate(),
     });
   }
 
@@ -410,6 +437,7 @@ function BankAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (a
         <FormInput label="은행명" onChange={(value) => setForm((current) => ({ ...current, bankName: value }))} value={form.bankName} />
         <FormInput label="계좌명" onChange={(value) => setForm((current) => ({ ...current, accountName: value }))} value={form.accountName} />
         <FormInput label="계좌번호" onChange={(value) => setForm((current) => ({ ...current, accountNo: value }))} value={form.accountNo} />
+        <FormInput label="개설일" onChange={(value) => setForm((current) => ({ ...current, createdAt: value }))} type="date" value={form.createdAt} />
         <label className="grid gap-1.5 text-sm font-semibold">
           계좌구분
           <select
@@ -422,10 +450,22 @@ function BankAccountModal({ onClose, onSave }: { onClose: () => void; onSave: (a
             <option>토지비계좌</option>
           </select>
         </label>
+        {saveError ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
         <ModalActions onClose={onClose} />
       </form>
     </ModalFrame>
   );
+}
+
+function buildLocalBankAccount(input: BankAccountInput): RegisteredBankAccount {
+  return {
+    ...input,
+    id: `bank-${Date.now()}`,
+    lastSyncedAt: "미연동",
+    status: "확인필요",
+    unmatchedCount: 0,
+    usageStatus: "사용",
+  };
 }
 
 function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (card: RegisteredCreditCard) => void }) {
@@ -434,6 +474,7 @@ function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (ca
     cardName: "",
     cardNo: "",
     cardType: "법인카드" as RegisteredCreditCard["cardType"],
+    createdAt: getTodayDate(),
   });
 
   function submit(event: FormEvent<HTMLFormElement>) {
@@ -444,6 +485,7 @@ function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (ca
       cardName: form.cardName || "신규 법인카드",
       cardNo: maskCardNo(form.cardNo),
       cardType: form.cardType,
+      createdAt: form.createdAt || getTodayDate(),
       id: `card-${Date.now()}`,
       lastSyncedAt: "미연동",
       limitAmount: 0,
@@ -459,6 +501,7 @@ function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (ca
         <FormInput label="카드사" onChange={(value) => setForm((current) => ({ ...current, cardCompany: value }))} value={form.cardCompany} />
         <FormInput label="카드명" onChange={(value) => setForm((current) => ({ ...current, cardName: value }))} value={form.cardName} />
         <FormInput label="카드번호" onChange={(value) => setForm((current) => ({ ...current, cardNo: value }))} value={form.cardNo} />
+        <FormInput label="카드 발급일" onChange={(value) => setForm((current) => ({ ...current, createdAt: value }))} type="date" value={form.createdAt} />
         <label className="grid gap-1.5 text-sm font-semibold">
           카드구분
           <select
@@ -504,17 +547,27 @@ function ModalFrame({ children, onClose, title }: { children: ReactNode; onClose
   );
 }
 
-function FormInput({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+function FormInput({ label, onChange, type = "text", value }: { label: string; onChange: (value: string) => void; type?: string; value: string }) {
   return (
     <label className="grid gap-1.5 text-sm font-semibold">
       {label}
       <input
         className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm font-medium text-[var(--color-midnight-ink)]"
         onChange={(event) => onChange(event.target.value)}
+        type={type}
         value={value}
       />
     </label>
   );
+}
+
+function getTodayDate() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
 }
 
 function ModalActions({ onClose }: { onClose: () => void }) {

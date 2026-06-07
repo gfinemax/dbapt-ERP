@@ -164,19 +164,19 @@ export function FinanceListPage() {
                 <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
                   <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                     <tr>
-                      <th className="px-4 py-3">날짜</th>
-                      <th className="px-4 py-3">구분</th>
-                      <th className="px-4 py-3">거래처</th>
-                      <th className="px-4 py-3">계정과목</th>
-                      <th className="px-4 py-3">적요</th>
-                      <th className="px-4 py-3 text-right">공급가</th>
-                      <th className="px-4 py-3 text-right">부가세</th>
-                      <th className="px-4 py-3 text-right">합계</th>
-                      <th className="px-4 py-3">결제장부</th>
-                      <th className="px-4 py-3">승인</th>
-                      <th className="px-4 py-3">증빙</th>
-                      <th className="px-4 py-3">연동</th>
-                      <th className="px-4 py-3 text-right">작업</th>
+                      <th className="px-4 py-3 text-center">날짜</th>
+                      <th className="px-4 py-3 text-center">구분</th>
+                      <th className="px-4 py-3 text-center">거래처</th>
+                      <th className="px-4 py-3 text-center">계정과목</th>
+                      <th className="px-4 py-3 text-center">적요</th>
+                      <th className="px-4 py-3 text-center">공급가</th>
+                      <th className="px-4 py-3 text-center">부가세</th>
+                      <th className="px-4 py-3 text-center">합계</th>
+                      <th className="px-4 py-3 text-center">결제장부</th>
+                      <th className="px-4 py-3 text-center">승인</th>
+                      <th className="px-4 py-3 text-center">증빙</th>
+                      <th className="px-4 py-3 text-center">연동</th>
+                      <th className="px-4 py-3 text-center">작업</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--color-soft-border)]">

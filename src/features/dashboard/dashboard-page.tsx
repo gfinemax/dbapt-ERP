@@ -1,3 +1,5 @@
+"use client";
+
 import {
   ArrowUpRight,
   CheckCircle2,
@@ -5,17 +7,24 @@ import {
   DatabaseZap,
   Download,
   ExternalLink,
+  Landmark,
+  MoreVertical,
+  Settings2,
   TriangleAlert,
+  X,
 } from "lucide-react";
+import { useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import {
+  cashFlowWidget,
   dashboardActivity,
   dashboardModules,
   dashboardStats,
   dashboardTasks,
   dashboardWarnings,
+  depositBalanceWidget,
   integrationStatuses,
   type Tone,
 } from "./dashboard-data";
@@ -36,6 +45,8 @@ const statusClasses = {
 };
 
 export function DashboardPage() {
+  const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+
   return (
     <ErpShell>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
@@ -87,6 +98,9 @@ export function DashboardPage() {
             </article>
           ))}
         </section>
+
+        <CashFlowProcessingWidget onOpenSettings={() => setIsPeriodModalOpen(true)} />
+        <DepositBalanceWidget />
 
         <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
@@ -227,6 +241,192 @@ export function DashboardPage() {
           </aside>
         </section>
       </div>
+
+      {isPeriodModalOpen ? <PeriodSettingsDialog onClose={() => setIsPeriodModalOpen(false)} /> : null}
     </ErpShell>
+  );
+}
+
+function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => void }) {
+  const monthlyPoints = cashFlowWidget.chart.monthly;
+  const maxAmount = Math.max(...monthlyPoints.flatMap((point) => [point.income, point.expense]), 1);
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+      <div className="flex flex-col gap-3 border-b border-[var(--color-soft-border)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <p className="text-xl font-bold">2026.06.07 <span className="text-sm">(일)</span></p>
+          <h2 className="mt-3 text-lg font-bold">{cashFlowWidget.title}</h2>
+        </div>
+        <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-stone)]">
+          <span>조회기준일시 : {cashFlowWidget.generatedAt}</span>
+          <Button className="rounded-full" size="sm" variant="outline">
+            위젯설정
+          </Button>
+          <MoreVertical className="size-5 text-[var(--color-fog)]" />
+        </div>
+      </div>
+
+      <div className="grid lg:grid-cols-[1.6fr_0.9fr]">
+        <div className="border-b border-[var(--color-soft-border)] p-5 lg:border-b-0 lg:border-r">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-2 text-xs">
+              <Legend color="bg-[#ef3f6b]" label="수입" value="102,753천원" />
+              <Legend color="bg-[#2878e5]" label="지출" value="20,238천원" />
+              <Legend color="bg-[var(--color-green-ink)]" label="순증감" value="82,515천원" />
+            </div>
+            <div className="flex overflow-hidden rounded-md border border-[var(--color-soft-border)] bg-white">
+              {cashFlowWidget.viewModes.map((mode) => (
+                <button
+                  aria-pressed={mode === "월별"}
+                  className={`min-h-8 px-3 text-xs font-bold ${mode === "월별" ? "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]" : "text-[var(--color-stone)]"}`}
+                  key={mode}
+                  type="button"
+                >
+                  {mode}
+                </button>
+              ))}
+              <button aria-label="조회기간 설정" className="min-h-8 border-l border-[var(--color-soft-border)] px-3 text-[var(--color-deep-cobalt)]" onClick={onOpenSettings} type="button">
+                <Settings2 className="size-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="mt-10 h-56">
+            <div className="flex h-full items-end justify-between gap-4 border-b border-[var(--color-soft-border)] px-2">
+              {monthlyPoints.map((point) => {
+                const incomeHeight = Math.max((point.income / maxAmount) * 170, point.income > 0 ? 24 : 0);
+                const expenseHeight = Math.max((point.expense / maxAmount) * 170, point.expense > 0 ? 18 : 0);
+                return (
+                  <div className="flex h-full min-w-16 flex-1 flex-col justify-end" key={point.label}>
+                    <div className="flex h-44 items-end justify-center gap-1 border-l border-[var(--color-soft-border)]">
+                      <div className="w-5 bg-[#ef3f6b]" style={{ height: `${incomeHeight}px` }} />
+                      <div className="w-8 bg-[#2878e5]" style={{ height: `${expenseHeight}px` }} />
+                    </div>
+                    <p className="mt-2 text-center text-xs font-semibold text-[var(--color-stone)]">{point.label}</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        <div className="p-5">
+          <p className="text-xs font-bold text-[var(--color-fog)]">{cashFlowWidget.periodLabel}</p>
+          <div className="mt-4 space-y-5">
+            {cashFlowWidget.statusGroups.map((group) => (
+              <div className="border-b border-[var(--color-soft-border)] pb-4 last:border-b-0 last:pb-0" key={group.title}>
+                <h3 className={`border-l-2 pl-3 text-sm font-bold ${group.tone === "income" ? "border-[#ef3f6b] text-[#e3234f]" : "border-[#2878e5] text-[#1160ce]"}`}>
+                  {group.title}
+                </h3>
+                <div className="mt-3 space-y-2">
+                  {group.items.map((item) => (
+                    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs" key={`${group.title}-${item.label}`}>
+                      <span className="font-semibold">{item.label}</span>
+                      <span className="text-right text-[var(--color-stone)]">{item.amount}</span>
+                      <span className="text-right font-semibold text-[var(--color-deep-cobalt)]">
+                        {item.status} {item.countLabel}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DepositBalanceWidget() {
+  return (
+    <section className="grid min-h-28 overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] sm:grid-cols-[280px_1fr_auto]">
+      <div className="border-b border-[var(--color-soft-border)] px-5 py-5 sm:border-b-0 sm:border-r">
+        <h2 className="text-sm font-bold">{depositBalanceWidget.title}</h2>
+        <p className="mt-3 text-lg font-bold text-[var(--color-deep-cobalt)]">{depositBalanceWidget.totalAmount}</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-8 px-5 py-5">
+        {depositBalanceWidget.accounts.map((account) => (
+          <div className="flex min-w-52 items-center gap-4" key={account.bankName}>
+            <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]">
+              <Landmark className="size-6" />
+            </div>
+            <div>
+              <p className="text-xs text-[var(--color-stone)]">{account.bankName}</p>
+              <p className="mt-1 text-sm font-bold">{account.amount}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-start justify-end px-4 py-5 text-[var(--color-fog)]">
+        <MoreVertical className="size-5" />
+      </div>
+    </section>
+  );
+}
+
+function Legend({ color, label, value }: { color: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className={`size-2.5 ${color}`} />
+      <span className="font-semibold">{label}</span>
+      <span className="text-[var(--color-stone)]">{value}</span>
+    </div>
+  );
+}
+
+function PeriodSettingsDialog({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
+      <section aria-label="조회기간 설정" aria-modal="true" className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-[0_24px_80px_rgba(16,20,24,0.28)]" role="dialog">
+        <div className="flex items-center justify-between bg-[#4b5968] px-5 py-4 text-white">
+          <h2 className="text-base font-bold">조회기간 설정</h2>
+          <button aria-label="닫기" onClick={onClose} type="button">
+            <X className="size-5" />
+          </button>
+        </div>
+        <div className="p-5">
+          <div className="flex flex-col gap-3 bg-[#f4f4f5] p-4 sm:flex-row sm:items-center">
+            <span className="text-sm font-bold">기준연도</span>
+            <div className="flex items-center rounded-md border border-[var(--color-soft-border)] bg-white">
+              <button className="px-3 py-1 text-lg text-[var(--color-stone)]" type="button">‹</button>
+              <span className="px-4 text-sm font-bold">2026</span>
+              <button className="px-3 py-1 text-lg text-[var(--color-stone)]" type="button">›</button>
+            </div>
+            <span className="text-sm font-bold">{cashFlowWidget.periodRange}</span>
+          </div>
+
+          <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
+            {["1년", "상반기", "하반기", "분기별", "1/4분기", "2/4분기", "3/4분기", "4/4분기"].map((label) => (
+              <button className={`min-h-11 border border-[var(--color-soft-border)] text-sm font-bold ${label === "1년" ? "bg-[var(--color-deep-cobalt)] text-white" : "bg-white text-[var(--color-stone)]"}`} key={label} type="button">
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-7">
+            <p className="text-sm font-bold">대시보드 조회 기준을 설정합니다.</p>
+            <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+              {["세금계산서 등", "거래명세표", "은행/카드 거래내역", "전표 처리일 기준"].map((label) => (
+                <label className="flex items-center gap-2" key={label}>
+                  <input defaultChecked={label === "은행/카드 거래내역"} type="radio" name="dashboard-period-source" />
+                  {label}
+                </label>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 flex justify-center gap-2 border-t border-[var(--color-soft-border)] pt-4">
+            <Button className="bg-[var(--color-deep-cobalt)] text-white hover:bg-[var(--color-midnight-ink)]" size="sm">
+              적용
+            </Button>
+            <Button onClick={onClose} size="sm" variant="outline">
+              취소
+            </Button>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }

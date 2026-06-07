@@ -8,7 +8,6 @@ import {
   CalendarCheck,
   ChevronLeft,
   ChevronRight,
-  CircleHelp,
   CreditCard,
   FileCheck2,
   FileText,
@@ -122,12 +121,16 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       ],
     },
     {
-      href: "/finance",
+      defaultDetailLabel: "사원정보등록",
+      href: "/hr-payroll",
       label: "인사/급여",
       items: [
-        { label: "임직원 등록" },
-        { label: "급여대장" },
-        { label: "원천세 자료" },
+        { label: "사원정보등록", href: "/hr-payroll?section=employees" },
+        { label: "급여입력", href: "/hr-payroll?section=payroll-entry" },
+        { label: "급여대장", href: "/hr-payroll?section=payroll-ledger" },
+        { label: "급여명세" },
+        { label: "급여이체" },
+        { label: "근로소득 원천징수영수증" },
         { label: "4대보험" },
         { label: "퇴직금 정산" },
       ],
@@ -149,19 +152,19 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       items: [
         { label: "전자계약" },
         { label: "전자결재" },
-        { label: "온라인문의" },
         { label: "도움말" },
         { label: "환경설정" },
       ],
     },
     {
-      href: "/finance",
+      defaultDetailLabel: "보고서 목록",
+      href: "/finance/reports",
       label: "보고서",
       items: [
-        { label: "자금일보" },
-        { label: "월간 자금현황" },
-        { label: "예산 집행 보고서" },
-        { label: "증빙 누락 보고서" },
+        { label: "보고서 목록", href: "/finance/reports" },
+        { label: "실적보고서", href: "/finance/reports?section=performance" },
+        { label: "자금입출금명세서", href: "/finance/reports?section=cash-flow" },
+        { label: "운영비 예산", href: "/finance/reports?section=budget" },
       ],
     },
   ],
@@ -220,37 +223,47 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           isSidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        {isDetailMode && hasDetailMenus ? (
-          <div className="mb-7 px-2">
+        <div className={`px-2 ${isDetailMode && hasDetailMenus ? "mb-5" : "mb-7"}`}>
+          {isDetailMode && hasDetailMenus ? (
             <button
-              className="mb-4 inline-flex items-center gap-1.5 rounded-md border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-bold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
+              aria-label="전체 메뉴로 돌아가기"
+              className="-mx-2 flex w-[calc(100%+1rem)] items-center gap-3 rounded-2xl px-2 py-2 text-left transition hover:bg-[var(--color-morning-tint)]"
               onClick={() => setFullMenuFor(selectedMenu)}
+              title="전체 메뉴로 돌아가기"
               type="button"
             >
-              <ChevronLeft className="size-3.5" />
-              전체 메뉴
-            </button>
-            <div className="flex items-center gap-3">
-              <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
-                <ReceiptText className="size-5" />
+              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
+                <Building2 className="size-5" />
               </div>
               <div>
-                <p className="text-sm font-semibold">{selectedMenu}</p>
-                <p className="text-xs text-[var(--color-stone)]">{selectedWorkspace?.label ?? "상세 업무 메뉴"}</p>
+                <p className="text-sm font-semibold">Daebang ERP</p>
+                <p className="text-xs text-[var(--color-stone)]">지역주택조합 통합관리</p>
+              </div>
+            </button>
+          ) : (
+            <div className="flex items-center gap-3">
+              <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
+                <Building2 className="size-5" />
+              </div>
+              <div>
+                <p className="text-sm font-semibold">Daebang ERP</p>
+                <p className="text-xs text-[var(--color-stone)]">지역주택조합 통합관리</p>
               </div>
             </div>
-          </div>
-        ) : (
-          <div className="mb-7 flex items-center gap-3 px-2">
+          )}
+        </div>
+
+        {isDetailMode && hasDetailMenus ? (
+          <div className="mb-6 flex items-center gap-3 px-2">
             <div className="flex size-10 items-center justify-center rounded-xl bg-[var(--color-pressed-charcoal)] text-white">
-              <Building2 className="size-5" />
+              <ReceiptText className="size-5" />
             </div>
             <div>
-              <p className="text-sm font-semibold">Daebang ERP</p>
-              <p className="text-xs text-[var(--color-stone)]">지역주택조합 통합관리</p>
+              <p className="text-sm font-semibold">{selectedMenu}</p>
+              <p className="text-xs text-[var(--color-stone)]">{selectedWorkspace?.label ?? "상세 업무 메뉴"}</p>
             </div>
           </div>
-        )}
+        ) : null}
 
         {isDetailMode && hasDetailMenus ? (
           <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">
@@ -350,10 +363,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             </div>
 
             <div className="flex items-center gap-2">
-              <a className="hidden items-center gap-1.5 rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] px-3 py-2 text-sm font-semibold text-[var(--color-stone)] lg:flex" href="#">
-                <CircleHelp className="size-4" />
-                온라인문의
-              </a>
               <a className="hidden items-center gap-1.5 rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] px-3 py-2 text-sm font-semibold text-[var(--color-stone)] lg:flex" href="#">
                 <BookOpen className="size-4" />
                 도움말

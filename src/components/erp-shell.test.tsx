@@ -10,15 +10,19 @@ describe("ErpShell", () => {
       </ErpShell>,
     );
 
-    expect(screen.getByRole("button", { name: "전체 메뉴" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 메뉴로 돌아가기" })).toBeInTheDocument();
+    expect(screen.getByText("Daebang ERP")).toBeInTheDocument();
+    expect(screen.getByText("지역주택조합 통합관리")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "전체 메뉴" })).not.toBeInTheDocument();
     expect(screen.getByText("회계/자금")).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "회계/자금 업무 탭" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "기초정보" })).toHaveAttribute("href", "/basic-info");
     expect(screen.getByRole("link", { name: "거래전표증빙문서" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "은행/카드" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "인사/급여" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "인사/급여" })).toHaveAttribute("href", "/hr-payroll");
     expect(screen.getByRole("link", { name: "세무신고" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "부가서비스" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "보고서" })).toHaveAttribute("href", "/finance/reports");
     expect(screen.queryByRole("link", { name: "거래처등록" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "매입매출거래입력" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("매입매출거래입력")).toBeInTheDocument();
@@ -26,10 +30,10 @@ describe("ErpShell", () => {
     expect(screen.getByRole("link", { name: "세금계산서/계산서" })).toBeInTheDocument();
     expect(screen.getByText("퀵메뉴")).toBeInTheDocument();
     expect(screen.getByText("분담금 입금처리")).toBeInTheDocument();
-    expect(screen.getByText("온라인문의")).toBeInTheDocument();
+    expect(screen.queryByText("온라인문의")).not.toBeInTheDocument();
     expect(screen.getByText("도움말")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole("button", { name: "전체 메뉴" }));
+    fireEvent.click(screen.getByRole("button", { name: "전체 메뉴로 돌아가기" }));
 
     expect(screen.getByRole("navigation", { name: "전체 메뉴" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "대시보드" })).toBeInTheDocument();
@@ -45,13 +49,58 @@ describe("ErpShell", () => {
       </ErpShell>,
     );
 
-    expect(screen.getByRole("button", { name: "전체 메뉴" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "전체 메뉴로 돌아가기" })).toBeInTheDocument();
+    expect(screen.getByText("Daebang ERP")).toBeInTheDocument();
     expect(screen.getByText("회계/자금")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "기초정보" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "거래처등록" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("품목등록")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "은행통장 등록" })).toHaveAttribute("href", "/basic-info?section=bank-accounts");
     expect(screen.getByRole("link", { name: "신용카드 등록" })).toHaveAttribute("href", "/basic-info?section=cards");
+    expect(screen.queryByRole("link", { name: "매입매출거래입력" })).not.toBeInTheDocument();
+  });
+
+  it("renders reports as a finance detail menu", () => {
+    render(
+      <ErpShell activeDetailLabel="보고서 목록" activeLabel="회계/자금" activeWorkspaceLabel="보고서">
+        <p>본문</p>
+      </ErpShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "보고서" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "보고서 목록" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "보고서 목록" })).toHaveAttribute("href", "/finance/reports");
+    expect(screen.getByRole("link", { name: "실적보고서" })).toHaveAttribute("href", "/finance/reports?section=performance");
+    expect(screen.getByRole("link", { name: "자금입출금명세서" })).toHaveAttribute("href", "/finance/reports?section=cash-flow");
+    expect(screen.getByRole("link", { name: "운영비 예산" })).toHaveAttribute("href", "/finance/reports?section=budget");
+    expect(screen.queryByRole("link", { name: "매입매출거래입력" })).not.toBeInTheDocument();
+  });
+
+  it("does not render online inquiry in the extra services detail menu", () => {
+    render(
+      <ErpShell activeDetailLabel="도움말" activeLabel="회계/자금" activeWorkspaceLabel="부가서비스">
+        <p>본문</p>
+      </ErpShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "부가서비스" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByText("온라인문의")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getByRole("link", { name: "도움말" })).toHaveAttribute("aria-current", "page");
+  });
+
+  it("renders hr payroll as a finance detail menu", () => {
+    render(
+      <ErpShell activeDetailLabel="사원정보등록" activeLabel="회계/자금" activeWorkspaceLabel="인사/급여">
+        <p>본문</p>
+      </ErpShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "인사/급여" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "사원정보등록" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "사원정보등록" })).toHaveAttribute("href", "/hr-payroll?section=employees");
+    expect(screen.getByRole("link", { name: "급여입력" })).toHaveAttribute("href", "/hr-payroll?section=payroll-entry");
+    expect(screen.getByRole("link", { name: "급여대장" })).toHaveAttribute("href", "/hr-payroll?section=payroll-ledger");
+    expect(screen.getByRole("link", { name: "급여명세" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "매입매출거래입력" })).not.toBeInTheDocument();
   });
 

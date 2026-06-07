@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  cashFlowWidget,
   dashboardModules,
   dashboardStats,
+  depositBalanceWidget,
   integrationStatuses,
 } from "./dashboard-data";
 
@@ -35,5 +37,20 @@ describe("dashboard data", () => {
       "valueON",
       "dbapt-site",
     ]);
+  });
+
+  it("defines the regional housing association cash flow widget", () => {
+    expect(cashFlowWidget.title).toBe("자금 입출금 및 전표처리 현황");
+    expect(cashFlowWidget.viewModes).toEqual(["일별", "월별", "분기별"]);
+    expect(cashFlowWidget.periodRange).toBe("2026년 01월 01일 ~ 2026년 12월 31일");
+    expect(cashFlowWidget.chart.monthly.map((item) => item.label)).toEqual(["11월", "12월", "1월", "2월", "3월", "4월"]);
+    expect(cashFlowWidget.statusGroups.map((group) => group.title)).toEqual(["수입", "지출"]);
+    expect(cashFlowWidget.statusGroups[1].items.map((item) => item.label)).toContain("운영비");
+  });
+
+  it("defines the deposit balance widget", () => {
+    expect(depositBalanceWidget.title).toBe("입출식예금 잔액");
+    expect(depositBalanceWidget.totalAmount).toBe("1,436,936원");
+    expect(depositBalanceWidget.accounts).toEqual([{ bankName: "신협", amount: "1,436,936원" }]);
   });
 });
