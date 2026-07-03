@@ -64,16 +64,21 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       ],
     },
     {
-      defaultDetailLabel: "매입매출거래입력",
+      defaultDetailLabel: "수입·지출 전표관리",
       href: "/finance",
-      label: "거래전표증빙문서",
+      label: "전표·증빙관리",
       items: [
-        { label: "매입매출거래입력", href: "/finance" },
-        { label: "일반대체전표입력" },
-        { label: "고정자산전표입력" },
-        { label: "영수증/증빙관리" },
-        { label: "세금계산서/계산서" },
-        { label: "거래명세표" },
+        { label: "수입·지출 전표관리", href: "/finance" },
+        { label: "지출결의서 관리", href: "/finance/expense-resolutions" },
+        { label: "결재함", href: "/finance/approval-inbox" },
+        { label: "지급대기", href: "/finance/payment-waiting" },
+        { label: "지급완료 내역", href: "/finance/payment-completed" },
+        { label: "분담금 수납관리" },
+        { label: "환불금 지급관리" },
+        { label: "증빙자료 관리" },
+        { label: "세금계산서·계산서" },
+        { label: "계좌거래 매칭" },
+        { label: "예산집행 현황" },
       ],
     },
     {
@@ -89,7 +94,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
     },
     {
       href: "/finance",
-      label: "채권/채무",
+      label: "채권·채무",
       items: [
         { label: "거래처 원장" },
         { label: "채권 잔액" },
@@ -100,7 +105,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
     },
     {
       href: "/finance",
-      label: "예산/결산",
+      label: "예산·결산",
       items: [
         { label: "예산 대비 집행" },
         { label: "사업비 집행률" },
@@ -110,7 +115,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
     },
     {
       href: "/finance",
-      label: "은행/카드",
+      label: "은행·카드",
       items: [
         { label: "은행 거래내역" },
         { label: "카드 사용내역" },
@@ -123,7 +128,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
     {
       defaultDetailLabel: "사원정보등록",
       href: "/hr-payroll",
-      label: "인사/급여",
+      label: "인사·급여",
       items: [
         { label: "사원정보등록", href: "/hr-payroll?section=employees" },
         { label: "급여입력", href: "/hr-payroll?section=payroll-entry" },
@@ -171,10 +176,10 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
 };
 
 const defaultWorkspaceLabels: Record<string, string> = {
-  "회계/자금": "거래전표증빙문서",
+  "회계/자금": "전표·증빙관리",
 };
 
-const quickMenus = ["조합원 등록", "분담금 입금처리", "은행 거래내역", "카드내역", "지출 전표", "증빙 미첨부", "승인대기", "미납 조합원"];
+const quickMenus = ["조합원 등록", "분담금 수납처리", "은행거래 업로드", "카드내역", "지출결의 작성", "지급대기", "증빙 미첨부", "미납 조합원"];
 
 function normalizeActiveLabel(activeLabel: string) {
   if (activeLabel === "조합원관리") {
@@ -197,9 +202,10 @@ type ErpShellProps = {
   activeLabel?: string;
   activeWorkspaceLabel?: string;
   children: ReactNode;
+  onQuickMenuSelect?: (label: string) => void;
 };
 
-export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
   const sidebarToggleText = isSidebarOpen ? "닫기" : "메뉴";
@@ -321,8 +327,10 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           <div className="grid grid-cols-2 gap-1.5">
             {quickMenus.map((item) => (
               <button
+                aria-label={`퀵메뉴 ${item}`}
                 className="min-h-9 rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
                 key={item}
+                onClick={() => onQuickMenuSelect?.(item)}
                 type="button"
               >
                 {item}

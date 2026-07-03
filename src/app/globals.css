@@ -127,3 +127,67 @@
     @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/40;
   }
 }
+
+.erp-print-page {
+  color: var(--color-midnight-ink);
+  background: white;
+}
+
+.expense-resolution-print-page {
+  width: 180mm;
+  min-height: 267mm;
+}
+
+.expense-resolution-print-section {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+@page {
+  size: A4 portrait;
+  margin: 15mm;
+}
+
+@media print {
+  html,
+  body {
+    background: white !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .erp-print-page,
+  .erp-print-page * {
+    visibility: visible !important;
+  }
+
+  .expense-resolution-print-page {
+    position: absolute;
+    inset: 0 auto auto 0;
+    width: 180mm !important;
+    min-height: auto !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    background: white !important;
+    font-size: 11pt;
+  }
+
+  .print-expense-resolution,
+  .print-modal-shell {
+    position: static !important;
+    display: block !important;
+    overflow: visible !important;
+    background: white !important;
+    padding: 0 !important;
+  }
+
+  .expense-resolution-print-actions,
+  nav,
+  aside,
+  button {
+    display: none !important;
+  }
+}

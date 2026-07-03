@@ -118,14 +118,14 @@ function MemberTierTabs({ query }: { query?: PeopleOnMembersTableParams }) {
   const selectedTier = readQueryStringValue(query, "tier", "등기조합원");
 
   return (
-    <nav aria-label="조합원 유형" className="flex flex-wrap gap-2">
+    <nav aria-label="조합원 유형" className="flex flex-nowrap gap-2 overflow-x-auto">
       {memberTierTabs.map((tier) => {
         const isSelected = tier === selectedTier;
 
         return (
           <a
             aria-current={isSelected ? "page" : undefined}
-            className={`rounded-full border px-3 py-2 text-sm font-semibold ${isSelected ? "border-[var(--color-pressed-charcoal)] bg-[var(--color-pressed-charcoal)] text-white" : "border-[var(--color-soft-border)] bg-white text-[var(--color-stone)]"}`}
+            className={`shrink-0 whitespace-nowrap rounded-full border px-3 py-2 text-sm font-semibold ${isSelected ? "border-[var(--color-pressed-charcoal)] bg-[var(--color-pressed-charcoal)] text-white" : "border-[var(--color-soft-border)] bg-white text-[var(--color-stone)]"}`}
             href={buildMembersTierHref(query, tier)}
             key={tier}
           >
@@ -201,8 +201,8 @@ export function MemberListPage({ initialMembers = members, pagination, query }: 
         </section>
 
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-          <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-            <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[420px]">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] lg:w-[420px]">
               <Search className="size-4 shrink-0" />
               <span>이름, 연락처, 조합원번호 검색</span>
             </div>

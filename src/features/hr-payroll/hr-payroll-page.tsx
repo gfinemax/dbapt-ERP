@@ -30,7 +30,7 @@ export function HrPayrollPage({ initialSection = "employees" }: { initialSection
   const activeDetailLabel = detailLabels[initialSection];
 
   return (
-    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="인사/급여">
+    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="인사·급여">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         {initialSection === "payroll-entry" ? (
           <PayrollEntrySection onOpenEmployee={() => setModalType("employee")} onOpenPayroll={() => setModalType("payroll")} />
@@ -58,7 +58,7 @@ function EmployeeSection({ onOpenEmployee }: { onOpenEmployee: () => void }) {
         description={workflow.description}
         helperText={workflow.helperText}
         onAction={onOpenEmployee}
-        route="회계/자금 > 인사/급여 > 사원정보등록"
+        route="회계/자금 > 인사·급여 > 사원정보등록"
         title="사원정보등록"
       />
 
@@ -110,7 +110,7 @@ function PayrollEntrySection({ onOpenEmployee, onOpenPayroll }: { onOpenEmployee
         description={workflow.description}
         helperText="공제 항목 - 소득세, 주민세 및 4대보험 등을 자동 계산"
         onAction={onOpenPayroll}
-        route="회계/자금 > 인사/급여 > 급여입력"
+        route="회계/자금 > 인사·급여 > 급여입력"
         title="급여입력 및 전표처리"
       />
 
@@ -168,7 +168,7 @@ function PayrollLedgerSection() {
         actionLabel="전월 복사"
         description={workflow.description}
         helperText={workflow.helperText}
-        route="회계/자금 > 인사/급여 > 급여대장"
+        route="회계/자금 > 인사·급여 > 급여대장"
         title="급여대장확인"
       />
 

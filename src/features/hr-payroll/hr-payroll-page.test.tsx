@@ -7,7 +7,7 @@ describe("HrPayrollPage", () => {
     render(<HrPayrollPage initialSection="employees" />);
 
     expect(screen.getByRole("heading", { name: "사원정보등록" })).toBeInTheDocument();
-    expect(screen.getByText("회계/자금 > 인사/급여 > 사원정보등록")).toBeInTheDocument();
+    expect(screen.getByText("회계/자금 > 인사·급여 > 사원정보등록")).toBeInTheDocument();
     expect(screen.getAllByText(/사원에 대한 급여 계산 및 급여 대장을 작성하기 위해 기본적인 사원정보를 등록합니다/).length).toBeGreaterThan(0);
     expect(screen.getByText(/소득세, 주민세 및 4대보험 등을 자동 계산/)).toBeInTheDocument();
     expect(screen.getByText("사원정보 입력창 제공")).toBeInTheDocument();
@@ -26,7 +26,7 @@ describe("HrPayrollPage", () => {
     render(<HrPayrollPage initialSection="payroll-entry" />);
 
     expect(screen.getByRole("heading", { name: "급여입력 및 전표처리" })).toBeInTheDocument();
-    expect(screen.getByText("회계/자금 > 인사/급여 > 급여입력")).toBeInTheDocument();
+    expect(screen.getByText("회계/자금 > 인사·급여 > 급여입력")).toBeInTheDocument();
     expect(screen.getByText("사원정보 입력창 제공")).toBeInTheDocument();
     expect(screen.getByText("급여입력 입력창 제공")).toBeInTheDocument();
     expect(screen.getByText("소득세")).toBeInTheDocument();
@@ -44,7 +44,7 @@ describe("HrPayrollPage", () => {
     render(<HrPayrollPage initialSection="payroll-ledger" />);
 
     expect(screen.getByRole("heading", { name: "급여대장확인" })).toBeInTheDocument();
-    expect(screen.getByText("회계/자금 > 인사/급여 > 급여대장")).toBeInTheDocument();
+    expect(screen.getByText("회계/자금 > 인사·급여 > 급여대장")).toBeInTheDocument();
     expect(screen.getAllByText(/해당 월에 대한 사원별 급여 지급내역을 등록하여 급여 대장을 작성하고 회계 전표 처리 합니다/).length).toBeGreaterThan(0);
     expect(screen.getByText(/급여 복사 기능을 활용/)).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "기본급" })).toBeInTheDocument();

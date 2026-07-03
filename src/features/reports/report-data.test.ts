@@ -11,6 +11,7 @@ import {
   operatingBudget,
   quarterlyPerformanceReport,
   reportFontFamily,
+  statutoryFundReportDocuments,
 } from "./report-data";
 
 describe("report data", () => {
@@ -65,6 +66,20 @@ describe("report data", () => {
       status: "수정필요",
       version: 2,
     });
+  });
+
+  it("defines printable statutory fund report documents", () => {
+    expect(statutoryFundReportDocuments.map((document) => document.key)).toEqual([
+      "monthly-cash-flow",
+      "annual-fund-plan",
+      "quarterly-business-performance",
+    ]);
+    expect(statutoryFundReportDocuments.find((document) => document.key === "monthly-cash-flow")).toMatchObject({
+      dialogLabel: "월별 자금 입출금 명세서",
+      title: "2026년 3월 월별 자금 입출금 명세서",
+    });
+    expect(statutoryFundReportDocuments.find((document) => document.key === "annual-fund-plan")?.sections.map((section) => section.title)).toContain("연간 자금수지");
+    expect(statutoryFundReportDocuments.find((document) => document.key === "quarterly-business-performance")?.sections.map((section) => section.title)).toContain("지급 및 증빙관리");
   });
 
   it("finds report runs impacted by an edited expense date", () => {

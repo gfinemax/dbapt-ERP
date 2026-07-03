@@ -23,6 +23,8 @@ describe("DashboardPage", () => {
 
     expect(within(kpiPanel).getByText("등기조합원")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("116명")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("지출결의 승인대기")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("3건")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("다음 총회")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("D-12")).toBeInTheDocument();
     expect(within(kpiPanel).getByRole("progressbar", { name: "납부율 82.4%" })).toHaveAttribute("aria-valuenow", "82.4");

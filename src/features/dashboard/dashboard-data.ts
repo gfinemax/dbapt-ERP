@@ -164,6 +164,13 @@ export const dashboardStats: DashboardStat[] = [
     tone: "blue",
   },
   {
+    label: "지출결의 승인대기",
+    value: "3건",
+    description: "지급 전 승인 필요",
+    kind: "count",
+    tone: "mustard",
+  },
+  {
     label: "납부율",
     value: "82.4%",
     description: "분담금 납부 완료 비율",
@@ -200,7 +207,7 @@ export function buildDashboardStats(registeredMemberCount: number | null | undef
   const count = typeof registeredMemberCount === "number" && Number.isFinite(registeredMemberCount) ? registeredMemberCount : 116;
 
   return dashboardStats.map((stat) =>
-    stat.kind === "count"
+    stat.kind === "count" && stat.label === "등기조합원"
       ? {
           ...stat,
           value: `${count.toLocaleString()}명`,
@@ -221,7 +228,7 @@ export const dashboardModules: DashboardModule[] = [
     name: "회계/자금",
     source: "ERP Core",
     description: "입출금, 계정과목, 예산 집행, 신탁/대행/시공 지출을 관리합니다.",
-    metric: "미승인 지출 6건",
+    metric: "지출결의 승인대기 3건",
     tone: "mustard",
   },
   {
@@ -309,8 +316,8 @@ export const dashboardWarnings: DashboardWarning[] = [
     tone: "mustard",
   },
   {
-    title: "미승인 지출 6건",
-    detail: "신탁/대행/시공 관련 지출 검토가 필요합니다.",
+    title: "지출결의 승인대기 3건",
+    detail: "지급 전 승인 검토가 필요합니다.",
     tone: "mustard",
   },
   {
@@ -335,8 +342,8 @@ export const dashboardTasks: DashboardTask[] = [
     description: "SMS 발송 대상 38명",
   },
   {
-    title: "지출 승인 검토",
-    description: "승인 대기 6건",
+    title: "지출결의 승인 검토",
+    description: "승인대기 3건",
   },
   {
     title: "총회 참석 현황 확인",

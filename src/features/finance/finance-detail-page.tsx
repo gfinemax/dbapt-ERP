@@ -5,7 +5,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { findFinanceTransactionById, financeTransactions, formatKrw } from "./finance-data";
 
-const approvalSteps = ["요청", "검토", "승인", "지급완료"];
+const approvalSteps = ["작성중", "승인대기", "승인완료", "지급대기", "지급완료", "지출전표 생성"];
 
 type FinanceDetailPageProps = {
   transactionId: string;
@@ -19,11 +19,11 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
   }
 
   return (
-    <ErpShell activeLabel="회계/자금">
+    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <Link className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-[var(--color-stone)]" href="/finance">
           <ArrowLeft className="size-4" />
-          회계/자금 목록
+          수입·지출 전표관리
         </Link>
 
         <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
@@ -55,7 +55,7 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
             <h2 className="text-xl font-bold">전표 정보</h2>
             <dl className="mt-5 grid gap-4 md:grid-cols-2">
               <Info label="날짜" value={transaction.date} />
-              <Info label="거래처" value={transaction.vendor} />
+              <Info label="조합원/업체" value={transaction.vendor} />
               <Info label="계정과목" value={transaction.accountTitle} />
               <Info label="결제장부" value={transaction.paymentBook} />
               <Info label="결제방법" value={transaction.paymentMethod} />
@@ -67,7 +67,7 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
                     <th className="px-4 py-3 text-center">구분</th>
-                    <th className="px-4 py-3 text-center">공급가</th>
+                    <th className="px-4 py-3 text-center">공급가액</th>
                     <th className="px-4 py-3 text-center">부가세</th>
                     <th className="px-4 py-3 text-center">합계금액</th>
                   </tr>
@@ -114,7 +114,7 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <h2 className="text-xl font-bold">은행/카드 매칭</h2>
+            <h2 className="text-xl font-bold">은행·카드 매칭</h2>
             <div className="mt-5 rounded-xl bg-white p-4">
               <p className="flex items-center gap-2 text-sm font-semibold">
                 <Link2 className="size-4 text-[var(--color-deep-cobalt)]" />

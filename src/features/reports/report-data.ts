@@ -23,6 +23,22 @@ export type ReportTableSection = {
   rows: string[][];
 };
 
+export type StatutoryFundReportDocumentKey = "monthly-cash-flow" | "annual-fund-plan" | "quarterly-business-performance";
+
+export type StatutoryFundReportDocument = {
+  description: string;
+  dialogLabel: string;
+  key: StatutoryFundReportDocumentKey;
+  period: string;
+  sections: ReportTableSection[];
+  summary: Array<{
+    label: string;
+    value: string;
+  }>;
+  title: string;
+  unit: string;
+};
+
 export const reportFontFamily = '"Trebuchet MS", "Malgun Gothic", sans-serif';
 
 export const reportAutomationRules = [
@@ -336,6 +352,138 @@ export const cashFlowStatement = {
     ["합  계", "", "8,266,110", ""],
   ],
 };
+
+export const statutoryFundReportDocuments: StatutoryFundReportDocument[] = [
+  {
+    description: "월별 입금, 출금, 운영비 세부내역과 월말 잔액을 감사 대응용으로 출력합니다.",
+    dialogLabel: "월별 자금 입출금 명세서",
+    key: "monthly-cash-flow",
+    period: "2026년 3월",
+    title: "2026년 3월 월별 자금 입출금 명세서",
+    unit: "(단위: 원, VAT포함)",
+    summary: [
+      { label: "작성월", value: cashFlowStatement.month },
+      { label: "당월 수입 합계", value: formatKrw(20728000) },
+      { label: "당월 지출 합계", value: formatKrw(16238000) },
+      { label: "월말 현금예금 잔액", value: formatKrw(4490000) },
+    ],
+    sections: [
+      {
+        title: "자금 입출금 요약",
+        rows: [
+          ["구분", "항목", "금액"],
+          ["수입", "전월말 현금예금 잔액", "254,894원"],
+          ["수입", "기타 차입금", "19,500,000원"],
+          ["수입", "기타수입", "3,000원"],
+          ["수입", "당월 수입 합계", "20,728,000원"],
+          ["지출", "세무회계용역비", "3,000,000원"],
+          ["지출", "총회비", "3,000,000원"],
+          ["지출", "차입금 상환", "1,000,000원"],
+          ["지출", "운영비", "9,238,000원"],
+          ["잔액", "월말 현금예금 잔액", "4,490,000원"],
+        ],
+      },
+      {
+        title: "운영비 세부내역",
+        rows: cashFlowStatement.detailRows.map((row, rowIndex) =>
+          rowIndex === 0
+            ? row
+            : row.map((cell, cellIndex) => (cellIndex === 2 && cell && !cell.endsWith("원") ? `${cell}원` : cell)),
+        ),
+      },
+    ],
+  },
+  {
+    description: "연간 수입원, 지출 예정액, 운영비 예산, 기말 운용잔액을 한 장의 계획서로 관리합니다.",
+    dialogLabel: "연간 자금운용 계획서",
+    key: "annual-fund-plan",
+    period: "2026/01/01 ~ 2026/12/31",
+    title: "2026년 연간 자금운용 계획서",
+    unit: "(단위: 원, VAT포함)",
+    summary: [
+      { label: "연간 계획수입", value: formatKrw(1854000000) },
+      { label: "연간 계획지출", value: formatKrw(1747254968) },
+      { label: "운영비 예산", value: formatKrw(242254968) },
+      { label: "기말 운용예정잔액", value: formatKrw(106745032) },
+    ],
+    sections: [
+      {
+        title: "자금수입 계획",
+        rows: [
+          ["구분", "계획금액", "산출근거"],
+          ["조합원 분담금", "1,140,000,000원", "월별 분담금 수납 계획"],
+          ["업무대행비 수입", "300,000,000원", "계약 기준 예정 수납"],
+          ["차입금", "380,000,000원", "운영 및 사업비 유동성 확보"],
+          ["기타수입", "34,000,000원", "임대보증금, 이자 등"],
+          ["합계", "1,854,000,000원", ""],
+        ],
+      },
+      {
+        title: "자금지출 계획",
+        rows: [
+          ["구분", "계획금액", "산출근거"],
+          ["토지매입비", "950,000,000원", "토지 계약 및 관련 제세금"],
+          ["용역비", "315,000,000원", "감정평가, 법무, 세무, 업무대행"],
+          ["운영비", "242,254,968원", "2026년 운영비 예산(안)"],
+          ["환불금", "203,310,000원", "조합원 환불 예정액"],
+          ["차입금상환", "36,690,000원", "원금 및 이자 상환"],
+          ["합계", "1,747,254,968원", ""],
+        ],
+      },
+      {
+        title: "연간 자금수지",
+        rows: [
+          ["항목", "금액", "비고"],
+          ["연간 계획수입", "1,854,000,000원", ""],
+          ["연간 계획지출", "1,747,254,968원", ""],
+          ["기말 운용예정잔액", "106,745,032원", "수입-지출 기준"],
+        ],
+      },
+    ],
+  },
+  {
+    description: "분기별 사업 추진, 조합원 모집, 인허가, 지급 및 증빙관리 현황을 보고서 형태로 출력합니다.",
+    dialogLabel: "분기별 사업실적보고서",
+    key: "quarterly-business-performance",
+    period: "2026.1.1. ~ 2026.3.31.",
+    title: "2026년 1분기 사업실적보고서",
+    unit: "(단위: 원, VAT포함)",
+    summary: [
+      { label: "보고분기", value: "2026년 1분기" },
+      { label: "조합원 현황", value: "116명" },
+      { label: "분기 수입/지출", value: "20,728,000원" },
+      { label: "분기말 잔액", value: "4,490,000원" },
+    ],
+    sections: [
+      {
+        title: "사업추진 실적",
+        rows: [
+          ["항목", "진행상태", "비고"],
+          ["조합설립인가", "완료", "2009.07.13 인가"],
+          ["지구단위계획", "완료", "2022.06.30 결정고시"],
+          ["건축심의 및 사업승인", "준비중", "통합심의 진행 예정"],
+        ],
+      },
+      {
+        title: "조합원 모집 현황",
+        rows: quarterlyPerformanceReport.sections[0].rows,
+      },
+      {
+        title: "지급 및 증빙관리",
+        rows: [
+          ["구분", "건수", "금액", "증빙상태"],
+          ["지출결의 승인대기", "3건", "12,300,000원", "검토중"],
+          ["지급완료", "4건", "1,447,610,000원", "이체확인증 연결"],
+          ["증빙 미첨부", "2건", "315,000,000원", "보완 필요"],
+        ],
+      },
+      {
+        title: "인허가 추진 현황",
+        rows: quarterlyPerformanceReport.sections[2].rows,
+      },
+    ],
+  },
+];
 
 export const operatingBudget = {
   title: "2026년 운영비 예산(안)",

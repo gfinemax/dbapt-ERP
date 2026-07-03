@@ -130,6 +130,17 @@ describe("MemberListPage", () => {
     expect(screen.getAllByText("검토")[0]).toHaveClass("whitespace-nowrap");
   });
 
+  it("keeps member tier tabs on one line at narrower widths", () => {
+    render(<MemberListPage />);
+
+    expect(screen.getByText("이름, 연락처, 조합원번호 검색").parentElement?.parentElement).toHaveClass("lg:flex-row");
+    expect(screen.getByText("이름, 연락처, 조합원번호 검색").parentElement).toHaveClass("lg:w-[420px]");
+    expect(screen.getByRole("navigation", { name: "조합원 유형" })).toHaveClass("flex-nowrap", "overflow-x-auto");
+    expect(screen.getByRole("link", { name: "등기조합원" })).toHaveClass("shrink-0", "whitespace-nowrap");
+    expect(screen.getByRole("link", { name: "예비조합원" })).toHaveClass("shrink-0", "whitespace-nowrap");
+    expect(screen.getByRole("link", { name: "권리증보유자" })).toHaveClass("shrink-0", "whitespace-nowrap");
+  });
+
   it("breaks multiple member numbers and phone numbers into separate lines", () => {
     render(
       <MemberListPage

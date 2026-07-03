@@ -23,6 +23,7 @@ describe("dashboard data", () => {
   it("keeps the key dashboard stats available for the first screen", () => {
     expect(dashboardStats.map((stat) => stat.label)).toEqual([
       "등기조합원",
+      "지출결의 승인대기",
       "납부율",
       "예산 집행률",
       "토지 확보율",

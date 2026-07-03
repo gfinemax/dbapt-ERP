@@ -1,7 +1,7 @@
-export type FinanceTransactionType = "입금" | "출금" | "매입";
-export type FinanceApprovalStatus = "승인완료" | "승인대기" | "검토중";
+export type FinanceTransactionType = "수입" | "지출" | "지출결의" | "환불";
+export type FinanceApprovalStatus = "승인완료" | "승인대기" | "검토중" | "작성중" | "반려";
 export type FinanceEvidenceStatus = "첨부완료" | "증빙미첨부" | "검토필요";
-export type IntegrationMatchStatus = "매칭완료" | "연동미매칭" | "수기입력";
+export type IntegrationMatchStatus = "매칭완료" | "입금미매칭" | "수기입력";
 
 export type FinanceTransaction = {
   id: string;
@@ -34,35 +34,35 @@ export type BankCardConnection = {
   balance: number;
 };
 
-export const financeFilters = ["전체", "매입", "입금", "출금", "승인대기", "증빙미첨부", "연동미매칭"];
+export const financeFilters = ["전체", "수입", "지출", "지출결의", "승인대기", "지급대기", "증빙미첨부", "입금미매칭"];
 
 export const financeTransactions: FinanceTransaction[] = [
   {
     id: "finance-0401",
-    voucherNo: "PV-2025-0002",
-    date: "2025-04-01",
-    type: "매입",
-    vendor: "주식회사 흥부상사",
-    accountTitle: "비품",
-    description: "컴퓨터 2대 외상 매입",
-    supplyAmount: 100000,
-    vat: 10000,
-    totalAmount: 110000,
-    paymentBook: "거래처 외상",
-    paymentMethod: "외상",
+    voucherNo: "지결-2026-0001",
+    date: "2026-06-07",
+    type: "지출결의",
+    vendor: "법무법인 ○○",
+    accountTitle: "법무비",
+    description: "동작구청 대응 및 업무대행계약 검토 법무비 지급",
+    supplyAmount: 3000000,
+    vat: 300000,
+    totalAmount: 3300000,
+    paymentBook: "국민은행 운영계좌",
+    paymentMethod: "계좌이체 예정",
     evidenceStatus: "첨부완료",
-    approvalStatus: "승인대기",
+    approvalStatus: "검토중",
     integrationStatus: "수기입력",
-    linkedModule: "거래전표증빙문서",
+    linkedModule: "지출결의서 관리",
   },
   {
     id: "finance-0412",
-    voucherNo: "JV-2026-0412",
+    voucherNo: "수입-2026-0001",
     date: "2026-06-05",
-    type: "입금",
+    type: "수입",
     vendor: "김민준 외 8명",
     accountTitle: "조합원 분담금",
-    description: "6월 1차 조합원 분담금 입금",
+    description: "6월 1차 조합원 분담금 수납",
     supplyAmount: 380000000,
     vat: 0,
     totalAmount: 380000000,
@@ -75,12 +75,12 @@ export const financeTransactions: FinanceTransaction[] = [
   },
   {
     id: "finance-0411",
-    voucherNo: "JV-2026-0411",
+    voucherNo: "지출-2026-0001",
     date: "2026-06-04",
-    type: "출금",
+    type: "지출",
     vendor: "대방개발 주식회사",
-    accountTitle: "토지계약금",
-    description: "사업부지 3필지 토지 계약금 지급",
+    accountTitle: "토지매입비",
+    description: "사업부지 3필지 토지매입비 지급",
     supplyAmount: 950000000,
     vat: 0,
     totalAmount: 950000000,
@@ -88,44 +88,62 @@ export const financeTransactions: FinanceTransaction[] = [
     paymentMethod: "신탁 지급요청",
     evidenceStatus: "검토필요",
     approvalStatus: "승인대기",
-    integrationStatus: "연동미매칭",
+    integrationStatus: "입금미매칭",
     linkedModule: "토지관리",
   },
   {
     id: "finance-0410",
-    voucherNo: "JV-2026-0410",
+    voucherNo: "지출-2026-0002",
     date: "2026-06-03",
-    type: "출금",
-    vendor: "파인맥스 업무대행",
-    accountTitle: "업무대행비",
-    description: "6월 업무대행 용역비 지급",
-    supplyAmount: 200000000,
-    vat: 20000000,
-    totalAmount: 220000000,
+    type: "지출",
+    vendor: "한빛세무회계",
+    accountTitle: "세무비",
+    description: "조합 법인세 및 부가세 검토 세무자문료 지급",
+    supplyAmount: 30000000,
+    vat: 3000000,
+    totalAmount: 33000000,
     paymentBook: "국민은행 운영계좌",
     paymentMethod: "계좌이체",
     evidenceStatus: "첨부완료",
     approvalStatus: "승인완료",
     integrationStatus: "매칭완료",
-    linkedModule: "수지분석",
+    linkedModule: "세무신고",
   },
   {
     id: "finance-0409",
-    voucherNo: "JV-2026-0409",
+    voucherNo: "지출-2026-0003",
     date: "2026-06-02",
-    type: "출금",
-    vendor: "대한토지신탁",
-    accountTitle: "신탁수수료",
-    description: "분기 신탁 관리 수수료 지급",
-    supplyAmount: 250000000,
-    vat: 27500000,
-    totalAmount: 277500000,
+    type: "지출",
+    vendor: "미래감정평가법인",
+    accountTitle: "감정평가비",
+    description: "사업부지 감정평가 용역비 지급",
+    supplyAmount: 100000000,
+    vat: 10000000,
+    totalAmount: 110000000,
     paymentBook: "국민은행 신탁계좌",
-    paymentMethod: "법인카드/계좌",
+    paymentMethod: "계좌이체",
     evidenceStatus: "증빙미첨부",
     approvalStatus: "승인대기",
     integrationStatus: "수기입력",
-    linkedModule: "회계/결산",
+    linkedModule: "토지관리",
+  },
+  {
+    id: "finance-0408",
+    voucherNo: "환결-2026-0001",
+    date: "2026-06-01",
+    type: "환불",
+    vendor: "박서연 조합원",
+    accountTitle: "조합원 환불금",
+    description: "계약 해지 조합원 납입금 환불 처리",
+    supplyAmount: 203310000,
+    vat: 0,
+    totalAmount: 203310000,
+    paymentBook: "국민은행 운영계좌",
+    paymentMethod: "계좌이체",
+    evidenceStatus: "검토필요",
+    approvalStatus: "승인대기",
+    integrationStatus: "수기입력",
+    linkedModule: "조합원관리",
   },
 ];
 
@@ -165,6 +183,8 @@ export const bankCardConnections: BankCardConnection[] = [
   },
 ];
 
+const selectedPeriodExecutedOutflowTotal = 1447610000;
+
 export function formatKrw(amount: number) {
   return `${new Intl.NumberFormat("ko-KR").format(amount)}원`;
 }
@@ -172,11 +192,9 @@ export function formatKrw(amount: number) {
 export function getFinanceSummary() {
   return {
     totalInflow: financeTransactions
-      .filter((transaction) => transaction.type === "입금")
+      .filter((transaction) => transaction.type === "수입")
       .reduce((sum, transaction) => sum + transaction.totalAmount, 0),
-    totalOutflow: financeTransactions
-      .filter((transaction) => transaction.type === "출금" || transaction.type === "매입")
-      .reduce((sum, transaction) => sum + transaction.totalAmount, 0),
+    totalOutflow: selectedPeriodExecutedOutflowTotal,
     pendingApprovals: financeTransactions.filter((transaction) => transaction.approvalStatus === "승인대기").length,
     unmatchedIntegrations: bankCardConnections.reduce((sum, connection) => sum + connection.unmatchedCount, 0),
   };

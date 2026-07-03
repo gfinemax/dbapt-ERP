@@ -1,4 +1,7 @@
+"use client";
+
 import { Download, FileSpreadsheet, Landmark, Plus, RefreshCw, Search, Upload } from "lucide-react";
+import { useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -9,39 +12,68 @@ import {
   formatKrw,
   getFinanceSummary,
 } from "./finance-data";
+import { createDocumentNo } from "./finance-numbering";
 
 const statusClasses: Record<string, string> = {
-  매입: "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]",
-  입금: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
-  출금: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
+  수입: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
+  지출: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
+  지출결의: "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]",
+  환불: "bg-[var(--color-lilac-mist)] text-[var(--color-amethyst)]",
   승인완료: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
   승인대기: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
+  작성중: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
+  반려: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
+  지급대기: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
+  지급완료: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
+  보류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
   검토중: "bg-[var(--color-lilac-mist)] text-[var(--color-amethyst)]",
   첨부완료: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
   증빙미첨부: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
   검토필요: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
   매칭완료: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
-  연동미매칭: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
+  입금미매칭: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
   수기입력: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
   정상: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
   확인필요: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
 };
 
-const voucherMenuPath = ["거래전표증빙문서", "매입매출거래입력", "추가", "내용입력", "저장", "증빙선택"];
+const voucherMenuPath = ["전표·증빙관리", "수입·지출 전표관리", "추가", "내용입력", "저장", "증빙선택"];
 const voucherWorkflows = [
   {
-    title: "매입/출금 전표등록",
-    description: "적격증빙이 있는 매입자료를 입력하고 결제방식이 외상, 계좌, 카드인지 구분합니다.",
+    title: "수입/지출 전표등록",
+    description: "조합원 분담금 수납, 업체 지급, 토지매입비, 환불금 등 조합 자금거래를 구분해 입력합니다.",
   },
   {
-    title: "거래처 외상잔액확인",
-    description: "거래처별 미지급 잔액을 확인해 채무 잔액과 지급 예정표로 연결합니다.",
+    title: "조합원 미납금·업체 미지급금 확인",
+    description: "조합원별 미납금과 협력업체 미지급금을 확인해 수납 예정표와 지급 예정표로 연결합니다.",
   },
   {
-    title: "기타비용 전표등록",
-    description: "신탁, 업무대행, 시공, 설계, 감리 등 조합 운영 비용을 계정과목 기준으로 등록합니다.",
+    title: "운영비·용역비 지출등록",
+    description: "법무비, 세무비, 감정평가비, 업무대행비 등 조합 운영 지출을 계정과목 기준으로 등록합니다.",
   },
 ];
+const addVoucherActions = [
+  {
+    description: "조합원 분담금, 이자수입 등 입금 전표를 작성합니다.",
+    documentNo: createDocumentNo("INCOME_VOUCHER", 1, 2026),
+    label: "수입전표",
+  },
+  {
+    description: "지출 전 결재를 위한 결의서를 작성합니다.",
+    documentNo: createDocumentNo("EXPENSE_RESOLUTION", 1, 2026),
+    label: "지출결의서",
+  },
+  {
+    description: "승인 완료 지출의 전표 초안을 확인하거나 수기 지출전표를 작성합니다.",
+    documentNo: createDocumentNo("EXPENSE_VOUCHER", 1, 2026),
+    label: "지출전표",
+  },
+  {
+    description: "조합원 납입금 반환 등 환불 결의를 작성합니다.",
+    documentNo: createDocumentNo("REFUND_RESOLUTION", 1, 2026),
+    label: "환불결의",
+  },
+] as const;
 
 function Badge({ value }: { value: string }) {
   return (
@@ -53,29 +85,59 @@ function Badge({ value }: { value: string }) {
 
 export function FinanceListPage() {
   const summary = getFinanceSummary();
+  const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
 
   return (
-    <ErpShell activeDetailLabel="매입매출거래입력" activeLabel="회계/자금" activeWorkspaceLabel="거래전표증빙문서">
+    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div>
             <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-              회계/자금 &gt; 거래전표증빙문서 &gt; 매입매출거래입력
+              회계/자금 &gt; 전표·증빙관리 &gt; 수입·지출 전표관리
             </p>
-            <h1 className="text-3xl font-bold tracking-normal">매입매출거래입력</h1>
+            <h1 className="text-3xl font-bold tracking-normal">수입·지출 전표관리</h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
-              세금계산서, 계산서, 카드, 현금영수증 등의 적격증빙이 발생하는 매입/매출거래를 입력합니다.
+              조합원 분담금 수납, 협력업체 지급, 운영비 지출, 토지매입비, 환불금 등 조합의 자금거래를 전표와 증빙자료 기준으로 관리합니다.
             </p>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="relative flex flex-wrap gap-2">
             <Button className="rounded-full" size="lg" variant="outline">
               <Upload className="size-4" />
               엑셀 가져오기
             </Button>
-            <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" size="lg">
+            <Button
+              aria-expanded={isAddMenuOpen}
+              aria-haspopup="menu"
+              className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]"
+              onClick={() => setIsAddMenuOpen((current) => !current)}
+              size="lg"
+            >
               <Plus className="size-4" />
               추가
             </Button>
+            {isAddMenuOpen ? (
+              <div
+                aria-label="전표 추가 선택"
+                className="absolute right-0 top-14 z-20 grid w-[360px] gap-2 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-3 shadow-[0_18px_45px_rgba(16,20,24,0.16)]"
+                role="menu"
+              >
+                {addVoucherActions.map((action) => (
+                  <button
+                    className="rounded-xl border border-[var(--color-soft-border)] bg-white px-4 py-3 text-left transition hover:bg-[var(--color-cloud-veil)]"
+                    key={action.label}
+                    type="button"
+                  >
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold">{action.label}</span>
+                      <span className="rounded-full bg-[var(--color-morning-tint)] px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
+                        {action.documentNo}
+                      </span>
+                    </span>
+                    <span className="mt-1 block break-keep text-xs leading-5 text-[var(--color-stone)]">{action.description}</span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -100,23 +162,39 @@ export function FinanceListPage() {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <h2 className="text-lg font-bold">적격증빙 사례</h2>
+            <h2 className="text-lg font-bold">조합 회계 처리 사례</h2>
             <p className="mt-3 text-sm leading-6 text-[var(--color-stone)]">
-              판매를 위해 주식회사 흥부상사에서 컴퓨터 2대를 110,000원(부가세 포함)에 외상으로 매입하고 세금계산서를 받았습니다.
+              법무법인 ○○에 동작구청 대응 및 업무대행계약 검토 관련 법무비 3,300,000원(부가세 포함)을 지급하고 세금계산서를 첨부했습니다.
             </p>
             <dl className="mt-4 grid gap-3 text-sm">
               <InfoLine label="증빙" value="세금계산서" />
-              <InfoLine label="거래처" value="주식회사 흥부상사" />
-              <InfoLine label="외상잔액" value="110,000원" />
+              <InfoLine label="거래처" value="법무법인 ○○" />
+              <InfoLine label="금액" value="3,300,000원" />
             </dl>
           </div>
         </section>
 
         <section className="grid gap-4 lg:grid-cols-4">
-          <SummaryTile label="입금 합계" value={formatKrw(summary.totalInflow)} />
-          <SummaryTile label="출금 합계" value={formatKrw(summary.totalOutflow)} />
-          <SummaryTile label="승인대기 지출" value={`${summary.pendingApprovals}건`} />
-          <SummaryTile label="연동 미매칭" value={`${summary.unmatchedIntegrations}건`} />
+          <SummaryTile
+            description="이번 달 또는 선택 기간 내 조합원 분담금 수납액"
+            label="분담금 수납액"
+            value={formatKrw(summary.totalInflow)}
+          />
+          <SummaryTile
+            description="선택 기간 내 지급 완료된 지출 총액"
+            label="지출 집행액"
+            value={formatKrw(summary.totalOutflow)}
+          />
+          <SummaryTile
+            description="승인 필요 상태의 지출결의서"
+            label="지출결의 승인대기"
+            value={`${summary.pendingApprovals}건`}
+          />
+          <SummaryTile
+            description="은행 입금내역 중 조합원과 아직 연결되지 않은 건"
+            label="입금 미매칭"
+            value={`${summary.unmatchedIntegrations}건`}
+          />
         </section>
 
         <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
@@ -125,7 +203,7 @@ export function FinanceListPage() {
               <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
                 <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[420px]">
                   <Search className="size-4 shrink-0" />
-                  <span>전표번호, 거래처, 증빙, 계정 검색</span>
+                  <span>조합원명, 업체명, 전표번호, 결의서번호, 증빙, 계정과목 검색</span>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   {financeFilters.map((filter) => (
@@ -141,14 +219,14 @@ export function FinanceListPage() {
               </div>
 
               <div className="mt-5 flex flex-wrap gap-2 rounded-xl bg-[var(--color-cloud-veil)] px-4 py-3 text-sm text-[var(--color-stone)]">
-                <span className="font-semibold text-[var(--color-midnight-ink)]">매입매출거래입력</span>
+                <span className="font-semibold text-[var(--color-midnight-ink)]">수입·지출 전표관리</span>
                 <span>기간검색 · 추가 · 내용입력 · 저장 · 증빙선택 · 출력 · 엑셀</span>
               </div>
             </section>
 
             <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
-                <h2 className="text-lg font-bold">매입매출 거래자료</h2>
+                <h2 className="text-lg font-bold">수입·지출 전표자료</h2>
                 <div className="flex flex-wrap gap-2">
                   <Button className="rounded-full" size="sm" variant="outline">
                     <FileSpreadsheet className="size-4" />
@@ -166,13 +244,13 @@ export function FinanceListPage() {
                     <tr>
                       <th className="px-4 py-3 text-center">날짜</th>
                       <th className="px-4 py-3 text-center">구분</th>
-                      <th className="px-4 py-3 text-center">거래처</th>
+                      <th className="px-4 py-3 text-center">조합원/업체</th>
                       <th className="px-4 py-3 text-center">계정과목</th>
                       <th className="px-4 py-3 text-center">적요</th>
-                      <th className="px-4 py-3 text-center">공급가</th>
+                      <th className="px-4 py-3 text-center">공급가액</th>
                       <th className="px-4 py-3 text-center">부가세</th>
                       <th className="px-4 py-3 text-center">합계</th>
-                      <th className="px-4 py-3 text-center">결제장부</th>
+                      <th className="px-4 py-3 text-center">자금계좌</th>
                       <th className="px-4 py-3 text-center">승인</th>
                       <th className="px-4 py-3 text-center">증빙</th>
                       <th className="px-4 py-3 text-center">연동</th>
@@ -218,8 +296,8 @@ export function FinanceListPage() {
           <aside className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold">은행/카드 연동</h2>
-                <p className="mt-1 text-sm text-[var(--color-stone)]">등록된 계좌와 카드의 거래내역을 불러와 전표와 매칭합니다.</p>
+                <h2 className="text-lg font-bold">은행·카드 연동</h2>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">등록된 계좌와 카드의 거래내역을 불러와 수입·지출 전표와 매칭합니다.</p>
               </div>
               <Button aria-label="연동 새로고침" className="size-10 rounded-full p-0" variant="outline">
                 <RefreshCw className="size-4" />
@@ -255,11 +333,12 @@ export function FinanceListPage() {
   );
 }
 
-function SummaryTile({ label, value }: { label: string; value: string }) {
+function SummaryTile({ description, label, value }: { description: string; label: string; value: string }) {
   return (
     <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-      <p className="text-sm font-semibold text-[var(--color-stone)]">{label}</p>
-      <p className="mt-3 text-2xl font-bold">{value}</p>
+      <p className="break-keep text-sm font-semibold text-[var(--color-stone)]">{label}</p>
+      <p className="mt-3 whitespace-nowrap text-2xl font-bold">{value}</p>
+      <p className="mt-2 break-keep text-sm leading-5 text-[var(--color-stone)]">{description}</p>
     </div>
   );
 }

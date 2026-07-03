@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { ReportsPage } from "./reports-page";
 
@@ -19,6 +19,35 @@ describe("ReportsPage", () => {
     expect(within(reportTable).getAllByText("수정필요")).toHaveLength(2);
     expect(within(reportTable).getAllByText("v2")).toHaveLength(2);
     expect(screen.getAllByRole("button", { name: "재생성" })).toHaveLength(2);
+  });
+
+  it("opens printable statutory fund report documents from the report overview", () => {
+    render(<ReportsPage initialSection="overview" />);
+
+    fireEvent.click(screen.getByRole("button", { name: "월별 자금 입출금 명세서 출력" }));
+    let dialog = screen.getByRole("dialog", { name: "월별 자금 입출금 명세서" });
+    expect(within(dialog).getByRole("heading", { name: "2026년 3월 월별 자금 입출금 명세서" })).toBeInTheDocument();
+    expect(within(dialog).getAllByText("당월 수입 합계").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("20,728,000원").length).toBeGreaterThan(0);
+    expect(within(dialog).getByText("운영비 세부내역")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "브라우저 프린트" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "연간 자금운용 계획서 출력" }));
+    dialog = screen.getByRole("dialog", { name: "연간 자금운용 계획서" });
+    expect(within(dialog).getByRole("heading", { name: "2026년 연간 자금운용 계획서" })).toBeInTheDocument();
+    expect(within(dialog).getByText("자금수입 계획")).toBeInTheDocument();
+    expect(within(dialog).getByText("조합원 분담금")).toBeInTheDocument();
+    expect(within(dialog).getByText("토지매입비")).toBeInTheDocument();
+    expect(within(dialog).getByText("연간 자금수지")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "분기별 사업실적보고서 출력" }));
+    dialog = screen.getByRole("dialog", { name: "분기별 사업실적보고서" });
+    expect(within(dialog).getByRole("heading", { name: "2026년 1분기 사업실적보고서" })).toBeInTheDocument();
+    expect(within(dialog).getByText("사업추진 실적")).toBeInTheDocument();
+    expect(within(dialog).getByText("조합원 모집 현황")).toBeInTheDocument();
+    expect(within(dialog).getByText("지급 및 증빙관리")).toBeInTheDocument();
   });
 
   it("renders the DOCX-based quarterly performance report", () => {

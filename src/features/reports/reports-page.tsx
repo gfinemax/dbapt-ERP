@@ -1,5 +1,8 @@
-import { Download, FileSpreadsheet, FileText, RefreshCw } from "lucide-react";
+"use client";
+
+import { Download, FileSpreadsheet, FileText, RefreshCw, X } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -11,8 +14,11 @@ import {
   quarterlyPerformanceReport,
   reportAutomationRules,
   reportFontFamily,
+  statutoryFundReportDocuments,
   type ReportSection,
   type ReportTableSection,
+  type StatutoryFundReportDocument,
+  type StatutoryFundReportDocumentKey,
 } from "./report-data";
 
 const detailLabels: Record<ReportSection, string> = {
@@ -44,6 +50,8 @@ export function ReportsPage({ initialSection = "overview" }: { initialSection?: 
 
 function ReportOverviewSection() {
   const summary = getReportSummary();
+  const [activePrintDocumentKey, setActivePrintDocumentKey] = useState<StatutoryFundReportDocumentKey | null>(null);
+  const activePrintDocument = statutoryFundReportDocuments.find((document) => document.key === activePrintDocumentKey);
 
   return (
     <>
@@ -88,6 +96,30 @@ function ReportOverviewSection() {
       <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
         <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
+            <h2 className="text-lg font-bold">필수 출력 문서</h2>
+            <p className="mt-1 text-sm text-[var(--color-stone)]">월별, 연간, 분기별 자금·사업 보고서를 종이 보관용으로 바로 출력합니다.</p>
+          </div>
+          <span className="rounded-full bg-[var(--color-cloud-veil)] px-3 py-1 text-xs font-bold text-[var(--color-stone)]">내부 보관 / 감사 대응</span>
+        </div>
+        <div className="grid gap-4 lg:grid-cols-3">
+          {statutoryFundReportDocuments.map((document) => (
+            <div className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4" key={document.key}>
+              <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">{document.dialogLabel}</p>
+              <h3 className="mt-2 text-xl font-bold">{document.title}</h3>
+              <p className="mt-2 text-sm font-semibold text-[var(--color-stone)]">{document.period}</p>
+              <p className="mt-3 min-h-12 text-sm leading-6 text-[var(--color-stone)]">{document.description}</p>
+              <Button className="mt-4 rounded-full" onClick={() => setActivePrintDocumentKey(document.key)} size="sm" variant="outline">
+                <FileSpreadsheet className="size-4" />
+                {document.dialogLabel} 출력
+              </Button>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
             <h2 className="text-lg font-bold">자동 생성 보고서 목록</h2>
             <p className="mt-1 text-sm text-[var(--color-stone)]">승인된 최신 버전만 홈페이지와 정보몽땅 공개 대상으로 관리합니다.</p>
           </div>
@@ -99,6 +131,8 @@ function ReportOverviewSection() {
         </div>
         <ReportRunTable />
       </section>
+
+      {activePrintDocument ? <StatutoryFundReportPrintModal document={activePrintDocument} onClose={() => setActivePrintDocumentKey(null)} /> : null}
     </>
   );
 }
@@ -218,6 +252,78 @@ function BudgetSection() {
         </div>
       </section>
     </>
+  );
+}
+
+function StatutoryFundReportPrintModal({
+  document,
+  onClose,
+}: {
+  document: StatutoryFundReportDocument;
+  onClose: () => void;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[var(--color-sky-wash)]/88 px-4 py-8" onClick={onClose}>
+      <section
+        aria-labelledby={`statutory-report-${document.key}-title`}
+        aria-modal="true"
+        className="w-full max-w-[1180px] overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] shadow-[0_24px_80px_rgba(16,20,24,0.22)]"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <div className="flex items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-6 py-5">
+          <div>
+            <h2 className="text-2xl font-bold" id={`statutory-report-${document.key}-title`}>
+              {document.dialogLabel}
+            </h2>
+            <p className="mt-2 text-sm text-[var(--color-stone)]">{document.description}</p>
+          </div>
+          <button aria-label={`${document.dialogLabel} 닫기`} className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onClose} type="button">
+            <X className="size-4" />
+          </button>
+        </div>
+
+        <div className="p-6">
+          <div className="erp-print-page rounded-xl border border-[var(--color-soft-border)] bg-white p-6">
+            <header className="border-b-2 border-[var(--color-midnight-ink)] pb-5 text-center">
+              <h3 className="text-3xl font-bold tracking-normal">{document.title}</h3>
+              <p className="mt-2 font-semibold">{document.period}</p>
+              <p className="mt-3 text-right text-sm text-[var(--color-stone)]">{document.unit}</p>
+            </header>
+
+            <section className="mt-5 grid gap-3 md:grid-cols-4">
+              {document.summary.map((item) => (
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3" key={item.label}>
+                  <p className="text-xs font-bold text-[var(--color-stone)]">{item.label}</p>
+                  <p className="mt-2 text-lg font-bold">{item.value}</p>
+                </div>
+              ))}
+            </section>
+
+            <div className="mt-6 grid gap-5">
+              {document.sections.map((section) => (
+                <section key={section.title}>
+                  <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+                    <h4 className="text-lg font-bold">{section.title}</h4>
+                    {section.asOf ? <p className="text-sm font-semibold text-[var(--color-stone)]">({section.asOf})</p> : null}
+                  </div>
+                  <SimpleTable ariaLabel={`${document.dialogLabel} ${section.title}`} rows={section.rows} />
+                </section>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
+          <Button className="rounded-full" onClick={onClose} variant="outline">
+            닫기
+          </Button>
+          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => window.print()}>
+            브라우저 프린트
+          </Button>
+        </div>
+      </section>
+    </div>
   );
 }
 
