@@ -59,7 +59,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
         { label: "품목등록", href: "/basic-info?section=items" },
         { label: "은행통장 등록", href: "/basic-info?section=bank-accounts" },
         { label: "신용카드 등록", href: "/basic-info?section=cards" },
-        { label: "계정과목 등록" },
+        { label: "계정과목 등록", href: "/basic-info?section=account-subjects" },
         { label: "초기잔액 등록" },
       ],
     },
@@ -117,7 +117,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       href: "/finance",
       label: "은행·카드",
       items: [
-        { label: "은행 거래내역" },
+        { label: "은행 거래내역", href: "/finance/bank-transactions" },
         { label: "카드 사용내역" },
         { label: "계좌 연동 설정" },
         { label: "카드 연동 설정" },

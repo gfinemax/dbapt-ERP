@@ -9,10 +9,11 @@ describe("ExpenseResolutionPage", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.useRealTimers();
   });
 
-  it("renders the expense resolution list and creation panel", () => {
+  it("renders the expense resolution list without the static creation guide panel", () => {
     render(<ExpenseResolutionPage />);
 
     expect(screen.getByRole("heading", { name: "지출결의서 관리" })).toBeInTheDocument();
@@ -21,36 +22,56 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByRole("button", { name: "지출결의 작성" })).toBeInTheDocument();
 
     const table = screen.getByRole("table", { name: "지출결의서 목록" });
-    expect(within(table).getByText("결의서번호")).toBeInTheDocument();
-    expect(within(table).getByText("결의서유형")).toBeInTheDocument();
-    expect(within(table).getByText("프로젝트/사업과제")).toBeInTheDocument();
-    expect(within(table).getByText("작성일")).toBeInTheDocument();
-    expect(within(table).getByText("작성자")).toBeInTheDocument();
-    expect(within(table).getByText("대표 거래처")).toBeInTheDocument();
-    expect(within(table).getByText("대표 계정항목")).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "결의서번호" })).not.toBeInTheDocument();
+    expect(within(table).getAllByRole("columnheader").map((header) => header.textContent)).toEqual(["작성일", "결의요약", "총지급액", "예산상태", "진행상태", "증빙", "액션"]);
+    expect(within(table).getByText("결의요약")).toBeInTheDocument();
     expect(within(table).getByText("총지급액")).toBeInTheDocument();
-    expect(within(table).getByText("항목수")).toBeInTheDocument();
-    expect(within(table).getByText("예산초과")).toBeInTheDocument();
-    expect(within(table).getByText("현재결재자")).toBeInTheDocument();
-    expect(within(table).getByText("승인상태")).toBeInTheDocument();
-    expect(within(table).getByText("지급상태")).toBeInTheDocument();
-    expect(within(table).getByText("전표번호")).toBeInTheDocument();
-    expect(within(table).getByText("증빙여부")).toBeInTheDocument();
+    expect(within(table).getByText("예산상태")).toBeInTheDocument();
+    expect(within(table).getByText("진행상태")).toBeInTheDocument();
+    expect(within(table).getByText("증빙")).toBeInTheDocument();
     expect(within(table).getByText("액션")).toBeInTheDocument();
+    for (const hiddenHeader of ["결의서유형", "프로젝트/사업과제", "작성자", "대표 거래처", "대표 계정항목", "항목수", "예산초과", "현재결재자", "승인상태", "지급상태", "전표번호", "증빙여부"]) {
+      expect(within(table).queryByRole("columnheader", { name: hiddenHeader })).not.toBeInTheDocument();
+    }
     expect(within(table).getByText("지결-2026-0001")).toBeInTheDocument();
-    expect(within(table).getByText("법무법인 ○○")).toBeInTheDocument();
+    expect(within(table).getAllByText("단일 · 프로젝트 없음").length).toBeGreaterThan(0);
+    expect(within(table).getByText("법무법인 ○○ / 법무비")).toBeInTheDocument();
+    expect(within(table).getAllByText("승인대기 · 지급대기 · 미생성").length).toBeGreaterThan(0);
     expect(screen.getByRole("button", { name: "전체 5" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "결재함 2" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "지급대기 1" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "지급완료 1" })).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { name: "작성 양식" })).toBeInTheDocument();
-    for (const label of ["결의서번호", "지출예정일", "지출정보 요약", "지급대상", "총지급액", "관련회의", "증빙자료", "메모"]) {
-      expect(screen.getAllByText(label).length).toBeGreaterThan(0);
-    }
+    expect(screen.queryByRole("heading", { name: "작성 양식" })).not.toBeInTheDocument();
+    expect(screen.queryByText("지출 전 결의서에 필요한 입력 항목입니다.")).not.toBeInTheDocument();
+    expect(screen.queryByText("결의서번호 입력")).not.toBeInTheDocument();
     for (const option of ["운영비", "용역비", "토지매입비", "업무대행비", "법무비", "세무비", "감정평가비", "환불금", "차입금상환", "기타"]) {
       expect(screen.getAllByText(option).length).toBeGreaterThan(0);
     }
+  });
+
+  it("exports the full expense resolution list to an Excel-compatible CSV regardless of the active tab", async () => {
+    const createObjectUrlSpy = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:expense-resolution-export");
+    const revokeObjectUrlSpy = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+    const anchorClickSpy = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => undefined);
+
+    render(<ExpenseResolutionPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "지급대기 1" }));
+    fireEvent.click(screen.getByRole("button", { name: "엑셀" }));
+
+    expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
+    const exportedBlob = createObjectUrlSpy.mock.calls[0]?.[0] as Blob;
+    const csv = await exportedBlob.text();
+
+    expect(anchorClickSpy).toHaveBeenCalledTimes(1);
+    expect(revokeObjectUrlSpy).toHaveBeenCalledWith("blob:expense-resolution-export");
+    expect(exportedBlob.type).toBe("text/csv;charset=utf-8");
+    expect(csv).toContain("결의서번호,결의서유형,프로젝트/사업과제,작성일,작성자,지출예정일,지급유형");
+    expect(csv).toContain("지결-2026-0001");
+    expect(csv).toContain("지결-2026-0005");
+    expect(csv).toContain('"950,000,000원"');
+    expect(csv.split("\n")).toHaveLength(6);
   });
 
   it("opens the creation modal from the header button and saves a draft resolution", () => {
@@ -70,9 +91,9 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByText("운영비 > 임대료 · 2026년 07월 예산")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "지출정보 상세 수정" })).toBeInTheDocument();
     expect(within(dialog).queryByRole("combobox", { name: "지출구분" })).not.toBeInTheDocument();
-    expect(within(dialog).getByText("등록된 기본 지급정보를 불러오며, 실제 지급 전 회계담당자가 최종 확인합니다.")).toBeInTheDocument();
-    expect(within(dialog).getByText("국민은행 ****6789 · 예금주 오학동")).toBeInTheDocument();
-    expect(within(dialog).getByRole("combobox", { name: "증빙유형" })).toBeInTheDocument();
+    expect(within(dialog).getByText("세금계산서 · 파일 미첨부")).toBeInTheDocument();
+    expect(within(dialog).getByText("오학동 사무장 · 국민은행 ****6789")).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "증빙자료" }).closest("details")).not.toHaveAttribute("open");
     expect(within(dialog).getByRole("heading", { name: "이번 달 예산현황" })).toBeInTheDocument();
 
     fireEvent.change(within(dialog).getByLabelText("작성일"), { target: { value: "2026-07-15" } });
@@ -129,6 +150,43 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).queryByRole("heading", { name: "결의 핵심정보" })).not.toBeInTheDocument();
   });
 
+  it("collapses evidence, payment, and memo sections below the basic information section", () => {
+    render(<ExpenseResolutionPage />);
+
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const evidenceHeading = within(dialog).getByRole("heading", { name: "증빙자료" });
+    const paymentHeading = within(dialog).getByRole("heading", { name: "지급정보" });
+    const memoHeading = within(dialog).getByRole("heading", { name: "기타" });
+    const evidenceDetails = evidenceHeading.closest("details");
+    const paymentDetails = paymentHeading.closest("details");
+    const memoDetails = memoHeading.closest("details");
+
+    expect(evidenceHeading.compareDocumentPosition(paymentHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(paymentHeading.compareDocumentPosition(memoHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(evidenceDetails).not.toBeNull();
+    expect(paymentDetails).not.toBeNull();
+    expect(memoDetails).not.toBeNull();
+    expect(evidenceDetails).not.toHaveAttribute("open");
+    expect(paymentDetails).not.toHaveAttribute("open");
+    expect(memoDetails).not.toHaveAttribute("open");
+    expect(within(evidenceDetails as HTMLElement).getByText("세금계산서 · 파일 미첨부")).toBeInTheDocument();
+    expect(within(paymentDetails as HTMLElement).getByText("오학동 사무장 · 국민은행 ****6789")).toBeInTheDocument();
+    expect(within(memoDetails as HTMLElement).getByText("내부메모 없음")).toBeInTheDocument();
+
+    fireEvent.click(evidenceHeading);
+    fireEvent.click(paymentHeading);
+    fireEvent.click(memoHeading);
+
+    expect(evidenceDetails).toHaveAttribute("open");
+    expect(paymentDetails).toHaveAttribute("open");
+    expect(memoDetails).toHaveAttribute("open");
+    expect(within(evidenceDetails as HTMLElement).getByRole("combobox", { name: "증빙유형" })).toBeInTheDocument();
+    expect(within(paymentDetails as HTMLElement).getByRole("combobox", { name: "지급대상" })).toBeInTheDocument();
+    expect(within(memoDetails as HTMLElement).getByLabelText("내부메모")).toBeInTheDocument();
+  });
+
   it("uses the current date, year-based next resolution number, and login author guidance", () => {
     render(<ExpenseResolutionPage />);
 
@@ -177,6 +235,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("combobox", { name: "지출구분" })).toHaveValue("운영비");
     expect(within(dialog).getByRole("combobox", { name: "운영비 세부구분" })).toHaveValue("사무용품비");
     expect(within(dialog).getByRole("combobox", { name: "예산항목" })).toHaveValue("운영비 > 사무용품비");
+    fireEvent.click(within(dialog).getByRole("heading", { name: "증빙자료" }));
     expect(within(dialog).getByRole("combobox", { name: "증빙유형" })).toHaveValue("영수증");
     expect(within(dialog).getByText("사무국 비품 구입 기준 추천값이 적용되었습니다.")).toBeInTheDocument();
 
@@ -227,6 +286,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
 
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("heading", { name: "지급정보" }));
     expect(within(dialog).getByRole("combobox", { name: "지급대상" })).toHaveValue("staff-oh");
     expect(within(dialog).getByText("직원 기본정보")).toBeInTheDocument();
     expect(within(dialog).getByText("국민은행 ****6789 · 예금주 오학동")).toBeInTheDocument();
@@ -256,7 +316,9 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.change(within(dialog).getByRole("combobox", { name: "결의서 유형" }), { target: { value: "BATCH" } });
     fireEvent.change(within(dialog).getByRole("combobox", { name: "프로젝트/사업과제" }), { target: { value: "2026년 정기총회 준비" } });
 
-    expect(within(dialog).getByRole("table", { name: "세부 지출내역" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("table", { name: "세부 지출내역" })).not.toBeInTheDocument();
+    expect(within(dialog).getByRole("group", { name: "1행 세부 지출항목" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("group", { name: "2행 세부 지출항목" })).toBeInTheDocument();
     expect(within(dialog).getByText("일괄 지출결의의 총지급액은 세부 지출내역 합계로 자동 계산됩니다.")).toBeInTheDocument();
     expect(within(dialog).getByLabelText("1행 거래처")).toHaveValue("대방컨벤션센터");
     expect(within(dialog).getByLabelText("1행 계정항목")).toHaveValue("총회대관료");
@@ -276,18 +338,14 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "승인요청" }));
 
     const table = screen.getByRole("table", { name: "지출결의서 목록" });
-    expect(within(table).getByText("결의서유형")).toBeInTheDocument();
-    expect(within(table).getByText("프로젝트/사업과제")).toBeInTheDocument();
-    expect(within(table).getByText("대표 거래처")).toBeInTheDocument();
-    expect(within(table).getByText("대표 계정항목")).toBeInTheDocument();
-    expect(within(table).getByText("항목수")).toBeInTheDocument();
-    expect(within(table).getByText("예산초과")).toBeInTheDocument();
+    expect(within(table).getByText("결의요약")).toBeInTheDocument();
+    expect(within(table).getByText("예산상태")).toBeInTheDocument();
+    expect(within(table).getByText("진행상태")).toBeInTheDocument();
     expect(within(table).getByText("지결-2026-0006")).toBeInTheDocument();
     expect(within(table).getByText("일괄")).toBeInTheDocument();
     expect(within(table).getByText("2026년 정기총회 준비")).toBeInTheDocument();
     expect(within(table).getByText("다수 거래처")).toBeInTheDocument();
     expect(within(table).getByText("복합계정")).toBeInTheDocument();
-    expect(within(table).getByText("2건")).toBeInTheDocument();
     expect(within(table).getByText("예산초과 1건")).toBeInTheDocument();
 
     const createdRow = screen.getAllByRole("row").find((row) => within(row).queryByText("지결-2026-0006"));
@@ -355,7 +413,6 @@ describe("ExpenseResolutionPage", () => {
     table = screen.getByRole("table", { name: "지출결의서 목록" });
     const paidBatchRow = screen.getAllByRole("row").find((row) => within(row).queryByText("지결-2026-0006"));
     expect(paidBatchRow).toBeDefined();
-    expect(within(paidBatchRow as HTMLElement).getByText("지출-2026-0002-01")).toBeInTheDocument();
     expect(within(paidBatchRow as HTMLElement).getByText("전표초안")).toBeInTheDocument();
     fireEvent.click(within(paidBatchRow as HTMLElement).getByRole("button", { name: "전표확정" }));
     expect(within(paidBatchRow as HTMLElement).getByText("전표확정")).toBeInTheDocument();
@@ -463,7 +520,6 @@ describe("ExpenseResolutionPage", () => {
     const paidRow = within(table).getAllByRole("row").find((row) => within(row).queryByText("지결-2026-0004"));
     expect(paidRow).toBeDefined();
     fireEvent.click(within(paidRow as HTMLElement).getByRole("button", { name: "전표확정" }));
-    expect(within(paidRow as HTMLElement).getByText("지출-2026-0001")).toBeInTheDocument();
     expect(within(paidRow as HTMLElement).getByText("전표확정")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "전표생성완료 1" }));
@@ -514,8 +570,13 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("button", { name: "최신순" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "승인" })).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "반려" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "출력 미리보기" })).toBeInTheDocument();
-    expect(within(dialog).getByRole("button", { name: "보관용 PDF 생성" })).toBeInTheDocument();
+    const printMenuButton = within(dialog).getByRole("button", { name: "인쇄하기" });
+    expect(printMenuButton).toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "출력 미리보기" })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole("button", { name: "보관용 PDF 생성" })).not.toBeInTheDocument();
+    fireEvent.click(printMenuButton);
+    expect(within(dialog).getByRole("menuitem", { name: "A4 출력 미리보기" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("menuitem", { name: "보관용 PDF 생성" })).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
     expect(screen.queryByRole("dialog", { name: "지출결의서 상세" })).not.toBeInTheDocument();
@@ -529,7 +590,8 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(targetRow as HTMLElement).getByRole("button", { name: "상세보기" }));
 
     let dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "보관용 PDF 생성" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(within(dialog).getByRole("menuitem", { name: "보관용 PDF 생성" }));
 
     const warningDialog = screen.getByRole("dialog", { name: "보관용 출력 전 확인" });
     fireEvent.click(within(warningDialog).getByRole("button", { name: "그래도 출력하기" }));
@@ -549,10 +611,13 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(targetRow as HTMLElement).getByRole("button", { name: "상세보기" }));
 
     const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
-    fireEvent.click(within(detailDialog).getByRole("button", { name: "출력 미리보기" }));
+    fireEvent.click(within(detailDialog).getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(within(detailDialog).getByRole("menuitem", { name: "A4 출력 미리보기" }));
 
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
     expect(within(printDialog).getByRole("heading", { name: "지출결의서" })).toBeInTheDocument();
+    expect(within(printDialog).getByText("A4 세로 기준 보관용 문서 형태를 확인합니다.")).toBeInTheDocument();
+    expect(printDialog.querySelector(".expense-resolution-print-page")).toHaveClass("erp-print-page");
     expect(within(printDialog).getByText("지결-2026-0001")).toBeInTheDocument();
     expect(within(printDialog).getByText("법무법인 ○○")).toBeInTheDocument();
     expect(within(printDialog).getByText("결의 기본정보")).toBeInTheDocument();
@@ -586,7 +651,8 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(createdRow as HTMLElement).getByRole("button", { name: "상세보기" }));
 
     const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
-    fireEvent.click(within(detailDialog).getByRole("button", { name: "출력 미리보기" }));
+    fireEvent.click(within(detailDialog).getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(within(detailDialog).getByRole("menuitem", { name: "A4 출력 미리보기" }));
 
     const warningDialog = screen.getByRole("dialog", { name: "보관용 출력 전 확인" });
     expect(within(warningDialog).getByText("보관용 출력 전 확인이 필요합니다.")).toBeInTheDocument();

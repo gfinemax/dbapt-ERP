@@ -1,13 +1,12 @@
 "use client";
 
-import { CheckCircle2, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
+import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import {
-  expenseResolutionFields,
   expenseResolutionTypeOptions,
   expenseResolutions,
   formatExpenseResolutionAmount,
@@ -1037,6 +1036,14 @@ function getPaymentTargetSummary(target: PaymentTarget) {
   return `${target.bankName} ${maskAccountNumber(target.accountNumber)} · 예금주 ${target.accountHolder}`;
 }
 
+function getPaymentTargetHeaderSummary(target: PaymentTarget) {
+  if (target.id === "manual") {
+    return "직접 입력 · 계좌 미등록";
+  }
+
+  return `${target.label} · ${target.bankName} ${maskAccountNumber(target.accountNumber)}`;
+}
+
 function getExpenseInfoSummary(formState: ResolutionFormState) {
   const [year, month] = (formState.budgetPeriod || formState.createdAt.slice(0, 7)).split("-");
   return `${formState.expenseType} > ${formState.operationExpenseDetail} · ${year}년 ${month}월 예산`;
@@ -1738,6 +1745,103 @@ function getArchiveStorageLocation(resolution: ManagedExpenseResolution, sequenc
   return `${year}년 ${resolution.expenseType} 지출결의서 / ${Number(month)}월 / ${String(sequence).padStart(3, "0")}`;
 }
 
+const expenseResolutionExportHeaders = [
+  "결의서번호",
+  "결의서유형",
+  "프로젝트/사업과제",
+  "작성일",
+  "작성자",
+  "지출예정일",
+  "지급유형",
+  "지출구분",
+  "운영비 세부구분",
+  "대표 거래처",
+  "거래처명",
+  "대표 계정항목",
+  "예산항목",
+  "항목수",
+  "공급가액",
+  "부가세",
+  "총지급액",
+  "예산초과건수",
+  "예산초과금액",
+  "현재결재자",
+  "승인상태",
+  "지급상태",
+  "전표상태",
+  "전표번호",
+  "증빙여부",
+  "지급은행",
+  "지급계좌번호",
+  "예금주",
+  "지급일",
+  "정산상태",
+  "지출사유",
+  "관련계약",
+  "관련회의",
+  "메모",
+] as const;
+
+function escapeCsvCell(value: string | number | undefined) {
+  const text = String(value ?? "");
+  return /[",\r\n]/.test(text) ? `"${text.replaceAll('"', '""')}"` : text;
+}
+
+function buildExpenseResolutionExportRow(resolution: ManagedExpenseResolution) {
+  return [
+    resolution.resolutionNo,
+    getResolutionTypeLabel(resolution.resolutionType),
+    resolution.projectName || "-",
+    resolution.createdAt,
+    resolution.author,
+    resolution.plannedPaymentDate,
+    resolution.paymentFlowType,
+    resolution.expenseType,
+    resolution.operationExpenseDetail,
+    resolution.representativeVendorName,
+    resolution.vendorName,
+    resolution.representativeAccountTitle,
+    resolution.budgetItem,
+    `${resolution.itemCount}건`,
+    formatExpenseResolutionAmount(resolution.supplyAmount),
+    formatExpenseResolutionAmount(resolution.vat),
+    formatExpenseResolutionAmount(resolution.totalPaymentAmount),
+    `${resolution.overBudgetItemCount}건`,
+    formatExpenseResolutionAmount(resolution.totalOverBudgetAmount),
+    resolution.currentApprover ?? "없음",
+    resolution.approvalStatus,
+    resolution.paymentStatus,
+    getVoucherStatusLabel(resolution),
+    getRelatedVoucherNo(resolution),
+    resolution.evidenceAttached ? "첨부완료" : "미첨부",
+    resolution.paymentBank,
+    resolution.paymentAccountNo,
+    resolution.accountHolder,
+    resolution.paidAt ?? "-",
+    resolution.settlementStatus,
+    resolution.reason || "-",
+    resolution.relatedContract || "-",
+    resolution.relatedMeeting || "-",
+    resolution.memo || "-",
+  ];
+}
+
+export function buildExpenseResolutionExportCsv(resolutions: ManagedExpenseResolution[]) {
+  return [expenseResolutionExportHeaders, ...resolutions.map(buildExpenseResolutionExportRow)].map((row) => row.map(escapeCsvCell).join(",")).join("\n");
+}
+
+function downloadTextFile({ content, fileName, mimeType }: { content: string; fileName: string; mimeType: string }) {
+  const blob = new Blob(["\ufeff", content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(url);
+}
+
 function getPrintValidationWarnings(resolution: ManagedExpenseResolution) {
   const warnings: string[] = [];
 
@@ -1957,6 +2061,14 @@ export function ExpenseResolutionPage() {
 
   function closeDetailModal() {
     setSelectedDetailId(null);
+  }
+
+  function exportAllExpenseResolutions() {
+    downloadTextFile({
+      content: buildExpenseResolutionExportCsv(resolutions),
+      fileName: `지출결의서_전체_${getCurrentDateIso()}.csv`,
+      mimeType: "text/csv;charset=utf-8",
+    });
   }
 
   function updateFormValue<K extends keyof ResolutionFormState>(key: K, value: ResolutionFormState[K]) {
@@ -2548,227 +2660,203 @@ export function ExpenseResolutionPage() {
           </div>
         </section>
 
-        <section className="grid gap-6 xl:grid-cols-[1fr_380px]">
-          <div className="flex flex-col gap-6">
-            <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-              <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-                <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[420px]">
-                  <Search className="size-4 shrink-0" />
-                  <span>결의서번호, 거래처명, 지출구분, 승인상태, 지급상태 검색</span>
-                </div>
-                <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
-                  현재 사용자: {currentUserName}
-                </div>
+        <section className="flex flex-col gap-6">
+          <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
+            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
+              <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[420px]">
+                <Search className="size-4 shrink-0" />
+                <span>결의서번호, 거래처명, 지출구분, 승인상태, 지급상태 검색</span>
               </div>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {tabItems.map((item) => (
-                  <button
-                    className={`rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-sm font-semibold ${
-                      activeTab === item.key ? "bg-[var(--color-pressed-charcoal)] text-white" : "bg-white text-[var(--color-stone)]"
-                    }`}
-                    key={item.key}
-                    onClick={() => setActiveTab(item.key)}
-                    type="button"
-                  >
-                    {item.label} {item.resolutions.length}
-                  </button>
-                ))}
+              <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
+                현재 사용자: {currentUserName}
               </div>
-            </section>
-
-            <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
-                <div>
-                  <h2 className="text-lg font-bold">지출결의서 목록</h2>
-                  <p className="mt-1 text-sm text-[var(--color-stone)]">{activeTabItem.label} 기준 {visibleResolutions.length}건</p>
-                </div>
-                <Button className="rounded-full" size="sm" variant="outline">
-                  <FileSpreadsheet className="size-4" />
-                  엑셀
-                </Button>
-              </div>
-              <div className="overflow-x-auto">
-                <table aria-label="지출결의서 목록" className="w-full min-w-[1760px] border-collapse text-left text-sm">
-                  <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
-                    <tr>
-                      <th className="px-4 py-3 text-center">결의서번호</th>
-                      <th className="px-4 py-3 text-center">결의서유형</th>
-                      <th className="px-4 py-3 text-center">프로젝트/사업과제</th>
-                      <th className="px-4 py-3 text-center">작성일</th>
-                      <th className="px-4 py-3 text-center">작성자</th>
-                      <th className="px-4 py-3 text-center">대표 거래처</th>
-                      <th className="px-4 py-3 text-center">대표 계정항목</th>
-                      <th className="px-4 py-3 text-center">총지급액</th>
-                      <th className="px-4 py-3 text-center">항목수</th>
-                      <th className="px-4 py-3 text-center">예산초과</th>
-                      <th className="px-4 py-3 text-center">현재결재자</th>
-                      <th className="px-4 py-3 text-center">승인상태</th>
-                      <th className="px-4 py-3 text-center">지급상태</th>
-                      <th className="px-4 py-3 text-center">전표상태</th>
-                      <th className="px-4 py-3 text-center">전표번호</th>
-                      <th className="px-4 py-3 text-center">증빙여부</th>
-                      <th className="px-4 py-3 text-center">액션</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-[var(--color-soft-border)]">
-                    {visibleResolutions.map((resolution) => {
-                      const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution);
-                      const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
-                      const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
-                      const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
-
-                      return (
-                        <tr className="bg-white/70" key={resolution.id}>
-                          <td className="px-4 py-4 font-bold text-[var(--color-deep-cobalt)]">{resolution.resolutionNo}</td>
-                          <td className="px-4 py-4 text-center">
-                            <Badge value={getResolutionTypeLabel(resolution.resolutionType)} />
-                          </td>
-                          <td className="px-4 py-4 font-semibold">{resolution.projectName || "-"}</td>
-                          <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.createdAt}</td>
-                          <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.author}</td>
-                          <td className="px-4 py-4 font-semibold">{resolution.representativeVendorName}</td>
-                          <td className="px-4 py-4">{resolution.representativeAccountTitle}</td>
-                          <td className="px-4 py-4 text-right font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
-                          <td className="px-4 py-4 text-center font-semibold">{resolution.itemCount}건</td>
-                          <td className="px-4 py-4">
-                            <Badge value={getBudgetOverLabel(resolution.overBudgetItemCount)} />
-                            {resolution.totalOverBudgetAmount > 0 ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}</p> : null}
-                          </td>
-                          <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.currentApprover ?? "없음"}</td>
-                          <td className="px-4 py-4">
-                            <Badge value={resolution.approvalStatus} />
-                            {resolution.rejectionReason ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{resolution.rejectionReason}</p> : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge value={resolution.paymentStatus} />
-                            {resolution.paidAt ? <p className="mt-1 text-xs text-[var(--color-stone)]">지급일 {resolution.paidAt}</p> : null}
-                            {resolution.transferReceiptStatus ? (
-                              <label className="mt-2 inline-flex cursor-pointer rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]">
-                                이체확인증 첨부
-                                <input className="sr-only" type="file" />
-                              </label>
-                            ) : null}
-                          </td>
-                          <td className="px-4 py-4">
-                            <Badge value={getVoucherStatusLabel(resolution)} />
-                          </td>
-                          <td className="px-4 py-4 font-semibold text-[var(--color-deep-cobalt)]">{getRelatedVoucherNo(resolution)}</td>
-                          <td className="px-4 py-4">
-                            <Badge value={resolution.evidenceAttached ? "첨부완료" : "미첨부"} />
-                          </td>
-                          <td className="px-4 py-4">
-                            <div className="flex flex-wrap gap-1.5">
-                              <button
-                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
-                                onClick={() => setSelectedDetailId(resolution.id)}
-                                type="button"
-                              >
-                                상세보기
-                              </button>
-                              {resolution.approvalStatus === "작성중" ? (
-                                <>
-                                  <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]" type="button">
-                                    수정
-                                  </button>
-                                  <button
-                                    className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                    onClick={() => requestApproval(resolution.id)}
-                                    type="button"
-                                  >
-                                    승인요청
-                                  </button>
-                                </>
-                              ) : null}
-                              {canApprove ? (
-                                <>
-                                  <button
-                                    className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                    onClick={() => approveResolution(resolution.id)}
-                                    type="button"
-                                  >
-                                    승인
-                                  </button>
-                                  <button
-                                    className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-tangerine)]"
-                                    onClick={() => rejectResolution(resolution.id)}
-                                    type="button"
-                                  >
-                                    반려
-                                  </button>
-                                </>
-                              ) : null}
-                              {canPay ? (
-                                <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]"
-                                  onClick={() => openPaymentModal(resolution)}
-                                  type="button"
-                                >
-                                  지급처리
-                                </button>
-                              ) : null}
-                              {canCreateVoucher ? (
-                                <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => createVoucher(resolution.id)}
-                                  type="button"
-                                >
-                                  전표초안 생성
-                                </button>
-                              ) : null}
-                              {canConfirmVoucher ? (
-                                <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => confirmVoucher(resolution.id)}
-                                  type="button"
-                                >
-                                  전표확정
-                                </button>
-                              ) : null}
-                              {resolution.voucherStatus === "전표확정" ? (
-                                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" type="button">
-                                  전표보기
-                                </button>
-                              ) : null}
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
-                    <tr>
-                      <td className="px-4 py-3 text-right" colSpan={7}>
-                        {activeTabItem.label} 합계
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {formatExpenseResolutionAmount(visibleResolutions.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0))}
-                      </td>
-                      <td className="px-4 py-3" colSpan={9}>
-                        표시 건수 {visibleResolutions.length}건
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            </section>
-          </div>
-
-          <aside className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <h2 className="text-lg font-bold">작성 양식</h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">
-              지출 전 결의서에 필요한 입력 항목입니다.
-            </p>
-            <div className="mt-5 grid gap-2">
-              {expenseResolutionFields.map((field) => (
-                <label className="grid gap-1 text-sm font-semibold" key={field}>
-                  <span>{field}</span>
-                  <span className="min-h-9 rounded-md border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-medium text-[var(--color-fog)]">
-                    {field} 입력
-                  </span>
-                </label>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {tabItems.map((item) => (
+                <button
+                  className={`rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-sm font-semibold ${
+                    activeTab === item.key ? "bg-[var(--color-pressed-charcoal)] text-white" : "bg-white text-[var(--color-stone)]"
+                  }`}
+                  key={item.key}
+                  onClick={() => setActiveTab(item.key)}
+                  type="button"
+                >
+                  {item.label} {item.resolutions.length}
+                </button>
               ))}
             </div>
-          </aside>
+          </section>
+
+          <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
+              <div>
+                <h2 className="text-lg font-bold">지출결의서 목록</h2>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">{activeTabItem.label} 기준 {visibleResolutions.length}건</p>
+              </div>
+              <Button className="rounded-full" onClick={exportAllExpenseResolutions} size="sm" variant="outline">
+                <FileSpreadsheet className="size-4" />
+                엑셀
+              </Button>
+            </div>
+            <div className="overflow-x-auto">
+              <table aria-label="지출결의서 목록" className="w-full min-w-[980px] border-collapse text-left text-sm">
+                <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
+                  <tr>
+                    <th className="w-[120px] px-4 py-3 text-center">작성일</th>
+                    <th className="px-4 py-3 text-left">결의요약</th>
+                    <th className="w-[150px] px-4 py-3 text-right">총지급액</th>
+                    <th className="w-[120px] px-4 py-3 text-center">예산상태</th>
+                    <th className="w-[210px] px-4 py-3 text-left">진행상태</th>
+                    <th className="w-[110px] px-4 py-3 text-center">증빙</th>
+                    <th className="w-[190px] px-4 py-3 text-left">액션</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-soft-border)]">
+                  {visibleResolutions.map((resolution) => {
+                    const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution);
+                    const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
+                    const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
+                    const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
+
+                    return (
+                      <tr className="bg-white/70" key={resolution.id}>
+                        <td className="px-4 py-4 text-center text-[var(--color-stone)]">
+                          <span className="sr-only">{resolution.resolutionNo}</span>
+                          {resolution.createdAt}
+                        </td>
+                        <td className="px-4 py-4 align-top">
+                          <p className="font-bold text-[var(--color-midnight-ink)]">
+                            {getResolutionTypeLabel(resolution.resolutionType)} · {resolution.projectName || "프로젝트 없음"}
+                          </p>
+                          <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
+                          <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
+                          <p className="mt-1 text-sm font-semibold text-[var(--color-stone)]">
+                            {resolution.representativeVendorName} / {resolution.representativeAccountTitle}
+                          </p>
+                          <span className="sr-only">{resolution.representativeVendorName}</span>
+                          <span className="sr-only">{resolution.representativeAccountTitle}</span>
+                        </td>
+                        <td className="px-4 py-4 text-right font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge value={getBudgetOverLabel(resolution.overBudgetItemCount)} />
+                          {resolution.totalOverBudgetAmount > 0 ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}</p> : null}
+                        </td>
+                        <td className="px-4 py-4">
+                          <p className="font-semibold text-[var(--color-midnight-ink)]">
+                            {resolution.approvalStatus} · {resolution.paymentStatus} · {getVoucherStatusLabel(resolution)}
+                          </p>
+                          <span className="sr-only">{resolution.approvalStatus}</span>
+                          <span className="sr-only">{resolution.paymentStatus}</span>
+                          <span className="sr-only">{getVoucherStatusLabel(resolution)}</span>
+                          {resolution.currentApprover ? <span className="sr-only">{resolution.currentApprover}</span> : null}
+                          {resolution.currentApprover ? <p className="mt-1 text-xs text-[var(--color-stone)]">현재결재자 {resolution.currentApprover}</p> : null}
+                          {resolution.rejectionReason ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{resolution.rejectionReason}</p> : null}
+                          {resolution.paidAt ? <p className="mt-1 text-xs text-[var(--color-stone)]">지급일 {resolution.paidAt}</p> : null}
+                          {resolution.transferReceiptStatus ? (
+                            <label className="mt-2 inline-flex cursor-pointer rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]">
+                              이체확인증 첨부
+                              <input className="sr-only" type="file" />
+                            </label>
+                          ) : null}
+                        </td>
+                        <td className="px-4 py-4 text-center">
+                          <Badge value={resolution.evidenceAttached ? "첨부완료" : "미첨부"} />
+                        </td>
+                        <td className="px-4 py-4">
+                          <div className="flex flex-wrap gap-1.5">
+                            <button
+                              className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
+                              onClick={() => setSelectedDetailId(resolution.id)}
+                              type="button"
+                            >
+                              상세보기
+                            </button>
+                            {resolution.approvalStatus === "작성중" ? (
+                              <>
+                                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]" type="button">
+                                  수정
+                                </button>
+                                <button
+                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
+                                  onClick={() => requestApproval(resolution.id)}
+                                  type="button"
+                                >
+                                  승인요청
+                                </button>
+                              </>
+                            ) : null}
+                            {canApprove ? (
+                              <>
+                                <button
+                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
+                                  onClick={() => approveResolution(resolution.id)}
+                                  type="button"
+                                >
+                                  승인
+                                </button>
+                                <button
+                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-tangerine)]"
+                                  onClick={() => rejectResolution(resolution.id)}
+                                  type="button"
+                                >
+                                  반려
+                                </button>
+                              </>
+                            ) : null}
+                            {canPay ? (
+                              <button
+                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]"
+                                onClick={() => openPaymentModal(resolution)}
+                                type="button"
+                              >
+                                지급처리
+                              </button>
+                            ) : null}
+                            {canCreateVoucher ? (
+                              <button
+                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
+                                onClick={() => createVoucher(resolution.id)}
+                                type="button"
+                              >
+                                전표초안 생성
+                              </button>
+                            ) : null}
+                            {canConfirmVoucher ? (
+                              <button
+                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
+                                onClick={() => confirmVoucher(resolution.id)}
+                                type="button"
+                              >
+                                전표확정
+                              </button>
+                            ) : null}
+                            {resolution.voucherStatus === "전표확정" ? (
+                              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" type="button">
+                                전표보기
+                              </button>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                  <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
+                    <tr>
+                    <td className="px-4 py-3 text-right" colSpan={2}>
+                      {activeTabItem.label} 합계
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {formatExpenseResolutionAmount(visibleResolutions.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0))}
+                    </td>
+                    <td className="px-4 py-3" colSpan={4}>
+                      표시 건수 {visibleResolutions.length}건
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </section>
         </section>
       </div>
 
@@ -3159,7 +3247,31 @@ function ExpenseResolutionCreateModal({
               </FormSection>
             ) : null}
 
-            <FormSection title="지급정보">
+            <CollapsibleFormSection summary={`${formState.evidenceType} · 파일 미첨부`} title="증빙자료">
+              <label className="grid gap-1 text-sm font-semibold">
+                <span>증빙유형</span>
+                <select
+                  className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
+                  onChange={(event) => onChange("evidenceType", event.target.value as EvidenceType)}
+                  value={formState.evidenceType}
+                >
+                  {evidenceTypeOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="grid gap-1 text-sm font-semibold md:col-span-2">
+                <span>증빙자료</span>
+                <span className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-sm text-[var(--color-stone)]">
+                  파일을 선택하거나 여기에 첨부하세요.
+                </span>
+                <input className="sr-only" type="file" />
+              </label>
+            </CollapsibleFormSection>
+
+            <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget)} title="지급정보">
               <label className="grid gap-1 text-sm font-semibold md:col-span-2">
                 <span>지급대상</span>
                 <select
@@ -3184,40 +3296,16 @@ function ExpenseResolutionCreateModal({
               <TextInput label="지급은행" onChange={(value) => onChange("paymentBank", value)} value={formState.paymentBank} />
               <TextInput label="지급계좌번호" onChange={(value) => onChange("paymentAccountNo", value)} value={formState.paymentAccountNo} />
               <TextInput label="예금주" onChange={(value) => onChange("accountHolder", value)} value={formState.accountHolder} />
-            </FormSection>
+            </CollapsibleFormSection>
 
             <FormSection title="연결정보">
               <TextInput label="관련계약" onChange={(value) => onChange("relatedContract", value)} value={formState.relatedContract} />
               <TextInput label="관련회의/의결" onChange={(value) => onChange("relatedMeeting", value)} value={formState.relatedMeeting} />
             </FormSection>
 
-            <FormSection title="증빙자료">
-              <label className="grid gap-1 text-sm font-semibold">
-                <span>증빙유형</span>
-                <select
-                  className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
-                  onChange={(event) => onChange("evidenceType", event.target.value as EvidenceType)}
-                  value={formState.evidenceType}
-                >
-                  {evidenceTypeOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="grid gap-1 text-sm font-semibold md:col-span-2">
-                <span>증빙자료</span>
-                <span className="flex min-h-24 items-center justify-center rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-sm text-[var(--color-stone)]">
-                  파일을 선택하거나 여기에 첨부하세요.
-                </span>
-                <input className="sr-only" type="file" />
-              </label>
-            </FormSection>
-
-            <FormSection title="기타">
+            <CollapsibleFormSection summary={formState.memo.trim() ? "내부메모 입력됨" : "내부메모 없음"} title="기타">
               <TextareaInput label="내부메모" onChange={(value) => onChange("memo", value)} value={formState.memo} />
-            </FormSection>
+            </CollapsibleFormSection>
           </div>
 
           <aside className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3">
@@ -3340,129 +3428,111 @@ function BatchExpenseItemsSection({
         <SummaryTile label="총 예산초과금액" value={formatExpenseResolutionAmount(batchSummary.totalOverBudgetAmount)} />
       </div>
 
-      <div className="mt-4 overflow-x-auto rounded-xl border border-[var(--color-soft-border)] bg-white">
-        <table aria-label="세부 지출내역" className="w-full min-w-[2200px] border-collapse text-left text-xs">
-          <thead className="bg-[var(--color-cloud-veil)] text-[var(--color-stone)]">
-            <tr>
-              {[
-                "순번",
-                "지출예정일",
-                "거래처",
-                "계정항목",
-                "지출구분",
-                "예산항목",
-                "지출항목명",
-                "내역 및 산출근거",
-                "공급가액",
-                "부가세",
-                "합계",
-                "증빙유형",
-                "증빙파일명",
-                "지급방법",
-                "지급상태",
-                "예산상태",
-                "액션",
-              ].map((column) => (
-                <th className="px-3 py-2" key={column}>
-                  {column}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-soft-border)]">
-            {items.map((item) => (
-              <tr className={item.budgetStatus === "OVER_BUDGET" ? "bg-[var(--color-sunset-soft)]/25" : "bg-white"} key={item.id}>
-                <td className="px-3 py-3 font-bold">{item.itemNo}</td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 지출예정일`} type="date" value={item.expenseDate} onChange={(value) => onBatchItemChange(item.itemNo, "expenseDate", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 거래처`} value={item.vendorName} onChange={(value) => onBatchItemChange(item.itemNo, "vendorName", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 계정항목`} options={accountTitleOptions} value={item.accountTitle} onChange={(value) => onBatchItemChange(item.itemNo, "accountTitle", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 지출구분`} options={expenseResolutionTypeOptions} value={item.expenseType} onChange={(value) => onBatchItemChange(item.itemNo, "expenseType", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 예산항목`} options={batchBudgetItemOptions} value={item.budgetItem} onChange={(value) => onBatchItemChange(item.itemNo, "budgetItem", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 지출항목명`} value={item.itemTitle} onChange={(value) => onBatchItemChange(item.itemNo, "itemTitle", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 공급가액`} type="number" value={item.supplyAmount} onChange={(value) => onBatchItemChange(item.itemNo, "supplyAmount", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 부가세`} type="number" value={item.vatAmount} onChange={(value) => onBatchItemChange(item.itemNo, "vatAmount", value)} />
-                </td>
-                <td className="px-3 py-3 text-right font-bold">{formatExpenseResolutionAmount(item.totalAmount)}</td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 증빙유형`} options={batchEvidenceTypeOptions} value={item.evidenceType} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceType", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchInput ariaLabel={`${item.itemNo}행 증빙파일명`} value={item.evidenceFileName} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceFileName", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 지급방법`} options={["계좌이체", "카드결제", "현금", "기타"]} value={item.paymentMethod} onChange={(value) => onBatchItemChange(item.itemNo, "paymentMethod", value)} />
-                </td>
-                <td className="px-3 py-3">
-                  <BatchSelect ariaLabel={`${item.itemNo}행 지급상태`} options={["지급전", "지급대기", "지급완료", "보류"]} value={item.paymentStatus} onChange={(value) => onBatchItemChange(item.itemNo, "paymentStatus", value)} />
-                </td>
-                <td className="px-3 py-3">
+      <div className="mt-4 grid gap-3">
+        {items.map((item) => (
+          <section
+            aria-label={`${item.itemNo}행 세부 지출항목`}
+            className={`rounded-xl border border-[var(--color-soft-border)] bg-white p-4 ${item.budgetStatus === "OVER_BUDGET" ? "shadow-[inset_4px_0_0_var(--color-tangerine)]" : ""}`}
+            key={item.id}
+            role="group"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-base font-bold">{item.itemNo}번 항목</p>
                   <Badge value={item.budgetStatus === "OVER_BUDGET" ? "예산초과" : "정상"} />
-                  <p className="mt-1 whitespace-nowrap text-[var(--color-stone)]">잔여 {formatExpenseResolutionAmount(item.remainingBudget)}</p>
-                </td>
-                <td className="px-3 py-3">
-                  <div className="flex flex-wrap gap-1.5">
-                    <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2 py-1 font-semibold text-[var(--color-stone)]" onClick={() => onCopyBatchItem(item.itemNo)} type="button">
-                      {item.itemNo}행 행 복사
-                    </button>
-                    <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2 py-1 font-semibold text-[var(--color-tangerine)]" onClick={() => onDeleteBatchItem(item.itemNo)} type="button">
-                      {item.itemNo}행 행 삭제
-                    </button>
-                    <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2 py-1 font-semibold text-[var(--color-deep-cobalt)]" onClick={() => onAttachBatchEvidence(item.itemNo)} type="button">
-                      {item.itemNo}행 증빙첨부
-                    </button>
-                    <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2 py-1 font-semibold text-[var(--color-green-ink)]" onClick={() => onReviewBatchBudget(item.itemNo)} type="button">
-                      {item.itemNo}행 예산검토
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </div>
+                <p className="mt-1 text-sm font-semibold text-[var(--color-stone)]">
+                  {item.vendorName || "거래처 미입력"} · {item.accountTitle || "계정항목 미입력"} · 합계 {formatExpenseResolutionAmount(item.totalAmount)}
+                </p>
+              </div>
+              <div className="text-right text-sm font-semibold text-[var(--color-stone)]">
+                <p>잔여 {formatExpenseResolutionAmount(item.remainingBudget)}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <BatchInput ariaLabel={`${item.itemNo}행 지출예정일`} label="지출예정일" type="date" value={item.expenseDate} onChange={(value) => onBatchItemChange(item.itemNo, "expenseDate", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 거래처`} label="거래처" value={item.vendorName} onChange={(value) => onBatchItemChange(item.itemNo, "vendorName", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 계정항목`} label="계정항목" options={accountTitleOptions} value={item.accountTitle} onChange={(value) => onBatchItemChange(item.itemNo, "accountTitle", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 지급상태`} label="지급상태" options={["지급전", "지급대기", "지급완료", "보류"]} value={item.paymentStatus} onChange={(value) => onBatchItemChange(item.itemNo, "paymentStatus", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 지출구분`} label="지출구분" options={expenseResolutionTypeOptions} value={item.expenseType} onChange={(value) => onBatchItemChange(item.itemNo, "expenseType", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 예산항목`} label="예산항목" options={batchBudgetItemOptions} value={item.budgetItem} onChange={(value) => onBatchItemChange(item.itemNo, "budgetItem", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 지출항목명`} label="지출항목명" value={item.itemTitle} onChange={(value) => onBatchItemChange(item.itemNo, "itemTitle", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 지급방법`} label="지급방법" options={["계좌이체", "카드결제", "현금", "기타"]} value={item.paymentMethod} onChange={(value) => onBatchItemChange(item.itemNo, "paymentMethod", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} className="xl:col-span-2" label="내역 및 산출근거" value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 공급가액`} label="공급가액" type="number" value={item.supplyAmount} onChange={(value) => onBatchItemChange(item.itemNo, "supplyAmount", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 부가세`} label="부가세" type="number" value={item.vatAmount} onChange={(value) => onBatchItemChange(item.itemNo, "vatAmount", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 증빙유형`} label="증빙유형" options={batchEvidenceTypeOptions} value={item.evidenceType} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceType", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 증빙파일명`} className="xl:col-span-2" label="증빙파일명" value={item.evidenceFileName} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceFileName", value)} />
+              <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
+                <p className="text-xs font-bold text-[var(--color-stone)]">합계</p>
+                <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(item.totalAmount)}</p>
+              </div>
+            </div>
+
+            <div className="mt-4 flex flex-wrap gap-2 border-t border-[var(--color-soft-border)] pt-3">
+              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-stone)]" onClick={() => onCopyBatchItem(item.itemNo)} type="button">
+                {item.itemNo}행 행 복사
+              </button>
+              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-tangerine)]" onClick={() => onDeleteBatchItem(item.itemNo)} type="button">
+                {item.itemNo}행 행 삭제
+              </button>
+              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-deep-cobalt)]" onClick={() => onAttachBatchEvidence(item.itemNo)} type="button">
+                {item.itemNo}행 증빙첨부
+              </button>
+              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-green-ink)]" onClick={() => onReviewBatchBudget(item.itemNo)} type="button">
+                {item.itemNo}행 예산검토
+              </button>
+            </div>
+          </section>
+        ))}
       </div>
     </section>
   );
 }
 
-function BatchInput({ ariaLabel, onChange, type = "text", value }: { ariaLabel: string; onChange: (value: string) => void; type?: "date" | "number" | "text"; value: string }) {
+function BatchInput({
+  ariaLabel,
+  className = "",
+  label,
+  onChange,
+  type = "text",
+  value,
+}: {
+  ariaLabel: string;
+  className?: string;
+  label: string;
+  onChange: (value: string) => void;
+  type?: "date" | "number" | "text";
+  value: string;
+}) {
   return (
-    <input
-      aria-label={ariaLabel}
-      className="h-9 w-full min-w-32 rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-xs"
-      onChange={(event) => onChange(event.target.value)}
-      type={type}
-      value={value}
-    />
+    <label className={`grid min-w-0 gap-1 text-sm font-semibold ${className}`}>
+      <span className="text-xs font-bold text-[var(--color-stone)]">{label}</span>
+      <input
+        aria-label={ariaLabel}
+        className="h-10 w-full min-w-0 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm font-semibold text-[var(--color-midnight-ink)]"
+        onChange={(event) => onChange(event.target.value)}
+        type={type}
+        value={value}
+      />
+    </label>
   );
 }
 
-function BatchSelect({ ariaLabel, onChange, options, value }: { ariaLabel: string; onChange: (value: string) => void; options: readonly string[]; value: string }) {
+function BatchSelect({ ariaLabel, label, onChange, options, value }: { ariaLabel: string; label: string; onChange: (value: string) => void; options: readonly string[]; value: string }) {
   return (
-    <select aria-label={ariaLabel} className="h-9 w-full min-w-36 rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-xs" onChange={(event) => onChange(event.target.value)} value={value}>
-      {options.map((option) => (
-        <option key={option} value={option}>
-          {option}
-        </option>
-      ))}
-    </select>
+    <label className="grid min-w-0 gap-1 text-sm font-semibold">
+      <span className="text-xs font-bold text-[var(--color-stone)]">{label}</span>
+      <select aria-label={ariaLabel} className="h-10 w-full min-w-0 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm font-semibold text-[var(--color-midnight-ink)]" onChange={(event) => onChange(event.target.value)} value={value}>
+        {options.map((option) => (
+          <option key={option} value={option}>
+            {option}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -3492,6 +3562,7 @@ export function ExpenseResolutionDetailModal({
   const evidenceRows = getEvidenceRows(resolution);
   const approvalLine = getDisplayApprovalLine(resolution);
   const [historySort, setHistorySort] = useState<"asc" | "desc">("asc");
+  const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   const timelineItems = [...resolution.history].sort((first, second) =>
     historySort === "asc" ? first.actionAt.localeCompare(second.actionAt) : second.actionAt.localeCompare(first.actionAt),
   );
@@ -3511,6 +3582,16 @@ export function ExpenseResolutionDetailModal({
 
   function handleRequestApproval() {
     onRequestApproval();
+  }
+
+  function handlePrintPreview() {
+    setIsPrintMenuOpen(false);
+    onPrintPreview();
+  }
+
+  function handlePrintArchive() {
+    setIsPrintMenuOpen(false);
+    onPrintArchive();
   }
 
   return (
@@ -3794,12 +3875,41 @@ export function ExpenseResolutionDetailModal({
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
-          <Button className="rounded-full" onClick={onPrintPreview} variant="outline">
-            출력 미리보기
-          </Button>
-          <Button className="rounded-full" onClick={onPrintArchive} variant="outline">
-            보관용 PDF 생성
-          </Button>
+          <div className="relative">
+            <Button
+              aria-expanded={isPrintMenuOpen}
+              aria-haspopup="menu"
+              className="rounded-full"
+              onClick={() => setIsPrintMenuOpen((current) => !current)}
+              variant="outline"
+            >
+              인쇄하기
+              <ChevronDown className="size-4" />
+            </Button>
+            {isPrintMenuOpen ? (
+              <div
+                className="absolute right-0 bottom-full z-10 mb-2 w-44 overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-white py-1 text-sm shadow-[0_16px_40px_rgba(16,20,24,0.16)]"
+                role="menu"
+              >
+                <button
+                  className="block w-full px-4 py-2.5 text-left font-semibold text-[var(--color-midnight-ink)] hover:bg-[var(--color-cloud-veil)]"
+                  onClick={handlePrintPreview}
+                  role="menuitem"
+                  type="button"
+                >
+                  A4 출력 미리보기
+                </button>
+                <button
+                  className="block w-full px-4 py-2.5 text-left font-semibold text-[var(--color-midnight-ink)] hover:bg-[var(--color-cloud-veil)]"
+                  onClick={handlePrintArchive}
+                  role="menuitem"
+                  type="button"
+                >
+                  보관용 PDF 생성
+                </button>
+              </div>
+            ) : null}
+          </div>
           {resolution.approvalStatus === "작성중" ? (
             <>
               <Button className="rounded-full" variant="outline">
@@ -3884,7 +3994,7 @@ function ExpenseResolutionPrintPreviewModal({
             <h2 className="text-2xl font-bold" id="expense-resolution-print-title">
               지출결의서 출력 미리보기
             </h2>
-            <p className="mt-2 text-sm text-[var(--color-stone)]">보관철에 출력 보관할 지출결의서 문서 형태를 확인합니다.</p>
+            <p className="mt-2 text-sm text-[var(--color-stone)]">A4 세로 기준 보관용 문서 형태를 확인합니다.</p>
           </div>
           <button aria-label="출력 미리보기 닫기" className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onClose} type="button">
             <X className="size-4" />
@@ -4397,6 +4507,22 @@ function FormSection({ children, layout = "default", title }: { children: ReactN
       <h3 className="mb-3 text-base font-bold">{title}</h3>
       <div className={gridClassName}>{children}</div>
     </section>
+  );
+}
+
+function CollapsibleFormSection({ children, summary, title }: { children: ReactNode; summary: string; title: string }) {
+  return (
+    <details className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
+      <summary className="cursor-pointer list-none">
+        <div className="flex items-center justify-between gap-4">
+          <h3 className="text-base font-bold">{title}</h3>
+          <span className="text-right text-sm font-semibold text-[var(--color-stone)]">{summary}</span>
+        </div>
+      </summary>
+      <div className="mt-3 grid gap-3 border-t border-[var(--color-soft-border)] pt-3 md:grid-cols-2 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]">
+        {children}
+      </div>
+    </details>
   );
 }
 

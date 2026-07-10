@@ -66,6 +66,10 @@ export const basicInfoWorkflows = [
     description: "법인카드, 업무대행 카드 등 카드 기본정보와 인증정보를 등록합니다.",
     title: "신용카드 등록",
   },
+  {
+    description: "운영비 예산안과 수지분석표 기준 계정과목을 등록합니다.",
+    title: "계정과목 등록",
+  },
 ];
 
 export const businessPartners: BusinessPartner[] = [
@@ -120,30 +124,15 @@ export const businessPartners: BusinessPartner[] = [
 ];
 
 export const registeredBankAccounts: RegisteredBankAccount[] = [
-  {
-    accountName: "국민은행 신탁계좌",
-    accountNo: "123456-78-901234",
-    accountType: "신탁계좌",
-    bankName: "KB국민은행",
-    createdAt: "2026-06-01",
-    id: "bank-001",
-    lastSyncedAt: "2026-06-06 08:10",
-    status: "정상",
-    unmatchedCount: 5,
-    usageStatus: "사용",
-  },
-  {
-    accountName: "국민은행 운영계좌",
-    accountNo: "987654-32-100000",
-    accountType: "운영계좌",
-    bankName: "KB국민은행",
-    createdAt: "2026-06-02",
-    id: "bank-002",
-    lastSyncedAt: "2026-06-06 08:08",
-    status: "정상",
-    unmatchedCount: 3,
-    usageStatus: "사용",
-  },
+  bankAccount("bank-daebang-001", "안동연(대방동지주택)", "우리은행", "1006-901-293047", "운영계좌", "2008-07-09"),
+  bankAccount("bank-daebang-002", "안동연(대방동지주택)", "하나은행", "56291000762005", "운영계좌", "2012-05-14"),
+  bankAccount("bank-daebang-003", "조합 여직원명의", "신한은행", "110-365-172420", "운영계좌", "2012-05-29"),
+  bankAccount("bank-daebang-004", "대방동지역주택조합", "기업은행", "071-114261-04-017", "운영계좌", "2021-02-26"),
+  bankAccount("bank-daebang-005", "대방동지역주택조합", "신협은행", "131-022-540467", "운영계좌", "2024-12-04"),
+  bankAccount("bank-daebang-006", "무궁화신탁(업무대행비)", "우리은행", "1005-403-950770", "신탁계좌", "2020-04-29"),
+  bankAccount("bank-daebang-007", "무궁화신탁(분담금)", "우리은행", "1005-503-950527", "신탁계좌", "2020-05-02"),
+  bankAccount("bank-daebang-008", "대방동지역주택조합", "국민은행", "029301-04-179045", "운영계좌", "2012-11-02"),
+  bankAccount("bank-daebang-009", "대방동지역주택조합", "신협", "131-022-540467", "운영계좌", "2024-12-04"),
 ];
 
 export const registeredCreditCards: RegisteredCreditCard[] = [
@@ -177,6 +166,28 @@ export const registeredCreditCards: RegisteredCreditCard[] = [
 
 export function formatKrw(amount: number) {
   return `${new Intl.NumberFormat("ko-KR").format(amount)}원`;
+}
+
+function bankAccount(
+  id: string,
+  accountName: string,
+  bankName: string,
+  accountNo: string,
+  accountType: RegisteredBankAccount["accountType"],
+  createdAt: string,
+): RegisteredBankAccount {
+  return {
+    accountName,
+    accountNo,
+    accountType,
+    bankName,
+    createdAt,
+    id,
+    lastSyncedAt: "미연동",
+    status: "확인필요",
+    unmatchedCount: 0,
+    usageStatus: "사용",
+  };
 }
 
 export function getBusinessPartnerSummary() {

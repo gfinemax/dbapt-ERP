@@ -2,7 +2,9 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createBankAccountInSupabase } from "@/features/basic-info/bank-account-repository";
+import { createAccountSubjectsInSupabase } from "@/features/basic-info/account-subject-repository";
+import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
+import { createBankAccountInSupabase, updateBankAccountInSupabase } from "@/features/basic-info/bank-account-repository";
 import type { BankAccountInput } from "@/features/basic-info/business-partner-data";
 
 export async function createBankAccountAction(input: BankAccountInput) {
@@ -11,4 +13,20 @@ export async function createBankAccountAction(input: BankAccountInput) {
   revalidatePath("/basic-info");
 
   return account;
+}
+
+export async function updateBankAccountAction(id: string, input: BankAccountInput) {
+  const account = await updateBankAccountInSupabase(id, input);
+
+  revalidatePath("/basic-info");
+
+  return account;
+}
+
+export async function createAccountSubjectsAction(input: RegisteredAccountSubject[]) {
+  const subjects = await createAccountSubjectsInSupabase(input);
+
+  revalidatePath("/basic-info");
+
+  return subjects;
 }

@@ -114,16 +114,51 @@ alter table finance.bank_accounts
   add column if not exists organization_id uuid references core.organizations(id),
   add column if not exists deleted_at timestamptz;
 
+create table if not exists finance.account_subjects (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references core.organizations(id),
+  code text not null,
+  name text not null,
+  parent_id uuid references finance.account_subjects(id),
+  subject_type text not null default '지출' check (subject_type in ('수입', '지출', '자산', '부채', '정산')),
+  normal_balance text not null default '차변' check (normal_balance in ('차변', '대변')),
+  business_category text not null default '미분류',
+  source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록')),
+  aliases text[] not null default array[]::text[],
+  description text not null default '',
+  sort_order integer not null default 0,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  unique (organization_id, code)
+);
+
+alter table finance.account_subjects
+  add column if not exists subject_type text not null default '지출' check (subject_type in ('수입', '지출', '자산', '부채', '정산')),
+  add column if not exists normal_balance text not null default '차변' check (normal_balance in ('차변', '대변')),
+  add column if not exists business_category text not null default '미분류',
+  add column if not exists source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록')),
+  add column if not exists aliases text[] not null default array[]::text[],
+  add column if not exists description text not null default '',
+  add column if not exists sort_order integer not null default 0;
+
 create table if not exists finance.bank_transactions (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references core.organizations(id),
   bank_account_id uuid not null references finance.bank_accounts(id) on delete cascade,
   transacted_at timestamptz not null,
+  transaction_kind text not null default '출금' check (transaction_kind in ('입금', '출금')),
   description text not null,
   deposit_amount numeric(14, 0) not null default 0 check (deposit_amount >= 0),
   withdrawal_amount numeric(14, 0) not null default 0 check (withdrawal_amount >= 0),
   balance_amount numeric(14, 0),
   counterparty text,
+  branch_name text,
+  uploaded_major_category text,
+  uploaded_account_title text,
+  recommended_account_subject_id uuid references finance.account_subjects(id),
+  recommended_account_subject_name text,
+  match_status text not null default '미분류' check (match_status in ('업로드분류', '자동추천', '신규후보', '미분류')),
+  raw_payload jsonb not null default '{}'::jsonb,
   memo text,
   created_at timestamptz not null default now(),
   deleted_at timestamptz
@@ -131,18 +166,15 @@ create table if not exists finance.bank_transactions (
 
 alter table finance.bank_transactions
   add column if not exists organization_id uuid references core.organizations(id),
+  add column if not exists transaction_kind text not null default '출금' check (transaction_kind in ('입금', '출금')),
+  add column if not exists branch_name text,
+  add column if not exists uploaded_major_category text,
+  add column if not exists uploaded_account_title text,
+  add column if not exists recommended_account_subject_id uuid references finance.account_subjects(id),
+  add column if not exists recommended_account_subject_name text,
+  add column if not exists match_status text not null default '미분류' check (match_status in ('업로드분류', '자동추천', '신규후보', '미분류')),
+  add column if not exists raw_payload jsonb not null default '{}'::jsonb,
   add column if not exists deleted_at timestamptz;
-
-create table if not exists finance.account_subjects (
-  id uuid primary key default gen_random_uuid(),
-  organization_id uuid references core.organizations(id),
-  code text not null,
-  name text not null,
-  parent_id uuid references finance.account_subjects(id),
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  unique (organization_id, code)
-);
 
 create table if not exists finance.vouchers (
   id uuid primary key default gen_random_uuid(),
@@ -304,6 +336,14 @@ create index if not exists bank_accounts_org_created_idx
 create index if not exists bank_transactions_account_date_idx
   on finance.bank_transactions (bank_account_id, transacted_at desc)
   where deleted_at is null;
+
+create index if not exists bank_transactions_match_status_idx
+  on finance.bank_transactions (match_status, transacted_at desc)
+  where deleted_at is null;
+
+create index if not exists account_subjects_org_sort_idx
+  on finance.account_subjects (organization_id, sort_order, code)
+  where is_active = true;
 
 create index if not exists vouchers_org_date_idx
   on finance.vouchers (organization_id, voucher_date desc)

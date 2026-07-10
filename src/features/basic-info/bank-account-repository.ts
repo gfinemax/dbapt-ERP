@@ -18,6 +18,7 @@ export type SupabaseBankAccountRow = {
 };
 
 export type SupabaseBankAccountInsert = Omit<SupabaseBankAccountRow, "id" | "last_synced_at">;
+export type SupabaseBankAccountUpdate = Pick<SupabaseBankAccountRow, "account_name" | "account_no" | "account_type" | "bank_name" | "created_at">;
 
 export function mapBankAccountFromRow(row: SupabaseBankAccountRow): RegisteredBankAccount {
   return {
@@ -47,6 +48,16 @@ export function mapBankAccountToInsert(input: BankAccountInput): SupabaseBankAcc
   };
 }
 
+export function mapBankAccountToUpdate(input: BankAccountInput): SupabaseBankAccountUpdate {
+  return {
+    account_name: input.accountName,
+    account_no: input.accountNo,
+    account_type: input.accountType,
+    bank_name: input.bankName,
+    created_at: `${input.createdAt}T00:00:00.000+09:00`,
+  };
+}
+
 export async function listBankAccountsFromSupabase() {
   const supabase = getSupabaseServerClient();
 
@@ -61,7 +72,6 @@ export async function listBankAccountsFromSupabase() {
     .order("created_at", { ascending: true });
 
   if (error) {
-    console.error("Failed to load bank accounts from Supabase", error.message);
     return null;
   }
 
@@ -83,10 +93,40 @@ export async function createBankAccountInSupabase(input: BankAccountInput) {
     .single();
 
   if (error) {
-    throw new Error(`Failed to create bank account: ${error.message}`);
+    throw new Error(formatBankAccountSaveError(error.message));
   }
 
   return mapBankAccountFromRow(data as SupabaseBankAccountRow);
+}
+
+export async function updateBankAccountInSupabase(id: string, input: BankAccountInput) {
+  const supabase = getSupabaseServerClient();
+
+  if (!supabase) {
+    throw new Error("Supabase is not configured.");
+  }
+
+  const { data, error } = await supabase
+    .schema(bankAccountRepositorySchema)
+    .from("bank_accounts")
+    .update(mapBankAccountToUpdate(input))
+    .eq("id", id)
+    .select("id, bank_name, account_name, account_no, account_type, usage_status, created_at, last_synced_at, sync_status, unmatched_count")
+    .single();
+
+  if (error) {
+    throw new Error(formatBankAccountSaveError(error.message));
+  }
+
+  return mapBankAccountFromRow(data as SupabaseBankAccountRow);
+}
+
+function formatBankAccountSaveError(message: string) {
+  if (message.toLowerCase().includes("fetch failed")) {
+    return "Supabase 연결에 실패했습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL 주소와 프로젝트 상태를 확인해 주세요.";
+  }
+
+  return `은행통장 저장에 실패했습니다: ${message}`;
 }
 
 function formatSyncedAt(value: string) {

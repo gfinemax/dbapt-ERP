@@ -134,8 +134,10 @@
 }
 
 .expense-resolution-print-page {
-  width: 180mm;
-  min-height: 267mm;
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  max-width: 100%;
 }
 
 .expense-resolution-print-section {
@@ -152,6 +154,7 @@
   html,
   body {
     background: white !important;
+    margin: 0 !important;
   }
 
   body * {

@@ -103,6 +103,7 @@ describe("ErpShell", () => {
     expect(screen.getByText("품목등록")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "은행통장 등록" })).toHaveAttribute("href", "/basic-info?section=bank-accounts");
     expect(screen.getByRole("link", { name: "신용카드 등록" })).toHaveAttribute("href", "/basic-info?section=cards");
+    expect(screen.getByRole("link", { name: "계정과목 등록" })).toHaveAttribute("href", "/basic-info?section=account-subjects");
     expect(screen.queryByRole("link", { name: "수입·지출 전표관리" })).not.toBeInTheDocument();
   });
 
@@ -148,6 +149,18 @@ describe("ErpShell", () => {
     expect(screen.getByRole("link", { name: "급여대장" })).toHaveAttribute("href", "/hr-payroll?section=payroll-ledger");
     expect(screen.getByRole("link", { name: "급여명세" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "수입·지출 전표관리" })).not.toBeInTheDocument();
+  });
+
+  it("links bank transaction upload from the bank-card workspace", () => {
+    render(
+      <ErpShell activeDetailLabel="은행 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드">
+        <p>본문</p>
+      </ErpShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "은행·카드" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "은행 거래내역" })).toHaveAttribute("href", "/finance/bank-transactions");
+    expect(screen.getByRole("link", { name: "은행 거래내역" })).toHaveAttribute("aria-current", "page");
   });
 
   it("renders a vertical sidebar toggle tab and switches labels when clicked", () => {
