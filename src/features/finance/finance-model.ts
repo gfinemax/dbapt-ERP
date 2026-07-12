@@ -203,6 +203,7 @@ export type ExpenseResolution = {
   relatedContract?: string;
   relatedMeeting?: string;
   resolutionNo: string;
+  subject?: string;
   supplyAmount: number;
   totalAmount: number;
   totalOverBudgetAmount?: number;

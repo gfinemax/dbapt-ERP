@@ -4,6 +4,19 @@ create schema if not exists reports;
 create schema if not exists documents;
 create schema if not exists integrations;
 create schema if not exists audit;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'expense-evidence',
+  'expense-evidence',
+  false,
+  10485760,
+  array['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain', 'text/csv']
+)
+on conflict (id) do update
+set public = false,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
 create schema if not exists private;
 
 grant usage on schema core to service_role;
@@ -200,6 +213,128 @@ create table if not exists finance.voucher_lines (
   created_at timestamptz not null default now()
 );
 
+create table if not exists finance.expense_resolutions (
+  id text primary key,
+  organization_id uuid references core.organizations(id),
+  resolution_no text not null,
+  author_label text not null,
+  current_approver_label text,
+  approval_status text not null check (approval_status in ('작성중', '승인대기', '승인완료', '반려')),
+  payment_status text not null,
+  resolution_mode text check (resolution_mode in ('SINGLE', 'PROJECT_BULK')),
+  expense_timing text check (expense_timing in ('ADVANCE', 'REIMBURSEMENT', 'SETTLEMENT')),
+  input_method text check (input_method in ('MANUAL', 'EXCEL', 'EVIDENCE_OCR')),
+  execution_method text check (execution_method in ('VENDOR_DIRECT', 'EMPLOYEE_ADVANCE', 'CORPORATE_CARD', 'AUTHORIZATION_ONLY')),
+  expense_burden_type text check (expense_burden_type in ('EMPLOYEE_PREPAID', 'VENDOR_UNPAID', 'CORPORATE_CARD', 'ORGANIZATION_PAID', 'CASH')),
+  original_resolution_id text references finance.expense_resolutions(id),
+  settlement_due_date date,
+  settlement_manager_label text,
+  project_name text,
+  subject text,
+  total_payment_amount numeric(14, 0) not null default 0,
+  actual_paid_amount numeric(14, 0),
+  settlement_status text,
+  voucher_no text,
+  voucher_status text check (voucher_status is null or voucher_status in ('전표초안', '전표확정', '전표취소')),
+  resolution_data jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz,
+  unique (organization_id, resolution_no)
+);
+
+alter table finance.expense_resolutions
+  add column if not exists resolution_mode text check (resolution_mode in ('SINGLE', 'PROJECT_BULK')),
+  add column if not exists expense_timing text check (expense_timing in ('ADVANCE', 'REIMBURSEMENT', 'SETTLEMENT')),
+  add column if not exists input_method text check (input_method in ('MANUAL', 'EXCEL', 'EVIDENCE_OCR')),
+  add column if not exists execution_method text check (execution_method in ('VENDOR_DIRECT', 'EMPLOYEE_ADVANCE', 'CORPORATE_CARD', 'AUTHORIZATION_ONLY')),
+  add column if not exists expense_burden_type text check (expense_burden_type in ('EMPLOYEE_PREPAID', 'VENDOR_UNPAID', 'CORPORATE_CARD', 'ORGANIZATION_PAID', 'CASH')),
+  add column if not exists original_resolution_id text references finance.expense_resolutions(id),
+  add column if not exists settlement_due_date date,
+  add column if not exists settlement_manager_label text,
+  add column if not exists project_name text,
+  add column if not exists subject text;
+
+alter table finance.expense_resolutions
+  add column if not exists actual_paid_amount numeric(14, 0),
+  add column if not exists settlement_status text,
+  add column if not exists voucher_no text,
+  add column if not exists voucher_status text check (voucher_status is null or voucher_status in ('전표초안', '전표확정', '전표취소'));
+
+create unique index if not exists expense_resolutions_voucher_no_unique_idx
+  on finance.expense_resolutions (voucher_no)
+  where voucher_no is not null and deleted_at is null;
+
+create table if not exists finance.expense_resolution_items (
+  id text primary key,
+  resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
+  item_kind text not null check (item_kind in ('SINGLE', 'BATCH')),
+  item_no integer not null check (item_no > 0),
+  supply_amount numeric(14, 0) not null default 0 check (supply_amount >= 0),
+  vat_amount numeric(14, 0) not null default 0 check (vat_amount >= 0),
+  total_amount numeric(14, 0) not null default 0 check (total_amount >= 0),
+  item_data jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (resolution_id, item_kind, item_no)
+);
+
+create table if not exists finance.expense_account_allocations (
+  id text primary key,
+  resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
+  item_id text references finance.expense_resolution_items(id) on delete cascade,
+  account_title text not null,
+  budget_item text,
+  amount numeric(14, 0) not null default 0 check (amount >= 0),
+  description text,
+  allocation_data jsonb not null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists finance.expense_resolution_evidence (
+  id text primary key,
+  resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
+  item_id text references finance.expense_resolution_items(id) on delete set null,
+  evidence_type text not null,
+  storage_bucket text not null,
+  storage_path text not null,
+  original_filename text not null,
+  content_type text not null,
+  file_size bigint not null check (file_size > 0),
+  ocr_status text not null check (ocr_status in ('EXTRACTED', 'REVIEW_REQUIRED', 'CONFIRMED', 'FAILED')),
+  ocr_data jsonb not null default '{}'::jsonb,
+  uploaded_by_label text not null,
+  uploaded_at timestamptz not null default now(),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  unique (storage_bucket, storage_path)
+);
+
+create table if not exists finance.expense_workflow_operations (
+  id uuid primary key default gen_random_uuid(),
+  idempotency_key text not null unique,
+  resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
+  command text not null check (command in ('PAYMENT_COMPLETE', 'ITEM_PAYMENT_COMPLETE', 'PAYMENT_HOLD', 'VOUCHER_CREATE', 'VOUCHER_CONFIRM')),
+  status text not null default 'PROCESSING' check (status in ('PROCESSING', 'COMPLETED', 'FAILED')),
+  request_data jsonb not null default '{}'::jsonb,
+  result_data jsonb,
+  error_message text,
+  created_at timestamptz not null default now(),
+  completed_at timestamptz
+);
+
+create table if not exists finance.expense_workflow_audit_logs (
+  id uuid primary key default gen_random_uuid(),
+  resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
+  operation_id uuid references finance.expense_workflow_operations(id) on delete set null,
+  action text not null,
+  actor_label text not null,
+  before_data jsonb,
+  after_data jsonb,
+  created_at timestamptz not null default now()
+);
+
 create table if not exists reports.report_definitions (
   id text primary key,
   name text not null,
@@ -293,6 +428,7 @@ create table if not exists audit.audit_logs (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references core.organizations(id),
   actor_user_id uuid references core.user_profiles(id),
+  actor_label text,
   action text not null,
   entity_schema text not null,
   entity_table text not null,
@@ -301,6 +437,9 @@ create table if not exists audit.audit_logs (
   after_data jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table audit.audit_logs
+  add column if not exists actor_label text;
 
 alter table core.organizations enable row level security;
 alter table core.user_profiles enable row level security;
@@ -313,6 +452,12 @@ alter table finance.bank_transactions enable row level security;
 alter table finance.account_subjects enable row level security;
 alter table finance.vouchers enable row level security;
 alter table finance.voucher_lines enable row level security;
+alter table finance.expense_resolutions enable row level security;
+alter table finance.expense_resolution_items enable row level security;
+alter table finance.expense_account_allocations enable row level security;
+alter table finance.expense_resolution_evidence enable row level security;
+alter table finance.expense_workflow_operations enable row level security;
+alter table finance.expense_workflow_audit_logs enable row level security;
 alter table reports.report_definitions enable row level security;
 alter table reports.report_runs enable row level security;
 alter table reports.report_versions enable row level security;
@@ -352,6 +497,45 @@ create index if not exists vouchers_org_date_idx
 create index if not exists vouchers_org_status_date_idx
   on finance.vouchers (organization_id, approval_status, voucher_date desc)
   where deleted_at is null;
+
+create index if not exists expense_resolutions_status_updated_idx
+  on finance.expense_resolutions (approval_status, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists expense_resolutions_approver_status_idx
+  on finance.expense_resolutions (current_approver_label, approval_status, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists expense_resolutions_workflow_idx
+  on finance.expense_resolutions (resolution_mode, expense_timing, input_method, updated_at desc)
+  where deleted_at is null;
+
+create index if not exists expense_resolutions_original_idx
+  on finance.expense_resolutions (original_resolution_id)
+  where original_resolution_id is not null and deleted_at is null;
+
+create index if not exists expense_resolution_items_resolution_idx
+  on finance.expense_resolution_items (resolution_id, item_kind, item_no);
+
+create index if not exists expense_account_allocations_resolution_idx
+  on finance.expense_account_allocations (resolution_id, created_at);
+
+create index if not exists expense_account_allocations_item_idx
+  on finance.expense_account_allocations (item_id)
+  where item_id is not null;
+
+create index if not exists expense_resolution_evidence_resolution_idx
+  on finance.expense_resolution_evidence (resolution_id, uploaded_at desc);
+
+create index if not exists expense_resolution_evidence_item_idx
+  on finance.expense_resolution_evidence (item_id)
+  where item_id is not null;
+
+create index if not exists expense_workflow_operations_resolution_idx
+  on finance.expense_workflow_operations (resolution_id, created_at desc);
+
+create index if not exists expense_workflow_audit_logs_resolution_idx
+  on finance.expense_workflow_audit_logs (resolution_id, created_at desc);
 
 create index if not exists report_runs_definition_generation_idx
   on reports.report_runs (report_definition_id, scheduled_generation_date desc);

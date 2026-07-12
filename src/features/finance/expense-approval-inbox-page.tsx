@@ -10,14 +10,13 @@ import type { ExpenseResolution } from "./expense-resolution-data";
 import {
   buildApprovalLine,
   buildExpenseResolutionHistory,
-  createHistoryItem,
   ExpenseResolutionDetailModal,
-  getApproverLabel,
   toApprovalStatus,
   toManagedExpenseResolution,
   toPaymentStatus,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { transitionExpenseApproval, type ApprovalTransitionRequest } from "./expense-approval-workflow";
 
 const today = "2026-07-02";
 const currentApprover = {
@@ -163,7 +162,7 @@ function buildInboxResolution(source: ExpenseResolution, override: Partial<Manag
 }
 
 function createInboxResolutions() {
-  return approvalInboxSeeds.map((seed) => buildInboxResolution(seed.source, seed.override));
+  return expenseResolutions.length > 0 ? approvalInboxSeeds.map((seed) => buildInboxResolution(seed.source, seed.override)) : [];
 }
 
 function Badge({ value }: { value: string }) {
@@ -181,11 +180,12 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage() {
-  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(createInboxResolutions);
+export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, transitionApproval }: { dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? createInboxResolutions());
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
+  const [workflowError, setWorkflowError] = useState("");
   const selectedDetail = selectedDetailId ? resolutions.find((resolution) => resolution.id === selectedDetailId) : undefined;
   const rejectTarget = rejectTargetId ? resolutions.find((resolution) => resolution.id === rejectTargetId) : undefined;
 
@@ -201,56 +201,23 @@ export function ExpenseApprovalInboxPage() {
     };
   }, [resolutions]);
 
-  function approveResolution(id: string) {
-    setResolutions((current) =>
-      current.map((resolution) => {
-        if (resolution.id !== id || resolution.approvalStatus !== "승인대기" || resolution.currentApprover !== currentApproverLabel) {
-          return resolution;
-        }
+  async function runTransition(resolution: ManagedExpenseResolution, command: "APPROVE" | "REJECT", reason?: string) {
+    setWorkflowError("");
+    try {
+      const transitioned = transitionApproval
+        ? await transitionApproval({ actorLabel: currentApproverLabel, command, expectedCurrentApprover: resolution.currentApprover, expectedStatus: resolution.approvalStatus, reason, resolutionId: resolution.id })
+        : transitionExpenseApproval({ actorLabel: currentApproverLabel, command, reason, resolution, transitionedAt: `${today} 14:20` });
+      setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
+      return true;
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "결재 상태를 변경하지 못했습니다.");
+      return false;
+    }
+  }
 
-        const currentStepIndex = resolution.approvalLine.findIndex((step) => getApproverLabel(step) === resolution.currentApprover);
-        const approvedStep = resolution.approvalLine[currentStepIndex];
-        const approvedActorLabel = getApproverLabel(approvedStep);
-        const approvalLine = resolution.approvalLine.map((step, index) =>
-          index === currentStepIndex ? { ...step, status: "승인완료" as const, processedAt: today } : step,
-        );
-        const nextStep = approvalLine[currentStepIndex + 1];
-        const approvalHistory = createHistoryItem({
-          actionAt: "2026-07-02 14:20",
-          actionLabel: "결재승인",
-          actionType: "APPROVED",
-          actorLabel: currentApproverLabel,
-          comment: `${approvedActorLabel} 승인`,
-        });
-
-        if (!nextStep) {
-          return {
-            ...resolution,
-            approvalLine,
-            approvalStatus: "승인완료",
-            currentApprover: undefined,
-            history: [
-              ...resolution.history,
-              approvalHistory,
-              createHistoryItem({
-                actionAt: "2026-07-03 09:31",
-                actionLabel: "지급대기 전환",
-                actionType: "PAYMENT_PENDING",
-                actorLabel: "시스템",
-              }),
-            ],
-            paymentStatus: "지급대기",
-          };
-        }
-
-        return {
-          ...resolution,
-          approvalLine,
-          currentApprover: getApproverLabel(nextStep),
-          history: [...resolution.history, approvalHistory],
-        };
-      }),
-    );
+  async function approveResolution(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (resolution) await runTransition(resolution, "APPROVE");
   }
 
   function openRejectModal(id: string) {
@@ -263,43 +230,20 @@ export function ExpenseApprovalInboxPage() {
     setRejectionReason("");
   }
 
-  function rejectResolution() {
+  async function rejectResolution() {
     const reason = rejectionReason.trim();
     if (!rejectTargetId || !reason) {
       return;
     }
 
-    setResolutions((current) =>
-      current.map((resolution) =>
-        resolution.id === rejectTargetId
-          ? {
-              ...resolution,
-              approvalLine: resolution.approvalLine.map((step) =>
-                getApproverLabel(step) === resolution.currentApprover ? { ...step, status: "반려" as const, processedAt: today } : step,
-              ),
-              approvalStatus: "반려",
-              currentApprover: undefined,
-              history: [
-                ...resolution.history,
-                createHistoryItem({
-                  actionAt: "2026-07-02 16:20",
-                  actionLabel: "반려",
-                  actionType: "REJECTED",
-                  actorLabel: resolution.currentApprover ?? currentApproverLabel,
-                  comment: reason,
-                }),
-              ],
-              paymentStatus: "지급전",
-              rejectionReason: reason,
-            }
-          : resolution,
-      ),
-    );
-    closeRejectModal();
+    const resolution = resolutions.find((item) => item.id === rejectTargetId);
+    if (resolution && await runTransition(resolution, "REJECT", reason)) closeRejectModal();
   }
 
   return (
     <ErpShell activeDetailLabel="결재함" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
+      {dataLoadError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{dataLoadError}</div> : null}
+      {workflowError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{workflowError}</div> : null}
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
@@ -423,6 +367,7 @@ export function ExpenseApprovalInboxPage() {
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
+          canApprove={selectedDetail.currentApprover === currentApproverLabel}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={() => setSelectedDetailId(null)}
           onConfirmVoucher={() => undefined}

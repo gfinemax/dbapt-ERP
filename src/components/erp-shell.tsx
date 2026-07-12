@@ -68,8 +68,8 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       href: "/finance",
       label: "전표·증빙관리",
       items: [
-        { label: "수입·지출 전표관리", href: "/finance" },
         { label: "지출결의서 관리", href: "/finance/expense-resolutions" },
+        { label: "수입·지출 전표관리", href: "/finance" },
         { label: "결재함", href: "/finance/approval-inbox" },
         { label: "지급대기", href: "/finance/payment-waiting" },
         { label: "지급완료 내역", href: "/finance/payment-completed" },

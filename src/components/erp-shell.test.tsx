@@ -39,8 +39,8 @@ describe("ErpShell", () => {
     expect(screen.getByRole("link", { name: "보고서" })).toHaveAttribute("href", "/finance/reports");
     expect(screen.queryByRole("link", { name: "거래처등록" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "수입·지출 전표관리",
       "지출결의서 관리",
+      "수입·지출 전표관리",
       "결재함",
       "지급대기",
       "지급완료 내역",

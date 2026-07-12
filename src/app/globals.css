@@ -145,6 +145,30 @@
   page-break-inside: avoid;
 }
 
+.expense-resolution-print-items {
+  break-inside: auto;
+  page-break-inside: auto;
+}
+
+.expense-resolution-print-items thead {
+  display: table-header-group;
+}
+
+.expense-resolution-print-item-row {
+  break-inside: avoid;
+  page-break-inside: avoid;
+}
+
+.expense-resolution-continuation-page {
+  break-before: page;
+  page-break-before: always;
+}
+
+.expense-approval-vertical-label {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+}
+
 @page {
   size: A4 portrait;
   margin: 15mm;
@@ -154,21 +178,22 @@
   html,
   body {
     background: white !important;
+    height: auto !important;
     margin: 0 !important;
+    padding: 0 !important;
   }
 
-  body * {
-    visibility: hidden !important;
+  body > :not(.print-modal-shell) {
+    display: none !important;
   }
 
-  .erp-print-page,
-  .erp-print-page * {
+  .print-modal-shell,
+  .print-modal-shell * {
     visibility: visible !important;
   }
 
   .expense-resolution-print-page {
-    position: absolute;
-    inset: 0 auto auto 0;
+    position: static !important;
     width: 180mm !important;
     min-height: auto !important;
     margin: 0 !important;
@@ -176,6 +201,24 @@
     box-shadow: none !important;
     background: white !important;
     font-size: 11pt;
+    break-after: page;
+    page-break-after: always;
+  }
+
+  .print-modal-shell {
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 180mm !important;
+    min-height: 0 !important;
+  }
+
+  .print-expense-resolution {
+    width: 180mm !important;
+  }
+
+  .expense-resolution-print-page:last-child {
+    break-after: auto;
+    page-break-after: auto;
   }
 
   .print-expense-resolution,
@@ -187,7 +230,18 @@
     padding: 0 !important;
   }
 
+  .print-modal-shell > section {
+    width: 100% !important;
+    max-width: none !important;
+    overflow: visible !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+  }
+
+  .expense-resolution-print-modal-header,
   .expense-resolution-print-actions,
+  .expense-resolution-print-storage-info,
   nav,
   aside,
   button {

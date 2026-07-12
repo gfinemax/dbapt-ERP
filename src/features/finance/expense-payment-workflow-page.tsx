@@ -7,18 +7,16 @@ import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { expenseResolutions, formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
-  applyVoucherConfirmation,
-  applyVoucherDraft,
   buildApprovalLine,
   buildExpenseResolutionHistory,
-  createHistoryItem,
   ExpenseResolutionDetailModal,
   getNextExpenseVoucherNo,
   getVoucherStatusLabel,
   toManagedExpenseResolution,
   toPaymentStatus,
 } from "./expense-resolution-page";
-import type { ManagedExpenseResolution, PaymentStatus } from "./expense-resolution-page";
+import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 
 type PaymentWorkflowMode = "waiting" | "completed";
 type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";
@@ -57,6 +55,10 @@ function buildPaymentResolution(
 }
 
 function createPaymentResolutions(): ManagedExpenseResolution[] {
+  if (expenseResolutions.length === 0) {
+    return [];
+  }
+
   return [
     buildPaymentResolution(4, {
       id: "payment-waiting-001",
@@ -168,9 +170,15 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.지급대기}`}>{value}</span>;
 }
 
-export function ExpensePaymentWorkflowPage({ initialMode }: { initialMode: PaymentWorkflowMode }) {
+export function ExpensePaymentWorkflowPage({ dataLoadError, initialMode, initialResolutions, transitionDisbursement }: {
+  dataLoadError?: string;
+  initialMode: PaymentWorkflowMode;
+  initialResolutions?: ManagedExpenseResolution[];
+  transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
+}) {
   const [mode, setMode] = useState<PaymentWorkflowMode>(initialMode);
-  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(createPaymentResolutions);
+  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? createPaymentResolutions());
+  const [transitionError, setTransitionError] = useState("");
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
   const [holdTargetId, setHoldTargetId] = useState<string | null>(null);
@@ -225,86 +233,52 @@ export function ExpensePaymentWorkflowPage({ initialMode }: { initialMode: Payme
     setPaymentForm((current) => ({ ...current, [key]: value }));
   }
 
-  function completePayment() {
+  async function runTransition(resolution: ManagedExpenseResolution, command: DisbursementTransitionRequest["command"], extra: Partial<DisbursementTransitionRequest> = {}) {
+    setTransitionError("");
+    try {
+      const request = { actorLabel: "사무국 관리자", command, expectedPaymentStatus: resolution.paymentStatus, expectedVoucherStatus: resolution.voucherStatus, idempotencyKey: crypto.randomUUID(), resolutionId: resolution.id, ...extra } as DisbursementTransitionRequest;
+      const changed = transitionDisbursement
+        ? await transitionDisbursement(request)
+        : transitionExpenseDisbursement({ ...request, resolution, voucherNo: command === "VOUCHER_CREATE" ? getNextExpenseVoucherNo(resolutions) : undefined });
+      setResolutions((current) => current.map((item) => item.id === changed.id ? changed : item));
+      return changed;
+    } catch (error) {
+      setTransitionError(error instanceof Error ? error.message : "지급 처리에 실패했습니다.");
+      return null;
+    }
+  }
+
+  async function completePayment() {
     if (!paymentTargetId) {
       return;
     }
 
-    setResolutions((current) =>
-      current.map((resolution) =>
-        resolution.id === paymentTargetId
-          ? {
-              ...resolution,
-              actualPaidAmount: Number(paymentForm.actualPaidAmount) || resolution.totalPaymentAmount,
-              paidAt: paymentForm.paidAt,
-              paymentAccountNo: paymentForm.paymentAccountNo,
-              paymentMemo: paymentForm.paymentMemo,
-              paymentMethod: paymentForm.paymentMethod,
-              paymentStatus: "지급완료",
-              history: [
-                ...resolution.history,
-                createHistoryItem({
-                  actionAt: `${paymentForm.paidAt} 15:00`,
-                  actionLabel: "지급완료",
-                  actionType: "PAYMENT_COMPLETED",
-                  actorLabel: "사무국 관리자",
-                  comment: paymentForm.paymentMemo || `${paymentForm.paymentMethod} 지급완료`,
-                }),
-              ],
-              transferReceiptStatus: "이체확인증 첨부 대기",
-            }
-          : resolution,
-      ),
-    );
+    const resolution = resolutions.find((item) => item.id === paymentTargetId);
+    if (!resolution || !await runTransition(resolution, "PAYMENT_COMPLETE", { actualPaidAmount: Number(paymentForm.actualPaidAmount) || resolution.totalPaymentAmount, paidAt: paymentForm.paidAt, paymentAccountNo: paymentForm.paymentAccountNo, paymentMemo: paymentForm.paymentMemo, paymentMethod: paymentForm.paymentMethod })) return;
     setPaymentTargetId(null);
     setMode("completed");
   }
 
-  function holdPayment() {
+  async function holdPayment() {
     const reason = holdReason.trim();
     if (!holdTargetId || !reason) {
       return;
     }
 
-    setResolutions((current) =>
-      current.map((resolution) =>
-        resolution.id === holdTargetId
-          ? {
-              ...resolution,
-              holdReason: reason,
-              history: [
-                ...resolution.history,
-                createHistoryItem({
-                  actionAt: "2026-07-02 16:30",
-                  actionLabel: "지급보류",
-                  actionType: "PAYMENT_HOLD",
-                  actorLabel: "사무국 관리자",
-                  comment: reason,
-                }),
-              ],
-              paymentStatus: "보류" as PaymentStatus,
-            }
-          : resolution,
-      ),
-    );
+    const resolution = resolutions.find((item) => item.id === holdTargetId);
+    if (!resolution || !await runTransition(resolution, "PAYMENT_HOLD", { reason })) return;
     setHoldTargetId(null);
     setHoldReason("");
   }
 
-  function createVoucher(id: string) {
-    setResolutions((current) =>
-      current.map((resolution) => {
-        if (resolution.id !== id || resolution.voucherNo) {
-          return resolution;
-        }
-
-        return applyVoucherDraft(resolution, getNextExpenseVoucherNo(current), "2026-07-03 16:45");
-      }),
-    );
+  async function createVoucher(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (resolution) await runTransition(resolution, "VOUCHER_CREATE");
   }
 
-  function confirmVoucher(id: string) {
-    setResolutions((current) => current.map((resolution) => (resolution.id === id ? applyVoucherConfirmation(resolution) : resolution)));
+  async function confirmVoucher(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (resolution) await runTransition(resolution, "VOUCHER_CONFIRM");
   }
 
   const title = mode === "waiting" ? "지급대기" : "지급완료 내역";
@@ -316,6 +290,7 @@ export function ExpensePaymentWorkflowPage({ initialMode }: { initialMode: Payme
   return (
     <ErpShell activeDetailLabel={title} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
+        {(dataLoadError || transitionError) ? <div className="rounded-2xl border border-orange-300 bg-orange-50 px-5 py-4 font-semibold text-orange-700">{transitionError || dataLoadError}</div> : null}
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
             회계/자금 &gt; 전표·증빙관리 &gt; {title}

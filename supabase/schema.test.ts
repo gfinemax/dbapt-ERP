@@ -27,6 +27,9 @@ describe("Supabase schema organization", () => {
     expect(schemaSql).toContain("recommended_account_subject_id uuid references finance.account_subjects(id)");
     expect(schemaSql).toContain("match_status text not null default '미분류'");
     expect(schemaSql).toContain("raw_payload jsonb not null default '{}'::jsonb");
+    expect(schemaSql).toContain("create table if not exists finance.expense_resolution_evidence");
+    expect(schemaSql).toContain("'expense-evidence'");
+    expect(schemaSql).toContain("file_size_limit = excluded.file_size_limit");
     expect(schemaSql).toContain("create table if not exists reports.report_definitions");
     expect(schemaSql).toContain("references reports.report_runs(id)");
     expect(schemaSql).not.toContain("create table if not exists public.bank_accounts");
