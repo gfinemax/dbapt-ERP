@@ -1,7 +1,7 @@
 import { ExpenseResolutionPage } from "@/features/finance/expense-resolution-page";
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
 import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
-import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseEvidenceAction } from "./actions";
+import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, getExpenseEvidenceOcrJobAction, retryExpenseEvidenceOcrJobAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseEvidenceAction } from "./actions";
 
 export default async function ExpenseResolutionsRoute() {
   let dataLoadError: string | undefined;
@@ -17,8 +17,10 @@ export default async function ExpenseResolutionsRoute() {
       createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction}
       dataLoadError={dataLoadError}
       deleteEvidence={deleteExpenseEvidenceAction}
+      getEvidenceOcrJob={getExpenseEvidenceOcrJobAction}
       initialResolutions={initialResolutions}
       persistResolution={saveExpenseResolutionAction}
+      retryEvidenceOcrJob={retryExpenseEvidenceOcrJobAction}
       transitionApproval={transitionExpenseApprovalAction}
       transitionDisbursement={transitionExpenseDisbursementAction}
       uploadEvidence={uploadExpenseEvidenceAction}
