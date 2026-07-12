@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 
 describe("print styles", () => {
   it("prints expense resolutions inside the A4 printable area without forcing an extra page", () => {
-    const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
+    const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8").replaceAll("\r\n", "\n");
 
     expect(css).toContain("@page {\n  size: A4 portrait;\n  margin: 15mm;\n}");
     expect(css).toContain("width: 180mm !important;");

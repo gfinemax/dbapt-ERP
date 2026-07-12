@@ -1,5 +1,6 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { ExpenseResolutionPage, formatApprovalDateTime } from "./expense-resolution-page";
 
 describe("ExpenseResolutionPage", () => {
@@ -76,7 +77,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByText("지급정보")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
-    expect(within(dialog).getByRole("heading", { name: "증빙자료" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "증빙자료·OCR 결과" })).toBeInTheDocument();
     expect(within(dialog).getByText("이번 달 예산현황")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
@@ -93,10 +94,13 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("집행방식")).toHaveValue("VENDOR_DIRECT");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     expect(within(dialog).getByLabelText("비용부담 유형")).toHaveValue("EMPLOYEE_PREPAID");
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     expect(within(dialog).getByLabelText("실제 지출일")).toBeInTheDocument();
 
+    fireEvent.click(within(dialog).getByRole("button", { name: /지급·기본정보/ }));
     fireEvent.click(within(dialog).getByRole("button", { name: "이전에 받은 금액을 정산합니다" }));
     expect(within(dialog).getByLabelText("원 사전결의")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     expect(within(dialog).getByLabelText("정산일")).toBeInTheDocument();
   });
 
@@ -104,6 +108,7 @@ describe("ExpenseResolutionPage", () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
 
     fireEvent.change(within(dialog).getByLabelText("품목명 1"), { target: { value: "복사용지" } });
     fireEvent.change(within(dialog).getByLabelText("단가 1"), { target: { value: "10000" } });
@@ -196,7 +201,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getAllByText("11,000원").length).toBeGreaterThan(0);
   });
 
-  it("uploads evidence, reviews OCR values, and applies them to the resolution", async () => {
+  it("uploads evidence in step one and automatically applies OCR values to the resolution", async () => {
     vi.useRealTimers();
     const uploadEvidence = vi.fn().mockResolvedValue({
       contentType: "text/plain",
@@ -204,7 +209,7 @@ describe("ExpenseResolutionPage", () => {
       fileName: "다이스_세금계산서.txt",
       fileSize: 120,
       id: "evidence-1",
-      ocrData: { issuer: "다이스", documentDate: "2026-07-15", supplyAmount: 10000, vatAmount: 1000, totalAmount: 11000 },
+      ocrData: { issuer: "다이스", issuerBusinessNumber: "123-45-67890", issuerRepresentative: "김대표", documentDate: "2026-07-15", supplyAmount: 10000, vatAmount: 1000, totalAmount: 11000 },
       ocrStatus: "EXTRACTED",
       storageBucket: "expense-evidence",
       storagePath: "지결-2026-0001/evidence-1.txt",
@@ -214,18 +219,136 @@ describe("ExpenseResolutionPage", () => {
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    expect(within(dialog).getByRole("button", { name: "증빙자료 자동입력" })).toHaveAttribute("aria-pressed", "true");
 
     const file = new File(["공급자: 다이스"], "다이스_세금계산서.txt", { type: "text/plain" });
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
     expect(await within(dialog).findByText("다이스_세금계산서.txt")).toBeInTheDocument();
-    expect(within(dialog).getByText(/추출값 검토 필요/)).toBeInTheDocument();
-    expect(within(dialog).getByText("10,000원")).toBeInTheDocument();
-    fireEvent.click(within(dialog).getByRole("button", { name: "추출값을 결의서에 반영" }));
+    expect(within(dialog).getByText("OCR 자동입력이 완료되었습니다.")).toBeInTheDocument();
+    expect(within(dialog).getByText(/추출값 확인완료/)).toBeInTheDocument();
+    expect(within(dialog).getAllByText("10,000원").length).toBeGreaterThan(0);
     expect(within(dialog).getByRole("button", { name: "추출값 반영완료" })).toBeDisabled();
-
-    fireEvent.click(within(dialog).getByText("지급·기본정보").closest("button")!);
+    expect(within(dialog).getByText("금액·증빙").closest("button")).toHaveAttribute("aria-current", "step");
     expect(within(dialog).getByLabelText("거래처명")).toHaveValue("다이스");
+    expect(within(dialog).getByLabelText("판매처 상호명")).toHaveValue("다이스");
+    expect(within(dialog).getByLabelText("사업자등록번호")).toHaveValue("123-45-67890");
+    expect(within(dialog).getByLabelText("대표자명")).toHaveValue("김대표");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(10000);
+    expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-07-15");
+  });
+
+  it("uses an OCR total as the single expense amount when a receipt has no supply amount", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockResolvedValue({
+      contentType: "image/png",
+      evidenceType: "영수증",
+      fileName: "카드영수증.png",
+      fileSize: 120,
+      id: "evidence-total-only",
+      ocrData: { issuer: "문구점", documentDate: "2026-07-16", totalAmount: 33000 },
+      ocrStatus: "EXTRACTED",
+      storageBucket: "expense-evidence",
+      storagePath: "지결-2026-0001/evidence-total-only.png",
+      uploadedAt: "2026-07-16T09:00:00.000Z",
+      uploadedBy: "오학동 사무장",
+    });
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "증빙자료 자동입력" }));
+    const file = new File(["합계 33,000원"], "카드영수증.png", { type: "image/png" });
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
+
+    expect(await within(dialog).findByText("카드영수증.png")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("단가 1")).toHaveValue(33000);
+    expect(within(dialog).getByLabelText("부가세 1")).toHaveValue(0);
+  });
+
+  it("selects evidence OCR automatically for settlement expenses", () => {
+    render(<ExpenseResolutionPage initialResolutions={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이전에 받은 금액을 정산합니다" }));
+
+    expect(within(dialog).getByRole("button", { name: "증빙자료 자동입력" })).toHaveAttribute("aria-pressed", "true");
+  });
+
+  it("shows upload and OCR progress while a PDF is being processed", async () => {
+    vi.useRealTimers();
+    let finishUpload!: (attachment: ExpenseEvidenceAttachment) => void;
+    const uploadEvidence = vi.fn(() => new Promise<ExpenseEvidenceAttachment>((resolve) => { finishUpload = resolve; }));
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    const file = new File(["pdf"], "카드영수증.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
+
+    expect(await within(dialog).findByRole("status")).toHaveTextContent("1/5 카드영수증.pdf 증빙파일을 업로드하고 있습니다");
+    expect(within(dialog).getByRole("status")).toHaveTextContent("백그라운드에서 영수증 분석을 계속합니다");
+    await act(async () => finishUpload({
+      contentType: "application/pdf",
+      evidenceType: "영수증",
+      fileName: "카드영수증.pdf",
+      fileSize: 3,
+      id: "evidence-progress",
+      ocrData: {},
+      ocrStatus: "REVIEW_REQUIRED",
+      storageBucket: "expense-evidence",
+      storagePath: "지결-2026-0001/evidence-progress.pdf",
+      uploadedAt: "2026-07-16T09:00:00.000Z",
+      uploadedBy: "오학동 사무장",
+    }));
+  });
+
+  it("shows an upload failure above the form instead of hiding it in the evidence section", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockRejectedValue(new Error("PDF 업로드 요청이 실패했습니다."));
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    const file = new File(["pdf"], "실패영수증.pdf", { type: "application/pdf" });
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("증빙자료를 처리하지 못했습니다");
+    expect(within(dialog).getByRole("alert")).toHaveTextContent("PDF 업로드 요청이 실패했습니다");
+    expect(within(dialog).getByRole("button", { name: "다른 파일 선택" })).toBeInTheDocument();
+  });
+
+  it("polls a background OCR job and applies the completed OpenAI result", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockResolvedValue({
+      contentType: "image/jpeg",
+      evidenceType: "영수증",
+      fileName: "봉투구매.jpg",
+      fileSize: 120,
+      id: "evidence-background",
+      ocrData: {},
+      ocrJobId: "evidence-background",
+      ocrStatus: "REVIEW_REQUIRED",
+      storageBucket: "expense-evidence",
+      storagePath: "expense-resolutions/2026-0002/evidence-background.jpg",
+      uploadedAt: "2026-07-12T09:00:00.000Z",
+      uploadedBy: "오학동 사무장",
+    });
+    const getEvidenceOcrJob = vi.fn().mockResolvedValue({
+      id: "evidence-background",
+      progress: 100,
+      resultData: { documentDate: "2026-06-19", issuer: "스마트기획", itemName: "소봉투제작(5백매)", provider: "OPENAI", quantity: 1, supplyAmount: 60000, totalAmount: 60000, vatAmount: 0 },
+      stage: "COMPLETED",
+      status: "COMPLETED",
+    });
+    render(<ExpenseResolutionPage getEvidenceOcrJob={getEvidenceOcrJob} initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "봉투구매.jpg", { type: "image/jpeg" })] } });
+
+    expect(await within(dialog).findByText("OCR 자동입력이 완료되었습니다.")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("거래처명")).toHaveValue("스마트기획");
+    expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("소봉투제작(5백매)");
+    expect(within(dialog).getByLabelText("단가 1")).toHaveValue(60000);
   });
 });

@@ -1,18 +1,33 @@
 import { PDFParse } from "pdf-parse";
 import { createWorker } from "tesseract.js";
 import { extractEvidenceText, type EvidenceOcrData } from "./expense-evidence";
+import { preprocessExpenseEvidenceImage } from "./expense-evidence-image.server";
 
 const minimumEmbeddedPdfTextLength = 20;
 const maximumPdfOcrPages = 3;
+const ocrOperationTimeoutMs = 45_000;
 
 export async function extractExpenseEvidenceFile(file: File): Promise<EvidenceOcrData> {
+  const startedAt = Date.now();
+  console.info(`[expense-evidence] OCR started: ${file.name} (${file.type}, ${file.size} bytes)`);
   const bytes = new Uint8Array(await file.arrayBuffer());
-  if (file.type === "text/plain" || file.type === "text/csv") {
-    return withRecognizedText(new TextDecoder("utf-8").decode(bytes));
+  try {
+    let result: EvidenceOcrData;
+    if (file.type === "text/plain" || file.type === "text/csv") {
+      result = { ...withRecognizedText(new TextDecoder("utf-8").decode(bytes)), provider: "EMBEDDED_TEXT" };
+    } else if (file.type === "application/pdf") {
+      result = await withTimeout(extractPdfEvidence(bytes), "PDF OCR");
+    } else if (file.type.startsWith("image/")) {
+      result = await withTimeout(recognizeImages([bytes]), "이미지 OCR");
+    } else {
+      result = {};
+    }
+    console.info(`[expense-evidence] OCR completed: ${file.name} (${Date.now() - startedAt}ms)`);
+    return result.provider ? result : { ...result, provider: "TESSERACT" };
+  } catch (error) {
+    console.error(`[expense-evidence] OCR failed: ${file.name} (${Date.now() - startedAt}ms): ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
   }
-  if (file.type === "application/pdf") return extractPdfEvidence(bytes);
-  if (file.type.startsWith("image/")) return recognizeImages([bytes]);
-  return {};
 }
 
 async function extractPdfEvidence(bytes: Uint8Array) {
@@ -36,7 +51,8 @@ async function recognizeImages(images: Uint8Array[]) {
     const texts: string[] = [];
     const confidences: number[] = [];
     for (const image of images) {
-      const result = await worker.recognize(Buffer.from(image));
+      const processed = await preprocessExpenseEvidenceImage(image);
+      const result = await worker.recognize(Buffer.from(processed));
       texts.push(result.data.text.trim());
       if (Number.isFinite(result.data.confidence)) confidences.push(result.data.confidence);
     }
@@ -54,4 +70,18 @@ function withRecognizedText(text: string, confidence?: number) {
     ...(Number.isFinite(confidence) ? { confidence } : {}),
     ...(text.trim() ? { recognizedText: text.trim().slice(0, 8000) } : {}),
   };
+}
+
+async function withTimeout<T>(operation: Promise<T>, label: string): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      operation,
+      new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(`${label} 처리시간이 45초를 초과했습니다.`)), ocrOperationTimeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
 }

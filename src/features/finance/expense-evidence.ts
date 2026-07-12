@@ -3,7 +3,18 @@ export type EvidenceOcrStatus = "EXTRACTED" | "REVIEW_REQUIRED" | "CONFIRMED" | 
 export type EvidenceOcrData = {
   confidence?: number;
   documentDate?: string;
+  documentType?: string;
   issuer?: string;
+  issuerAddress?: string;
+  issuerBusinessCategory?: string;
+  issuerBusinessNumber?: string;
+  issuerBusinessType?: string;
+  issuerContact?: string;
+  issuerRepresentative?: string;
+  itemName?: string;
+  provider?: "EMBEDDED_TEXT" | "OPENAI" | "TESSERACT";
+  processingNote?: string;
+  quantity?: number;
   recognizedText?: string;
   supplyAmount?: number;
   totalAmount?: number;
@@ -17,6 +28,7 @@ export type ExpenseEvidenceAttachment = {
   fileSize: number;
   id: string;
   itemId?: string;
+  ocrJobId?: string;
   ocrData: EvidenceOcrData;
   ocrStatus: EvidenceOcrStatus;
   storageBucket: string;
@@ -25,18 +37,34 @@ export type ExpenseEvidenceAttachment = {
   uploadedBy: string;
 };
 
+export type EvidenceOcrJobStage = "UPLOADED" | "RENDERING" | "PREPROCESSING" | "RECOGNIZING" | "STRUCTURING" | "COMPLETED" | "FAILED";
+
+export type EvidenceOcrJobProgress = {
+  errorMessage?: string;
+  id: string;
+  progress: number;
+  resultData: EvidenceOcrData;
+  stage: EvidenceOcrJobStage;
+  status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED";
+};
+
 export function extractEvidenceText(text: string): EvidenceOcrData {
   const normalized = text.replace(/\r/g, "");
-  const issuer = matchText(normalized, /(?:공급자|거래처|상호)\s*[:：]?\s*([^\n]+)/);
-  const documentDate = normalizeDate(matchText(normalized, /(?:작성일|발행일|거래일|일자)\s*[:：]?\s*([0-9]{4}[./-][0-9]{1,2}[./-][0-9]{1,2})/));
-  const supplyAmount = matchAmount(normalized, /(?:공급가액|공급금액)\s*[:：]?\s*([0-9,]+)\s*원?/);
+  const issuer = matchText(normalized, /(?:공\s*급\s*자|거\s*래\s*처|상\s*호)\s*[:：]?\s*([^\n]+)/);
+  const issuerBusinessNumber = matchText(normalized, /(?:사업자\s*등록\s*번호|등록\s*번호)\s*[:：]?\s*([0-9]{3}\s*-?\s*[0-9]{2}\s*-?\s*[0-9]{5})/);
+  const issuerRepresentative = matchText(normalized, /(?:대표자|성\s*명)\s*[:：]?\s*([^\n]+)/);
+  const issuerAddress = matchText(normalized, /(?:사업장\s*소재지|주\s*소)\s*[:：]?\s*([^\n]+)/);
+  const issuerBusinessType = matchText(normalized, /(?:업\s*태)\s*[:：]?\s*([^\n]+)/);
+  const issuerBusinessCategory = matchText(normalized, /(?:종\s*목)\s*[:：]?\s*([^\n]+)/);
+  const documentDate = normalizeDate(matchText(normalized, /(?:작\s*성\s*(?:년\s*월\s*일|일)|발\s*행\s*일|거\s*래\s*일|일\s*자)\s*[:：]?\s*([0-9]{4}\s*[./-]\s*[0-9]{1,2}\s*[./-]\s*[0-9]{1,2})/));
+  const supplyAmount = matchAmount(normalized, /(?:공\s*급\s*가\s*액|공\s*급\s*금\s*액|공\s*급\s*대\s*가\s*총\s*액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   const vatAmount = matchAmount(normalized, /(?:부가세|세액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   const totalAmount = matchAmount(normalized, /(?:합계|총액|결제금액)\s*[:：]?\s*([0-9,]+)\s*원?/);
-  return compactOcrData({ documentDate, issuer, supplyAmount, totalAmount, vatAmount });
+  return compactOcrData({ documentDate, issuer, issuerAddress, issuerBusinessCategory, issuerBusinessNumber: issuerBusinessNumber?.replace(/\s/g, ""), issuerBusinessType, issuerRepresentative, supplyAmount, totalAmount, vatAmount });
 }
 
 export function hasExtractedEvidenceData(data: EvidenceOcrData) {
-  return [data.documentDate, data.issuer, data.supplyAmount, data.totalAmount, data.vatAmount]
+  return [data.documentDate, data.issuer, data.issuerBusinessNumber, data.supplyAmount, data.totalAmount, data.vatAmount]
     .some((value) => value !== undefined && value !== "");
 }
 
@@ -64,7 +92,7 @@ function matchAmount(text: string, pattern: RegExp) {
 
 function normalizeDate(value?: string) {
   if (!value) return undefined;
-  const [year, month, day] = value.replace(/[./]/g, "-").split("-").map(Number);
+  const [year, month, day] = value.replace(/\s/g, "").replace(/[./]/g, "-").split("-").map(Number);
   const date = new Date(Date.UTC(year, month - 1, day));
   if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return undefined;
   return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
