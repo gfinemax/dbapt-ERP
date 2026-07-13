@@ -25,8 +25,8 @@ import { useState } from "react";
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
-  { label: "조합원", icon: Users, href: "/members" },
   { label: "회계/자금", icon: Wallet, href: "/finance" },
+  { label: "조합원", icon: Users, href: "/members" },
   { label: "총회", icon: CalendarCheck, href: "#" },
   { label: "토지", icon: Map, href: "#" },
   { label: "계약/분양", icon: FileCheck2, href: "#" },
