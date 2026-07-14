@@ -22,6 +22,7 @@ import {
   registeredBankAccounts,
   registeredCreditCards,
   type BankAccountInput,
+  type BusinessPartner,
   type RegisteredBankAccount,
   type RegisteredCreditCard,
 } from "./business-partner-data";
@@ -75,6 +76,7 @@ export function BusinessPartnerPage({
   createBankAccount,
   initialAccountSubjects,
   initialBankAccounts,
+  initialBusinessPartners,
   initialSection,
   updateBankAccount,
 }: {
@@ -82,12 +84,14 @@ export function BusinessPartnerPage({
   createBankAccount?: CreateBankAccount;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
+  initialBusinessPartners?: BusinessPartner[];
   initialSection?: BasicInfoSection;
   updateBankAccount?: UpdateBankAccount;
 } = {}) {
   const activeSection = initialSection ?? "partners";
   const [accountSubjects, setAccountSubjects] = useState<RegisteredAccountSubject[]>(initialAccountSubjects ?? registeredAccountSubjects);
   const [bankAccounts, setBankAccounts] = useState<RegisteredBankAccount[]>(initialBankAccounts ?? registeredBankAccounts);
+  const partners = initialBusinessPartners ?? businessPartners;
   const [creditCards, setCreditCards] = useState<RegisteredCreditCard[]>(registeredCreditCards);
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalType, setModalType] = useState<ModalType>(null);
@@ -129,7 +133,7 @@ export function BusinessPartnerPage({
             subjects={accountSubjects}
           />
         ) : (
-          <PartnerSection />
+          <PartnerSection partners={partners} />
         )}
       </div>
 
@@ -169,8 +173,8 @@ export function BusinessPartnerPage({
   );
 }
 
-function PartnerSection() {
-  const summary = getBusinessPartnerSummary();
+function PartnerSection({ partners }: { partners: BusinessPartner[] }) {
+  const summary = getBusinessPartnerSummary(partners);
 
   return (
     <>
@@ -286,7 +290,7 @@ function PartnerSection() {
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
-              {businessPartners.map((partner) => (
+              {partners.map((partner) => (
                 <tr className="bg-white/70" key={partner.id}>
                   <td className="px-4 py-4 font-semibold">{partner.code}</td>
                   <td className="px-4 py-4">

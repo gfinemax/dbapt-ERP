@@ -40,7 +40,7 @@ describe("expense resolution repository", () => {
       id: "expense-resolution-1",
       expenseItems: [],
       singleItems: [
-        { id: "item-1", itemName: "복사용지", memo: "", quantity: "2", unitPrice: "5000", supplyAmount: 10000, vatAmount: 1000, totalAmount: 11000 },
+        { id: "item-1", itemName: "복사용지", memo: "", quantity: "2", unitPrice: "5000", supplyAmount: 10000, taxCategory: "TAXABLE", vatAmount: 1000, totalAmount: 11000 },
       ],
       accountAllocations: [
         { id: "allocation-1", accountTitle: "소모품비", amount: "11000", budgetItem: "운영비 > 사무용품", description: "복사용지" },
@@ -57,7 +57,7 @@ describe("expense resolution repository", () => {
 
   it("hydrates child rows over the legacy json snapshot", () => {
     const resolution = { id: "expense-resolution-1", expenseItems: [], singleItems: [] } as unknown as ManagedExpenseResolution;
-    const item = { id: "item-1", itemName: "복사용지", memo: "", quantity: "1", unitPrice: "10000", supplyAmount: 10000, vatAmount: 1000, totalAmount: 11000 };
+    const item = { id: "item-1", itemName: "복사용지", memo: "", quantity: "1", unitPrice: "10000", supplyAmount: 10000, taxCategory: "TAXABLE" as const, vatAmount: 1000, totalAmount: 11000 };
     const allocation = { id: "allocation-1", accountTitle: "소모품비", amount: "11000", budgetItem: "운영비 > 사무용품", description: "" };
 
     expect(hydrateExpenseResolutionChildren(

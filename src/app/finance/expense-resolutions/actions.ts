@@ -1,10 +1,16 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { randomUUID } from "node:crypto";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { hasExtractedEvidenceData, inferEvidenceType, type ExpenseEvidenceAttachment } from "@/features/finance/expense-evidence";
+import { ensureBusinessPartnerFromOcrInSupabase } from "@/features/basic-info/business-partner-repository";
+import type { BusinessPartnerOcrInput } from "@/features/basic-info/business-partner-data";
+import { inferEvidenceType, type EvidenceOcrJobProgress, type EvidenceOcrJobStage, type ExpenseEvidenceAttachment } from "@/features/finance/expense-evidence";
 import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-ocr.server";
+import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
+import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
+import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
 import { getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, updateExpenseResolutionWorkflowInSupabase, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
 import { transitionExpenseApproval, type ApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "@/features/finance/expense-disbursement-workflow";
@@ -14,6 +20,13 @@ import type { ManagedExpenseResolution } from "@/features/finance/expense-resolu
 const expenseEvidenceBucket = "expense-evidence";
 const maxEvidenceFileSize = 10 * 1024 * 1024;
 const acceptedEvidenceTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "text/plain", "text/csv"]);
+
+export async function ensureBusinessPartnerFromOcrAction(input: BusinessPartnerOcrInput) {
+  const result = await ensureBusinessPartnerFromOcrInSupabase(input);
+  revalidatePath("/basic-info");
+  revalidatePath("/finance/expense-resolutions");
+  return result;
+}
 
 export async function uploadExpenseEvidenceAction(formData: FormData): Promise<ExpenseEvidenceAttachment> {
   const file = formData.get("file");
@@ -26,36 +39,155 @@ export async function uploadExpenseEvidenceAction(formData: FormData): Promise<E
 
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const compression = await compressExpenseEvidenceFile(file);
+  const storedFile = compression.file;
+  if (compression.savedBytes > 0) {
+    console.info(`[expense-evidence] compressed ${file.name}: ${compression.originalSize} -> ${storedFile.size} bytes`);
+  }
   const id = randomUUID();
-  const safeResolutionNo = resolutionNo.replace(/[^0-9A-Za-z가-힣_-]/g, "-");
-  const safeFileName = file.name.replace(/[^0-9A-Za-z가-힣._-]/g, "_");
-  const storagePath = `${safeResolutionNo}/${id}-${safeFileName}`;
-  const { error } = await supabase.storage.from(expenseEvidenceBucket).upload(storagePath, file, {
+  const storagePath = buildExpenseEvidenceStoragePath(resolutionNo, id, storedFile.type);
+  const ocrSourcePath = buildExpenseEvidenceOcrSourcePath(storagePath);
+  const { error } = await supabase.storage.from(expenseEvidenceBucket).upload(storagePath, storedFile, {
     cacheControl: "3600",
-    contentType: file.type,
+    contentType: storedFile.type,
     upsert: false,
   });
   if (error) throw new Error(`증빙파일 저장 실패: ${error.message}`);
-
-  let ocrData = {};
-  try {
-    ocrData = await extractExpenseEvidenceFile(file);
-  } catch (ocrError) {
-    console.warn(`[expense-evidence] OCR unavailable for ${file.name}: ${ocrError instanceof Error ? ocrError.message : String(ocrError)}`);
+  const usesVisionOcr = file.type === "application/pdf" || file.type.startsWith("image/");
+  if (usesVisionOcr) {
+    const { error: sourceError } = await supabase.storage.from(expenseEvidenceBucket).upload(ocrSourcePath, file, {
+      cacheControl: "60",
+      contentType: file.type,
+      upsert: false,
+    });
+    if (sourceError) {
+      await supabase.storage.from(expenseEvidenceBucket).remove([storagePath]);
+      throw new Error(`OCR 원본 준비 실패: ${sourceError.message}`);
+    }
   }
+  const evidenceType = inferEvidenceType(file.name, requestedEvidenceType);
+  const { error: jobError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").insert({
+    content_type: storedFile.type,
+    evidence_type: evidenceType,
+    id,
+    original_filename: file.name,
+    resolution_no: resolutionNo,
+    storage_bucket: expenseEvidenceBucket,
+    storage_path: storagePath,
+  });
+  if (jobError) {
+    await supabase.storage.from(expenseEvidenceBucket).remove(usesVisionOcr ? [storagePath, ocrSourcePath] : [storagePath]);
+    throw new Error(`OCR 작업 등록 실패: ${jobError.message}`);
+  }
+  after(() => processExpenseEvidenceOcrJob(id));
   return {
     contentType: file.type,
-    evidenceType: inferEvidenceType(file.name, requestedEvidenceType),
+    evidenceType,
     fileName: file.name,
-    fileSize: file.size,
+    fileSize: storedFile.size,
     id,
-    ocrData,
-    ocrStatus: hasExtractedEvidenceData(ocrData) ? "EXTRACTED" : "REVIEW_REQUIRED",
+    ocrData: {},
+    ocrJobId: id,
+    ocrStatus: "REVIEW_REQUIRED",
     storageBucket: expenseEvidenceBucket,
     storagePath,
     uploadedAt: new Date().toISOString(),
     uploadedBy: "오학동 사무장",
   };
+}
+
+export async function getExpenseEvidenceOcrJobAction(id: string): Promise<EvidenceOcrJobProgress> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const { data, error } = await supabase.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("id,status,stage,progress,result_data,error_message")
+    .eq("id", id)
+    .single();
+  if (error) throw new Error(`OCR 작업 조회 실패: ${error.message}`);
+  return {
+    errorMessage: data.error_message ?? undefined,
+    id: data.id,
+    progress: data.progress,
+    resultData: data.result_data ?? {},
+    stage: data.stage,
+    status: data.status,
+  } as EvidenceOcrJobProgress;
+}
+
+export async function retryExpenseEvidenceOcrJobAction(id: string) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const { error } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").update({
+    completed_at: null,
+    error_message: null,
+    progress: 20,
+    result_data: {},
+    stage: "UPLOADED",
+    status: "PENDING",
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) throw new Error(`OCR 재분석 등록 실패: ${error.message}`);
+  after(() => processExpenseEvidenceOcrJob(id));
+}
+
+async function processExpenseEvidenceOcrJob(id: string) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return;
+  const { data: job, error: jobError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("id,storage_bucket,storage_path,original_filename,content_type,attempt_count")
+    .eq("id", id)
+    .single();
+  if (jobError || !job) return;
+  try {
+    await updateOcrJob(id, "RENDERING", 30, { attempt_count: job.attempt_count + 1, started_at: new Date().toISOString(), status: "PROCESSING" });
+    const sourcePath = buildExpenseEvidenceOcrSourcePath(job.storage_path);
+    let { data: blob, error: downloadError } = await supabase.storage.from(job.storage_bucket).download(sourcePath);
+    const usedOriginalSource = !downloadError && Boolean(blob);
+    if (downloadError || !blob) {
+      ({ data: blob, error: downloadError } = await supabase.storage.from(job.storage_bucket).download(job.storage_path));
+    }
+    if (downloadError || !blob) throw new Error(`증빙파일 읽기 실패: ${downloadError?.message ?? "파일이 없습니다."}`);
+    const file = new File([blob], job.original_filename, { type: job.content_type });
+    let result;
+    if (process.env.OPENAI_API_KEY && (file.type === "application/pdf" || file.type.startsWith("image/"))) {
+      try {
+        result = await extractExpenseEvidenceWithOpenAI(file, {
+          onStage: async (stage) => updateOcrJob(id, stage, stage === "PREPROCESSING" ? 45 : stage === "RECOGNIZING" ? 65 : 85),
+        });
+      } catch (openAiError) {
+        const openAiFailureMessage = openAiError instanceof Error ? openAiError.message : String(openAiError);
+        console.warn(`[expense-evidence] OpenAI vision unavailable; falling back to Tesseract for ${file.name}: ${openAiFailureMessage}`);
+        await updateOcrJob(id, "RECOGNIZING", 65, { provider: "TESSERACT" });
+        result = { ...await extractExpenseEvidenceFile(file), processingNote: `OpenAI 분석 실패 후 로컬 OCR로 처리됨: ${openAiFailureMessage}` };
+      }
+    } else {
+      await updateOcrJob(id, "RECOGNIZING", 65, { provider: "TESSERACT" });
+      result = { ...await extractExpenseEvidenceFile(file), processingNote: "OpenAI API 키가 없어 로컬 OCR로 처리됨" };
+    }
+    await updateOcrJob(id, "COMPLETED", 100, {
+      completed_at: new Date().toISOString(),
+      provider: result.provider ?? "TESSERACT",
+      result_data: result,
+      status: "COMPLETED",
+    });
+    if (usedOriginalSource) await supabase.storage.from(job.storage_bucket).remove([sourcePath]);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.error(`[expense-evidence] background OCR failed for ${id}: ${message}`);
+    await updateOcrJob(id, "FAILED", 100, { completed_at: new Date().toISOString(), error_message: message, status: "FAILED" });
+  }
+}
+
+async function updateOcrJob(id: string, stage: EvidenceOcrJobStage, progress: number, values: Record<string, unknown> = {}) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return;
+  const { error } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").update({
+    ...values,
+    progress,
+    stage,
+    updated_at: new Date().toISOString(),
+  }).eq("id", id);
+  if (error) throw new Error(`OCR 상태 저장 실패: ${error.message}`);
 }
 
 export async function createExpenseEvidenceDownloadUrlAction(storagePath: string) {
@@ -69,7 +201,7 @@ export async function createExpenseEvidenceDownloadUrlAction(storagePath: string
 export async function deleteExpenseEvidenceAction(storagePath: string) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
-  const { error } = await supabase.storage.from(expenseEvidenceBucket).remove([storagePath]);
+  const { error } = await supabase.storage.from(expenseEvidenceBucket).remove([storagePath, buildExpenseEvidenceOcrSourcePath(storagePath)]);
   if (error) throw new Error(`증빙파일 삭제 실패: ${error.message}`);
 }
 

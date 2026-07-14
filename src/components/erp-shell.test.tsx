@@ -51,8 +51,7 @@ describe("ErpShell", () => {
       "계좌거래 매칭",
       "예산집행 현황",
     ]);
-    expect(screen.getByRole("link", { name: "수입·지출 전표관리" })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByText("수입·지출 전표관리")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "지출결의서 관리" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "지출결의서 관리" })).toHaveAttribute("href", "/finance/expense-resolutions");
     expect(screen.getByRole("link", { name: "결재함" })).toHaveAttribute("href", "/finance/approval-inbox");
     expect(screen.getByRole("link", { name: "지급대기" })).toHaveAttribute("href", "/finance/payment-waiting");
@@ -84,7 +83,7 @@ describe("ErpShell", () => {
     expect(screen.getByRole("navigation", { name: "전체 메뉴" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "대시보드" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "조합원" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "회계/자금" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/expense-resolutions");
     expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).queryByRole("link", { name: "기초정보" })).not.toBeInTheDocument();
   });
 

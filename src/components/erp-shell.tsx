@@ -25,7 +25,7 @@ import { useState } from "react";
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
-  { label: "회계/자금", icon: Wallet, href: "/finance" },
+  { label: "회계/자금", icon: Wallet, href: "/finance/expense-resolutions" },
   { label: "조합원", icon: Users, href: "/members" },
   { label: "총회", icon: CalendarCheck, href: "#" },
   { label: "토지", icon: Map, href: "#" },
@@ -64,7 +64,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       ],
     },
     {
-      defaultDetailLabel: "수입·지출 전표관리",
+      defaultDetailLabel: "지출결의서 관리",
       href: "/finance",
       label: "전표·증빙관리",
       items: [

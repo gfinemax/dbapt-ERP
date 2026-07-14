@@ -2,11 +2,15 @@
 
 import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
+import { recommendExpenseBudget, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
+import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
+import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import {
   expenseResolutionTypeOptions,
   expenseResolutions,
@@ -14,7 +18,7 @@ import {
 } from "./expense-resolution-data";
 import type { ExpenseResolution, ExpenseResolutionType, ResolutionHistory } from "./expense-resolution-data";
 import { getNextDocumentNo } from "./finance-numbering";
-import type { ExpenseEvidenceAttachment } from "./expense-evidence";
+import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, sanitizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment } from "./expense-evidence";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
@@ -105,6 +109,7 @@ export type BatchExpenseItem = {
   currentRequestAmount: number;
   description: string;
   evidenceFileName: string;
+  evidenceId?: string;
   evidenceType: string;
   executedAmount: number;
   expenseDate: string;
@@ -124,9 +129,18 @@ export type BatchExpenseItem = {
   totalAmount: number;
   vatAmount: string;
   vendorName: string;
+  vendorId?: string;
+  vendorAddress?: string;
+  vendorBusinessCategory?: string;
+  vendorBusinessNumber?: string;
+  vendorBusinessType?: string;
+  vendorContact?: string;
+  vendorRepresentative?: string;
   voucherNo?: string;
   voucherStatus?: VoucherStatus;
 };
+
+export type SingleExpenseTaxCategory = "TAXABLE" | "NON_DEDUCTIBLE" | "NO_VAT";
 
 export type SingleExpenseItem = {
   id: string;
@@ -134,6 +148,7 @@ export type SingleExpenseItem = {
   quantity: string;
   unitPrice: string;
   supplyAmount: number;
+  taxCategory?: SingleExpenseTaxCategory;
   vatAmount: number;
   totalAmount: number;
   memo: string;
@@ -229,6 +244,13 @@ export type ManagedExpenseResolution = {
   transferReceiptStatus?: string;
   vat: number;
   vendorName: string;
+  vendorId?: string;
+  vendorAddress?: string;
+  vendorBusinessCategory?: string;
+  vendorBusinessNumber?: string;
+  vendorBusinessType?: string;
+  vendorContact?: string;
+  vendorRepresentative?: string;
   voucherNo?: string;
   voucherGenerated?: boolean;
   voucherStatus?: VoucherStatus;
@@ -247,6 +269,7 @@ type ResolutionFormState = {
   advancePaymentMethod: PaymentMethod;
   actualUsedAmount: string;
   budgetItem: string;
+  budgetRecommendation: ExpenseBudgetRecommendation | null;
   budgetOverReason: string;
   budgetPeriod: string;
   batchItems: BatchExpenseItem[];
@@ -285,6 +308,13 @@ type ResolutionFormState = {
   supplyAmount: string;
   vat: string;
   vendorName: string;
+  vendorId: string;
+  vendorAddress: string;
+  vendorBusinessCategory: string;
+  vendorBusinessNumber: string;
+  vendorBusinessType: string;
+  vendorContact: string;
+  vendorRepresentative: string;
 };
 
 const currentUser = {
@@ -337,6 +367,7 @@ const paymentTargets: PaymentTarget[] = [
 const resolutionNoPrefix = "지결";
 const resolutionFlow = "지출결의서 작성 → 승인요청 → 승인완료 → 지급대기 → 지급완료 → 지출전표 생성 → 증빙자료 연결";
 const evidenceTypeOptions: EvidenceType[] = ["세금계산서", "계산서", "영수증", "현금영수증", "이체확인증", "계약서", "견적서", "의결서", "기타"];
+const transactionEvidenceTypeOptions: EvidenceType[] = ["세금계산서", "계산서", "영수증", "현금영수증", "이체확인증", "기타"];
 const projectNameOptions = [
   "사무국 비품 구입",
   "사무국 운영관리",
@@ -514,7 +545,7 @@ const operatingBudgetProfiles: Record<string, BudgetProfile> = {
   },
   "운영비 > 사무등록비": {
     budgetPeriod: "2026-07",
-    calculationBasis: "복사기, 회선, 유물료, 기타",
+    calculationBasis: "복사기, 회선, 문구류, 기타",
     currentAnnualBudgetAmount: 3600000,
     monthlyBudgetAmount: 300000,
     paymentWaitingAmount: 0,
@@ -767,11 +798,20 @@ function getBudgetCheckStatus(remainingBudgetAmount: number, budgetUsageRate: nu
 }
 
 function createBudgetSnapshot(budgetItem: string, requestAmount: number): BudgetSnapshot {
-  const profile = operatingBudgetProfiles[budgetItem] ?? operatingBudgetProfiles["운영비 > 임대료"];
+  const profile = operatingBudgetProfiles[budgetItem] ?? {
+    budgetPeriod: "2026-07",
+    calculationBasis: "예산항목을 선택해 주세요.",
+    currentAnnualBudgetAmount: 0,
+    monthlyBudgetAmount: 0,
+    paymentWaitingAmount: 0,
+    pendingApprovalAmount: 0,
+    previousAnnualBudgetAmount: 0,
+    usedAmount: 0,
+  };
   const currentRequestAmount = requestAmount;
   const expectedUsedAmount = profile.usedAmount + profile.pendingApprovalAmount + profile.paymentWaitingAmount + currentRequestAmount;
   const remainingBudgetAmount = profile.monthlyBudgetAmount - expectedUsedAmount;
-  const budgetUsageRate = Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1));
+  const budgetUsageRate = profile.monthlyBudgetAmount > 0 ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1)) : 0;
 
   return {
     ...profile,
@@ -792,7 +832,7 @@ function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseI
     currentRequestAmount: 0,
     description: "정기총회 장소 대관료",
     evidenceFileName: "",
-    evidenceType: "세금계산서",
+    evidenceType: "영수증",
     executedAmount: 0,
     expenseDate: getCurrentDateIso(),
     expenseType: "총회비",
@@ -1089,6 +1129,16 @@ function maskAccountNumber(accountNumber: string) {
   return suffix ? `****${suffix}` : "계좌 미등록";
 }
 
+function getExpenseBurdenLabel(value: ExpenseBurdenType) {
+  return {
+    CORPORATE_CARD: "법인카드 결제",
+    EMPLOYEE_PREPAID: "임직원 개인 선결제",
+    ORGANIZATION_PAID: "조합계좌에서 이미 지급",
+    VENDOR_UNPAID: "거래처 미지급 청구",
+    CASH: "현금 사용",
+  }[value];
+}
+
 function getPaymentTargetSummary(target: PaymentTarget) {
   if (target.id === "manual") {
     return "이번 결의서에서 직접 지급정보를 입력합니다.";
@@ -1099,7 +1149,11 @@ function getPaymentTargetSummary(target: PaymentTarget) {
 
 function calculateSingleExpenseItem(item: SingleExpenseItem, recalculateVat = false): SingleExpenseItem {
   const supplyAmount = Math.max(0, toNumber(item.quantity) * toNumber(item.unitPrice));
-  const vatAmount = recalculateVat ? Math.round(supplyAmount * 0.1) : Math.max(0, item.vatAmount);
+  const vatAmount = item.taxCategory === "NO_VAT"
+    ? 0
+    : recalculateVat
+      ? Math.round(supplyAmount * 0.1)
+      : Math.max(0, item.vatAmount);
   return { ...item, supplyAmount, vatAmount, totalAmount: supplyAmount + vatAmount };
 }
 
@@ -1110,6 +1164,7 @@ function createSingleExpenseItem(overrides: Partial<SingleExpenseItem> = {}): Si
     memo: "",
     quantity: "1",
     supplyAmount: 0,
+    taxCategory: "TAXABLE",
     totalAmount: 0,
     unitPrice: "0",
     vatAmount: 0,
@@ -1128,7 +1183,7 @@ function createAccountAllocation(overrides: Partial<AccountAllocation> = {}): Ac
   return {
     accountTitle: "운영비",
     amount: "0",
-    budgetItem: "운영비 > 임대료",
+    budgetItem: "",
     description: "",
     id: `allocation-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     ...overrides,
@@ -1150,6 +1205,103 @@ function getExpenseInfoSummary(formState: ResolutionFormState) {
 
 function getResolutionSubject(resolution: ManagedExpenseResolution) {
   return resolution.subject?.trim() || (resolution.resolutionType === "BATCH" ? resolution.projectName : resolution.operationExpenseDetail) || "건명 미입력";
+}
+
+function getSingleExpenseTaxCategory(item: { supplyAmount: number | string; taxCategory?: SingleExpenseTaxCategory; vatAmount: number | string }): SingleExpenseTaxCategory {
+  return item.taxCategory ?? (toNumber(String(item.supplyAmount)) > 0 && toNumber(String(item.vatAmount)) === 0 ? "NO_VAT" : "TAXABLE");
+}
+
+function createBatchExpenseItemFromEvidence(evidence: ExpenseEvidenceAttachment, itemNo: number, reason: string) {
+  const ocr = normalizeEvidenceVendorFields(evidence.ocrData);
+  const itemNames = ocr.items?.map((item) => item.itemName).filter(Boolean) ?? (ocr.itemName ? [ocr.itemName] : []);
+  const recommendation = recommendExpenseBudget({
+    itemName: itemNames.join(" "),
+    reason,
+    vendorBusinessCategory: ocr.issuerBusinessCategory,
+    vendorBusinessType: ocr.issuerBusinessType,
+    vendorName: ocr.issuer,
+  });
+  const vatAmount = ocr.vatAmount ?? 0;
+  const supplyAmount = ocr.supplyAmount ?? Math.max((ocr.totalAmount ?? 0) - vatAmount, 0);
+  const itemTitle = itemNames.length ? `${itemNames[0]}${itemNames.length > 1 ? ` 외 ${itemNames.length - 1}종` : ""}` : evidence.fileName;
+  const expenseType = expenseResolutionTypeOptions.includes(recommendation?.accountTitle as ExpenseResolutionType)
+    ? recommendation?.accountTitle as ExpenseResolutionType
+    : "운영비";
+  return createBatchExpenseItem(itemNo, {
+    accountTitle: recommendation?.accountTitle ?? "운영비",
+    budgetItem: recommendation?.budgetItem ?? "",
+    description: itemNames.join("\n") || `${ocr.issuer ?? "거래처 미확인"} 증빙 지출`,
+    evidenceFileName: evidence.fileName,
+    evidenceId: evidence.id,
+    evidenceType: ocr.normalizedEvidenceType ?? evidence.evidenceType,
+    expenseDate: ocr.documentDate ?? getCurrentDateIso(),
+    expenseType,
+    itemTitle,
+    supplyAmount: String(supplyAmount),
+    vatAmount: String(vatAmount),
+    vendorAddress: ocr.issuerAddress,
+    vendorBusinessCategory: ocr.issuerBusinessCategory,
+    vendorBusinessNumber: ocr.issuerBusinessNumber,
+    vendorBusinessType: ocr.issuerBusinessType,
+    vendorContact: ocr.issuerContact,
+    vendorName: ocr.issuer ?? "",
+    vendorRepresentative: ocr.issuerRepresentative,
+  });
+}
+
+function buildSingleExpenseItemsFromOcr(ocr: EvidenceOcrData, fallback: SingleExpenseItem[]) {
+  const sourceItems = ocr.items?.filter((item) => item.itemName.trim()) ?? [];
+  if (!sourceItems.length) {
+    const supplyAmount = ocr.supplyAmount ?? (ocr.totalAmount !== undefined ? Math.max(ocr.totalAmount - (ocr.vatAmount ?? 0), 0) : undefined);
+    if (supplyAmount === undefined) return fallback;
+    return [calculateSingleExpenseItem({
+      ...(fallback[0] ?? createSingleExpenseItem()),
+      itemName: ocr.itemName ?? fallback[0]?.itemName ?? "",
+      quantity: String(ocr.quantity ?? 1),
+      taxCategory: ocr.vatTreatment === "VAT_NON_DEDUCTIBLE" ? "NON_DEDUCTIBLE" : ocr.vatTreatment === "NO_VAT" || !ocr.vatAmount ? "NO_VAT" : "TAXABLE",
+      unitPrice: String(supplyAmount / Math.max(ocr.quantity ?? 1, 1)),
+      vatAmount: ocr.vatAmount ?? 0,
+    })];
+  }
+
+  const grossAmounts = sourceItems.map((item) => item.totalAmount ?? ((item.unitPrice ?? 0) * Math.max(item.quantity ?? 1, 1)));
+  const grossSum = grossAmounts.reduce((sum, amount) => sum + amount, 0);
+  const receiptSupply = ocr.supplyAmount ?? Math.max((ocr.totalAmount ?? grossSum) - (ocr.vatAmount ?? 0), 0);
+  const receiptVat = ocr.vatAmount ?? Math.max((ocr.totalAmount ?? grossSum) - receiptSupply, 0);
+  let allocatedSupply = 0;
+  let allocatedVat = 0;
+
+  return sourceItems.map((item, index) => {
+    const quantity = Math.max(item.quantity ?? 1, 1);
+    const isLast = index === sourceItems.length - 1;
+    const ratio = grossSum > 0 ? grossAmounts[index] / grossSum : 1 / sourceItems.length;
+    const supplyAmount = item.supplyAmount ?? (isLast ? receiptSupply - allocatedSupply : Math.round(receiptSupply * ratio));
+    const vatAmount = item.vatAmount ?? (isLast ? receiptVat - allocatedVat : Math.round(receiptVat * ratio));
+    allocatedSupply += supplyAmount;
+    allocatedVat += vatAmount;
+    return calculateSingleExpenseItem({
+      ...createSingleExpenseItem(),
+      itemName: item.itemName,
+      quantity: String(quantity),
+      taxCategory: ocr.vatTreatment === "VAT_NON_DEDUCTIBLE" ? "NON_DEDUCTIBLE" : receiptVat === 0 ? "NO_VAT" : "TAXABLE",
+      unitPrice: String(supplyAmount / quantity),
+      vatAmount,
+    });
+  });
+}
+
+function getSingleExpenseTaxCategoryLabel(item: { supplyAmount: number | string; taxCategory?: SingleExpenseTaxCategory; vatAmount: number | string }) {
+  const category = getSingleExpenseTaxCategory(item);
+  return category === "NO_VAT" ? "부가세 없음" : category === "NON_DEDUCTIBLE" ? "부가세 불공제" : "부가세 공제";
+}
+
+function getResolutionTaxCategorySummary(resolution: ManagedExpenseResolution) {
+  if (resolution.resolutionType === "BATCH" || !resolution.singleItems?.length) {
+    return resolution.supplyAmount > 0 && resolution.vat === 0 ? "부가세 없음" : "부가세 공제";
+  }
+
+  const labels = new Set(resolution.singleItems.map(getSingleExpenseTaxCategoryLabel));
+  return labels.size === 1 ? Array.from(labels)[0] : "부가세 처리 혼합";
 }
 
 export function formatApprovalDateTime(value?: string) {
@@ -1684,12 +1836,22 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     advancePaymentMethod: (resolution.advancePaymentMethod as PaymentMethod | undefined) ?? "계좌이체",
     actualUsedAmount: String(resolution.actualUsedAmount ?? ""),
     budgetItem: resolution.resolutionType === "BATCH" ? "운영비 > 임대료" : resolution.budgetItem,
+    budgetRecommendation: null,
     budgetOverReason: resolution.budgetOverReason,
     budgetPeriod: resolution.budgetSnapshot.budgetPeriod,
     batchItems: resolution.resolutionType === "BATCH" ? resolution.expenseItems.map((item) => ({ ...item })) : createDefaultBatchItems(),
     singleItems: resolution.singleItems?.length
-      ? resolution.singleItems.map((item) => ({ ...item }))
-      : [createSingleExpenseItem({ itemName: resolution.operationExpenseDetail, quantity: "1", unitPrice: String(resolution.supplyAmount), vatAmount: resolution.vat })],
+      ? resolution.singleItems.map((item) => createSingleExpenseItem({
+          ...item,
+          taxCategory: getSingleExpenseTaxCategory(item),
+        }))
+      : [createSingleExpenseItem({
+          itemName: resolution.operationExpenseDetail,
+          quantity: "1",
+          taxCategory: resolution.supplyAmount > 0 && resolution.vat === 0 ? "NO_VAT" : "TAXABLE",
+          unitPrice: String(resolution.supplyAmount),
+          vatAmount: resolution.vat,
+        })],
     accountAllocations: resolution.accountAllocations?.length
       ? resolution.accountAllocations.map((allocation) => ({ ...allocation }))
       : [createAccountAllocation({ accountTitle: resolution.representativeAccountTitle || resolution.expenseType, amount: String(resolution.totalPaymentAmount), budgetItem: resolution.budgetItem })],
@@ -1726,6 +1888,13 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     supplyAmount: String(resolution.supplyAmount),
     vat: String(resolution.vat),
     vendorName: resolution.vendorName === "거래처 미입력" ? "" : resolution.vendorName,
+    vendorId: resolution.vendorId ?? "",
+    vendorAddress: resolution.vendorAddress ?? "",
+    vendorBusinessCategory: resolution.vendorBusinessCategory ?? "",
+    vendorBusinessNumber: resolution.vendorBusinessNumber ?? "",
+    vendorBusinessType: resolution.vendorBusinessType ?? "",
+    vendorContact: resolution.vendorContact ?? "",
+    vendorRepresentative: resolution.vendorRepresentative ?? "",
   };
 }
 
@@ -1745,9 +1914,10 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     expenseBurdenType: "EMPLOYEE_PREPAID",
     inputMethod: "MANUAL",
     expenseType: "운영비",
-    operationExpenseDetail: "임대료",
+    operationExpenseDetail: "기타",
     budgetPeriod: "2026-07",
-    budgetItem: "운영비 > 임대료",
+    budgetItem: "",
+    budgetRecommendation: null,
     budgetOverReason: "",
     batchItems: createDefaultBatchItems(),
     singleItems: [createSingleExpenseItem()],
@@ -1755,6 +1925,13 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     batchPaymentMode: "ITEM",
     voucherCreationMode: "ITEM_VOUCHER",
     vendorName: "",
+    vendorId: "",
+    vendorAddress: "",
+    vendorBusinessCategory: "",
+    vendorBusinessNumber: "",
+    vendorBusinessType: "",
+    vendorContact: "",
+    vendorRepresentative: "",
     paymentTargetId: "staff-oh",
     paymentBank: "",
     paymentAccountNo: "",
@@ -1775,7 +1952,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     relatedContract: "",
     relatedMeeting: "",
     evidenceFiles: [],
-    evidenceType: "세금계산서",
+    evidenceType: "영수증",
     memo: "",
   }, "staff-oh");
 }
@@ -1938,10 +2115,12 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)}MB`;
 }
 
-function OcrValue({ label, value }: { label: string; value: string }) {
+function OcrValue({ confirmed = false, label, value }: { confirmed?: boolean; label: string; value: string }) {
+  const missing = value === "-";
+  const status = missing ? "인식 안 됨" : confirmed ? "사용자 확인" : "자동입력 · 확인 필요";
   return (
     <div>
-      <p className="text-xs font-bold text-[var(--color-stone)]">{label}</p>
+      <div className="flex items-center justify-between gap-2"><p className="text-xs font-bold text-[var(--color-stone)]">{label}</p><span className={`rounded-full px-2 py-0.5 text-[10px] font-bold ${missing ? "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]" : confirmed ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]"}`}>{status}</span></div>
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
@@ -2229,8 +2408,11 @@ export function ExpenseResolutionPage({
   createEvidenceDownloadUrl,
   dataLoadError,
   deleteEvidence,
+  ensureBusinessPartnerFromOcr,
+  getEvidenceOcrJob,
   initialResolutions,
   persistResolution,
+  retryEvidenceOcrJob,
   transitionApproval,
   transitionDisbursement,
   uploadEvidence,
@@ -2238,8 +2420,11 @@ export function ExpenseResolutionPage({
   createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>;
   dataLoadError?: string;
   deleteEvidence?: (storagePath: string) => Promise<void>;
+  ensureBusinessPartnerFromOcr?: (input: BusinessPartnerOcrInput) => Promise<BusinessPartnerRegistrationResult>;
+  getEvidenceOcrJob?: (id: string) => Promise<EvidenceOcrJobProgress>;
   initialResolutions?: ManagedExpenseResolution[];
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
+  retryEvidenceOcrJob?: (id: string) => Promise<void>;
   transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>;
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
   uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment>;
@@ -2253,7 +2438,9 @@ export function ExpenseResolutionPage({
   const [batchImportFileName, setBatchImportFileName] = useState("");
   const [batchImportError, setBatchImportError] = useState("");
   const [evidenceUploadError, setEvidenceUploadError] = useState("");
+  const [vendorRegistrationNotice, setVendorRegistrationNotice] = useState("");
   const [isEvidenceUploading, setIsEvidenceUploading] = useState(false);
+  const [evidenceOcrProgress, setEvidenceOcrProgress] = useState<Record<string, EvidenceOcrJobProgress>>({});
   const [activeTab, setActiveTab] = useState<ResolutionTabKey>("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [approvalFilter, setApprovalFilter] = useState("");
@@ -2312,6 +2499,10 @@ export function ExpenseResolutionPage({
   });
   const dashboard = getExpenseResolutionDashboard(resolutions, getCurrentDateIso());
   const workflowAlerts = buildExpenseResolutionAlerts(resolutions, getCurrentDateIso());
+  const pendingEvidenceJobIds = formState.evidenceFiles
+    .filter((file) => file.ocrJobId && file.ocrStatus === "REVIEW_REQUIRED")
+    .map((file) => file.ocrJobId)
+    .join(",");
 
   useEffect(() => {
     let storedResolutions: ManagedExpenseResolution[] | undefined;
@@ -2348,6 +2539,7 @@ export function ExpenseResolutionPage({
     setBatchImportFileName("");
     setBatchImportError("");
     setEvidenceUploadError("");
+    setVendorRegistrationNotice("");
     setEditingResolutionId(null);
     setFormState(createFormState(getNextResolutionNo(resolutions)));
     setIsCreateModalOpen(true);
@@ -2402,13 +2594,22 @@ export function ExpenseResolutionPage({
 
   function updateFormValue<K extends keyof ResolutionFormState>(key: K, value: ResolutionFormState[K]) {
     setFormState((current) => {
-      const nextState = { ...current, [key]: value };
+      const normalizedValue = key === "vendorName" && typeof value === "string" ? sanitizeVendorName(value) : value;
+      const nextState = { ...current, [key]: normalizedValue };
       if (key === "createdAt" && typeof value === "string" && (!current.plannedPaymentDate || current.plannedPaymentDate === current.createdAt)) {
         nextState.plannedPaymentDate = value;
       }
 
       if (key === "paymentTargetId" && typeof value === "string") {
         return applyPaymentTarget(nextState, value);
+      }
+
+      if (key === "evidenceType" && typeof value === "string") {
+        nextState.evidenceFiles = current.evidenceFiles.map((file) => ({
+          ...file,
+          evidenceType: value,
+          ocrStatus: file.ocrData.normalizedEvidenceType ? "CONFIRMED" : file.ocrStatus,
+        }));
       }
 
       if (key === "resolutionMode") {
@@ -2433,7 +2634,27 @@ export function ExpenseResolutionPage({
         nextState.subject = value;
       }
 
-      return key === "projectName" || key === "resolutionMode" ? applyProjectExpensePreset(nextState) : nextState;
+      if (key === "inputMethod" && value === "EVIDENCE_OCR" && current.resolutionType === "BATCH" && !current.evidenceFiles.length) {
+        nextState.batchItems = [];
+      }
+
+      if (key === "budgetItem" && typeof value === "string" && current.accountAllocations.length === 1) {
+        nextState.accountAllocations = current.accountAllocations.map((allocation) => ({
+          ...allocation,
+          accountTitle: value.split(" > ")[0] || allocation.accountTitle,
+          budgetItem: value,
+        }));
+        nextState.budgetRecommendation = null;
+      }
+
+      if (key === "projectName" || key === "resolutionMode") {
+        const withProjectPreset = applyProjectExpensePreset(nextState);
+        if (withProjectPreset.resolutionType === "BATCH" && withProjectPreset.inputMethod === "EVIDENCE_OCR" && !withProjectPreset.evidenceFiles.length) {
+          return { ...withProjectPreset, batchItems: [] };
+        }
+        return withProjectPreset;
+      }
+      return nextState;
     });
   }
 
@@ -2465,7 +2686,7 @@ export function ExpenseResolutionPage({
       const items = current.singleItems.map((item) => {
         if (item.id !== id) return item;
         const updated = { ...item, [key]: key === "vatAmount" ? toNumber(value) : value } as SingleExpenseItem;
-        return calculateSingleExpenseItem(updated, key === "quantity" || key === "unitPrice");
+        return calculateSingleExpenseItem(updated, key === "quantity" || key === "unitPrice" || key === "taxCategory");
       });
       const summary = summarizeSingleExpenseItems(items);
       return {
@@ -2501,12 +2722,24 @@ export function ExpenseResolutionPage({
   }
 
   function updateAccountAllocation(id: string, key: keyof AccountAllocation, value: string) {
-    setFormState((current) => ({
-      ...current,
-      accountAllocations: current.accountAllocations.map((allocation) =>
-        allocation.id === id ? { ...allocation, [key]: value } : allocation,
-      ),
-    }));
+    setFormState((current) => {
+      const targetIndex = current.accountAllocations.findIndex((allocation) => allocation.id === id);
+      const accountAllocations = current.accountAllocations.map((allocation) => {
+        if (allocation.id !== id) return allocation;
+        if (key === "accountTitle") {
+          const keepsBudgetItem = allocation.budgetItem.startsWith(`${value} >`);
+          return { ...allocation, accountTitle: value, budgetItem: keepsBudgetItem ? allocation.budgetItem : "" };
+        }
+        return { ...allocation, [key]: value };
+      });
+      const primaryAllocation = accountAllocations[0];
+      return {
+        ...current,
+        accountAllocations,
+        budgetItem: targetIndex === 0 && (key === "budgetItem" || key === "accountTitle") ? primaryAllocation.budgetItem : current.budgetItem,
+        budgetRecommendation: key === "budgetItem" || key === "accountTitle" ? null : current.budgetRecommendation,
+      };
+    });
   }
 
   function addAccountAllocation() {
@@ -2610,26 +2843,46 @@ export function ExpenseResolutionPage({
     }
   }
 
-  async function uploadEvidenceFile(file: File) {
+  async function uploadEvidenceFiles(files: File[]) {
     setEvidenceUploadError("");
     if (!uploadEvidence) {
       setEvidenceUploadError("증빙 저장소가 연결되지 않았습니다.");
-      return;
+      return 0;
+    }
+    const remainingSlots = Math.max(0, 10 - formState.evidenceFiles.length);
+    if (files.length > remainingSlots) {
+      setEvidenceUploadError(`증빙은 최대 10개까지 등록할 수 있습니다. 현재 ${formState.evidenceFiles.length}개가 등록되어 있습니다.`);
+      return 0;
     }
     setIsEvidenceUploading(true);
+    let uploadedCount = 0;
+    let cursor = 0;
+    const errors: string[] = [];
     try {
-      const formData = new FormData();
-      formData.set("file", file);
-      formData.set("resolutionNo", formState.resolutionNo);
-      formData.set("evidenceType", formState.evidenceType);
-      const attachment = await uploadEvidence(formData);
-      setFormState((current) => ({
-        ...current,
-        evidenceFiles: [...current.evidenceFiles, attachment],
-        evidenceType: attachment.evidenceType as EvidenceType,
-      }));
-    } catch (error) {
-      setEvidenceUploadError(error instanceof Error ? error.message : "증빙파일 업로드에 실패했습니다.");
+      async function worker() {
+        while (cursor < files.length) {
+          const file = files[cursor++];
+          try {
+            const formData = new FormData();
+            formData.set("file", file);
+            formData.set("resolutionNo", formState.resolutionNo);
+            formData.set("evidenceType", formState.evidenceType);
+            const attachment = await uploadEvidence!(formData);
+            uploadedCount += 1;
+            setFormState((current) => {
+              const withAttachment = { ...current, evidenceFiles: [...current.evidenceFiles, attachment], evidenceType: attachment.evidenceType as EvidenceType };
+              return current.inputMethod === "EVIDENCE_OCR" && !attachment.ocrJobId && hasExtractedEvidenceData(attachment.ocrData)
+                ? applyEvidenceOcrToFormState(withAttachment, attachment.id)
+                : withAttachment;
+            });
+          } catch (error) {
+            errors.push(`${file.name}: ${error instanceof Error ? error.message : "업로드 실패"}`);
+          }
+        }
+      }
+      await Promise.all(Array.from({ length: Math.min(3, files.length) }, () => worker()));
+      if (errors.length) setEvidenceUploadError(`${uploadedCount}개 업로드 완료, ${errors.length}개 실패 · ${errors.join(" / ")}`);
+      return uploadedCount;
     } finally {
       setIsEvidenceUploading(false);
     }
@@ -2641,41 +2894,217 @@ export function ExpenseResolutionPage({
     setEvidenceUploadError("");
     try {
       if (deleteEvidence) await deleteEvidence(attachment.storagePath);
-      setFormState((current) => ({ ...current, evidenceFiles: current.evidenceFiles.filter((file) => file.id !== id) }));
+      setFormState((current) => {
+        const evidenceFiles = current.evidenceFiles.filter((file) => file.id !== id);
+        const settlement = calculateBatchEvidenceSettlement({ advancePaidAmount: toNumber(current.advancePaidAmount), evidenceFiles });
+        return {
+          ...current,
+          actualUsedAmount: current.resolutionType === "BATCH" && current.expenseTiming === "SETTLEMENT" ? String(settlement.confirmedReceiptTotal) : current.actualUsedAmount,
+          batchItems: current.batchItems.filter((item) => item.evidenceId !== id),
+          evidenceFiles,
+          settlementDifferenceAction: settlement.action === "REFUND_REQUIRED" ? "환급필요" : settlement.action === "ADDITIONAL_PAYMENT" ? "추가지급" : "차액없음",
+        };
+      });
     } catch (error) {
       setEvidenceUploadError(error instanceof Error ? error.message : "증빙파일을 삭제하지 못했습니다.");
     }
   }
 
-  function applyEvidenceOcr(id: string) {
-    setFormState((current) => {
-      const evidence = current.evidenceFiles.find((file) => file.id === id);
-      if (!evidence) return current;
-      const ocr = evidence.ocrData;
-      const next = {
-        ...current,
-        createdAt: ocr.documentDate ?? current.createdAt,
-        evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrStatus: "CONFIRMED" as const } : file),
-        vendorName: ocr.issuer ?? current.vendorName,
-      };
-      if (current.resolutionType === "SINGLE" && current.singleItems.length && ocr.supplyAmount !== undefined) {
-        const items = current.singleItems.map((item, index) => index === 0
-          ? calculateSingleExpenseItem({ ...item, quantity: "1", unitPrice: String(ocr.supplyAmount), vatAmount: ocr.vatAmount ?? item.vatAmount })
-          : item);
-        const summary = summarizeSingleExpenseItems(items);
-        return {
-          ...next,
-          accountAllocations: next.accountAllocations.length === 1
-            ? next.accountAllocations.map((allocation) => ({ ...allocation, amount: String(summary.totalAmount) }))
-            : next.accountAllocations,
-          singleItems: summary.items,
-          supplyAmount: String(summary.supplyAmount),
-          vat: String(summary.vatAmount),
-        };
-      }
-      return next;
-    });
+  async function applyEvidenceOcr(id: string) {
+    const evidence = formState.evidenceFiles.find((file) => file.id === id);
+    setFormState((current) => applyEvidenceOcrToFormState(current, id));
+    if (evidence) await registerOcrBusinessPartner(evidence);
   }
+
+  const registerOcrBusinessPartner = useCallback(async (evidence: ExpenseEvidenceAttachment) => {
+    const ocr = evidence.ocrData;
+    if (!ensureBusinessPartnerFromOcr || !ocr.issuer || !ocr.issuerBusinessNumber) {
+      if (ocr.issuer && !ocr.issuerBusinessNumber) setVendorRegistrationNotice("사업자등록번호를 확인하면 거래처를 자동등록할 수 있습니다.");
+      return;
+    }
+    try {
+      const result = await ensureBusinessPartnerFromOcr({
+        address: ocr.issuerAddress,
+        businessCategory: ocr.issuerBusinessType,
+        businessItem: ocr.issuerBusinessCategory,
+        evidenceId: evidence.id,
+        firstTransactionDate: ocr.documentDate,
+        name: ocr.issuer,
+        phone: ocr.issuerContact,
+        registrationNo: ocr.issuerBusinessNumber,
+        representative: ocr.issuerRepresentative,
+        resolutionNo: formState.resolutionNo,
+      });
+      setFormState((current) => ({ ...current, vendorId: result.partner.id }));
+      setVendorRegistrationNotice(result.status === "CREATED"
+        ? `신규 거래처 '${result.partner.name}'을 기초정보에 자동등록했습니다.`
+        : `등록된 거래처 '${result.partner.name}'을 연결했습니다.`);
+    } catch (error) {
+      setVendorRegistrationNotice(error instanceof Error ? error.message : "거래처 자동등록에 실패했습니다.");
+    }
+  }, [ensureBusinessPartnerFromOcr, formState.resolutionNo]);
+
+  async function retryEvidenceFile(id: string) {
+    const attachment = formState.evidenceFiles.find((file) => file.id === id);
+    if (!attachment?.ocrJobId || !retryEvidenceOcrJob) return;
+    setEvidenceUploadError("");
+    try {
+      await retryEvidenceOcrJob(attachment.ocrJobId);
+      setEvidenceOcrProgress((current) => {
+        const next = { ...current };
+        delete next[attachment.ocrJobId!];
+        return next;
+      });
+      setFormState((current) => ({
+        ...current,
+        evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrData: {}, ocrStatus: "REVIEW_REQUIRED" as const } : file),
+      }));
+    } catch (error) {
+      setEvidenceUploadError(error instanceof Error ? error.message : "OCR 재분석을 시작하지 못했습니다.");
+    }
+  }
+
+  function applyEvidenceOcrToFormState(current: ResolutionFormState, id: string): ResolutionFormState {
+    const evidence = current.evidenceFiles.find((file) => file.id === id);
+    if (!evidence) return current;
+    const ocr = normalizeEvidenceVendorFields(evidence.ocrData);
+    const ocrItemNames = ocr.items?.map((item) => item.itemName).filter(Boolean) ?? [];
+    const budgetRecommendation = recommendExpenseBudget({
+      itemName: ocrItemNames.join(" ") || ocr.itemName,
+      reason: current.reason,
+      vendorBusinessCategory: ocr.issuerBusinessCategory,
+      vendorBusinessType: ocr.issuerBusinessType,
+      vendorName: ocr.issuer,
+    });
+    const next = {
+      ...current,
+      budgetItem: budgetRecommendation?.budgetItem ?? current.budgetItem,
+      budgetRecommendation,
+      plannedPaymentDate: ocr.documentDate ?? current.plannedPaymentDate,
+      evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrStatus: "CONFIRMED" as const } : file),
+      vendorName: ocr.issuer ? sanitizeVendorName(ocr.issuer).replace(/\s{2,}/g, " ").trim() : current.vendorName,
+      evidenceType: transactionEvidenceTypeOptions.includes(ocr.normalizedEvidenceType as EvidenceType)
+        ? ocr.normalizedEvidenceType as EvidenceType
+        : current.evidenceType,
+      vendorAddress: ocr.issuerAddress ?? current.vendorAddress,
+      vendorBusinessCategory: ocr.issuerBusinessCategory ?? current.vendorBusinessCategory,
+      vendorBusinessNumber: ocr.issuerBusinessNumber ?? current.vendorBusinessNumber,
+      vendorBusinessType: ocr.issuerBusinessType ?? current.vendorBusinessType,
+      vendorContact: ocr.issuerContact ?? current.vendorContact,
+      vendorRepresentative: ocr.issuerRepresentative ?? current.vendorRepresentative,
+      operationExpenseDetail: budgetRecommendation?.budgetItem.split(" > ").at(-1) ?? current.operationExpenseDetail,
+      accountAllocations: budgetRecommendation && current.accountAllocations.length === 1
+        ? current.accountAllocations.map((allocation) => ({
+            ...allocation,
+            accountTitle: budgetRecommendation.accountTitle,
+            budgetItem: budgetRecommendation.budgetItem,
+            description: ocr.itemName ?? allocation.description,
+          }))
+        : current.accountAllocations,
+    };
+    if (current.resolutionType === "BATCH") {
+      const existingItems = current.batchItems.filter((item) => item.evidenceId !== id);
+      const batchItems = reindexBatchItems([...existingItems, createBatchExpenseItemFromEvidence(evidence, existingItems.length + 1, current.reason)]);
+      const settlement = calculateBatchEvidenceSettlement({ advancePaidAmount: toNumber(current.advancePaidAmount), evidenceFiles: next.evidenceFiles });
+      return {
+        ...next,
+        actualUsedAmount: current.expenseTiming === "SETTLEMENT" ? String(settlement.confirmedReceiptTotal) : current.actualUsedAmount,
+        batchItems,
+        settlementDifferenceAction: settlement.action === "REFUND_REQUIRED" ? "환급필요" : settlement.action === "ADDITIONAL_PAYMENT" ? "추가지급" : "차액없음",
+      };
+    }
+    if (!current.singleItems.length) return next;
+
+    const items = buildSingleExpenseItemsFromOcr(ocr, current.singleItems);
+    const summary = summarizeSingleExpenseItems(items);
+    const recommendedAllocations = items.map((item) => ({
+      item,
+      recommendation: recommendExpenseBudget({
+        itemName: item.itemName,
+        reason: current.reason,
+        vendorBusinessCategory: ocr.issuerBusinessCategory,
+        vendorBusinessType: ocr.issuerBusinessType,
+        vendorName: ocr.issuer,
+      }),
+    })).filter((entry) => entry.recommendation);
+    const allocationGroups = new Map<string, AccountAllocation>();
+    for (const { item, recommendation } of recommendedAllocations) {
+      if (!recommendation) continue;
+      const existing = allocationGroups.get(recommendation.budgetItem);
+      allocationGroups.set(recommendation.budgetItem, existing
+        ? { ...existing, amount: String(toNumber(existing.amount) + item.totalAmount), description: `${existing.description}, ${item.itemName}` }
+        : createAccountAllocation({ accountTitle: recommendation.accountTitle, amount: String(item.totalAmount), budgetItem: recommendation.budgetItem, description: item.itemName }));
+    }
+    const allocations = allocationGroups.size
+      ? Array.from(allocationGroups.values())
+      : next.accountAllocations.length === 1
+        ? next.accountAllocations.map((allocation) => ({ ...allocation, amount: String(summary.totalAmount) }))
+        : next.accountAllocations;
+    return {
+      ...next,
+      accountAllocations: allocations,
+      singleItems: summary.items,
+      supplyAmount: String(summary.supplyAmount),
+      vat: String(summary.vatAmount),
+    };
+  }
+
+  useEffect(() => {
+    if (!isCreateModalOpen || !getEvidenceOcrJob || !pendingEvidenceJobIds) return;
+    const fetchOcrJob = getEvidenceOcrJob;
+    let cancelled = false;
+    const jobIds = pendingEvidenceJobIds.split(",");
+    async function pollJobs() {
+      await Promise.all(jobIds.map(async (id) => {
+        try {
+          const progress = await fetchOcrJob(id);
+          if (cancelled) return;
+          setEvidenceOcrProgress((current) => ({ ...current, [id]: progress }));
+          if (progress.status === "COMPLETED") {
+            setFormState((current) => {
+              const hasResult = hasExtractedEvidenceData(progress.resultData);
+              const classifiedType = evidenceTypeOptions.includes(progress.resultData.normalizedEvidenceType as EvidenceType)
+                ? progress.resultData.normalizedEvidenceType as EvidenceType
+                : current.evidenceType;
+              const transactionEvidenceType = transactionEvidenceTypeOptions.includes(classifiedType)
+                ? classifiedType
+                : current.evidenceType;
+              const updated = {
+                ...current,
+                evidenceType: transactionEvidenceType,
+                evidenceFiles: current.evidenceFiles.map((file) => file.ocrJobId === id ? {
+                  ...file,
+                  evidenceType: classifiedType,
+                  ocrData: progress.resultData,
+                  ocrStatus: hasResult ? "EXTRACTED" as const : "FAILED" as const,
+                } : file),
+              };
+              return hasResult && current.inputMethod === "EVIDENCE_OCR"
+                ? applyEvidenceOcrToFormState(updated, id)
+                : updated;
+            });
+            const completedEvidence = formState.evidenceFiles.find((file) => file.ocrJobId === id);
+            if (completedEvidence && hasExtractedEvidenceData(progress.resultData)) {
+              void registerOcrBusinessPartner({ ...completedEvidence, ocrData: progress.resultData });
+            }
+          } else if (progress.status === "FAILED") {
+            setFormState((current) => ({
+              ...current,
+              evidenceFiles: current.evidenceFiles.map((file) => file.ocrJobId === id ? { ...file, ocrStatus: "FAILED" as const } : file),
+            }));
+          }
+        } catch (error) {
+          if (!cancelled) setEvidenceUploadError(error instanceof Error ? error.message : "OCR 진행 상태를 확인하지 못했습니다.");
+        }
+      }));
+    }
+    void pollJobs();
+    const timer = window.setInterval(() => void pollJobs(), 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [formState.evidenceFiles, getEvidenceOcrJob, isCreateModalOpen, pendingEvidenceJobIds, registerOcrBusinessPartner]);
 
   async function openEvidenceOriginal(storagePath: string) {
     if (!createEvidenceDownloadUrl) {
@@ -2714,6 +3143,16 @@ export function ExpenseResolutionPage({
     const isBatch = formState.resolutionType === "BATCH";
     const totalPaymentAmount = isBatch ? batchSummary.totalAmount : formTotalAmount;
     if (mode === "approval-request") {
+      if (isBatch && formState.expenseTiming === "SETTLEMENT" && formState.inputMethod === "EVIDENCE_OCR") {
+        const evidenceSettlement = calculateBatchEvidenceSettlement({ advancePaidAmount: toNumber(formState.advancePaidAmount), evidenceFiles: formState.evidenceFiles });
+        const settlementErrors = [...evidenceSettlement.errors];
+        if (Math.abs(batchSummary.totalAmount - evidenceSettlement.confirmedReceiptTotal) > 0.5) settlementErrors.push("일괄 지출내역 합계와 확정 영수증 합계가 일치하지 않습니다.");
+        if (Math.abs(toNumber(formState.actualUsedAmount) - evidenceSettlement.confirmedReceiptTotal) > 0.5) settlementErrors.push("실제 사용액과 확정 영수증 합계가 일치하지 않습니다.");
+        if (settlementErrors.length) {
+          setSaveError(settlementErrors.join(" "));
+          return;
+        }
+      }
       const validation = validateExpenseResolutionWorkflow({
         ...formState,
         actualUsedAmount: toNumber(formState.actualUsedAmount),
@@ -2756,7 +3195,14 @@ export function ExpenseResolutionPage({
       budgetItem: isBatch ? "프로젝트 일괄 예산" : formState.budgetItem,
       budgetOverReason: formState.budgetOverReason,
       vendorName: isBatch ? batchSummary.representativeVendorName : formState.vendorName || "거래처 미입력",
+      vendorId: formState.vendorId || undefined,
       representativeVendorName: isBatch ? batchSummary.representativeVendorName : formState.vendorName || "거래처 미입력",
+      vendorAddress: formState.vendorAddress,
+      vendorBusinessCategory: formState.vendorBusinessCategory,
+      vendorBusinessNumber: formState.vendorBusinessNumber,
+      vendorBusinessType: formState.vendorBusinessType,
+      vendorContact: formState.vendorContact,
+      vendorRepresentative: formState.vendorRepresentative,
       representativeAccountTitle: isBatch ? batchSummary.representativeAccountTitle : new Set(formState.accountAllocations.map((allocation) => allocation.accountTitle)).size > 1 ? "복합계정" : formState.accountAllocations[0]?.accountTitle ?? formState.expenseType,
       itemCount: isBatch ? batchSummary.itemCount : formSingleSummary.items.length,
       overBudgetItemCount: isBatch ? batchSummary.overBudgetItemCount : formBudgetSnapshot.remainingBudgetAmount < 0 ? 1 : 0,
@@ -3374,6 +3820,8 @@ export function ExpenseResolutionPage({
           batchImportFileName={batchImportFileName}
           batchImportResult={batchImportResult}
           evidenceUploadError={evidenceUploadError}
+          vendorRegistrationNotice={vendorRegistrationNotice}
+          evidenceOcrProgress={evidenceOcrProgress}
           batchSummary={formBatchSummary}
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
@@ -3396,13 +3844,14 @@ export function ExpenseResolutionPage({
           onApplyEvidenceOcr={applyEvidenceOcr}
           onOpenEvidenceOriginal={openEvidenceOriginal}
           onRemoveEvidenceFile={removeEvidenceFile}
+          onRetryEvidenceFile={retryEvidenceFile}
           onReviewBatchBudget={reviewBatchBudget}
           onBatchItemChange={updateBatchItem}
           onSingleItemChange={updateSingleItem}
           onAccountAllocationChange={updateAccountAllocation}
           onRequestApproval={() => saveResolution("approval-request")}
           onSaveDraft={() => saveResolution("draft")}
-          onUploadEvidenceFile={uploadEvidenceFile}
+          onUploadEvidenceFiles={uploadEvidenceFiles}
           settlementDifference={settlementDifference}
           totalAmount={effectiveFormTotalAmount}
           accountAllocationTotal={accountAllocationTotal}
@@ -3470,7 +3919,9 @@ function ExpenseResolutionCreateModal({
   batchImportError,
   batchImportFileName,
   batchImportResult,
+  evidenceOcrProgress,
   evidenceUploadError,
+  vendorRegistrationNotice,
   batchSummary,
   budgetSnapshot,
   formState,
@@ -3493,10 +3944,11 @@ function ExpenseResolutionCreateModal({
   onApplyEvidenceOcr,
   onOpenEvidenceOriginal,
   onRemoveEvidenceFile,
+  onRetryEvidenceFile,
   onReviewBatchBudget,
   onRequestApproval,
   onSaveDraft,
-  onUploadEvidenceFile,
+  onUploadEvidenceFiles,
   saveError,
   settlementDifference,
   totalAmount,
@@ -3507,7 +3959,9 @@ function ExpenseResolutionCreateModal({
   batchImportError: string;
   batchImportFileName: string;
   batchImportResult: ExpenseResolutionImportResult | null;
+  evidenceOcrProgress: Record<string, EvidenceOcrJobProgress>;
   evidenceUploadError: string;
+  vendorRegistrationNotice: string;
   batchSummary: ReturnType<typeof summarizeBatchItems>;
   budgetSnapshot: BudgetSnapshot;
   formState: ResolutionFormState;
@@ -3527,13 +3981,14 @@ function ExpenseResolutionCreateModal({
   onDeleteAccountAllocation: (id: string) => void;
   onDownloadBatchImportTemplate: () => void;
   onImportBatchExpenseFile: (file: File) => void | Promise<void>;
-  onApplyEvidenceOcr: (id: string) => void;
+  onApplyEvidenceOcr: (id: string) => void | Promise<void>;
   onOpenEvidenceOriginal: (storagePath: string) => void | Promise<void>;
   onRemoveEvidenceFile: (id: string) => void | Promise<void>;
+  onRetryEvidenceFile: (id: string) => void | Promise<void>;
   onReviewBatchBudget: (itemNo: number) => void;
   onRequestApproval: () => void | Promise<void>;
   onSaveDraft: () => void | Promise<void>;
-  onUploadEvidenceFile: (file: File) => void | Promise<void>;
+  onUploadEvidenceFiles: (files: File[]) => number | Promise<number>;
   saveError: string;
   settlementDifference: number;
   totalAmount: number;
@@ -3545,7 +4000,51 @@ function ExpenseResolutionCreateModal({
   const presetApplied = Boolean(formState.projectName && hasProjectExpensePreset(formState.projectName));
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [evidenceProcessingFileName, setEvidenceProcessingFileName] = useState("");
+  const [evidenceProcessingStartedAt, setEvidenceProcessingStartedAt] = useState<number | null>(null);
+  const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0);
+  const [lastSavedAt, setLastSavedAt] = useState("");
+  const [ocrUndoSnapshot, setOcrUndoSnapshot] = useState<Pick<ResolutionFormState, "plannedPaymentDate" | "vendorName" | "vendorAddress" | "vendorBusinessCategory" | "vendorBusinessNumber" | "vendorBusinessType" | "vendorContact" | "vendorRepresentative" | "singleItems" | "accountAllocations" | "budgetItem" | "budgetRecommendation" | "operationExpenseDetail" | "supplyAmount" | "vat"> | null>(null);
+  const evidenceFileInputRef = useRef<HTMLInputElement>(null);
+  const moveToField = (step: 1 | 2, fieldId: string) => {
+    setCurrentStep(step);
+    window.setTimeout(() => {
+      const field = document.getElementById(fieldId);
+      field?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      field?.focus({ preventScroll: true });
+    }, 0);
+  };
   const selectedPaymentTarget = getPaymentTarget(formState.paymentTargetId);
+  const latestEvidenceFile = formState.evidenceFiles.at(-1);
+  const latestOcrProgress = latestEvidenceFile?.ocrJobId ? evidenceOcrProgress[latestEvidenceFile.ocrJobId] : undefined;
+  const batchEvidenceSettlement = calculateBatchEvidenceSettlement({ advancePaidAmount: toNumber(formState.advancePaidAmount), evidenceFiles: formState.evidenceFiles });
+  const ocrFormSuggestions = formState.inputMethod === "EVIDENCE_OCR" && latestEvidenceFile
+    ? buildExpenseOcrFormSuggestions({
+        budgetItems: formState.accountAllocations.map((allocation) => allocation.budgetItem).filter(Boolean),
+        ocr: latestEvidenceFile.ocrData,
+        projectOptions: projectNameOptions,
+      })
+    : {};
+  const getReviewSuggestion = (label: string) => label === "건명 입력"
+    ? ocrFormSuggestions.subject
+    : label === "프로젝트 선택"
+      ? ocrFormSuggestions.projectName
+      : label === "지출사유 입력"
+        ? ocrFormSuggestions.reason
+        : undefined;
+  const applyReviewSuggestion = (label: string) => {
+    const suggestion = getReviewSuggestion(label);
+    if (!suggestion) return;
+    if (label === "건명 입력") onChange("subject", suggestion);
+    if (label === "프로젝트 선택") onChange("projectName", suggestion);
+    if (label === "지출사유 입력") onChange("reason", suggestion);
+  };
+  const moveToReviewField = (label: string) => {
+    if (label === "건명 입력") return moveToField(1, "expense-subject");
+    if (label === "프로젝트 선택") return moveToField(1, "expense-project-name");
+    if (label === "지출사유 입력") return moveToField(2, "expense-reason");
+    setCurrentStep(["지급계좌 확인", "집행방식", "비용부담 유형", "원 사전결의 연결"].includes(label) ? 1 : 2);
+  };
   const reviewItems = [
     { complete: Boolean(formState.subject.trim()), label: "건명 입력" },
     { complete: Boolean(formState.projectName.trim()), label: "프로젝트 선택" },
@@ -3582,10 +4081,24 @@ function ExpenseResolutionCreateModal({
       : []),
   ];
   const incompleteReviewItems = reviewItems.filter((item) => !item.complete);
+  const stepOneRemaining = reviewItems.filter((item) => ["건명 입력", "프로젝트 선택", "지급계좌 확인", "집행방식", "비용부담 유형", "원 사전결의 연결"].includes(item.label) && !item.complete).length;
+  const stepTwoRemaining = Math.max(0, incompleteReviewItems.length - stepOneRemaining);
   const stepItems = [
-    { key: 1 as const, label: "지급·기본정보" },
-    { key: 2 as const, label: "금액·증빙" },
-    { key: 3 as const, label: "검토·승인" },
+    { key: 1 as const, label: "지급·기본정보", remaining: stepOneRemaining },
+    { key: 2 as const, label: "금액·증빙", remaining: stepTwoRemaining },
+    { key: 3 as const, label: "검토·승인", remaining: incompleteReviewItems.length },
+  ];
+  const duplicateEvidenceIds = findDuplicateEvidenceIds(formState.evidenceFiles);
+  const displayedSupplyAmount = isBatch ? batchSummary.totalSupplyAmount : formState.singleItems.reduce((sum, item) => sum + item.supplyAmount, 0);
+  const displayedVatAmount = isBatch ? batchSummary.totalVatAmount : formState.singleItems.reduce((sum, item) => sum + item.vatAmount, 0);
+  const amountEquationDifference = totalAmount - (displayedSupplyAmount + displayedVatAmount);
+  const allocationDifference = totalAmount - accountAllocationTotal;
+  const ocrStageItems = [
+    { label: "증빙파일 업로드 완료", stages: ["UPLOADED", "RENDERING", "PREPROCESSING", "RECOGNIZING", "STRUCTURING", "COMPLETED"] },
+    { label: latestEvidenceFile?.contentType === "application/pdf" ? "PDF 페이지를 이미지로 변환하고 있습니다" : "영수증 영역을 찾고 보정하고 있습니다", stages: ["RENDERING", "PREPROCESSING", "RECOGNIZING", "STRUCTURING", "COMPLETED"] },
+    { label: "글자를 인식하고 있습니다", stages: ["RECOGNIZING", "STRUCTURING", "COMPLETED"] },
+    { label: "금액과 거래처를 분석하고 있습니다", stages: ["STRUCTURING", "COMPLETED"] },
+    { label: "자동입력이 완료되었습니다", stages: ["COMPLETED"] },
   ];
 
   function handleBatchImportChange(event: ChangeEvent<HTMLInputElement>) {
@@ -3594,10 +4107,72 @@ function ExpenseResolutionCreateModal({
     event.target.value = "";
   }
 
-  function handleEvidenceChange(event: ChangeEvent<HTMLInputElement>) {
-    const file = event.target.files?.[0];
-    if (file) void onUploadEvidenceFile(file);
+  async function handleEvidenceChange(event: ChangeEvent<HTMLInputElement>) {
+    const files = Array.from(event.target.files ?? []);
     event.target.value = "";
+    if (!files.length) return;
+    setEvidenceProcessingFileName(files.length === 1 ? files[0].name : `${files.length}개 증빙파일`);
+    setEvidenceProcessingStartedAt(1);
+    setOcrElapsedSeconds(0);
+    captureBeforeOcr();
+    const uploadedCount = await onUploadEvidenceFiles(files);
+    if (uploadedCount > 0) setCurrentStep(2);
+  }
+
+  useEffect(() => {
+    if (!evidenceProcessingStartedAt || latestOcrProgress?.status === "COMPLETED" || latestOcrProgress?.status === "FAILED") return;
+    const timer = window.setInterval(() => setOcrElapsedSeconds((current) => current + 1), 1000);
+    return () => window.clearInterval(timer);
+  }, [evidenceProcessingStartedAt, latestOcrProgress?.status]);
+
+  function captureBeforeOcr() {
+    setOcrUndoSnapshot({
+      accountAllocations: formState.accountAllocations.map((item) => ({ ...item })),
+      budgetItem: formState.budgetItem,
+      budgetRecommendation: formState.budgetRecommendation,
+      operationExpenseDetail: formState.operationExpenseDetail,
+      plannedPaymentDate: formState.plannedPaymentDate,
+      singleItems: formState.singleItems.map((item) => ({ ...item })),
+      supplyAmount: formState.supplyAmount,
+      vat: formState.vat,
+      vendorAddress: formState.vendorAddress,
+      vendorBusinessCategory: formState.vendorBusinessCategory,
+      vendorBusinessNumber: formState.vendorBusinessNumber,
+      vendorBusinessType: formState.vendorBusinessType,
+      vendorContact: formState.vendorContact,
+      vendorName: formState.vendorName,
+      vendorRepresentative: formState.vendorRepresentative,
+    });
+  }
+
+  async function handleApplyEvidenceOcr(id: string) {
+    captureBeforeOcr();
+    await onApplyEvidenceOcr(id);
+  }
+
+  function restoreBeforeOcr() {
+    if (!ocrUndoSnapshot) return;
+    onChange("accountAllocations", ocrUndoSnapshot.accountAllocations);
+    onChange("budgetItem", ocrUndoSnapshot.budgetItem);
+    onChange("budgetRecommendation", ocrUndoSnapshot.budgetRecommendation);
+    onChange("operationExpenseDetail", ocrUndoSnapshot.operationExpenseDetail);
+    onChange("plannedPaymentDate", ocrUndoSnapshot.plannedPaymentDate);
+    onChange("singleItems", ocrUndoSnapshot.singleItems);
+    onChange("supplyAmount", ocrUndoSnapshot.supplyAmount);
+    onChange("vat", ocrUndoSnapshot.vat);
+    onChange("vendorAddress", ocrUndoSnapshot.vendorAddress);
+    onChange("vendorBusinessCategory", ocrUndoSnapshot.vendorBusinessCategory);
+    onChange("vendorBusinessNumber", ocrUndoSnapshot.vendorBusinessNumber);
+    onChange("vendorBusinessType", ocrUndoSnapshot.vendorBusinessType);
+    onChange("vendorContact", ocrUndoSnapshot.vendorContact);
+    onChange("vendorName", ocrUndoSnapshot.vendorName);
+    onChange("vendorRepresentative", ocrUndoSnapshot.vendorRepresentative);
+    setOcrUndoSnapshot(null);
+  }
+
+  async function handleSaveDraft() {
+    await onSaveDraft();
+    setLastSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
   }
 
   return (
@@ -3609,6 +4184,15 @@ function ExpenseResolutionCreateModal({
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
+        <input
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
+          aria-label="증빙자료 자동입력 파일 선택"
+          className="sr-only"
+          disabled={isEvidenceUploading}
+          onChange={handleEvidenceChange}
+          ref={evidenceFileInputRef}
+          type="file"
+        />
         <div className="flex items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-6 py-5">
           <div>
             <h2 className="text-2xl font-bold" id="expense-resolution-dialog-title">
@@ -3619,7 +4203,7 @@ function ExpenseResolutionCreateModal({
                 ? "누락된 결의 내용을 보완합니다. 승인대기 문서는 저장 시 결재 상태를 다시 시작합니다."
                 : "조합 지출 전에 결의서를 작성하고 결재 승인 후 지급대기 및 지출전표 생성으로 연결합니다."}
             </p>
-            <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">자동 저장 준비됨 · 변경사항은 임시저장으로 보관할 수 있습니다.</p>
+            <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">{lastSavedAt ? `마지막 임시저장 ${lastSavedAt}` : "아직 저장되지 않음 · 변경사항은 임시저장으로 보관할 수 있습니다."}</p>
           </div>
           <button aria-label="닫기" className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onCancel} type="button">
             <X className="size-4" />
@@ -3639,14 +4223,67 @@ function ExpenseResolutionCreateModal({
             >
               <span className="flex size-6 items-center justify-center rounded-full border border-current text-xs">{currentStep > step.key ? "✓" : step.key}</span>
               {step.label}
+              {step.remaining > 0 ? <span className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-black text-[var(--color-tangerine)]">{step.remaining}</span> : null}
             </button>
           ))}
         </nav>
+        <input
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
+          aria-label="증빙자료 파일 선택"
+          className="sr-only"
+          disabled={isEvidenceUploading}
+          id="expense-evidence-file"
+          multiple={isBatch && formState.inputMethod === "EVIDENCE_OCR"}
+          onChange={(event) => void handleEvidenceChange(event)}
+          ref={evidenceFileInputRef}
+          type="file"
+        />
 
         <div className="grid gap-4 p-5 xl:grid-cols-[1fr_320px]">
-          <div className="grid gap-4">
-            {currentStep === 1 ? (
+          <div className="grid min-w-0 gap-4">
+            {evidenceUploadError ? (
+              <div className="rounded-xl border border-[var(--color-tangerine)]/35 bg-[var(--color-sunset-soft)] px-5 py-4" role="alert">
+                <p className="font-bold text-[var(--color-tangerine)]">증빙자료를 처리하지 못했습니다.</p>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">{evidenceUploadError}</p>
+                <button className="mt-3 rounded-full border border-[var(--color-tangerine)]/40 bg-white px-4 py-2 text-sm font-bold" onClick={() => evidenceFileInputRef.current?.click()} type="button">다른 파일 선택</button>
+              </div>
+            ) : null}
+            {isEvidenceUploading ? (
+              <div className="rounded-xl border border-[var(--color-deep-cobalt)]/30 bg-[var(--color-morning-tint)] px-5 py-4" role="status">
+                <p className="font-bold text-[var(--color-deep-cobalt)]">1/5 {evidenceProcessingFileName} 증빙파일을 업로드하고 있습니다…</p>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">업로드가 끝나면 백그라운드에서 영수증 분석을 계속합니다.</p>
+              </div>
+            ) : latestOcrProgress && (latestOcrProgress.status === "PENDING" || latestOcrProgress.status === "PROCESSING") ? (
+              <div className="rounded-xl border border-[var(--color-deep-cobalt)]/30 bg-[var(--color-morning-tint)] px-5 py-4" role="status">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="font-bold text-[var(--color-deep-cobalt)]">AI 영수증 분석 중 · {latestOcrProgress.progress}%</p>
+                  <span className="text-xs font-bold text-[var(--color-stone)]">{ocrElapsedSeconds}초</span>
+                </div>
+                <div className="mt-3 h-2 overflow-hidden rounded-full bg-white"><div className="h-full rounded-full bg-[var(--color-deep-cobalt)] transition-all" style={{ width: `${latestOcrProgress.progress}%` }} /></div>
+                <ol className="mt-4 grid gap-2 text-sm">
+                  {ocrStageItems.map((item, index) => {
+                    const complete = item.stages.includes(latestOcrProgress.stage);
+                    const current = complete && (index === ocrStageItems.length - 1 || !ocrStageItems[index + 1].stages.includes(latestOcrProgress.stage));
+                    return <li className={complete ? "font-bold text-[var(--color-deep-cobalt)]" : "text-[var(--color-stone)]"} key={item.label}>{complete ? current ? "●" : "✓" : "○"} {index + 1}/5 {item.label}</li>;
+                  })}
+                </ol>
+                <p className="mt-3 text-sm text-[var(--color-stone)]">{ocrElapsedSeconds >= 30 ? "분석을 계속 진행 중입니다. 자동입력이 끝날 때까지 이 화면을 닫지 마세요." : ocrElapsedSeconds >= 10 ? "문서 화질에 따라 분석에 시간이 걸릴 수 있습니다." : "영수증을 분석하고 있습니다."}</p>
+              </div>
+            ) : latestOcrProgress?.status === "FAILED" ? (
+              <div className="rounded-xl border border-[var(--color-tangerine)]/35 bg-[var(--color-sunset-soft)] px-5 py-4" role="alert">
+                <p className="font-bold text-[var(--color-tangerine)]">자동인식하지 못했습니다.</p>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">{latestOcrProgress.errorMessage ?? "원본을 보면서 직접 입력하거나 다시 분석할 수 있습니다."}</p>
+                {latestEvidenceFile ? <Button className="mt-3" onClick={() => void onRetryEvidenceFile(latestEvidenceFile.id)} type="button" variant="outline">다시 분석</Button> : null}
+              </div>
+            ) : currentStep === 2 && latestEvidenceFile && formState.inputMethod === "EVIDENCE_OCR" ? (
+              <div className={`rounded-xl border px-5 py-4 ${latestEvidenceFile.ocrStatus === "CONFIRMED" ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)]" : "border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)]"}`} role="status">
+                <p className="font-bold">{latestEvidenceFile.ocrStatus === "CONFIRMED" ? "OCR 자동입력이 완료되었습니다." : "OCR 분석 결과를 확인해 주세요."}</p>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">{latestEvidenceFile.fileName} · 아래 추출값과 원본을 비교한 뒤 필요한 항목을 수정해 주세요.</p>
+              </div>
+            ) : null}
+            {(currentStep === 1 || currentStep === 2) ? (
             <>
+            {currentStep === 1 ? <>
             <section className="grid gap-5 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-5">
               <QuestionChoiceGroup
                 label="지출내역을 어떤 방식으로 작성하시겠습니까?"
@@ -3659,7 +4296,10 @@ function ExpenseResolutionCreateModal({
               />
               <QuestionChoiceGroup
                 label="이번 지출은 언제 신청하는 건가요?"
-                onChange={(value) => onChange("expenseTiming", value as ExpenseTiming)}
+                onChange={(value) => {
+                  onChange("expenseTiming", value as ExpenseTiming);
+                  if (value === "REIMBURSEMENT" || value === "SETTLEMENT") onChange("inputMethod", "EVIDENCE_OCR");
+                }}
                 options={[
                   { description: "사전 집행결의", label: "구매·집행 전에 승인을 받습니다", value: "ADVANCE" },
                   { description: "사후 지출결의", label: "이미 결제한 비용을 신청합니다", value: "REIMBURSEMENT" },
@@ -3669,7 +4309,10 @@ function ExpenseResolutionCreateModal({
               />
               <QuestionChoiceGroup
                 label="지출내역을 어떻게 등록하시겠습니까?"
-                onChange={(value) => onChange("inputMethod", value as ExpenseInputMethod)}
+                onChange={(value) => {
+                  onChange("inputMethod", value as ExpenseInputMethod);
+                  if (value === "EVIDENCE_OCR") evidenceFileInputRef.current?.click();
+                }}
                 options={[
                   { label: "직접 입력", value: "MANUAL" },
                   ...(isBatch ? [{ label: "엑셀 일괄등록", value: "EXCEL" }] : []),
@@ -3678,6 +4321,12 @@ function ExpenseResolutionCreateModal({
                 value={formState.inputMethod}
               />
             </section>
+            {formState.inputMethod === "EVIDENCE_OCR" ? (
+              <div className="rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 px-5 py-4 text-sm">
+                <p className="font-bold text-[var(--color-deep-cobalt)]">증빙자료를 올리면 거래처·실제 지출일·금액을 자동 입력합니다.</p>
+                <p className="mt-1 text-[var(--color-stone)]">자동 입력된 값은 다음 단계에서 원본과 비교해 수정할 수 있습니다.</p>
+              </div>
+            ) : null}
             {isBatch && formState.inputMethod === "EXCEL" ? (
               <section className="grid gap-4 rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
@@ -3715,17 +4364,20 @@ function ExpenseResolutionCreateModal({
                 ) : null}
               </section>
             ) : null}
-            <FormSection layout="compact" title="기본정보">
+            </> : null}
+            <FormSection layout="compact" title={currentStep === 1 ? "기본정보" : "지출내역·금액"}>
+              {currentStep === 1 ? <>
               <TextInput label="결의서번호" readOnly value={formState.resolutionNo} />
               <TextInput label="작성일" onChange={(value) => onChange("createdAt", value)} type="date" value={formState.createdAt} />
               <TextInput label="작성자" readOnly value={formState.author} />
-              <TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} />
+              {formState.expenseTiming === "ADVANCE" ? <TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /> : null}
               <p className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)] md:col-span-3 xl:col-span-4">
                 작성자는 로그인 사용자 기준으로 자동 입력되며 결재선과 별도로 관리됩니다.
               </p>
               <label className="grid gap-1 text-sm font-semibold">
                 <span>프로젝트/사업과제</span>
                 <select
+                  id="expense-project-name"
                   className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
                   onChange={(event) => onChange("projectName", event.target.value)}
                   value={formState.projectName}
@@ -3741,6 +4393,7 @@ function ExpenseResolutionCreateModal({
               <label className="grid gap-1 text-sm font-semibold md:col-span-3 xl:col-span-4">
                 <span>건명 (필수)</span>
                 <input
+                  id="expense-subject"
                   className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
                   maxLength={60}
                   onChange={(event) => onChange("subject", event.target.value)}
@@ -3812,7 +4465,31 @@ function ExpenseResolutionCreateModal({
                   {formState.projectName} 기준 추천값이 적용되었습니다.
                 </div>
               ) : null}
+              </> : null}
+              {currentStep === 2 ? (
               <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 md:col-span-3 xl:col-span-4">
+                <div className="mb-4 grid gap-3 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+                  <div><p className="text-xs font-bold text-[var(--color-stone)]">프로젝트</p><p className="mt-1 font-bold">{formState.projectName || "미선택"}</p></div>
+                  <div><p className="text-xs font-bold text-[var(--color-stone)]">지급대상</p><p className="mt-1 font-bold">{selectedPaymentTarget?.label ?? formState.author}</p></div>
+                  <div><p className="text-xs font-bold text-[var(--color-stone)]">비용부담</p><p className="mt-1 font-bold">{getExpenseBurdenLabel(formState.expenseBurdenType)}</p></div>
+                  <div className="flex items-end justify-between gap-2"><div><p className="text-xs font-bold text-[var(--color-stone)]">지급계좌</p><p className="mt-1 font-bold">{formState.paymentBank || "미입력"} {maskAccountNumber(formState.paymentAccountNo)}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
+                </div>
+                 {formState.expenseTiming !== "ADVANCE" ? <div className="mb-4 grid gap-3 md:grid-cols-2"><TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /><TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} /></div> : null}
+                 <section className="mb-4 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
+                   <div className="mb-3">
+                     <h3 className="text-sm font-black">판매처 정보</h3>
+                     <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">증빙에서 인식한 판매처 정보를 확인하고 필요한 경우 수정해줘.</p>
+                   </div>
+                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                     <TextInput label="판매처 상호명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} />
+                     <TextInput label="사업자등록번호" onChange={(value) => onChange("vendorBusinessNumber", value)} value={formState.vendorBusinessNumber} />
+                     <TextInput label="대표자명" onChange={(value) => onChange("vendorRepresentative", value)} value={formState.vendorRepresentative} />
+                     <TextInput label="사업장 주소" onChange={(value) => onChange("vendorAddress", value)} value={formState.vendorAddress} />
+                     <TextInput label="업태" onChange={(value) => onChange("vendorBusinessType", value)} value={formState.vendorBusinessType} />
+                     <TextInput label="종목" onChange={(value) => onChange("vendorBusinessCategory", value)} value={formState.vendorBusinessCategory} />
+                     <TextInput label="판매처 연락처" onChange={(value) => onChange("vendorContact", value)} value={formState.vendorContact} />
+                   </div>
+                 </section>
                 <div className="mb-3 flex items-center justify-between gap-3 border-b border-[var(--color-soft-border)] pb-3">
                   <div>
                     <p className="text-sm font-bold text-[var(--color-midnight-ink)]">결의 입력</p>
@@ -3842,7 +4519,7 @@ function ExpenseResolutionCreateModal({
                 )}
 
                 {!isBatch && isExpenseDetailOpen ? (
-                  <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="mt-3 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0 [&_input]:min-w-0 [&_input]:w-full [&_select]:min-w-0 [&_select]:w-full">
                     <label className="grid gap-1 text-sm font-semibold">
                       <span>지출구분</span>
                       <select
@@ -3878,6 +4555,7 @@ function ExpenseResolutionCreateModal({
                         onChange={(event) => onChange("budgetItem", event.target.value)}
                         value={formState.budgetItem}
                       >
+                        <option value="">선택</option>
                         {budgetItemOptions.map((option) => (
                           <option key={option} value={option}>
                             {option}
@@ -3892,23 +4570,28 @@ function ExpenseResolutionCreateModal({
                 {!isBatch ? (
                   <div className="mt-4 grid gap-4">
                     <SingleExpenseItemsEditor items={formState.singleItems} onAdd={onAddSingleItem} onChange={onSingleItemChange} onDelete={onDeleteSingleItem} />
-                    <AccountAllocationEditor allocations={formState.accountAllocations} allocationTotal={accountAllocationTotal} onAdd={onAddAccountAllocation} onChange={onAccountAllocationChange} onDelete={onDeleteAccountAllocation} totalAmount={totalAmount} />
+                    <AccountAllocationEditor allocations={formState.accountAllocations} allocationTotal={accountAllocationTotal} budgetRecommendation={formState.budgetRecommendation} onAdd={onAddAccountAllocation} onChange={onAccountAllocationChange} onDelete={onDeleteAccountAllocation} totalAmount={totalAmount} />
                   </div>
                 ) : null}
 
                 <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
                   <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                     <p className="text-sm font-semibold text-[var(--color-stone)]">공급가액 합계</p>
-                    <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(isBatch ? batchSummary.totalSupplyAmount : formState.singleItems.reduce((sum, item) => sum + item.supplyAmount, 0))}</p>
+                    <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(displayedSupplyAmount)}</p>
                   </div>
                   <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                     <p className="text-sm font-semibold text-[var(--color-stone)]">부가세 합계</p>
-                    <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(isBatch ? batchSummary.totalVatAmount : formState.singleItems.reduce((sum, item) => sum + item.vatAmount, 0))}</p>
+                    <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(displayedVatAmount)}</p>
                   </div>
                   <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                     <p className="text-sm font-semibold text-[var(--color-stone)]">총지급액</p>
                     <p className="mt-2 text-xl font-bold">{formatExpenseResolutionAmount(totalAmount)}</p>
                   </div>
+                </div>
+                <div className="mt-3 grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm md:grid-cols-2">
+                  <p className={Math.abs(amountEquationDifference) <= 0.5 ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{Math.abs(amountEquationDifference) <= 0.5 ? "✓ 공급가액 + 부가세 = 총액" : `! 공급가액과 부가세 합계가 총액과 ${formatExpenseResolutionAmount(Math.abs(amountEquationDifference))} 차이 납니다.`}</p>
+                  {!isBatch ? <p className={Math.abs(allocationDifference) <= 0.5 ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{Math.abs(allocationDifference) <= 0.5 ? "✓ 계정과목 분할합계 = 총지급액" : `! 계정과목 분할금액을 ${formatExpenseResolutionAmount(Math.abs(allocationDifference))} ${allocationDifference > 0 ? "늘려" : "줄여"}주세요.`}</p> : null}
+                  {formState.expenseTiming === "SETTLEMENT" ? <p className="font-bold text-[var(--color-deep-cobalt)]">선지급액 - 실제 사용액 = {formatExpenseResolutionAmount(settlementDifference)}</p> : null}
                 </div>
                 {budgetSnapshot.remainingBudgetAmount < 0 ? (
                   <div className="mt-3">
@@ -3916,9 +4599,10 @@ function ExpenseResolutionCreateModal({
                   </div>
                 ) : null}
                 <div className="mt-3">
-                  <TextareaInput label="지출사유" onChange={(value) => onChange("reason", value)} value={formState.reason} />
+                  <TextareaInput id="expense-reason" label="지출사유" onChange={(value) => onChange("reason", value)} value={formState.reason} />
                 </div>
               </div>
+              ) : null}
             </FormSection>
             </>
             ) : null}
@@ -3972,11 +4656,12 @@ function ExpenseResolutionCreateModal({
               <FormSection title="선지급금 정산 정보">
                 <TextInput label="선지급일" onChange={(value) => onChange("advancePaidAt", value)} type="date" value={formState.advancePaidAt} />
                 <TextInput label="선지급액" onChange={(value) => onChange("advancePaidAmount", value)} type="number" value={formState.advancePaidAmount} />
-                <TextInput label="실제 사용액" onChange={(value) => onChange("actualUsedAmount", value)} type="number" value={formState.actualUsedAmount} />
+                <TextInput label="실제 사용액" onChange={(value) => onChange("actualUsedAmount", value)} readOnly={isBatch && formState.inputMethod === "EVIDENCE_OCR"} type="number" value={formState.actualUsedAmount} />
                 <label className="grid gap-1 text-sm font-semibold">
                   <span>차액 처리</span>
                   <select
                     className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
+                    disabled={isBatch && formState.inputMethod === "EVIDENCE_OCR"}
                     onChange={(event) => onChange("settlementDifferenceAction", event.target.value as ResolutionFormState["settlementDifferenceAction"])}
                     value={formState.settlementDifferenceAction}
                   >
@@ -3991,33 +4676,48 @@ function ExpenseResolutionCreateModal({
                   <p className="text-sm font-semibold text-[var(--color-stone)]">정산 차액</p>
                   <p className="mt-2 text-lg font-bold">{settlementDifference > 0 ? `반납액 ${formatExpenseResolutionAmount(settlementDifference)}` : settlementDifference < 0 ? `추가 지급액 ${formatExpenseResolutionAmount(Math.abs(settlementDifference))}` : "차액 없음"}</p>
                 </div>
+                {isBatch && formState.inputMethod === "EVIDENCE_OCR" ? (
+                  <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm md:col-span-2">
+                    <p className="font-bold">영수증 정산 대사</p>
+                    <p>전체 {batchEvidenceSettlement.totalCount}개 · 확정 {batchEvidenceSettlement.confirmedCount}개 · 확인 대기 {batchEvidenceSettlement.pendingCount}개 · 실패 {batchEvidenceSettlement.failedCount}개</p>
+                    <p>확정 영수증 합계 <strong>{formatExpenseResolutionAmount(batchEvidenceSettlement.confirmedReceiptTotal)}</strong></p>
+                    <p className={batchEvidenceSettlement.canApprove ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{batchEvidenceSettlement.canApprove ? "정산 대사가 완료되었습니다." : batchEvidenceSettlement.errors.join(" ")}</p>
+                  </div>
+                ) : null}
                 <TextareaInput label="정산사유" onChange={(value) => onChange("postApprovalReason", value)} value={formState.postApprovalReason} />
               </FormSection>
             ) : null}
 
-            {currentStep === 2 ? <CollapsibleFormSection summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료">
+            {currentStep === 2 ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
+              {vendorRegistrationNotice ? <p className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-sprout)] px-4 py-3 text-sm font-bold text-[var(--color-green-ink)]">{vendorRegistrationNotice}</p> : null}
               <label className="grid gap-1 text-sm font-semibold">
-                <span>증빙유형</span>
+                <span>거래 증빙 종류</span>
                 <select
                   className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
                   onChange={(event) => onChange("evidenceType", event.target.value as EvidenceType)}
                   value={formState.evidenceType}
                 >
-                  {evidenceTypeOptions.map((option) => (
+                  {transactionEvidenceTypeOptions.map((option) => (
                     <option key={option} value={option}>
                       {option}
                     </option>
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold md:col-span-2">
+              <label className="grid gap-1 text-sm font-semibold md:col-span-2" htmlFor="expense-evidence-file">
                 <span>증빙자료</span>
                 <span className="flex min-h-24 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-center text-sm text-[var(--color-stone)]">
-                  {isEvidenceUploading ? "안전한 저장소에 업로드 중입니다…" : "PDF, 이미지, TXT, CSV 증빙을 선택하세요. 최대 10MB"}
+                  {isEvidenceUploading ? "최대 3개씩 안전한 저장소에 업로드 중입니다…" : isBatch && formState.inputMethod === "EVIDENCE_OCR" ? `영수증을 여러 개 선택하세요. 최대 10개 · 현재 ${formState.evidenceFiles.length}개` : "PDF, 이미지, TXT, CSV 증빙을 선택하세요. 최대 10MB"}
                 </span>
-                <input accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" aria-label="증빙자료 파일 선택" className="sr-only" disabled={isEvidenceUploading} onChange={handleEvidenceChange} type="file" />
               </label>
-              {evidenceUploadError ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-bold text-[var(--color-tangerine)] md:col-span-3" role="alert">{evidenceUploadError}</p> : null}
+              {isBatch && formState.inputMethod === "EVIDENCE_OCR" ? (
+                <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3 text-sm md:col-span-3 md:grid-cols-4">
+                  <p><span className="block text-xs font-bold text-[var(--color-stone)]">전체 증빙</span><strong>{batchEvidenceSettlement.totalCount}개</strong></p>
+                  <p><span className="block text-xs font-bold text-[var(--color-stone)]">확정 합계</span><strong>{formatExpenseResolutionAmount(batchEvidenceSettlement.confirmedReceiptTotal)}</strong></p>
+                  <p><span className="block text-xs font-bold text-[var(--color-stone)]">선지급액</span><strong>{formatExpenseResolutionAmount(toNumber(formState.advancePaidAmount))}</strong></p>
+                  <p><span className="block text-xs font-bold text-[var(--color-stone)]">정산 결과</span><strong>{batchEvidenceSettlement.action === "REFUND_REQUIRED" ? `반납 ${formatExpenseResolutionAmount(batchEvidenceSettlement.refundAmount)}` : batchEvidenceSettlement.action === "ADDITIONAL_PAYMENT" ? `추가 지급 ${formatExpenseResolutionAmount(batchEvidenceSettlement.additionalPaymentAmount)}` : "차액 없음"}</strong></p>
+                </div>
+              ) : null}
               {formState.evidenceFiles.length ? (
                 <div className="grid gap-3 md:col-span-3" aria-label="첨부 증빙 목록">
                   {formState.evidenceFiles.map((file) => (
@@ -4025,24 +4725,30 @@ function ExpenseResolutionCreateModal({
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div>
                           <p className="font-bold">{file.fileName}</p>
-                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{file.evidenceType} · {formatFileSize(file.fileSize)} · {file.ocrStatus === "EXTRACTED" ? "추출값 검토 필요" : file.ocrStatus === "CONFIRMED" ? "추출값 확인완료" : "OCR 검토 필요"}{file.ocrData.confidence !== undefined ? ` · 인식률 ${file.ocrData.confidence}%` : ""}</p>
+                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{file.evidenceType} · {formatFileSize(file.fileSize)} · {file.ocrData.provider === "OPENAI" ? "OpenAI 비전" : file.ocrData.provider === "EMBEDDED_TEXT" ? "PDF 내장문자" : "로컬 OCR(Tesseract)"} · {file.ocrStatus === "EXTRACTED" ? "추출값 검토 필요" : file.ocrStatus === "CONFIRMED" ? "추출값 확인완료" : file.ocrStatus === "FAILED" ? "OCR 처리 실패 · 직접 입력 필요" : "OCR 검토 필요"}{file.ocrData.confidence !== undefined ? ` · 인식률 ${file.ocrData.confidence}%` : ""}</p>
+                          {file.ocrData.normalizedEvidenceType ? <p className="mt-2 text-xs font-bold text-[var(--color-deep-cobalt)]">인식 유형: {file.ocrData.normalizedEvidenceType} · 분류 신뢰도: {file.ocrData.classificationConfidence ?? "낮음"}</p> : null}
+                          {file.ocrData.classificationReasons?.length ? <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">판정 근거: {file.ocrData.classificationReasons.join(", ")}</p> : null}
+                          {file.ocrData.processingNote ? <p className="mt-2 rounded-md border border-orange-200 bg-orange-50 px-3 py-2 text-xs font-semibold text-orange-800">{file.ocrData.processingNote}</p> : null}
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          <Button onClick={() => void onOpenEvidenceOriginal(file.storagePath)} size="sm" type="button" variant="outline">원본 열기</Button>
+                          <Button onClick={() => void onOpenEvidenceOriginal(file.storagePath)} size="sm" type="button" variant="outline">원본 보기</Button>
                           <Button onClick={() => onRemoveEvidenceFile(file.id)} size="sm" type="button" variant="outline">목록에서 제거</Button>
+                          {file.ocrJobId ? <Button onClick={() => void onRetryEvidenceFile(file.id)} size="sm" type="button" variant="outline">다시 분석</Button> : null}
                         </div>
                       </div>
                       {Object.keys(file.ocrData).length ? (
                         <div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm md:grid-cols-5">
-                          <OcrValue label="거래처" value={file.ocrData.issuer ?? "-"} />
-                          <OcrValue label="증빙일" value={file.ocrData.documentDate ?? "-"} />
-                          <OcrValue label="공급가액" value={file.ocrData.supplyAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.supplyAmount)} />
-                          <OcrValue label="부가세" value={file.ocrData.vatAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.vatAmount)} />
-                          <OcrValue label="합계" value={file.ocrData.totalAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.totalAmount)} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="거래처" value={file.ocrData.issuer ?? "-"} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="사업자등록번호" value={file.ocrData.issuerBusinessNumber ?? "-"} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="대표자" value={file.ocrData.issuerRepresentative ?? "-"} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="증빙일" value={file.ocrData.documentDate ?? "-"} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="공급가액" value={file.ocrData.supplyAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.supplyAmount)} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="부가세" value={file.ocrData.vatAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.vatAmount)} />
+                          <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="합계" value={file.ocrData.totalAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.totalAmount)} />
                           <div className="md:col-span-5">
-                            <Button disabled={file.ocrStatus === "CONFIRMED"} onClick={() => onApplyEvidenceOcr(file.id)} size="sm" type="button">
+                            <div className="flex flex-wrap gap-2"><Button disabled={file.ocrStatus === "CONFIRMED"} onClick={() => void handleApplyEvidenceOcr(file.id)} size="sm" type="button">
                               {file.ocrStatus === "CONFIRMED" ? "추출값 반영완료" : "추출값을 결의서에 반영"}
-                            </Button>
+                            </Button>{ocrUndoSnapshot ? <Button onClick={restoreBeforeOcr} size="sm" type="button" variant="outline">자동입력 이전으로 되돌리기</Button> : null}</div>
                           </div>
                           {file.ocrData.recognizedText ? (
                             <details className="md:col-span-5 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
@@ -4050,6 +4756,7 @@ function ExpenseResolutionCreateModal({
                               <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[var(--color-stone)]">{file.ocrData.recognizedText}</pre>
                             </details>
                           ) : null}
+                          {duplicateEvidenceIds.has(file.id) ? <p className="md:col-span-5 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-xs font-bold text-[var(--color-tangerine)]">같은 거래처·날짜·금액의 증빙이 이미 첨부되어 있습니다. 중복 영수증인지 확인해줘.</p> : null}
                         </div>
                       ) : null}
                     </article>
@@ -4085,6 +4792,26 @@ function ExpenseResolutionCreateModal({
               <TextInput label="지급계좌번호" onChange={(value) => onChange("paymentAccountNo", value)} value={formState.paymentAccountNo} />
               <TextInput label="예금주" onChange={(value) => onChange("accountHolder", value)} value={formState.accountHolder} />
             </CollapsibleFormSection> : null}
+
+            {currentStep === 3 ? <section className="grid gap-4 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">기본·지급정보</h3><p className="mt-1 text-sm text-[var(--color-stone)]">{formState.projectName || "프로젝트 미선택"} · {formState.subject || "건명 미입력"} · {selectedPaymentTarget.label}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <DetailItem label="지출일" value={formState.plannedPaymentDate || "-"} />
+                <DetailItem label="거래처" value={formState.vendorName || "-"} />
+                <DetailItem label="사업자등록번호" value={formState.vendorBusinessNumber || "-"} />
+                <DetailItem label="대표자" value={formState.vendorRepresentative || "-"} />
+                <DetailItem label="업태·종목" value={[formState.vendorBusinessType, formState.vendorBusinessCategory].filter(Boolean).join(" · ") || "-"} />
+                <DetailItem label="총지급액" value={formatExpenseResolutionAmount(totalAmount)} />
+                <DetailItem label="계정과목" value={formState.accountAllocations.map((item) => item.accountTitle).join(", ") || "-"} />
+              </div>
+              <div className="rounded-lg bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-bold">지출내역·증빙</p><p className="mt-1 text-sm text-[var(--color-stone)]">품목 {isBatch ? formState.batchItems.length : formState.singleItems.length}건 · 증빙 {formState.evidenceFiles.length}개 · {formState.reason || "지출사유 미입력"}</p></div><Button onClick={() => setCurrentStep(2)} size="sm" type="button" variant="outline">금액·증빙 수정</Button></div></div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <div className="rounded-lg bg-white p-3"><p className="font-bold">지출 품목</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{(isBatch ? formState.batchItems.map((item) => ({ id: item.id, label: item.itemTitle, total: item.totalAmount })) : formState.singleItems.map((item) => ({ id: item.id, label: item.itemName, total: item.totalAmount }))).map((item) => <p key={item.id}>{item.label || "품목명 미입력"} · {formatExpenseResolutionAmount(item.total)}</p>)}</div></div>
+                <div className="rounded-lg bg-white p-3"><p className="font-bold">증빙자료</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{formState.evidenceFiles.length ? formState.evidenceFiles.map((file) => <p key={file.id}>{file.fileName} · {file.ocrStatus === "CONFIRMED" ? "확인완료" : "확인 필요"}</p>) : <p>첨부된 증빙 없음</p>}</div></div>
+                <div className="rounded-lg bg-white p-3"><p className="font-bold">계정과목 분할</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{isBatch ? <p>일괄결의 항목별 계정과목 적용</p> : formState.accountAllocations.map((item) => <p key={item.id}>{item.accountTitle} · {item.budgetItem} · {formatExpenseResolutionAmount(toNumber(item.amount))}</p>)}</div></div>
+                <div className="rounded-lg bg-white p-3"><p className="font-bold">예산 상태</p><p className={`mt-2 text-sm font-bold ${budgetSnapshot.remainingBudgetAmount >= 0 ? "text-[var(--color-green-ink)]" : "text-[var(--color-tangerine)]"}`}>{budgetSnapshot.budgetCheckStatus} · 결의 후 잔여 {formatExpenseResolutionAmount(budgetSnapshot.remainingBudgetAmount)}</p></div>
+              </div>
+            </section> : null}
 
             {currentStep === 3 ? <FormSection title="계약·회의 연결">
               <TextInput label="관련계약" onChange={(value) => onChange("relatedContract", value)} value={formState.relatedContract} />
@@ -4138,7 +4865,12 @@ function ExpenseResolutionCreateModal({
                 {reviewItems.map((item) => (
                   <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${item.complete ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`} key={item.label}>
                     <span>{item.complete ? "✓" : "!"}</span>
-                    <span>{item.label}</span>
+                    <span className="min-w-0 flex-1">
+                      <span className="block">{item.label}</span>
+                      {!item.complete && getReviewSuggestion(item.label) ? <span className="mt-0.5 block truncate text-[10px] font-semibold text-[var(--color-stone)]">추천: {getReviewSuggestion(item.label)}</span> : null}
+                    </span>
+                    {!item.complete && getReviewSuggestion(item.label) ? <button className="rounded-full border border-current bg-white px-2 py-1 text-[10px] font-black" onClick={() => applyReviewSuggestion(item.label)} type="button">추천 적용</button> : null}
+                    {!item.complete ? <button className="rounded-full border border-current bg-white px-2 py-1 text-[10px] font-black" onClick={() => moveToReviewField(item.label)} type="button">{getReviewSuggestion(item.label) ? "직접 입력" : item.label.includes("확인") ? "확인하기" : item.label.includes("합계") ? "수정하기" : "입력하기"}</button> : null}
                   </div>
                 ))}
               </div>
@@ -4182,13 +4914,33 @@ function ExpenseResolutionCreateModal({
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
-          {saveError ? <p className="w-full rounded-lg bg-[var(--color-sunset-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
+          {saveError ? (
+            <div className="w-full rounded-lg bg-[var(--color-sunset-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
+              <div className="flex flex-wrap gap-x-1 gap-y-1">
+                {saveError.includes("건명을 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(1, "expense-subject")} type="button">건명을 입력해주세요.</button> : null}
+                {saveError.includes("프로젝트/사업과제를 선택해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(1, "expense-project-name")} type="button">프로젝트/사업과제를 선택해주세요.</button> : null}
+                {saveError.includes("지출사유를 입력해주세요.") || saveError.includes("정산사유를 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(2, "expense-reason")} type="button">{saveError.includes("정산사유를 입력해주세요.") ? "정산사유를 입력해주세요." : "지출사유를 입력해주세요."}</button> : null}
+                {saveError
+                  .replace("건명을 입력해주세요.", "")
+                  .replace("프로젝트/사업과제를 선택해주세요.", "")
+                  .replace("지출사유를 입력해주세요.", "")
+                  .replace("정산사유를 입력해주세요.", "")
+                  .trim() ? <span>{saveError
+                    .replace("건명을 입력해주세요.", "")
+                    .replace("프로젝트/사업과제를 선택해주세요.", "")
+                    .replace("지출사유를 입력해주세요.", "")
+                    .replace("정산사유를 입력해주세요.", "")
+                    .trim()}</span> : null}
+              </div>
+              <p className="mt-1 text-xs font-medium">항목을 누르면 해당 입력창으로 이동해.</p>
+            </div>
+          ) : null}
           <Button className="rounded-full" onClick={onCancel} variant="outline">
             취소
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button className="rounded-full" onClick={onSaveDraft} variant="outline">{isEditing ? "수정사항 저장" : "임시저장"}</Button>
+            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
@@ -4507,6 +5259,7 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="거래처명" value={resolution.vendorName} />
             <DetailItem label="총지급액" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} />
             <DetailItem label="공급가액" value={formatExpenseResolutionAmount(resolution.supplyAmount)} />
+            <DetailItem label="세금구분" value={getResolutionTaxCategorySummary(resolution)} />
             <DetailItem label="부가세" value={formatExpenseResolutionAmount(resolution.vat)} />
             <DetailItem label="지출사유" value={resolution.reason || "-"} wide />
           </DetailSection>
@@ -4782,6 +5535,58 @@ export function ExpenseResolutionDetailModal({
   );
 }
 
+export async function waitForExpensePrintLayout(printDocument: Document, printWindow: Window, timeoutMs = 8_000) {
+  const styleLinks = Array.from(printDocument.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'));
+  const stylesReady = Promise.all(styleLinks.map((link) => {
+    if (link.sheet) return Promise.resolve();
+    return new Promise<void>((resolve, reject) => {
+      link.addEventListener("load", () => resolve(), { once: true });
+      link.addEventListener("error", () => reject(new Error("출력용 스타일시트를 불러오지 못했습니다.")), { once: true });
+    });
+  }));
+  const timeout = new Promise<never>((_, reject) => {
+    printWindow.setTimeout(() => reject(new Error("출력 스타일 준비 시간이 초과되었습니다. 다시 시도해주세요.")), timeoutMs);
+  });
+
+  await Promise.race([stylesReady, timeout]);
+  if (printDocument.fonts?.ready) await Promise.race([printDocument.fonts.ready, timeout]);
+  await new Promise<void>((resolve) => printWindow.setTimeout(resolve, 0));
+  await new Promise<void>((resolve) => printWindow.setTimeout(resolve, 0));
+
+  const header = printDocument.querySelector<HTMLElement>(".expense-resolution-print-header");
+  if (!header || printWindow.getComputedStyle(header).display !== "grid") {
+    throw new Error("출력 스타일이 적용되지 않았습니다. 잠시 후 다시 시도해주세요.");
+  }
+}
+
+export function getExpensePrintAmountSummary(input: {
+  actualUsedAmount?: number;
+  advancePaidAmount?: number;
+  settlementDifference?: number;
+  timing: ExpenseTiming;
+  totalPaymentAmount: number;
+}) {
+  if (input.timing === "SETTLEMENT") {
+    const advanceAmount = input.advancePaidAmount ?? 0;
+    const expenseAmount = input.actualUsedAmount ?? input.totalPaymentAmount;
+    const difference = input.settlementDifference ?? advanceAmount - expenseAmount;
+    return {
+      items: [
+        { label: "선지급액", value: advanceAmount },
+        { label: "총 지출액", value: expenseAmount },
+        { label: difference > 0 ? "반납액" : difference < 0 ? "추가 지급액" : "정산차액", value: Math.abs(difference) },
+      ],
+      primaryLabel: "총 지출액",
+      primaryValue: expenseAmount,
+    };
+  }
+  return {
+    items: [],
+    primaryLabel: input.timing === "REIMBURSEMENT" ? "총 지출액" : "총 결의금액",
+    primaryValue: input.totalPaymentAmount,
+  };
+}
+
 function ExpenseResolutionPrintPreviewModal({
   onClose,
   resolution,
@@ -4789,10 +5594,20 @@ function ExpenseResolutionPrintPreviewModal({
   onClose: () => void;
   resolution: ManagedExpenseResolution;
 }) {
+  const [isPreparingPrint, setIsPreparingPrint] = useState(false);
+  const [printPreparationError, setPrintPreparationError] = useState("");
   const vendorMissing = !resolution.vendorName.trim() || resolution.vendorName === "거래처 미입력";
   const reasonText = resolution.reason.trim() || "지출사유 미입력";
   const warningTextClass = "font-bold text-[var(--color-tangerine)]";
   const isBatchResolution = resolution.resolutionType === "BATCH";
+  const expenseTiming = normalizeExpenseTiming(resolution);
+  const printAmountSummary = getExpensePrintAmountSummary({
+    actualUsedAmount: resolution.actualUsedAmount,
+    advancePaidAmount: resolution.advancePaidAmount,
+    settlementDifference: resolution.settlementDifference,
+    timing: expenseTiming,
+    totalPaymentAmount: resolution.totalPaymentAmount,
+  });
   const printExpenseItems = isBatchResolution
     ? resolution.expenseItems
     : resolution.singleItems?.length
@@ -4802,6 +5617,7 @@ function ExpenseResolutionPrintPreviewModal({
           id: item.id,
           itemNo: index + 1,
           supplyAmount: String(item.supplyAmount),
+          taxCategory: item.taxCategory,
           totalAmount: item.totalAmount,
           vatAmount: String(item.vatAmount),
           vendorName: resolution.vendorName,
@@ -4833,6 +5649,8 @@ function ExpenseResolutionPrintPreviewModal({
   async function handleBrowserPrint() {
     const printShell = document.querySelector<HTMLElement>(".print-modal-shell");
     if (!printShell) return;
+    setIsPreparingPrint(true);
+    setPrintPreparationError("");
 
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
@@ -4861,20 +5679,19 @@ function ExpenseResolutionPrintPreviewModal({
     printDocument.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${resolution.resolutionNo} 지출결의서</title>${styles}</head><body>${printShell.outerHTML}</body></html>`);
     printDocument.close();
 
-    await new Promise<void>((resolve) => {
-      if (printDocument.readyState === "complete") {
-        resolve();
-        return;
-      }
-      frame.addEventListener("load", () => resolve(), { once: true });
-    });
-    await printDocument.fonts?.ready;
-
-    const cleanup = () => frame.remove();
-    printWindow.addEventListener("afterprint", cleanup, { once: true });
-    printWindow.focus();
-    printWindow.print();
-    window.setTimeout(cleanup, 60_000);
+    try {
+      await waitForExpensePrintLayout(printDocument, printWindow);
+      const cleanup = () => frame.remove();
+      printWindow.addEventListener("afterprint", cleanup, { once: true });
+      printWindow.focus();
+      printWindow.print();
+      window.setTimeout(cleanup, 60_000);
+    } catch (error) {
+      frame.remove();
+      setPrintPreparationError(error instanceof Error ? error.message : "출력 스타일을 준비하지 못했습니다. 다시 시도해주세요.");
+    } finally {
+      setIsPreparingPrint(false);
+    }
   }
 
   return createPortal(
@@ -4915,40 +5732,39 @@ function ExpenseResolutionPrintPreviewModal({
             </header>
 
             <section className="expense-resolution-print-section mt-6">
-              <h4 className="mb-2 text-base font-bold">결의 기본정보</h4>
+              <h4 className="mb-2 text-base font-bold">결의 및 지출 정보</h4>
               <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
                 <PrintCell label="결의서번호" value={resolution.resolutionNo} />
                 <PrintCell label="작성일" value={resolution.createdAt} />
                 <PrintCell label="작성자" value={resolution.author} />
-                <PrintCell label="업무유형" value={getExpenseTimingLabel(normalizeExpenseTiming(resolution))} />
+                <PrintCell label="업무유형" value={getExpenseTimingLabel(expenseTiming)} />
                 <PrintCell label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
-                {isBatchResolution ? (
-                  <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} />
-                ) : (
-                  <PrintCell label="대표 지출항목" value={resolution.operationExpenseDetail || resolution.expenseType} />
-                )}
+                <PrintCell label={getExpenseDateLabel(expenseTiming)} value={resolution.plannedPaymentDate} />
+                {isBatchResolution ? <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} wide /> : null}
+                <PrintCell className="border-t-2 border-t-[var(--color-midnight-ink)]" label="지출구분" value={resolution.expenseType} />
+                <PrintCell className="border-t-2 border-t-[var(--color-midnight-ink)]" label="예산항목" value={resolution.budgetItem || "-"} />
+                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
                 <PrintCell label="건명" value={getResolutionSubject(resolution)} wide />
               </div>
             </section>
 
-            <section className="expense-resolution-print-section mt-5">
-              <h4 className="mb-2 text-base font-bold">지출 정보</h4>
-              <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
-                <PrintCell label="지출구분" value={resolution.expenseType} />
-                <PrintCell label="예산항목" value={resolution.budgetItem || "-"} />
-                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} />
-                <PrintCell label="총지급액" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} valueClassName="text-right" />
-              </div>
-            </section>
-
             <section className="expense-resolution-print-section mt-5 border-y-2 border-[var(--color-midnight-ink)] py-3">
-              <div className="flex items-center justify-between gap-4">
+              {expenseTiming === "SETTLEMENT" ? (
+                <div className="grid grid-cols-3 gap-4">
+                  {printAmountSummary.items.map((item) => (
+                    <div className="border-r border-[var(--color-soft-border)] px-3 last:border-r-0" key={item.label}>
+                      <p className="text-xs font-bold text-[var(--color-stone)]">{item.label}</p>
+                      <p className="mt-1 text-right text-xl font-black tracking-tight">{formatExpenseResolutionAmount(item.value)}</p>
+                    </div>
+                  ))}
+                </div>
+              ) : <div className="flex items-center justify-between gap-4">
                 <div>
-                  <p className="text-xs font-bold text-[var(--color-stone)]">총 결의금액</p>
+                  <p className="text-xs font-bold text-[var(--color-stone)]">{printAmountSummary.primaryLabel}</p>
                   <p className="mt-1 text-sm font-semibold">{getResolutionSubject(resolution)}</p>
                 </div>
-                <p className="text-2xl font-black tracking-tight">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</p>
-              </div>
+                <p className="text-2xl font-black tracking-tight">{formatExpenseResolutionAmount(printAmountSummary.primaryValue)}</p>
+              </div>}
             </section>
 
             <section className="expense-resolution-print-section expense-resolution-print-items mt-5">
@@ -4996,11 +5812,12 @@ function ExpenseResolutionPrintPreviewModal({
         </div>
 
         <div className="expense-resolution-print-actions flex justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
+          {printPreparationError ? <p className="mr-auto self-center text-sm font-bold text-[var(--color-tangerine)]" role="alert">{printPreparationError}</p> : null}
           <Button className="rounded-full" onClick={onClose} variant="outline">
             닫기
           </Button>
-          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => void handleBrowserPrint()}>
-            브라우저 프린트
+          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isPreparingPrint} onClick={() => void handleBrowserPrint()}>
+            {isPreparingPrint ? "출력 스타일 준비 중…" : "브라우저 프린트"}
           </Button>
         </div>
       </section>
@@ -5015,6 +5832,7 @@ type ExpensePrintItem = {
   id: string;
   itemNo: number;
   supplyAmount: string;
+  taxCategory?: SingleExpenseTaxCategory;
   totalAmount: number;
   vatAmount: string;
   vendorName: string;
@@ -5068,7 +5886,7 @@ function ExpensePrintItemsTable({
       <table className="w-full table-fixed border-collapse text-[11px]">
         <thead className="bg-[var(--color-cloud-veil)]">
           <tr>
-            {["순번", "지출예정일", "거래처", "내역 및 산출근거", "공급가액", "부가세", "합계"].map((label) => (
+            {["순번", "지출예정일", "거래처", "내역 및 산출근거", "공급가액", "세금구분", "부가세", "합계"].map((label) => (
               <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-left last:border-r-0" key={label}>{label}</th>
             ))}
           </tr>
@@ -5081,6 +5899,7 @@ function ExpensePrintItemsTable({
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
               <td className="w-2/5 whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-center whitespace-nowrap">{getSingleExpenseTaxCategoryLabel(item)}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
               <td className="border-b border-[var(--color-soft-border)] px-2 py-2 text-right font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             </tr>
@@ -5294,9 +6113,9 @@ function PrintValidationWarningModal({
   );
 }
 
-function PrintCell({ label, value, valueClassName = "", wide }: { label: string; value: ReactNode; valueClassName?: string; wide?: boolean }) {
+function PrintCell({ className = "", label, value, valueClassName = "", wide }: { className?: string; label: string; value: ReactNode; valueClassName?: string; wide?: boolean }) {
   return (
-    <div className={`grid grid-cols-[110px_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""}`}>
+    <div className={`grid grid-cols-[110px_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
       <span className="bg-[var(--color-cloud-veil)] px-3 py-2 font-bold text-[var(--color-stone)]">{label}</span>
       <span className={`whitespace-normal px-3 py-2 font-semibold ${valueClassName}`}>{value}</span>
     </div>
@@ -5500,20 +6319,21 @@ function DetailItem({ label, value, wide }: { label: string; value: ReactNode; w
 
 function SingleExpenseItemsEditor({ items, onAdd, onChange, onDelete }: { items: SingleExpenseItem[]; onAdd: () => void; onChange: (id: string, key: keyof SingleExpenseItem, value: string) => void; onDelete: (id: string) => void }) {
   return (
-    <section className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h3 className="text-sm font-black">품목/용역 내역</h3><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">같은 거래처의 여러 품목을 입력하면 금액이 자동 합산됩니다.</p></div>
         <Button className="rounded-full" onClick={onAdd} type="button" variant="outline">품목 추가</Button>
       </div>
-      <div className="mt-3 overflow-x-auto">
-        <table className="min-w-[900px] w-full border-collapse text-sm">
-          <thead className="bg-[var(--color-cloud-veil)] text-left"><tr>{["품목명", "수량", "단가", "공급가액", "부가세", "합계", "비고", "관리"].map((label) => <th className="border border-[var(--color-soft-border)] px-2 py-2" key={label}>{label}</th>)}</tr></thead>
+      <div className="mt-3 max-w-full overflow-x-auto">
+        <table className="min-w-[1040px] w-full border-collapse text-sm">
+          <thead className="bg-[var(--color-cloud-veil)] text-center"><tr>{["품목명", "수량", "단가", "공급가액", "세금구분", "부가세", "합계", "비고", "관리"].map((label) => <th className="border border-[var(--color-soft-border)] px-2 py-2 text-center" key={label}>{label}</th>)}</tr></thead>
           <tbody>{items.map((item, index) => <tr key={item.id}>
             <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`품목명 ${index + 1}`} className="h-9 w-full px-2" onChange={(event) => onChange(item.id, "itemName", event.target.value)} value={item.itemName} /></td>
             <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`수량 ${index + 1}`} className="h-9 w-20 px-2 text-right" min="0" onChange={(event) => onChange(item.id, "quantity", event.target.value)} type="number" value={item.quantity} /></td>
             <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`단가 ${index + 1}`} className="h-9 w-28 px-2 text-right" min="0" onChange={(event) => onChange(item.id, "unitPrice", event.target.value)} type="number" value={item.unitPrice} /></td>
             <td className="border border-[var(--color-soft-border)] px-2 py-1 text-right">{formatExpenseResolutionAmount(item.supplyAmount)}</td>
-            <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`부가세 ${index + 1}`} className="h-9 w-24 px-2 text-right" min="0" onChange={(event) => onChange(item.id, "vatAmount", event.target.value)} type="number" value={item.vatAmount} /></td>
+            <td className="border border-[var(--color-soft-border)] p-1"><select aria-label={`세금구분 ${index + 1}`} className="h-9 w-full min-w-28 bg-white px-2" onChange={(event) => onChange(item.id, "taxCategory", event.target.value)} value={item.taxCategory}><option value="TAXABLE">부가세 공제</option><option value="NON_DEDUCTIBLE">부가세 불공제</option><option value="NO_VAT">부가세 없음</option></select></td>
+            <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`부가세 ${index + 1}`} className="h-9 w-24 px-2 text-right disabled:bg-[var(--color-cloud-veil)] disabled:text-[var(--color-stone)]" disabled={item.taxCategory === "NO_VAT"} min="0" onChange={(event) => onChange(item.id, "vatAmount", event.target.value)} type="number" value={item.vatAmount} /></td>
             <td className="border border-[var(--color-soft-border)] px-2 py-1 text-right font-bold">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             <td className="border border-[var(--color-soft-border)] p-1"><input aria-label={`품목 비고 ${index + 1}`} className="h-9 w-full px-2" onChange={(event) => onChange(item.id, "memo", event.target.value)} value={item.memo} /></td>
             <td className="border border-[var(--color-soft-border)] p-1"><Button disabled={items.length === 1} onClick={() => onDelete(item.id)} type="button" variant="outline">삭제</Button></td>
@@ -5524,20 +6344,28 @@ function SingleExpenseItemsEditor({ items, onAdd, onChange, onDelete }: { items:
   );
 }
 
-function AccountAllocationEditor({ allocations, allocationTotal, onAdd, onChange, onDelete, totalAmount }: { allocations: AccountAllocation[]; allocationTotal: number; onAdd: () => void; onChange: (id: string, key: keyof AccountAllocation, value: string) => void; onDelete: (id: string) => void; totalAmount: number }) {
+function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommendation, onAdd, onChange, onDelete, totalAmount }: { allocations: AccountAllocation[]; allocationTotal: number; budgetRecommendation: ExpenseBudgetRecommendation | null; onAdd: () => void; onChange: (id: string, key: keyof AccountAllocation, value: string) => void; onDelete: (id: string) => void; totalAmount: number }) {
   const matches = Math.abs(allocationTotal - totalAmount) <= 0.5;
+  const recommendationProfile = budgetRecommendation ? operatingBudgetProfiles[budgetRecommendation.budgetItem] : undefined;
+  const recommendationRemaining = recommendationProfile
+    ? recommendationProfile.monthlyBudgetAmount - recommendationProfile.usedAmount - recommendationProfile.pendingApprovalAmount - recommendationProfile.paymentWaitingAmount - totalAmount
+    : 0;
   return (
-    <section className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4">
-      <div className="flex items-center justify-between gap-3">
+    <section className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-white p-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div><h3 className="text-sm font-black">계정과목 분할</h3><p className={`mt-1 text-xs font-semibold ${matches ? "text-[var(--color-green-ink)]" : "text-[var(--color-tangerine)]"}`}>분할 합계 {formatExpenseResolutionAmount(allocationTotal)} / 총지급액 {formatExpenseResolutionAmount(totalAmount)}</p></div>
         <Button className="rounded-full" onClick={onAdd} type="button" variant="outline">계정과목 추가</Button>
       </div>
+      {budgetRecommendation ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-blue-200 bg-blue-50 px-4 py-3 text-sm">
+        <div><p className="font-black text-[var(--color-deep-cobalt)]">추천 예산항목: {budgetRecommendation.budgetItem} · 신뢰도 {budgetRecommendation.confidence}</p><p className="mt-1 font-semibold text-[var(--color-stone)]">{budgetRecommendation.reason}</p>{recommendationProfile ? <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">월 예산 {formatExpenseResolutionAmount(recommendationProfile.monthlyBudgetAmount)} · 이번 결의 {formatExpenseResolutionAmount(totalAmount)} · 결의 후 잔액 {formatExpenseResolutionAmount(recommendationRemaining)}</p> : null}</div>
+        <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-green-ink)]">자동 적용됨</span>
+      </div> : null}
       <div className="mt-3 grid gap-3">
-        {allocations.map((allocation, index) => <div className="grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 md:grid-cols-[1fr_1fr_140px_1fr_auto]" key={allocation.id}>
-          <label className="grid gap-1 text-xs font-bold">계정과목<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}>{expenseResolutionTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-          <label className="grid gap-1 text-xs font-bold">예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}>{budgetItemOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-          <label className="grid gap-1 text-xs font-bold">분할금액<input aria-label={`분할금액 ${index + 1}`} className="h-9 bg-white px-2 text-right" min="0" onChange={(event) => onChange(allocation.id, "amount", event.target.value)} type="number" value={allocation.amount} /></label>
-          <label className="grid gap-1 text-xs font-bold">적요<input aria-label={`분할 적요 ${index + 1}`} className="h-9 bg-white px-2" onChange={(event) => onChange(allocation.id, "description", event.target.value)} value={allocation.description} /></label>
+        {allocations.map((allocation, index) => <div className="grid min-w-0 gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_auto]" key={allocation.id}>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">예산 구분<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}>{expenseResolutionTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">세부 예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}><option value="">선택</option>{budgetItemOptions.filter((option) => option.startsWith(`${allocation.accountTitle} >`)).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">분할금액<input aria-label={`분할금액 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2 text-right" min="0" onChange={(event) => onChange(allocation.id, "amount", event.target.value)} type="number" value={allocation.amount} /></label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">적요<input aria-label={`분할 적요 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "description", event.target.value)} value={allocation.description} /></label>
           <Button className="self-end" disabled={allocations.length === 1} onClick={() => onDelete(allocation.id)} type="button" variant="outline">삭제</Button>
         </div>)}
       </div>
@@ -5596,9 +6424,9 @@ function FormSection({ children, layout = "default", title }: { children: ReactN
   );
 }
 
-function CollapsibleFormSection({ children, summary, title }: { children: ReactNode; summary: string; title: string }) {
+function CollapsibleFormSection({ children, defaultOpen = false, summary, title }: { children: ReactNode; defaultOpen?: boolean; summary: string; title: string }) {
   return (
-    <details className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
+    <details className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4" open={defaultOpen || undefined}>
       <summary className="cursor-pointer list-none">
         <div className="flex items-center justify-between gap-4">
           <h3 className="text-base font-bold">{title}</h3>
@@ -5644,11 +6472,12 @@ function TextInput({
   );
 }
 
-function TextareaInput({ label, onChange, value }: { label: string; onChange: (value: string) => void; value: string }) {
+function TextareaInput({ id, label, onChange, value }: { id?: string; label: string; onChange: (value: string) => void; value: string }) {
   return (
     <label className={`${fieldWrapperClassName} md:col-span-2`}>
       <span className={fieldLabelClassName}>{label}</span>
       <textarea
+        id={id}
         className="min-h-28 rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-base font-semibold leading-6 text-[var(--color-midnight-ink)] placeholder:text-[var(--color-fog)] focus:border-[var(--color-sky-blue)] focus:outline-none focus:ring-2 focus:ring-[var(--color-morning-tint)]"
         onChange={(event) => onChange(event.target.value)}
         value={value}

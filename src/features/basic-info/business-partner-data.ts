@@ -16,6 +16,29 @@ export type BusinessPartner = {
   balanceType: BusinessPartnerBalanceType;
   balanceAmount: number;
   evidenceProfileStatus: "완료" | "미비";
+  address?: string;
+  firstTransactionDate?: string;
+  registrationSource?: "직접등록" | "OCR 자동등록";
+  sourceEvidenceId?: string;
+  sourceResolutionNo?: string;
+};
+
+export type BusinessPartnerOcrInput = {
+  address?: string;
+  businessCategory?: string;
+  businessItem?: string;
+  evidenceId: string;
+  firstTransactionDate?: string;
+  name: string;
+  phone?: string;
+  registrationNo: string;
+  representative?: string;
+  resolutionNo: string;
+};
+
+export type BusinessPartnerRegistrationResult = {
+  partner: BusinessPartner;
+  status: "CREATED" | "EXISTING";
 };
 
 export type RegisteredBankAccount = {
@@ -190,11 +213,11 @@ function bankAccount(
   };
 }
 
-export function getBusinessPartnerSummary() {
+export function getBusinessPartnerSummary(partners: BusinessPartner[] = businessPartners) {
   return {
-    totalPartners: businessPartners.length,
-    receivablePartners: businessPartners.filter((partner) => partner.balanceType === "채권").length,
-    payablePartners: businessPartners.filter((partner) => partner.balanceType === "채무").length,
-    missingEvidenceProfiles: businessPartners.filter((partner) => partner.evidenceProfileStatus === "미비").length,
+    totalPartners: partners.length,
+    receivablePartners: partners.filter((partner) => partner.balanceType === "채권").length,
+    payablePartners: partners.filter((partner) => partner.balanceType === "채무").length,
+    missingEvidenceProfiles: partners.filter((partner) => partner.evidenceProfileStatus === "미비").length,
   };
 }

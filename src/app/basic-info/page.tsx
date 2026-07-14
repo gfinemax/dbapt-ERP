@@ -1,6 +1,7 @@
 import { BusinessPartnerPage, type BasicInfoSection } from "@/features/basic-info/business-partner-page";
 import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
+import { listBusinessPartnersFromSupabase } from "@/features/basic-info/business-partner-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { createAccountSubjectsAction, createBankAccountAction, updateBankAccountAction } from "./actions";
 
@@ -34,6 +35,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
   const initialSection = parseBasicInfoSection(params?.section);
   const initialAccountSubjects = initialSection === "account-subjects" ? await listAccountSubjectsFromSupabase() : null;
   const initialBankAccounts = initialSection === "bank-accounts" ? await listBankAccountsFromSupabase() : null;
+  const initialBusinessPartners = initialSection === "partners" ? await listBusinessPartnersFromSupabase() : null;
   const hasRemoteWriteConfig = hasSupabaseSecretConfig();
 
   return (
@@ -50,6 +52,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       }
       initialAccountSubjects={initialAccountSubjects ?? undefined}
       initialBankAccounts={initialBankAccounts ?? undefined}
+      initialBusinessPartners={initialBusinessPartners ?? undefined}
       initialSection={initialSection}
       updateBankAccount={
         shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "bank-accounts", initialBankAccounts)

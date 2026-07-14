@@ -6,6 +6,14 @@ import { createAccountSubjectsInSupabase } from "@/features/basic-info/account-s
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import { createBankAccountInSupabase, updateBankAccountInSupabase } from "@/features/basic-info/bank-account-repository";
 import type { BankAccountInput } from "@/features/basic-info/business-partner-data";
+import type { BusinessPartnerOcrInput } from "@/features/basic-info/business-partner-data";
+import { ensureBusinessPartnerFromOcrInSupabase } from "@/features/basic-info/business-partner-repository";
+
+export async function createBusinessPartnerAction(input: BusinessPartnerOcrInput) {
+  const result = await ensureBusinessPartnerFromOcrInSupabase(input);
+  revalidatePath("/basic-info");
+  return result;
+}
 
 export async function createBankAccountAction(input: BankAccountInput) {
   const account = await createBankAccountInSupabase(input);

@@ -4,13 +4,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 describe("print styles", () => {
-  it("prints expense resolutions inside the A4 printable area without forcing an extra page", () => {
+  it("keeps the browser print layout identical to the A4 preview", () => {
     const css = readFileSync(join(process.cwd(), "src/app/globals.css"), "utf8");
 
-    expect(css).toContain("@page {\n  size: A4 portrait;\n  margin: 15mm;\n}");
-    expect(css).toContain("width: 180mm !important;");
-    expect(css).toContain("min-height: auto !important;");
-    expect(css).toContain("padding: 0 !important;");
-    expect(css).not.toContain("min-height: 297mm !important;");
+    expect(css).toContain("@page {\n  size: A4 portrait;\n  margin: 0;\n}");
+    expect(css).toContain("width: 210mm !important;");
+    expect(css).toContain("min-height: 297mm !important;");
+    expect(css).toContain(".expense-resolution-print-header h3 {\n    white-space: nowrap !important;");
+    expect(css).not.toContain("width: 180mm !important;");
+    expect(css).not.toContain("font-size: 11pt;");
   });
 });
