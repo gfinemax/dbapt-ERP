@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapBankTransactionToInsert } from "./bank-transaction-repository";
+import { buildBankTransactionUid, mapBankTransactionToInsert } from "./bank-transaction-repository";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 describe("bank transaction repository mappers", () => {
@@ -29,6 +29,7 @@ describe("bank transaction repository mappers", () => {
     expect(mapBankTransactionToInsert(row)).toEqual({
       balance_amount: 12000000,
       bank_account_id: "00000000-0000-0000-0000-000000000001",
+      bank_transaction_uid: "FALLBACK:00000000-0000-0000-0000-000000000001:2026-07-04T10:31:00.000+09:00:3300000:한빛세무회계",
       branch_name: "우리은행",
       counterparty: "우리은행",
       deposit_amount: 0,
@@ -47,5 +48,6 @@ describe("bank transaction repository mappers", () => {
       uploaded_major_category: "운영비",
       withdrawal_amount: 3300000,
     });
+    expect(buildBankTransactionUid({ ...row, raw: { 거래고유번호: "ABC-123" } })).toBe("BANK:00000000-0000-0000-0000-000000000001:ABC-123");
   });
 });

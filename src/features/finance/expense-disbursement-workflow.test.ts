@@ -65,4 +65,14 @@ describe("expense disbursement workflow", () => {
     expect(() => transitionExpenseDisbursement({ ...payment, command: "PAYMENT_COMPLETE", resolution: createResolution({ approvalStatus: "승인대기" }) })).toThrow(DisbursementWorkflowError);
     expect(() => transitionExpenseDisbursement({ actorLabel: "오학동 사무장", command: "VOUCHER_CREATE", resolution: createResolution(), voucherNo: "지출-2026-0001" })).toThrow(DisbursementWorkflowError);
   });
+
+  it("blocks duplicate payment for an already withdrawn bank transaction", () => {
+    expect(() => transitionExpenseDisbursement({ ...payment, command: "PAYMENT_COMPLETE", resolution: createResolution({ bankTransactionId: "bank-1", expenseKind: "BANK_POST_APPROVAL" }) })).toThrow("추가 지급할 수 없습니다");
+  });
+
+  it("cancels an existing voucher only with a reason", () => {
+    const confirmed = createResolution({ paymentStatus: "지급완료", voucherNo: "지출-2026-0001", voucherStatus: "전표확정" });
+    expect(() => transitionExpenseDisbursement({ actorLabel: "사무장", command: "VOUCHER_CANCEL", resolution: confirmed })).toThrow("전표취소 사유");
+    expect(transitionExpenseDisbursement({ actorLabel: "사무장", command: "VOUCHER_CANCEL", reason: "계정과목 정정", resolution: confirmed })).toMatchObject({ voucherStatus: "전표취소" });
+  });
 });

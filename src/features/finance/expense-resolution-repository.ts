@@ -40,8 +40,9 @@ type ExpenseEvidenceRow = {
 
 const expenseResolutionSelect = "resolution_data";
 
-export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolution) {
+export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolution, organizationId?: string) {
   return {
+    ...(organizationId ? { organization_id: organizationId } : {}),
     id: resolution.id,
     resolution_no: resolution.resolutionNo,
     author_label: resolution.author,
@@ -63,6 +64,22 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     settlement_status: resolution.settlementStatus,
     voucher_no: resolution.voucherNo ?? null,
     voucher_status: resolution.voucherStatus ?? null,
+    expense_kind: resolution.expenseKind ?? "GENERAL",
+    accounting_date: resolution.accountingDate ?? null,
+    actual_expense_date: resolution.actualExpenseDate ?? null,
+    drafted_at: resolution.draftedAt ?? resolution.createdAt,
+    approved_at: resolution.approvedAt ?? null,
+    disbursed_at: resolution.disbursedAt ?? resolution.paidAt ?? null,
+    is_post_approval: resolution.isPostApproval ?? resolution.expenseKind === "BANK_POST_APPROVAL",
+    post_approval_reason: resolution.postApprovalReason ?? null,
+    evidence_kind: resolution.evidenceKind ?? "NONE",
+    evidence_status: resolution.evidenceStatus ?? "NONE",
+    missing_evidence_reason: resolution.missingEvidenceReason ?? null,
+    actual_spender_label: resolution.advancePayer ?? null,
+    settlement_recipient_label: resolution.settlementRecipient ?? null,
+    settlement_amount: resolution.settlementAmount ?? (resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? resolution.totalPaymentAmount : null),
+    settlement_completed_at: resolution.settlementCompletedAt ?? null,
+    bank_transaction_id: resolution.bankTransactionId ?? null,
     resolution_data: resolution,
     updated_at: new Date().toISOString(),
   };
@@ -276,18 +293,25 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
 
+  const { data: organization, error: organizationError } = await supabase.schema("finance").from("expense_compliance_settings").select("organization_id").limit(1).maybeSingle();
+  if (organizationError) throw new Error(`Failed to resolve expense organization: ${organizationError.message}`);
+  if (!organization?.organization_id) throw new Error("지출결의서를 귀속할 활성 조합이 없습니다.");
   const { data, error } = await supabase
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolutions")
-    .upsert(mapExpenseResolutionToUpsert(resolution), { onConflict: "id" })
+    .upsert(mapExpenseResolutionToUpsert(resolution, organization.organization_id), { onConflict: "id" })
     .select(expenseResolutionSelect)
     .single();
 
-  if (error) throw new Error(`Failed to save expense resolution: ${error.message}`);
+  if (error) throw new Error(error.code === "23505" && resolution.bankTransactionId ? "이미 다른 결의서에 연결된 통장거래입니다." : `Failed to save expense resolution: ${error.message}`);
 
   const itemRows = mapExpenseResolutionItemsToRows(resolution);
   const allocationRows = mapExpenseAccountAllocationsToRows(resolution);
   const evidenceRows = mapExpenseEvidenceToRows(resolution);
+  const detailRows = (resolution.pettyCashTransactions ?? []).map((item, index) => {
+    const source = resolution.expenseItems.find((expenseItem) => expenseItem.id === item.id) ?? resolution.expenseItems[index];
+    return { account_title: item.accountTitle, actual_spender_label: item.spender, amount: item.amount, business_purpose: item.businessPurpose, deleted_at: null, evidence_kind: item.evidenceKind ?? mapDetailEvidenceKind(source?.evidenceType), evidence_status: item.evidenceStatus ?? (source?.evidenceFileName ? "GENERAL" : "NONE"), fact_confirmation_id: item.factConfirmationId ?? null, id: item.id, item_name: item.item, line_no: index + 1, memo: source?.memo || null, payment_method: source?.paymentMethod ?? resolution.advancePaymentMethod ?? resolution.paymentMethod ?? "기타", resolution_id: resolution.id, transaction_date: item.transactionDate, updated_at: new Date().toISOString(), vendor_name: item.vendor };
+  });
   const { error: deleteEvidenceError } = await supabase
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolution_evidence")
@@ -307,6 +331,18 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
     .delete()
     .eq("resolution_id", resolution.id);
   if (deleteItemError) throw new Error(`Failed to replace expense resolution items: ${deleteItemError.message}`);
+  const { data: existingDetails, error: existingDetailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").select("id").eq("resolution_id", resolution.id).is("deleted_at", null);
+  if (existingDetailError) throw new Error(`소액경비 상세거래 조회 실패: ${existingDetailError.message}`);
+  for (const [index, detail] of (existingDetails ?? []).entries()) {
+    const { error: parkError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").update({ line_no: 100_000 + index, updated_at: new Date().toISOString() }).eq("id", detail.id);
+    if (parkError) throw new Error(`소액경비 상세거래 순번 준비 실패: ${parkError.message}`);
+  }
+  const currentDetailIds = new Set(detailRows.map((row) => row.id));
+  const removedDetailIds = (existingDetails ?? []).map((row) => row.id).filter((id) => !currentDetailIds.has(id));
+  if (removedDetailIds.length) {
+    const { error: deleteDetailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).in("id", removedDetailIds);
+    if (deleteDetailError) throw new Error(`소액경비 상세거래 삭제 실패: ${deleteDetailError.message}`);
+  }
 
   if (itemRows.length) {
     const { error: itemError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_resolution_items").insert(itemRows);
@@ -326,5 +362,19 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
       .insert(evidenceRows);
     if (evidenceError) throw new Error(`Failed to save expense evidence: ${evidenceError.message}`);
   }
+  if (detailRows.length) {
+    const { error: detailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").upsert(detailRows, { onConflict: "id" });
+    if (detailError) throw new Error(`소액경비 상세거래 저장 실패: ${detailError.message}`);
+  }
   return (data as ExpenseResolutionRow).resolution_data;
+}
+
+function mapDetailEvidenceKind(value?: string) {
+  if (!value) return "NONE";
+  if (value.includes("세금계산서")) return "E_TAX_INVOICE";
+  if (value.includes("계산서")) return "INVOICE";
+  if (value.includes("카드")) return "CARD_RECEIPT";
+  if (value.includes("현금영수증")) return "CASH_RECEIPT";
+  if (value.includes("이체")) return "BANK_TRANSFER";
+  return "OTHER_ALTERNATIVE";
 }

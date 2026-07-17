@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExpenseEvidence, extractEvidenceText, hasExtractedEvidenceData, inferEvidenceType, normalizeEvidenceVendorFields, sanitizeVendorName } from "./expense-evidence";
+import { classifyExpenseEvidence, extractEvidenceText, hasExtractedEvidenceData, inferEvidenceType, normalizeEvidenceVendorFields, normalizeVendorName, sanitizeVendorName } from "./expense-evidence";
 
 describe("expense evidence OCR helpers", () => {
   it("extracts reviewable fields from text evidence", () => {
@@ -33,6 +33,12 @@ describe("expense evidence OCR helpers", () => {
 
   it("removes OCR punctuation from vendor names while preserving Korean, English, numbers, and spaces", () => {
     expect(sanitizeVendorName("스마트기획 | Smart-2026_#")).toBe("스마트기획  Smart2026");
+  });
+
+  it("restores the omitted corporate marker for the Asung Daiso Bongcheon branch", () => {
+    expect(normalizeVendorName("주아성다이소봉천본점")).toBe("(주)아성다이소봉천본점");
+    expect(normalizeVendorName("주아성다이소 봉천본점")).toBe("(주)아성다이소봉천본점");
+    expect(normalizeVendorName("주문구상사")).toBe("주문구상사");
   });
 
   it("classifies a receipt conservatively even when the model guesses tax invoice", () => {

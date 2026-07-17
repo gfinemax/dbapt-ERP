@@ -91,7 +91,7 @@ create table if not exists core.user_roles (
   primary key (user_id, role_id)
 );
 
-create table if not exists core.business_partners (
+create table if not exists finance.business_partners (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references core.organizations(id),
   code text not null unique,
@@ -117,9 +117,10 @@ create table if not exists core.business_partners (
   deleted_at timestamptz
 );
 
-grant select, insert, update on core.business_partners to service_role;
-create index if not exists business_partners_name_idx on core.business_partners (name);
-create index if not exists business_partners_registration_no_idx on core.business_partners (registration_no);
+grant select, insert, update on finance.business_partners to service_role;
+create index if not exists business_partners_name_idx on finance.business_partners (name);
+create index if not exists business_partners_registration_no_idx on finance.business_partners (registration_no);
+create index if not exists business_partners_organization_id_idx on finance.business_partners (organization_id);
 
 create table if not exists core.code_groups (
   id text primary key,
@@ -152,6 +153,44 @@ create table if not exists finance.bank_accounts (
   updated_at timestamptz not null default now(),
   deleted_at timestamptz
 );
+
+create unique index if not exists bank_accounts_active_account_no_key on finance.bank_accounts (account_no) where deleted_at is null;
+
+create table if not exists finance.items (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references core.organizations(id),
+  code text not null unique,
+  name text not null,
+  category text not null default '미분류',
+  unit text not null default '식',
+  description text not null default '',
+  usage_status text not null default '사용' check (usage_status in ('사용', '사용안함')),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+
+create table if not exists finance.credit_cards (
+  id uuid primary key default gen_random_uuid(),
+  organization_id uuid references core.organizations(id),
+  card_company text not null,
+  card_name text not null,
+  card_last_four text not null check (card_last_four ~ '^[0-9]{4}$'),
+  card_type text not null check (card_type in ('법인카드', '업무대행카드')),
+  issued_at date not null,
+  usage_status text not null default '사용' check (usage_status in ('사용', '사용안함')),
+  last_synced_at timestamptz,
+  sync_status text not null default '확인필요' check (sync_status in ('정상', '확인필요')),
+  limit_amount numeric(16,0) not null default 0,
+  settlement_bank text not null default '미지정',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  deleted_at timestamptz
+);
+create unique index if not exists credit_cards_active_identity_key on finance.credit_cards (card_company, card_last_four) where deleted_at is null;
+create index if not exists items_organization_id_idx on finance.items (organization_id);
+create index if not exists credit_cards_organization_id_idx on finance.credit_cards (organization_id);
+grant select, insert, update on finance.items, finance.credit_cards to service_role;
 
 alter table finance.bank_accounts
   add column if not exists organization_id uuid references core.organizations(id),
@@ -345,7 +384,7 @@ create table if not exists finance.expense_workflow_operations (
   id uuid primary key default gen_random_uuid(),
   idempotency_key text not null unique,
   resolution_id text not null references finance.expense_resolutions(id) on delete cascade,
-  command text not null check (command in ('PAYMENT_COMPLETE', 'ITEM_PAYMENT_COMPLETE', 'PAYMENT_HOLD', 'VOUCHER_CREATE', 'VOUCHER_CONFIRM')),
+  command text not null check (command in ('PAYMENT_COMPLETE', 'ITEM_PAYMENT_COMPLETE', 'PAYMENT_HOLD', 'VOUCHER_CREATE', 'VOUCHER_CONFIRM', 'VOUCHER_CANCEL')),
   status text not null default 'PROCESSING' check (status in ('PROCESSING', 'COMPLETED', 'FAILED')),
   request_data jsonb not null default '{}'::jsonb,
   result_data jsonb,
@@ -364,6 +403,96 @@ create table if not exists finance.expense_workflow_audit_logs (
   after_data jsonb,
   created_at timestamptz not null default now()
 );
+
+alter table finance.expense_resolutions
+  add column if not exists expense_kind text not null default 'GENERAL' check (expense_kind in ('GENERAL','PERSONAL_REIMBURSEMENT','BANK_POST_APPROVAL','PETTY_CASH_BATCH','RECURRING_BATCH')),
+  add column if not exists accounting_date date,
+  add column if not exists actual_expense_date date,
+  add column if not exists drafted_at timestamptz not null default now(),
+  add column if not exists approved_at timestamptz,
+  add column if not exists disbursed_at timestamptz,
+  add column if not exists is_post_approval boolean not null default false,
+  add column if not exists post_approval_reason text,
+  add column if not exists evidence_kind text not null default 'NONE',
+  add column if not exists evidence_status text not null default 'NONE' check (evidence_status in ('QUALIFIED','GENERAL','ALTERNATIVE','DEFICIENT','NONE')),
+  add column if not exists missing_evidence_reason text,
+  add column if not exists actual_spender_label text,
+  add column if not exists settlement_recipient_label text,
+  add column if not exists settlement_amount numeric(14,0),
+  add column if not exists settlement_completed_at timestamptz,
+  add column if not exists bank_transaction_id uuid references finance.bank_transactions(id) on delete restrict;
+
+alter table finance.bank_transactions
+  add column if not exists bank_transaction_uid text,
+  add column if not exists resolution_status text not null default 'UNRESOLVED' check (resolution_status in ('UNRESOLVED','DRAFTING','EVIDENCE_MISSING','RESOLVED','APPROVED','EXPLANATION_REQUIRED','REFUND_TARGET'));
+
+create unique index if not exists expense_resolutions_bank_transaction_unique_idx on finance.expense_resolutions(bank_transaction_id) where bank_transaction_id is not null and deleted_at is null;
+create unique index if not exists bank_transactions_uid_unique_idx on finance.bank_transactions(bank_transaction_uid) where bank_transaction_uid is not null;
+
+create table if not exists finance.expense_compliance_settings (
+  organization_id uuid primary key references core.organizations(id) on delete cascade,
+  petty_cash_limit numeric(14,0) not null default 30000,
+  monthly_person_warning_limit numeric(14,0) not null default 100000,
+  petty_cash_allowed_accounts text[] not null default '{}',
+  petty_cash_excluded_keywords text[] not null default '{}',
+  allow_no_evidence_approval boolean not null default true,
+  no_evidence_approver_role text,
+  allow_personal_reimbursement boolean not null default true,
+  post_approval_max_days integer,
+  fact_confirmer_roles text[] not null default '{}',
+  approval_line jsonb not null default '[]'::jsonb,
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists finance.expense_detail_transactions (
+  id text primary key, resolution_id text not null references finance.expense_resolutions(id) on delete restrict,
+  line_no integer not null check (line_no > 0), transaction_date date not null, actual_spender_label text not null, vendor_name text not null,
+  item_name text not null, business_purpose text not null, account_title text not null, amount numeric(14,0) not null check (amount > 0),
+  payment_method text not null, evidence_kind text not null default 'NONE', evidence_status text not null default 'NONE' check (evidence_status in ('QUALIFIED','GENERAL','ALTERNATIVE','DEFICIENT','NONE')),
+  fact_confirmation_id uuid, memo text, created_at timestamptz not null default now(), updated_at timestamptz not null default now(), deleted_at timestamptz
+);
+create unique index if not exists expense_detail_resolution_line_unique_idx on finance.expense_detail_transactions(resolution_id,line_no) where deleted_at is null;
+
+create table if not exists finance.expense_fact_confirmations (
+  id uuid primary key default gen_random_uuid(), resolution_id text not null references finance.expense_resolutions(id) on delete restrict,
+  detail_transaction_id text references finance.expense_detail_transactions(id) on delete restrict, revision_no integer not null default 1,
+  actual_spender_label text not null, actual_expense_date date not null, vendor_name text not null, item_description text not null,
+  amount numeric(14,0) not null check (amount > 0), business_purpose text not null, missing_receipt_reason text not null, payment_method text not null,
+  author_label text not null, confirmer_label text, confirmed_at timestamptz, electronic_confirmation jsonb not null default '{}'::jsonb,
+  is_current boolean not null default true, created_at timestamptz not null default now(), deleted_at timestamptz
+);
+
+do $$ begin
+  alter table finance.expense_detail_transactions add constraint expense_detail_fact_confirmation_fk foreign key(fact_confirmation_id) references finance.expense_fact_confirmations(id) on delete set null;
+exception when duplicate_object then null; end $$;
+
+create table if not exists finance.expense_supporting_files (
+  id uuid primary key default gen_random_uuid(), resolution_id text not null references finance.expense_resolutions(id) on delete restrict,
+  detail_transaction_id text references finance.expense_detail_transactions(id) on delete restrict, fact_confirmation_id uuid references finance.expense_fact_confirmations(id) on delete restrict,
+  storage_bucket text not null, storage_path text not null, original_filename text not null, uploaded_by_label text not null,
+  created_at timestamptz not null default now(), unique(storage_bucket,storage_path)
+);
+
+alter table finance.vouchers
+  add column if not exists expense_resolution_id text references finance.expense_resolutions(id) on delete restrict,
+  add column if not exists detail_transaction_id text references finance.expense_detail_transactions(id) on delete restrict,
+  add column if not exists bank_transaction_id uuid references finance.bank_transactions(id) on delete restrict;
+create unique index if not exists vouchers_bank_transaction_unique_idx on finance.vouchers(bank_transaction_id) where bank_transaction_id is not null and deleted_at is null;
+create index if not exists expense_detail_fact_confirmation_idx on finance.expense_detail_transactions(fact_confirmation_id) where fact_confirmation_id is not null;
+create index if not exists expense_fact_confirmations_resolution_idx on finance.expense_fact_confirmations(resolution_id,is_current) where deleted_at is null;
+create index if not exists expense_fact_confirmations_detail_idx on finance.expense_fact_confirmations(detail_transaction_id) where detail_transaction_id is not null and deleted_at is null;
+create index if not exists expense_supporting_files_resolution_idx on finance.expense_supporting_files(resolution_id);
+create index if not exists expense_supporting_files_detail_idx on finance.expense_supporting_files(detail_transaction_id) where detail_transaction_id is not null;
+create index if not exists expense_supporting_files_fact_idx on finance.expense_supporting_files(fact_confirmation_id) where fact_confirmation_id is not null;
+create index if not exists vouchers_expense_resolution_idx on finance.vouchers(expense_resolution_id) where expense_resolution_id is not null and deleted_at is null;
+create index if not exists vouchers_detail_transaction_idx on finance.vouchers(detail_transaction_id) where detail_transaction_id is not null and deleted_at is null;
+create index if not exists voucher_lines_voucher_idx on finance.voucher_lines(voucher_id);
+
+insert into core.organizations(name,status) select '대방동 지역주택조합','active' where not exists (select 1 from core.organizations where name='대방동 지역주택조합');
+update finance.expense_resolutions set organization_id=(select id from core.organizations where name='대방동 지역주택조합' order by created_at limit 1) where organization_id is null;
+update finance.bank_transactions set organization_id=(select id from core.organizations where name='대방동 지역주택조합' order by created_at limit 1) where organization_id is null;
+update finance.vouchers set organization_id=(select id from core.organizations where name='대방동 지역주택조합' order by created_at limit 1) where organization_id is null;
+insert into finance.expense_compliance_settings(organization_id) select id from core.organizations where name='대방동 지역주택조합' order by created_at limit 1 on conflict (organization_id) do nothing;
 
 create table if not exists reports.report_definitions (
   id text primary key,
@@ -477,7 +606,10 @@ alter table core.roles enable row level security;
 alter table core.user_roles enable row level security;
 alter table core.code_groups enable row level security;
 alter table core.codes enable row level security;
+alter table finance.business_partners enable row level security;
 alter table finance.bank_accounts enable row level security;
+alter table finance.items enable row level security;
+alter table finance.credit_cards enable row level security;
 alter table finance.bank_transactions enable row level security;
 alter table finance.account_subjects enable row level security;
 alter table finance.vouchers enable row level security;
@@ -488,6 +620,10 @@ alter table finance.expense_account_allocations enable row level security;
 alter table finance.expense_resolution_evidence enable row level security;
 alter table finance.expense_workflow_operations enable row level security;
 alter table finance.expense_workflow_audit_logs enable row level security;
+alter table finance.expense_compliance_settings enable row level security;
+alter table finance.expense_detail_transactions enable row level security;
+alter table finance.expense_fact_confirmations enable row level security;
+alter table finance.expense_supporting_files enable row level security;
 alter table reports.report_definitions enable row level security;
 alter table reports.report_runs enable row level security;
 alter table reports.report_versions enable row level security;

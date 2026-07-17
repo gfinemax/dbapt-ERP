@@ -324,6 +324,7 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
                       <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.currentApprover ?? "없음"}</td>
                       <td className="px-4 py-4">
                         <Badge value={resolution.approvalStatus} />
+                        {resolution.evidenceStatus === "NONE" ? <p className="mt-1 rounded bg-red-50 px-2 py-1 text-xs font-bold text-red-700">증빙 없음 · 추가 확인 필수</p> : resolution.evidenceStatus === "DEFICIENT" ? <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs font-bold text-amber-800">증빙불비</p> : null}
                         {resolution.rejectionReason ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{resolution.rejectionReason}</p> : null}
                       </td>
                       <td className="px-4 py-4">

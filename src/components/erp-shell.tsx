@@ -77,8 +77,9 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
         { label: "환불금 지급관리" },
         { label: "증빙자료 관리" },
         { label: "세금계산서·계산서" },
-        { label: "계좌거래 매칭" },
+        { label: "계좌거래 매칭", href: "/finance/bank-transactions" },
         { label: "예산집행 현황" },
+        { label: "지출 관리설정", href: "/finance/expense-settings" },
       ],
     },
     {

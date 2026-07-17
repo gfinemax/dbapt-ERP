@@ -46,6 +46,7 @@ export function BankTransactionUploadPage({
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [savedTransactionIds, setSavedTransactionIds] = useState<string[]>([]);
   const selectedAccount = useMemo(
     () => bankAccounts.find((account) => account.id === selectedAccountId) ?? bankAccounts[0],
     [bankAccounts, selectedAccountId],
@@ -126,7 +127,8 @@ export function BankTransactionUploadPage({
 
     try {
       if (createBankTransactions) {
-        await createBankTransactions(previewRows);
+        const saved = await createBankTransactions(previewRows);
+        setSavedTransactionIds(saved.map((transaction) => transaction.id));
       }
 
       setSaveMessage(`${previewRows.length}건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.`);
@@ -224,6 +226,7 @@ export function BankTransactionUploadPage({
             </Button>
           </div>
           {saveMessage ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{saveMessage}</p> : null}
+          {savedTransactionIds.length ? <div className="mx-4 mt-3 flex flex-wrap gap-2">{savedTransactionIds.map((id, index) => <a className="rounded-full border border-[var(--color-deep-cobalt)] bg-white px-3 py-1.5 text-xs font-bold text-[var(--color-deep-cobalt)]" href={`/finance/exp?bankTransactionId=${encodeURIComponent(id)}`} key={id}>{index + 1}번 출금거래 사후결의 초안 작성</a>)}</div> : null}
           {saveError ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1180px] border-collapse text-left text-sm">

@@ -50,6 +50,7 @@ describe("ErpShell", () => {
       "세금계산서·계산서",
       "계좌거래 매칭",
       "예산집행 현황",
+      "지출 관리설정",
     ]);
     expect(screen.getByRole("link", { name: "지출결의서 관리" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "지출결의서 관리" })).toHaveAttribute("href", "/finance/expense-resolutions");
@@ -61,6 +62,7 @@ describe("ErpShell", () => {
     expect(screen.getByRole("link", { name: "세금계산서·계산서" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "계좌거래 매칭" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "예산집행 현황" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "지출 관리설정" })).toHaveAttribute("href", "/finance/expense-settings");
     expect(screen.getByText("퀵메뉴")).toBeInTheDocument();
     expect(screen.getByText("분담금 수납처리")).toBeInTheDocument();
     expect(screen.getByText("은행거래 업로드")).toBeInTheDocument();

@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import { validateExpenseCompliance, type EvidenceKind, type EvidenceStatus, type ExpenseKind, type PettyCashTransaction } from "./expense-compliance";
+import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
 import { recommendExpenseBudget, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
@@ -18,7 +20,7 @@ import {
 } from "./expense-resolution-data";
 import type { ExpenseResolution, ExpenseResolutionType, ResolutionHistory } from "./expense-resolution-data";
 import { getNextDocumentNo } from "./finance-numbering";
-import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, sanitizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment } from "./expense-evidence";
+import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment } from "./expense-evidence";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
@@ -108,9 +110,14 @@ export type BatchExpenseItem = {
   budgetStatus: BatchBudgetStatus;
   currentRequestAmount: number;
   description: string;
+  actualSpender: string;
+  businessPurpose: string;
   evidenceFileName: string;
   evidenceId?: string;
+  evidenceKind: EvidenceKind;
+  evidenceStatus: EvidenceStatus;
   evidenceType: string;
+  factConfirmationId?: string;
   executedAmount: number;
   expenseDate: string;
   expenseType: ExpenseResolutionType;
@@ -256,11 +263,47 @@ export type ManagedExpenseResolution = {
   voucherStatus?: VoucherStatus;
   voucherConfirmedAt?: string;
   voucherConfirmedBy?: string;
+  expenseKind?: ExpenseKind;
+  accountingDate?: string;
+  actualExpenseDate?: string;
+  draftedAt?: string;
+  approvedAt?: string;
+  disbursedAt?: string;
+  isPostApproval?: boolean;
+  evidenceKind?: EvidenceKind;
+  evidenceStatus?: EvidenceStatus;
+  missingEvidenceReason?: string;
+  bankTransactionId?: string;
+  bankTransactionUid?: string;
+  settlementRecipient?: string;
+  settlementCompletedAt?: string;
+  settlementAmount?: number;
+  pettyCashTransactions?: PettyCashTransaction[];
+  complianceWarnings?: string[];
 };
 
 export type EvidenceType = "세금계산서" | "계산서" | "영수증" | "현금영수증" | "이체확인증" | "계약서" | "견적서" | "의결서" | "기타";
 
+function mapEvidenceTypeToComplianceKind(value: string): EvidenceKind {
+  if (value.includes("세금계산서")) return "E_TAX_INVOICE";
+  if (value.includes("계산서")) return "INVOICE";
+  if (value.includes("카드")) return "CARD_RECEIPT";
+  if (value.includes("현금영수증")) return "CASH_RECEIPT";
+  if (value.includes("영수증")) return "SIMPLE_RECEIPT";
+  if (value.includes("이체")) return "BANK_TRANSFER";
+  return "OTHER_ALTERNATIVE";
+}
+
 type ResolutionFormState = {
+  expenseKind: ExpenseKind;
+  accountingDate: string;
+  actualExpenseDate: string;
+  evidenceKind: EvidenceKind;
+  evidenceStatus: EvidenceStatus;
+  missingEvidenceReason: string;
+  bankTransactionId: string;
+  settlementRecipient: string;
+  settlementCompletedAt: string;
   accountHolder: string;
   author: string;
   advancePaidAmount: string;
@@ -831,7 +874,11 @@ function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseI
     budgetStatus: "NORMAL",
     currentRequestAmount: 0,
     description: "정기총회 장소 대관료",
+    actualSpender: "",
+    businessPurpose: "조합 업무 수행",
     evidenceFileName: "",
+    evidenceKind: "NONE",
+    evidenceStatus: "NONE",
     evidenceType: "영수증",
     executedAmount: 0,
     expenseDate: getCurrentDateIso(),
@@ -1828,6 +1875,15 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution): Manag
 
 function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFormState {
   return {
+    expenseKind: resolution.expenseKind ?? "GENERAL",
+    accountingDate: resolution.accountingDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
+    actualExpenseDate: resolution.actualExpenseDate ?? resolution.advancePaidAt ?? resolution.createdAt,
+    evidenceKind: resolution.evidenceKind ?? "NONE",
+    evidenceStatus: resolution.evidenceStatus ?? "NONE",
+    missingEvidenceReason: resolution.missingEvidenceReason ?? "",
+    bankTransactionId: resolution.bankTransactionId ?? "",
+    settlementRecipient: resolution.settlementRecipient ?? resolution.accountHolder,
+    settlementCompletedAt: resolution.settlementCompletedAt ?? "",
     accountHolder: resolution.accountHolder,
     author: resolution.author,
     advancePaidAmount: String(resolution.advancePaidAmount ?? ""),
@@ -1900,6 +1956,15 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
 
 function createFormState(nextNo: string, currentDate = getCurrentDateIso()): ResolutionFormState {
   return applyPaymentTarget({
+    expenseKind: "GENERAL",
+    accountingDate: currentDate,
+    actualExpenseDate: currentDate,
+    evidenceKind: "NONE",
+    evidenceStatus: "NONE",
+    missingEvidenceReason: "",
+    bankTransactionId: "",
+    settlementRecipient: "",
+    settlementCompletedAt: "",
     resolutionNo: nextNo,
     resolutionMode: "SINGLE",
     subject: "",
@@ -2124,6 +2189,24 @@ function OcrValue({ confirmed = false, label, value }: { confirmed?: boolean; la
       <p className="mt-1 font-semibold">{value}</p>
     </div>
   );
+}
+
+function createBankTransactionDraftFormState(transaction: BankTransactionResolutionCandidate, nextNo: string): ResolutionFormState {
+  const amount = transaction.withdrawalAmount;
+  return {
+    ...createFormState(nextNo),
+    actualExpenseDate: transaction.transactedAt.slice(0, 10),
+    bankTransactionId: transaction.id,
+    evidenceKind: "BANK_TRANSFER",
+    evidenceStatus: "GENERAL",
+    expenseKind: "BANK_POST_APPROVAL",
+    plannedPaymentDate: transaction.transactedAt.slice(0, 10),
+    reason: transaction.description,
+    singleItems: [createSingleExpenseItem({ itemName: transaction.description, quantity: "1", taxCategory: "NO_VAT", unitPrice: String(amount) })],
+    supplyAmount: String(amount),
+    vat: "0",
+    vendorName: transaction.counterparty || transaction.description,
+  };
 }
 
 function getApprovalProcessedAt(resolution: ManagedExpenseResolution, step: ApprovalStep) {
@@ -2408,10 +2491,17 @@ export function ExpenseResolutionPage({
   createEvidenceDownloadUrl,
   dataLoadError,
   deleteEvidence,
+  deleteResolution,
   ensureBusinessPartnerFromOcr,
   getEvidenceOcrJob,
   initialResolutions,
+  initialBankTransactions = [],
+  initialBankTransactionId,
   persistResolution,
+  saveFactConfirmation,
+  listFactConfirmations,
+  deleteFactConfirmation,
+  uploadFactSupportingFile,
   retryEvidenceOcrJob,
   transitionApproval,
   transitionDisbursement,
@@ -2420,10 +2510,17 @@ export function ExpenseResolutionPage({
   createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>;
   dataLoadError?: string;
   deleteEvidence?: (storagePath: string) => Promise<void>;
+  deleteResolution?: (resolutionId: string, actorLabel: string) => Promise<void>;
   ensureBusinessPartnerFromOcr?: (input: BusinessPartnerOcrInput) => Promise<BusinessPartnerRegistrationResult>;
   getEvidenceOcrJob?: (id: string) => Promise<EvidenceOcrJobProgress>;
   initialResolutions?: ManagedExpenseResolution[];
+  initialBankTransactions?: BankTransactionResolutionCandidate[];
+  initialBankTransactionId?: string;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
+  saveFactConfirmation?: (input: ExpenseFactConfirmationInput) => Promise<string>;
+  listFactConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>;
+  deleteFactConfirmation?: (id: string, resolutionId: string, actorLabel: string) => Promise<void>;
+  uploadFactSupportingFile?: (formData: FormData) => Promise<{ fileName: string; id: string }>;
   retryEvidenceOcrJob?: (id: string) => Promise<void>;
   transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>;
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
@@ -2432,6 +2529,7 @@ export function ExpenseResolutionPage({
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? expenseResolutions.map(toManagedExpenseResolution),
   );
+  const initialBankDraft = initialBankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
   const [isLocalStorageHydrated, setIsLocalStorageHydrated] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [batchImportResult, setBatchImportResult] = useState<ExpenseResolutionImportResult | null>(null);
@@ -2445,18 +2543,27 @@ export function ExpenseResolutionPage({
   const [searchQuery, setSearchQuery] = useState("");
   const [approvalFilter, setApprovalFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
+  const [expenseKindFilter, setExpenseKindFilter] = useState("");
+  const [evidenceStatusFilter, setEvidenceStatusFilter] = useState("");
+  const [postApprovalFilter, setPostApprovalFilter] = useState("");
+  const [bankLinkedFilter, setBankLinkedFilter] = useState("");
+  const [spenderFilter, setSpenderFilter] = useState("");
+  const [accountTitleFilter, setAccountTitleFilter] = useState("");
+  const [vendorFilter, setVendorFilter] = useState("");
+  const [pettyCashBatchFilter, setPettyCashBatchFilter] = useState("");
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(Boolean(initialBankDraft));
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
+  const [factConfirmationTarget, setFactConfirmationTarget] = useState<{ detailItem?: BatchExpenseItem; resolution: ManagedExpenseResolution } | null>(null);
   const [printWarning, setPrintWarning] = useState<{ mode: PrintRecordItem["printPurpose"]; resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
-  const [formState, setFormState] = useState<ResolutionFormState>(() => createFormState(getNextResolutionNo(resolutions)));
+  const [formState, setFormState] = useState<ResolutionFormState>(() => initialBankDraft ? createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions)) : createFormState(getNextResolutionNo(resolutions)));
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
     actualPaidAmount: "",
     accountHolder: "",
@@ -2495,9 +2602,18 @@ export function ExpenseResolutionPage({
     dateTo: dateToFilter,
     overdueOnly,
     paymentStatus: paymentFilter,
+    expenseKind: expenseKindFilter,
+    evidenceStatus: evidenceStatusFilter,
+    postApproval: postApprovalFilter,
+    bankLinked: bankLinkedFilter,
+    spender: spenderFilter,
+    accountTitle: accountTitleFilter,
+    vendor: vendorFilter,
+    pettyCashBatch: pettyCashBatchFilter,
     query: searchQuery,
   });
   const dashboard = getExpenseResolutionDashboard(resolutions, getCurrentDateIso());
+  const repeatedMissingEvidenceSpenders = new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender));
   const workflowAlerts = buildExpenseResolutionAlerts(resolutions, getCurrentDateIso());
   const pendingEvidenceJobIds = formState.evidenceFiles
     .filter((file) => file.ocrJobId && file.ocrStatus === "REVIEW_REQUIRED")
@@ -2594,7 +2710,7 @@ export function ExpenseResolutionPage({
 
   function updateFormValue<K extends keyof ResolutionFormState>(key: K, value: ResolutionFormState[K]) {
     setFormState((current) => {
-      const normalizedValue = key === "vendorName" && typeof value === "string" ? sanitizeVendorName(value) : value;
+      const normalizedValue = key === "vendorName" && typeof value === "string" ? normalizeVendorName(value) : value;
       const nextState = { ...current, [key]: normalizedValue };
       if (key === "createdAt" && typeof value === "string" && (!current.plannedPaymentDate || current.plannedPaymentDate === current.createdAt)) {
         nextState.plannedPaymentDate = value;
@@ -2787,8 +2903,37 @@ export function ExpenseResolutionPage({
     });
   }
 
-  function attachBatchEvidence(itemNo: number) {
-    updateBatchItem(itemNo, "evidenceFileName", `증빙첨부-ui-${itemNo}.pdf`);
+  async function attachBatchEvidence(itemNo: number, file: File) {
+    if (!uploadEvidence) {
+      setEvidenceUploadError("증빙 저장소가 연결되지 않았습니다.");
+      return;
+    }
+    const item = formState.batchItems.find((entry) => entry.itemNo === itemNo);
+    if (!item) return;
+    setIsEvidenceUploading(true);
+    setEvidenceUploadError("");
+    try {
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("resolutionNo", formState.resolutionNo);
+      formData.set("evidenceType", item.evidenceType || formState.evidenceType);
+      const uploaded = { ...(await uploadEvidence(formData)), itemId: item.id };
+      setFormState((current) => ({
+        ...current,
+        batchItems: current.batchItems.map((entry) => entry.itemNo === itemNo ? {
+          ...entry,
+          evidenceFileName: uploaded.fileName,
+          evidenceId: uploaded.id,
+          evidenceKind: mapEvidenceTypeToComplianceKind(uploaded.evidenceType),
+          evidenceStatus: "GENERAL",
+        } : entry),
+        evidenceFiles: [...current.evidenceFiles, uploaded],
+      }));
+    } catch (error) {
+      setEvidenceUploadError(error instanceof Error ? error.message : "상세거래 증빙을 업로드하지 못했습니다.");
+    } finally {
+      setIsEvidenceUploading(false);
+    }
   }
 
   function reviewBatchBudget(itemNo: number) {
@@ -2982,7 +3127,7 @@ export function ExpenseResolutionPage({
       budgetRecommendation,
       plannedPaymentDate: ocr.documentDate ?? current.plannedPaymentDate,
       evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrStatus: "CONFIRMED" as const } : file),
-      vendorName: ocr.issuer ? sanitizeVendorName(ocr.issuer).replace(/\s{2,}/g, " ").trim() : current.vendorName,
+      vendorName: ocr.issuer ? normalizeVendorName(ocr.issuer) : current.vendorName,
       evidenceType: transactionEvidenceTypeOptions.includes(ocr.normalizedEvidenceType as EvidenceType)
         ? ocr.normalizedEvidenceType as EvidenceType
         : current.evidenceType,
@@ -3175,7 +3320,24 @@ export function ExpenseResolutionPage({
     const approvalLine = buildApprovalLine().map((step, index) =>
       mode === "approval-request" && index === 0 ? { ...step, status: "결재대기" as const } : step,
     );
+    const pettyCashTransactions = formState.expenseKind === "PETTY_CASH_BATCH" || formState.expenseKind === "RECURRING_BATCH" ? formState.batchItems.map((item) => ({ accountTitle: item.accountTitle, amount: item.totalAmount, businessPurpose: item.businessPurpose || formState.reason || item.description, evidenceKind: item.evidenceKind, evidenceStatus: item.evidenceStatus, factConfirmationId: item.factConfirmationId, id: item.id, item: item.itemTitle, overrideReason: item.overBudgetReason, spender: item.actualSpender || formState.advancePayer || formState.author, transactionDate: item.expenseDate, vendor: item.vendorName })) : undefined;
+    const compliance = validateExpenseCompliance({ actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason });
+    if (mode === "approval-request" && compliance.errors.length) { setSaveError(compliance.errors.join(" ")); return; }
     const nextResolution: ManagedExpenseResolution = {
+      expenseKind: formState.expenseKind,
+      accountingDate: formState.accountingDate,
+      actualExpenseDate: formState.actualExpenseDate,
+      draftedAt: new Date().toISOString(),
+      isPostApproval: formState.expenseKind === "BANK_POST_APPROVAL" || formState.expenseTiming !== "ADVANCE",
+      evidenceKind: formState.evidenceKind,
+      evidenceStatus: formState.evidenceStatus,
+      missingEvidenceReason: formState.missingEvidenceReason || undefined,
+      bankTransactionId: formState.bankTransactionId || undefined,
+      settlementRecipient: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementRecipient || formState.advancePayer : undefined,
+      settlementCompletedAt: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementCompletedAt || undefined : undefined,
+      settlementAmount: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? totalPaymentAmount : undefined,
+      pettyCashTransactions,
+      complianceWarnings: compliance.warnings,
       id: createExpenseResolutionInternalId(formState.resolutionNo),
       resolutionNo: formState.resolutionNo,
       subject: formState.subject.trim(),
@@ -3229,7 +3391,7 @@ export function ExpenseResolutionPage({
       approvalStatus,
       currentApprover: mode === "approval-request" ? getApproverLabel(firstApprover) : undefined,
       paymentStatus: isAlreadyPaid ? "지급완료" : "지급전",
-      settlementStatus: formState.expenseTiming === "SETTLEMENT" ? "정산대기" : "정산없음",
+      settlementStatus: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? (formState.settlementCompletedAt ? "정산완료" : "정산대기") : formState.expenseTiming === "SETTLEMENT" ? "정산대기" : "정산없음",
       advancePaidAt: usesAdvanceFields ? formState.advancePaidAt : undefined,
       advancePayer: usesAdvanceFields || formState.expenseTiming === "REIMBURSEMENT" ? formState.advancePayer : undefined,
       advancePaymentMethod: usesAdvanceFields ? formState.advancePaymentMethod : undefined,
@@ -3335,6 +3497,18 @@ export function ExpenseResolutionPage({
     if (resolution) await runApprovalTransition(resolution, "REQUEST", resolution.author);
   }
 
+  async function cancelApproval(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (!resolution) return;
+    const reason = window.prompt("승인취소 사유를 입력해주세요.");
+    if (reason) await runApprovalTransition(resolution, "CANCEL", currentUserName, reason);
+  }
+
+  async function removeResolution(id: string) {
+    if (!deleteResolution || !window.confirm("지출결의서를 삭제할까요? 감사로그에는 이력이 보존됩니다.")) return;
+    try { await deleteResolution(id, currentUserName); setResolutions((current) => current.filter((item) => item.id !== id)); setSelectedDetailId(null); } catch (error) { setSaveError(error instanceof Error ? error.message : "지출결의서를 삭제하지 못했습니다."); }
+  }
+
   function rejectResolution(id: string) {
     setRejectionForm({
       error: "",
@@ -3434,6 +3608,13 @@ export function ExpenseResolutionPage({
   async function confirmVoucher(id: string) {
     const resolution = resolutions.find((item) => item.id === id);
     if (resolution && await runDisbursementTransition(resolution, "VOUCHER_CONFIRM")) setActiveTab("voucherCreated");
+  }
+
+  async function cancelVoucher(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (!resolution) return;
+    const reason = window.prompt("전표취소 사유를 입력해주세요.");
+    if (reason) await runDisbursementTransition(resolution, "VOUCHER_CANCEL", { reason });
   }
 
   function createPrintRecord(id: string, printPurpose: PrintRecordItem["printPurpose"]) {
@@ -3607,6 +3788,14 @@ export function ExpenseResolutionPage({
               </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <select aria-label="지출 유형 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setExpenseKindFilter(event.target.value)} value={expenseKindFilter}><option value="">지출 유형 전체</option><option value="GENERAL">일반 지출</option><option value="PERSONAL_REIMBURSEMENT">개인 선지출 정산</option><option value="BANK_POST_APPROVAL">통장 선출금 사후결의</option><option value="PETTY_CASH_BATCH">소액경비 일괄결의</option><option value="RECURRING_BATCH">정기비용 일괄결의</option></select>
+              <select aria-label="증빙 상태 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setEvidenceStatusFilter(event.target.value)} value={evidenceStatusFilter}><option value="">증빙 상태 전체</option><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select>
+              <select aria-label="사후결의 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setPostApprovalFilter(event.target.value)} value={postApprovalFilter}><option value="">사후결의 전체</option><option value="YES">사후결의</option><option value="NO">사전결의</option></select>
+              <select aria-label="통장거래 연결 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setBankLinkedFilter(event.target.value)} value={bankLinkedFilter}><option value="">통장연결 전체</option><option value="YES">연결됨</option><option value="NO">미연결</option></select>
+              <input aria-label="개인 선지출자 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setSpenderFilter(event.target.value)} placeholder="개인 선지출자" value={spenderFilter} />
+              <input aria-label="계정과목 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setAccountTitleFilter(event.target.value)} placeholder="계정과목" value={accountTitleFilter} />
+              <input aria-label="거래처 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setVendorFilter(event.target.value)} placeholder="거래처" value={vendorFilter} />
+              <select aria-label="소액 일괄결의 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setPettyCashBatchFilter(event.target.value)} value={pettyCashBatchFilter}><option value="">소액 일괄 전체</option><option value="YES">소액 일괄</option><option value="NO">일반/기타</option></select>
               <select aria-label="승인상태 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setApprovalFilter(event.target.value)} value={approvalFilter}>
                 <option value="">승인상태 전체</option><option>작성중</option><option>승인대기</option><option>승인완료</option><option>반려</option>
               </select>
@@ -3645,22 +3834,27 @@ export function ExpenseResolutionPage({
               </Button>
             </div>
             <div className="overflow-x-auto">
-              <table aria-label="지출결의서 목록" className="w-full min-w-[980px] border-collapse text-left text-sm">
+              <table aria-label="지출결의서 목록" className="w-full min-w-[1800px] border-collapse text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
-                    <th className="w-[120px] px-4 py-3 text-center">작성일</th>
+                    <th className="w-[140px] px-4 py-3 text-center">결의번호</th>
+                    <th className="w-[150px] px-4 py-3 text-center">실제 지출일 / 작성일</th>
+                    <th className="w-[140px] px-4 py-3 text-center">지출 유형</th>
                     <th className="px-4 py-3 text-left">결의요약</th>
+                    <th className="w-[150px] px-4 py-3 text-left">거래처/정산대상자</th>
                     <th className="w-[150px] px-4 py-3 text-right">총지급액</th>
                     <th className="w-[120px] px-4 py-3 text-center">예산상태</th>
                     <th className="w-[210px] px-4 py-3 text-left">진행상태</th>
                     <th className="w-[110px] px-4 py-3 text-center">증빙</th>
+                    <th className="w-[90px] px-4 py-3 text-center">사후결의</th>
+                    <th className="w-[100px] px-4 py-3 text-center">통장연결</th>
                     <th className="w-[190px] px-4 py-3 text-left">액션</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
                   {visibleResolutions.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={7}>
+                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={12}>
                         등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요.
                       </td>
                     </tr>
@@ -3673,28 +3867,42 @@ export function ExpenseResolutionPage({
 
                     return (
                       <tr className="bg-white/70" key={resolution.id}>
+                        <td className="px-4 py-4 text-center font-bold">{resolution.resolutionNo}</td>
                         <td className="px-4 py-4 text-center text-[var(--color-stone)]">
-                          <span className="sr-only">{resolution.resolutionNo}</span>
-                          {resolution.createdAt}
+                          <p className="font-bold text-[var(--color-midnight-ink)]">{resolution.actualExpenseDate ?? "-"}</p>
+                          <p className="text-xs">작성 {resolution.createdAt}</p>
                         </td>
+                        <td className="px-4 py-4 text-center text-xs font-bold">{resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : resolution.expenseKind === "PETTY_CASH_BATCH" ? "소액경비 일괄" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출"}</td>
                         <td className="px-4 py-4 align-top">
                           <p className="font-bold text-[var(--color-midnight-ink)]">
                             {getResolutionSubject(resolution)}
                           </p>
                           <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{getResolutionTypeLabel(resolution.resolutionType)} · {resolution.projectName || "프로젝트 없음"}</p>
+                          <div className="mt-2 flex flex-wrap gap-1">
+                            {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
+                            {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <ComplianceBadge label="개인 선지출" /> : null}
+                            {resolution.expenseKind === "PETTY_CASH_BATCH" ? <ComplianceBadge label="소액 일괄" /> : null}
+                            {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
+                            {resolution.bankTransactionId ? <ComplianceBadge label="통장연결" tone="success" /> : null}
+                            {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
+                            {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
+                            {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
+                          </div>
                           <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
                           <p className="mt-1 text-sm font-semibold text-[var(--color-stone)]">
                             {resolution.representativeVendorName} / {resolution.representativeAccountTitle}
                           </p>
-                          <span className="sr-only">{resolution.representativeVendorName}</span>
                           <span className="sr-only">{resolution.representativeAccountTitle}</span>
                         </td>
+                        <td className="px-4 py-4 text-sm font-semibold">{resolution.settlementRecipient || resolution.representativeVendorName || resolution.vendorName}</td>
                         <td className="px-4 py-4 text-right font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
                         <td className="px-4 py-4 text-center">
                           <Badge value={getBudgetOverLabel(resolution.overBudgetItemCount)} />
                           {resolution.totalOverBudgetAmount > 0 ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}</p> : null}
                         </td>
+                        <td className="px-4 py-4 text-center">{resolution.isPostApproval ? "예" : "아니오"}</td>
+                        <td className="px-4 py-4 text-center">{resolution.bankTransactionId ? "연결완료" : "미연결"}</td>
                         <td className="px-4 py-4">
                           <p className="font-semibold text-[var(--color-midnight-ink)]">
                             {resolution.approvalStatus} · {resolution.paymentStatus} · {getVoucherStatusLabel(resolution)}
@@ -3714,7 +3922,7 @@ export function ExpenseResolutionPage({
                           ) : null}
                         </td>
                         <td className="px-4 py-4 text-center">
-                          <Badge value={resolution.evidenceAttached ? "첨부완료" : "미첨부"} />
+                          <Badge value={resolution.evidenceStatus === "QUALIFIED" ? "적격증빙" : resolution.evidenceStatus === "GENERAL" ? "일반증빙" : resolution.evidenceStatus === "ALTERNATIVE" ? "대체증빙" : resolution.evidenceStatus === "DEFICIENT" ? "증빙불비" : resolution.evidenceAttached ? "첨부완료" : "증빙 없음"} />
                         </td>
                         <td className="px-4 py-4">
                           <div className="flex flex-wrap gap-1.5">
@@ -3797,13 +4005,13 @@ export function ExpenseResolutionPage({
                 </tbody>
                   <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
                     <tr>
-                    <td className="px-4 py-3 text-right" colSpan={2}>
+                    <td className="px-4 py-3 text-right" colSpan={5}>
                       {activeTabItem.label} 합계
                     </td>
                     <td className="px-4 py-3 text-right">
                       {formatExpenseResolutionAmount(visibleResolutions.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0))}
                     </td>
-                    <td className="px-4 py-3" colSpan={4}>
+                    <td className="px-4 py-3" colSpan={6}>
                       표시 건수 {visibleResolutions.length}건
                     </td>
                   </tr>
@@ -3825,6 +4033,7 @@ export function ExpenseResolutionPage({
           batchSummary={formBatchSummary}
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
+          bankTransactionCandidates={initialBankTransactions}
           settlementCandidates={resolutions.filter((resolution) => normalizeExpenseTiming(resolution) === "ADVANCE" && resolution.paymentStatus === "지급완료")}
           isEditing={Boolean(editingResolutionId)}
           isEvidenceUploading={isEvidenceUploading}
@@ -3863,8 +4072,12 @@ export function ExpenseResolutionPage({
           canApprove={isCurrentUserApprover(selectedDetail)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
+          onCancelApproval={() => cancelApproval(selectedDetail.id)}
+          onCancelVoucher={() => cancelVoucher(selectedDetail.id)}
           onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
+          onCreateFactConfirmation={(detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
+          onDelete={() => removeResolution(selectedDetail.id)}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
           onProcessPayment={() => openPaymentModal(selectedDetail)}
@@ -3873,6 +4086,8 @@ export function ExpenseResolutionPage({
           resolution={selectedDetail}
         />
       ) : null}
+
+      {factConfirmationTarget ? <ExpenseFactConfirmationModal deleteConfirmation={deleteFactConfirmation} detailItem={factConfirmationTarget.detailItem} listConfirmations={listFactConfirmations} onClose={() => setFactConfirmationTarget(null)} onSave={saveFactConfirmation} onUploadSupportingFile={uploadFactSupportingFile} resolution={factConfirmationTarget.resolution} /> : null}
 
       {paymentTarget ? (
         <PaymentProcessModal
@@ -3916,6 +4131,7 @@ export function ExpenseResolutionPage({
 }
 
 function ExpenseResolutionCreateModal({
+  bankTransactionCandidates,
   batchImportError,
   batchImportFileName,
   batchImportResult,
@@ -3956,6 +4172,7 @@ function ExpenseResolutionCreateModal({
   onSingleItemChange,
   onAccountAllocationChange,
 }: {
+  bankTransactionCandidates: BankTransactionResolutionCandidate[];
   batchImportError: string;
   batchImportFileName: string;
   batchImportResult: ExpenseResolutionImportResult | null;
@@ -3971,7 +4188,7 @@ function ExpenseResolutionCreateModal({
   onAddBatchItem: () => void;
   onAddSingleItem: () => void;
   onAddAccountAllocation: () => void;
-  onAttachBatchEvidence: (itemNo: number) => void;
+  onAttachBatchEvidence: (itemNo: number, file: File) => void | Promise<void>;
   onBatchItemChange: (itemNo: number, key: keyof BatchExpenseItem, value: string) => void;
   onCancel: () => void;
   onChange: <K extends keyof ResolutionFormState>(key: K, value: ResolutionFormState[K]) => void;
@@ -4284,6 +4501,23 @@ function ExpenseResolutionCreateModal({
             {(currentStep === 1 || currentStep === 2) ? (
             <>
             {currentStep === 1 ? <>
+            <QuestionChoiceGroup
+              label="지출 유형"
+              onChange={(value) => {
+                onChange("expenseKind", value as ExpenseKind);
+                if (value === "BANK_POST_APPROVAL" || value === "PERSONAL_REIMBURSEMENT") onChange("expenseTiming", "REIMBURSEMENT");
+                if (value === "PETTY_CASH_BATCH" || value === "RECURRING_BATCH") onChange("resolutionMode", "PROJECT_BULK");
+              }}
+              options={[
+                { label: "일반 지출", value: "GENERAL" },
+                { label: "개인 선지출 정산", value: "PERSONAL_REIMBURSEMENT" },
+                { label: "통장 선출금 사후결의", value: "BANK_POST_APPROVAL" },
+                { label: "소액경비 일괄결의", value: "PETTY_CASH_BATCH" },
+                { label: "정기비용 일괄결의", value: "RECURRING_BATCH" },
+              ]}
+              value={formState.expenseKind}
+            />
+            {formState.expenseKind === "BANK_POST_APPROVAL" ? <div className="rounded-xl border border-orange-300 bg-orange-50 px-5 py-4 text-sm font-bold text-orange-900">이미 통장에서 출금된 거래에 대한 사후결의입니다. 승인 후 추가 지급하지 않고 기존 출금 및 전표를 연결합니다.</div> : null}
             <section className="grid gap-5 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-5">
               <QuestionChoiceGroup
                 label="지출내역을 어떤 방식으로 작성하시겠습니까?"
@@ -4368,8 +4602,12 @@ function ExpenseResolutionCreateModal({
             <FormSection layout="compact" title={currentStep === 1 ? "기본정보" : "지출내역·금액"}>
               {currentStep === 1 ? <>
               <TextInput label="결의서번호" readOnly value={formState.resolutionNo} />
-              <TextInput label="작성일" onChange={(value) => onChange("createdAt", value)} type="date" value={formState.createdAt} />
+              <TextInput label="작성일" readOnly value={formState.createdAt} />
+              <TextInput label="회계 귀속일" onChange={(value) => onChange("accountingDate", value)} type="date" value={formState.accountingDate} />
+              <TextInput label="실제 지출일" onChange={(value) => onChange("actualExpenseDate", value)} type="date" value={formState.actualExpenseDate} />
               <TextInput label="작성자" readOnly value={formState.author} />
+              {formState.expenseKind === "BANK_POST_APPROVAL" ? <label className="grid gap-1 text-sm font-semibold md:col-span-2"><span>통장 출금거래 연결</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => { const transaction = bankTransactionCandidates.find((item) => item.id === event.target.value); onChange("bankTransactionId", event.target.value); if (transaction) { onChange("actualExpenseDate", transaction.transactedAt.slice(0, 10)); onChange("vendorName", transaction.counterparty || transaction.description); } }} value={formState.bankTransactionId}><option value="">미결의 출금거래 선택</option>{bankTransactionCandidates.map((transaction) => <option disabled={Boolean(transaction.linkedResolutionId)} key={transaction.id} value={transaction.id}>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</option>)}</select></label> : null}
+              {formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? <><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /><TextInput label="조합의 정산일" onChange={(value) => onChange("settlementCompletedAt", value)} type="date" value={formState.settlementCompletedAt} /><div className="rounded-lg border bg-white px-4 py-3 text-sm font-bold">정산 상태: {formState.settlementCompletedAt ? "정산완료" : "정산예정"}</div></> : null}
               {formState.expenseTiming === "ADVANCE" ? <TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /> : null}
               <p className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)] md:col-span-3 xl:col-span-4">
                 작성자는 로그인 사용자 기준으로 자동 입력되며 결재선과 별도로 관리됩니다.
@@ -4690,6 +4928,10 @@ function ExpenseResolutionCreateModal({
 
             {currentStep === 2 ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
               {vendorRegistrationNotice ? <p className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-sprout)] px-4 py-3 text-sm font-bold text-[var(--color-green-ink)]">{vendorRegistrationNotice}</p> : null}
+              <label className="grid gap-1 text-sm font-semibold"><span>증빙 유형</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceKind", event.target.value as EvidenceKind)} value={formState.evidenceKind}><option value="E_TAX_INVOICE">전자세금계산서</option><option value="INVOICE">계산서</option><option value="CARD_RECEIPT">카드매출전표</option><option value="CASH_RECEIPT">현금영수증</option><option value="SIMPLE_RECEIPT">간이영수증</option><option value="BANK_TRANSFER">계좌이체확인증</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="BILL">청구서</option><option value="EXPENSE_FACT_CONFIRMATION">지출사실확인서</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option><option value="NONE">증빙 없음</option></select></label>
+              <label className="grid gap-1 text-sm font-semibold"><span>증빙 상태</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceStatus", event.target.value as EvidenceStatus)} value={formState.evidenceStatus}><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select></label>
+              {formState.evidenceKind === "EXPENSE_FACT_CONFIRMATION" ? <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 md:col-span-3">지출사실확인서는 지출결의서를 대체하지 않으며 적격증빙으로 처리되지 않습니다.</p> : null}
+              {formState.evidenceStatus === "DEFICIENT" || formState.evidenceStatus === "NONE" ? <TextInput label="증빙 미첨부 사유" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} /> : null}
               <label className="grid gap-1 text-sm font-semibold">
                 <span>거래 증빙 종류</span>
                 <select
@@ -4966,7 +5208,7 @@ function BatchExpenseItemsSection({
   batchSummary: ReturnType<typeof summarizeBatchItems>;
   items: BatchExpenseItem[];
   onAddBatchItem: () => void;
-  onAttachBatchEvidence: (itemNo: number) => void;
+  onAttachBatchEvidence: (itemNo: number, file: File) => void | Promise<void>;
   onBatchItemChange: (itemNo: number, key: keyof BatchExpenseItem, value: string) => void;
   onCopyBatchItem: (itemNo: number) => void;
   onDeleteBatchItem: (itemNo: number) => void;
@@ -5021,6 +5263,7 @@ function BatchExpenseItemsSection({
             <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <BatchInput ariaLabel={`${item.itemNo}행 지출예정일`} label="지출예정일" type="date" value={item.expenseDate} onChange={(value) => onBatchItemChange(item.itemNo, "expenseDate", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 거래처`} label="거래처" value={item.vendorName} onChange={(value) => onBatchItemChange(item.itemNo, "vendorName", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 실제 지출자`} label="실제 지출자" value={item.actualSpender} onChange={(value) => onBatchItemChange(item.itemNo, "actualSpender", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 계정항목`} label="계정항목" options={accountTitleOptions} value={item.accountTitle} onChange={(value) => onBatchItemChange(item.itemNo, "accountTitle", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 지급상태`} label="지급상태" options={["지급전", "지급대기", "지급완료", "보류"]} value={item.paymentStatus} onChange={(value) => onBatchItemChange(item.itemNo, "paymentStatus", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 지출구분`} label="지출구분" options={expenseResolutionTypeOptions} value={item.expenseType} onChange={(value) => onBatchItemChange(item.itemNo, "expenseType", value)} />
@@ -5028,9 +5271,11 @@ function BatchExpenseItemsSection({
               <BatchInput ariaLabel={`${item.itemNo}행 지출항목명`} label="지출항목명" value={item.itemTitle} onChange={(value) => onBatchItemChange(item.itemNo, "itemTitle", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 지급방법`} label="지급방법" options={["계좌이체", "카드결제", "현금", "기타"]} value={item.paymentMethod} onChange={(value) => onBatchItemChange(item.itemNo, "paymentMethod", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} className="xl:col-span-2" label="내역 및 산출근거" value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 업무목적`} className="xl:col-span-2" label="업무목적" value={item.businessPurpose} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 공급가액`} label="공급가액" type="number" value={item.supplyAmount} onChange={(value) => onBatchItemChange(item.itemNo, "supplyAmount", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 부가세`} label="부가세" type="number" value={item.vatAmount} onChange={(value) => onBatchItemChange(item.itemNo, "vatAmount", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 증빙유형`} label="증빙유형" options={batchEvidenceTypeOptions} value={item.evidenceType} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceType", value)} />
+              <BatchSelect ariaLabel={`${item.itemNo}행 증빙상태`} label="증빙상태" options={["QUALIFIED", "GENERAL", "ALTERNATIVE", "DEFICIENT", "NONE"]} value={item.evidenceStatus} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceStatus", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 증빙파일명`} className="xl:col-span-2" label="증빙파일명" value={item.evidenceFileName} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceFileName", value)} />
               <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                 <p className="text-xs font-bold text-[var(--color-stone)]">합계</p>
@@ -5045,9 +5290,10 @@ function BatchExpenseItemsSection({
               <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-tangerine)]" onClick={() => onDeleteBatchItem(item.itemNo)} type="button">
                 {item.itemNo}행 행 삭제
               </button>
-              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-deep-cobalt)]" onClick={() => onAttachBatchEvidence(item.itemNo)} type="button">
-                {item.itemNo}행 증빙첨부
-              </button>
+              <label className="cursor-pointer rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-deep-cobalt)]">
+                {item.itemNo}행 실제 증빙첨부
+                <input accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv" className="sr-only" onChange={(event) => { const file = event.target.files?.[0]; if (file) void onAttachBatchEvidence(item.itemNo, file); event.target.value = ""; }} type="file" />
+              </label>
               <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-semibold text-[var(--color-green-ink)]" onClick={() => onReviewBatchBudget(item.itemNo)} type="button">
                 {item.itemNo}행 예산검토
               </button>
@@ -5103,11 +5349,85 @@ function BatchSelect({ ariaLabel, label, onChange, options, value }: { ariaLabel
   );
 }
 
+function ComplianceBadge({ label, tone = "default" }: { label: string; tone?: "default" | "danger" | "success" | "warning" }) {
+  const tones = { default: "bg-blue-50 text-blue-800", danger: "bg-red-50 text-red-800", success: "bg-green-50 text-green-800", warning: "bg-amber-50 text-amber-900" };
+  return <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${tones[tone]}`}>{label}</span>;
+}
+
+function ExpenseFactConfirmationModal({ deleteConfirmation, detailItem, listConfirmations, onClose, onSave, onUploadSupportingFile, resolution }: { deleteConfirmation?: (id: string, resolutionId: string, actorLabel: string) => Promise<void>; detailItem?: BatchExpenseItem; listConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>; onClose: () => void; onSave?: (input: ExpenseFactConfirmationInput) => Promise<string>; onUploadSupportingFile?: (formData: FormData) => Promise<{ fileName: string; id: string }>; resolution: ManagedExpenseResolution }) {
+  const [form, setForm] = useState<ExpenseFactConfirmationInput>({
+    actualExpenseDate: detailItem?.expenseDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
+    actualSpender: detailItem?.actualSpender || resolution.advancePayer || resolution.author,
+    amount: detailItem?.totalAmount ?? resolution.totalPaymentAmount,
+    authorLabel: resolution.author,
+    businessPurpose: detailItem?.businessPurpose || resolution.reason,
+    detailTransactionId: detailItem?.id,
+    itemDescription: detailItem?.itemTitle || resolution.subject || resolution.operationExpenseDetail,
+    missingReceiptReason: "",
+    paymentMethod: detailItem?.paymentMethod ?? resolution.advancePaymentMethod ?? resolution.paymentMethod ?? "개인 현금",
+    resolutionId: resolution.id,
+    vendorName: detailItem?.vendorName || resolution.vendorName,
+  });
+  const [error, setError] = useState("");
+  const [savedId, setSavedId] = useState("");
+  const [supportingFiles, setSupportingFiles] = useState<string[]>([]);
+  const [confirmations, setConfirmations] = useState<ExpenseFactConfirmation[]>([]);
+  useEffect(() => { if (listConfirmations) void listConfirmations(resolution.id).then(setConfirmations).catch(() => setConfirmations([])); }, [listConfirmations, resolution.id]);
+  const update = <K extends keyof ExpenseFactConfirmationInput>(key: K, value: ExpenseFactConfirmationInput[K]) => setForm((current) => ({ ...current, [key]: value }));
+  async function save() {
+    if (!onSave) { setError("지출사실확인서 저장소가 연결되지 않았습니다."); return; }
+    try { setError(""); setSavedId(await onSave(form)); if (listConfirmations) setConfirmations(await listConfirmations(resolution.id)); } catch (caught) { setError(caught instanceof Error ? caught.message : "저장하지 못했습니다."); }
+  }
+  async function uploadSupportingFile(file?: File) {
+    if (!file || !savedId || !onUploadSupportingFile) { setError("확인서를 먼저 저장한 후 보완자료를 첨부해주세요."); return; }
+    const data = new FormData(); data.set("file", file); data.set("factConfirmationId", savedId); data.set("resolutionId", resolution.id);
+    try { const result = await onUploadSupportingFile(data); setSupportingFiles((current) => [...current, result.fileName]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "보완자료를 저장하지 못했습니다."); }
+  }
+  function editConfirmation(item: ExpenseFactConfirmation) { setForm({ ...item }); setSavedId(item.id); setSupportingFiles([]); }
+  async function removeConfirmation(item: ExpenseFactConfirmation) { if (!deleteConfirmation || !window.confirm("지출사실확인서를 삭제할까요? 이전 이력은 감사로그에 보존됩니다.")) return; try { await deleteConfirmation(item.id, resolution.id, currentUserName); setConfirmations((current) => current.filter((entry) => entry.id !== item.id)); if (savedId === item.id) setSavedId(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "삭제하지 못했습니다."); } }
+  return <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/45 p-6 print:static print:bg-white print:p-0" onClick={onClose}>
+    <section aria-label="지출사실확인서" className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none" onClick={(event) => event.stopPropagation()}>
+      <div className="flex items-center justify-between border-b px-6 py-4 print:hidden"><div><h2 className="text-xl font-bold">지출사실확인서 작성</h2><p className="mt-1 text-sm text-[var(--color-stone)]">지출결의서 {resolution.resolutionNo}{detailItem ? ` · 상세거래 ${detailItem.itemNo}` : ""}의 보완자료이며 독립 지급·전표 문서가 아닙니다.</p></div><Button onClick={onClose} variant="outline">닫기</Button></div>
+      {confirmations.length ? <div className="mx-6 mt-4 grid gap-2 print:hidden">{confirmations.map((item) => <div className="flex items-center justify-between rounded-lg border bg-gray-50 px-4 py-2 text-sm" key={item.id}><span className="font-bold">{item.vendorName} · {item.amount.toLocaleString("ko-KR")}원 · revision {item.revisionNo}</span><span className="flex gap-2"><Button onClick={() => editConfirmation(item)} size="sm" variant="outline">수정</Button><Button onClick={() => void removeConfirmation(item)} size="sm" variant="outline">삭제</Button></span></div>)}</div> : null}
+      <div className="m-6 min-h-[257mm] border-2 border-black p-10 print:m-0 print:min-h-[297mm] print:border-0">
+        <h1 className="text-center text-3xl font-bold tracking-[0.35em]">지출사실확인서</h1>
+        <p className="mt-3 text-center text-sm">연결 결의번호: {resolution.resolutionNo}</p>
+        <div className="mt-10 grid grid-cols-2 gap-4 print:gap-2">
+          <FactField label="실제 지출자" value={form.actualSpender} onChange={(value) => update("actualSpender", value)} />
+          <FactField label="실제 지출일" type="date" value={form.actualExpenseDate} onChange={(value) => update("actualExpenseDate", value)} />
+          <FactField label="구입처" value={form.vendorName} onChange={(value) => update("vendorName", value)} />
+          <FactField label="지출금액" type="number" value={String(form.amount)} onChange={(value) => update("amount", Number(value))} />
+          <FactField className="col-span-2" label="구입 품목 또는 서비스" value={form.itemDescription} onChange={(value) => update("itemDescription", value)} />
+          <FactField className="col-span-2" label="지출 목적 및 조합 업무 관련성" value={form.businessPurpose} onChange={(value) => update("businessPurpose", value)} />
+          <FactField className="col-span-2" label="영수증 미첨부 사유" value={form.missingReceiptReason} onChange={(value) => update("missingReceiptReason", value)} />
+          <FactField label="결제수단" value={form.paymentMethod} onChange={(value) => update("paymentMethod", value)} />
+          <FactField label="작성자" value={form.authorLabel} onChange={(value) => update("authorLabel", value)} />
+          <FactField label="사실 확인자" value={form.confirmerLabel ?? ""} onChange={(value) => update("confirmerLabel", value)} />
+          <div className="rounded-lg border p-3 text-sm"><span className="block text-xs font-bold text-gray-500">전자 확인기록</span>{savedId ? `저장 ID ${savedId}` : "저장 후 생성"}</div>
+          <label className="col-span-2 grid gap-2 rounded-lg border p-3 text-sm font-bold print:hidden"><span>보완자료</span><input disabled={!savedId} onChange={(event) => void uploadSupportingFile(event.target.files?.[0])} type="file" />{supportingFiles.length ? <span className="text-xs text-green-700">{supportingFiles.join(", ")}</span> : <span className="text-xs text-gray-500">확인서를 저장한 뒤 사진·이체내역 등 보완자료를 첨부할 수 있습니다.</span>}</label>
+        </div>
+        <p className="mt-10 text-sm leading-7">위 지출은 조합 업무 수행 과정에서 실제 발생하였으며, 영수증을 첨부하지 못한 사유와 기재 내용이 사실임을 확인합니다.</p>
+        <div className="mt-16 flex justify-end gap-12 text-sm"><p>작성자: {form.authorLabel} (서명)</p><p>확인자: {form.confirmerLabel || "____________"} (서명)</p></div>
+      </div>
+      <div className="flex justify-between border-t px-6 py-4 print:hidden"><p className="text-sm font-bold text-amber-800">저장 후에도 증빙상태는 대체증빙 또는 증빙불비로 유지됩니다.</p><div className="flex gap-2"><Button onClick={() => window.print()} variant="outline">A4 인쇄·PDF</Button><Button onClick={() => void save()}>{savedId ? "저장완료" : "확인서 저장"}</Button></div></div>
+      {error ? <p className="mx-6 mb-4 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700 print:hidden">{error}</p> : null}
+    </section>
+  </div>;
+}
+
+function FactField({ className = "", label, onChange, type = "text", value }: { className?: string; label: string; onChange: (value: string) => void; type?: "date" | "number" | "text"; value: string }) {
+  return <label className={`grid gap-1 rounded-lg border p-3 ${className}`}><span className="text-xs font-bold text-gray-500">{label}</span><input className="border-0 bg-transparent font-semibold outline-none print:appearance-none" onChange={(event) => onChange(event.target.value)} type={type} value={value} /></label>;
+}
+
 export function ExpenseResolutionDetailModal({
   canApprove = false,
   onApprove,
+  onCancelApproval,
+  onCancelVoucher,
   onClose,
   onConfirmVoucher,
+  onCreateFactConfirmation,
+  onDelete,
   onCreateVoucher,
   onPrintArchive,
   onPrintPreview,
@@ -5118,8 +5438,12 @@ export function ExpenseResolutionDetailModal({
 }: {
   canApprove?: boolean;
   onApprove: () => void;
+  onCancelApproval?: () => void;
+  onCancelVoucher?: () => void;
   onClose: () => void;
   onConfirmVoucher: () => void;
+  onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
+  onDelete?: () => void;
   onCreateVoucher: () => void;
   onPrintArchive: () => void;
   onPrintPreview: () => void;
@@ -5205,7 +5529,7 @@ export function ExpenseResolutionDetailModal({
                   <table className="w-full min-w-[1320px] text-left text-sm">
                     <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                       <tr>
-                        {["순번", "지출예정일", "거래처", "지출항목명", "계정항목", "예산항목", "공급가액", "부가세", "합계", "예산상태", "지급상태", "증빙", "전표번호"].map((column) => (
+                        {["순번", "거래일", "실제 지출자", "거래처", "지출항목명", "업무목적", "계정항목", "예산항목", "공급가액", "부가세", "합계", "예산상태", "지급상태", "증빙", "사실확인서", "전표번호"].map((column) => (
                           <th className="px-3 py-2" key={column}>
                             {column}
                           </th>
@@ -5217,8 +5541,10 @@ export function ExpenseResolutionDetailModal({
                         <tr className={item.budgetStatus === "OVER_BUDGET" ? "bg-[var(--color-sunset-soft)]/25" : "bg-white"} key={item.id}>
                           <td className="px-3 py-3 font-bold">{item.itemNo}</td>
                           <td className="px-3 py-3 text-[var(--color-stone)]">{item.expenseDate || "-"}</td>
+                          <td className="px-3 py-3">{item.actualSpender || resolution.author}</td>
                           <td className="px-3 py-3 font-semibold">{item.vendorName || "거래처 미입력"}</td>
                           <td className="px-3 py-3">{item.itemTitle}</td>
+                          <td className="px-3 py-3">{item.businessPurpose || resolution.reason}</td>
                           <td className="px-3 py-3">{item.accountTitle}</td>
                           <td className="px-3 py-3">{item.budgetItem}</td>
                           <td className="px-3 py-3 text-right">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
@@ -5231,6 +5557,7 @@ export function ExpenseResolutionDetailModal({
                             <Badge value={item.paymentStatus} />
                           </td>
                           <td className="px-3 py-3">{item.evidenceFileName || item.evidenceType || "미첨부"}</td>
+                          <td className="px-3 py-3">{onCreateFactConfirmation ? <button className="rounded-full border border-[var(--color-soft-border)] px-2.5 py-1 text-xs font-bold text-[var(--color-deep-cobalt)]" onClick={() => onCreateFactConfirmation(item)} type="button">작성</button> : item.factConfirmationId ? "연결됨" : "-"}</td>
                           <td className="px-3 py-3 font-semibold text-[var(--color-deep-cobalt)]">{item.voucherNo ?? "-"}</td>
                         </tr>
                       ))}
@@ -5446,6 +5773,7 @@ export function ExpenseResolutionDetailModal({
         </div>
 
         <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
+          {onCreateFactConfirmation ? <Button className="rounded-full" onClick={() => onCreateFactConfirmation()} variant="outline">지출사실확인서 작성</Button> : null}
           <div className="relative">
             <Button
               aria-expanded={isPrintMenuOpen}
@@ -5483,6 +5811,7 @@ export function ExpenseResolutionDetailModal({
           </div>
           {resolution.approvalStatus === "작성중" ? (
             <>
+              {onDelete ? <Button className="rounded-full text-red-700" onClick={onDelete} variant="outline">삭제</Button> : null}
               <Button className="rounded-full" variant="outline">
                 수정
               </Button>
@@ -5502,9 +5831,7 @@ export function ExpenseResolutionDetailModal({
             </>
           ) : null}
           {resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus) ? (
-            <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handlePayment}>
-              지급처리
-            </Button>
+            <><Button className="rounded-full" onClick={onCancelApproval} variant="outline">승인취소</Button><Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handlePayment}>지급처리</Button></>
           ) : null}
           {resolution.paymentStatus === "지급완료" && !resolution.voucherNo ? (
             <Button className="rounded-full" onClick={onCreateVoucher} variant="outline">
@@ -5517,9 +5844,7 @@ export function ExpenseResolutionDetailModal({
             </Button>
           ) : null}
           {resolution.voucherStatus === "전표확정" ? (
-            <Button className="rounded-full" variant="outline">
-              전표보기
-            </Button>
+            <><Button className="rounded-full" variant="outline">전표보기</Button>{onCancelVoucher ? <Button className="rounded-full text-red-700" onClick={onCancelVoucher} variant="outline">전표취소</Button> : null}</>
           ) : null}
           {resolution.approvalStatus === "반려" ? (
             <Button className="rounded-full" onClick={handleRequestApproval} variant="outline">
@@ -5736,7 +6061,13 @@ function ExpenseResolutionPrintPreviewModal({
               <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
                 <PrintCell label="결의서번호" value={resolution.resolutionNo} />
                 <PrintCell label="작성일" value={resolution.createdAt} />
+                <PrintCell label="회계 귀속일" value={resolution.accountingDate ?? "-"} />
+                <PrintCell label="실제 지출일" value={resolution.actualExpenseDate ?? "-"} />
+                <PrintCell label="결재일" value={resolution.approvedAt ?? "-"} />
+                <PrintCell label="지급일/통장 출금일" value={resolution.disbursedAt ?? resolution.paidAt ?? resolution.actualExpenseDate ?? "-"} />
                 <PrintCell label="작성자" value={resolution.author} />
+                <PrintCell label="지출 유형" value={resolution.expenseKind ?? "GENERAL"} />
+                {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <><PrintCell label="실제 지출자" value={resolution.advancePayer ?? "-"} /><PrintCell label="정산받을 사람" value={resolution.settlementRecipient ?? "-"} /><PrintCell label="정산 상태" value={resolution.settlementStatus} /><PrintCell label="조합 정산일" value={resolution.settlementCompletedAt ?? "-"} /></> : null}
                 <PrintCell label="업무유형" value={getExpenseTimingLabel(expenseTiming)} />
                 <PrintCell label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
                 <PrintCell label={getExpenseDateLabel(expenseTiming)} value={resolution.plannedPaymentDate} />
@@ -5784,6 +6115,7 @@ function ExpenseResolutionPrintPreviewModal({
               <h4 className="mb-2 text-base font-bold">증빙 요약</h4>
               <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
                 <PrintCell label="증빙 유형" value={evidenceSummary} />
+                <PrintCell label="증빙 상태" value={resolution.evidenceStatus ?? "NONE"} />
                 <PrintCell label="첨부 현황" value={`${resolution.evidenceMaterials.length + resolution.expenseItems.filter((item) => item.evidenceFileName).length}건`} />
               </div>
             </section>

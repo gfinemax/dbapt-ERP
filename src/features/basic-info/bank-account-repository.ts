@@ -84,6 +84,7 @@ export async function createBankAccountInSupabase(input: BankAccountInput) {
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
+  validateBankAccountInput(input);
 
   const { data, error } = await supabase
     .schema(bankAccountRepositorySchema)
@@ -105,6 +106,7 @@ export async function updateBankAccountInSupabase(id: string, input: BankAccount
   if (!supabase) {
     throw new Error("Supabase is not configured.");
   }
+  validateBankAccountInput(input);
 
   const { data, error } = await supabase
     .schema(bankAccountRepositorySchema)
@@ -125,8 +127,14 @@ function formatBankAccountSaveError(message: string) {
   if (message.toLowerCase().includes("fetch failed")) {
     return "Supabase 연결에 실패했습니다. .env.local의 NEXT_PUBLIC_SUPABASE_URL 주소와 프로젝트 상태를 확인해 주세요.";
   }
+  if (message.toLowerCase().includes("duplicate")) return "이미 등록된 계좌번호입니다.";
 
   return `은행통장 저장에 실패했습니다: ${message}`;
+}
+
+function validateBankAccountInput(input: BankAccountInput) {
+  if (!input.bankName.trim() || !input.accountName.trim() || !input.accountNo.replace(/\D/g, "")) throw new Error("은행명, 계좌명, 계좌번호를 모두 입력해 주세요.");
+  if (!input.createdAt) throw new Error("개설일을 입력해 주세요.");
 }
 
 function formatSyncedAt(value: string) {

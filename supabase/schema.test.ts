@@ -17,6 +17,10 @@ describe("Supabase schema organization", () => {
   it("stores finance and report tables under their domain schemas", () => {
     expect(schemaSql).toContain("create table if not exists finance.bank_accounts");
     expect(schemaSql).toContain("create table if not exists finance.account_subjects");
+    expect(schemaSql).toContain("create table if not exists finance.business_partners");
+    expect(schemaSql).toContain("create table if not exists finance.items");
+    expect(schemaSql).toContain("create table if not exists finance.credit_cards");
+    expect(schemaSql).toContain("card_last_four text not null");
     expect(schemaSql).toContain("source text not null default '직접등록'");
     expect(schemaSql).toContain("aliases text[] not null default array[]::text[]");
     expect(schemaSql).toContain("references finance.bank_accounts(id)");

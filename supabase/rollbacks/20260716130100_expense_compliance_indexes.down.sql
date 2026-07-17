@@ -1,0 +1,9 @@
+drop index if exists finance.voucher_lines_voucher_idx;
+drop index if exists finance.vouchers_detail_transaction_idx;
+drop index if exists finance.vouchers_expense_resolution_idx;
+drop index if exists finance.expense_supporting_files_fact_idx;
+drop index if exists finance.expense_supporting_files_detail_idx;
+drop index if exists finance.expense_supporting_files_resolution_idx;
+drop index if exists finance.expense_fact_confirmations_detail_idx;
+drop index if exists finance.expense_fact_confirmations_resolution_idx;
+drop index if exists finance.expense_detail_fact_confirmation_idx;

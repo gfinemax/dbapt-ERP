@@ -12,6 +12,11 @@ describe("expense resolution insights", () => {
     expect(filterExpenseResolutions(resolutions, { query: "다이소", approvalStatus: "승인완료", dateFrom: "2026-07-01" }).map((value) => value.id)).toEqual(["r1"]);
   });
 
+  it("filters the compliance-specific list fields", () => {
+    const resolution = item({ accountAllocations: [{ accountTitle: "사무용품비", amount: "10000", budgetItem: "운영비", description: "", id: "a1" }], actualExpenseDate: "2026-03-15", advancePayer: "오학동", bankTransactionId: "bank-1", evidenceStatus: "DEFICIENT", expenseKind: "PERSONAL_REIMBURSEMENT", vendorName: "문구점" });
+    expect(filterExpenseResolutions([resolution], { accountTitle: "사무용품", bankLinked: "YES", dateFrom: "2026-03-01", evidenceStatus: "DEFICIENT", expenseKind: "PERSONAL_REIMBURSEMENT", spender: "오학", vendor: "문구" })).toHaveLength(1);
+  });
+
   it("builds overdue payment, settlement and receipt alerts", () => {
     const alerts = buildExpenseResolutionAlerts([
       item({ plannedPaymentDate: "2026-07-01" }),

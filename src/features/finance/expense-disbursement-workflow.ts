@@ -7,7 +7,7 @@ export type DisbursementTransitionRequest = Omit<DisbursementTransitionInput, "r
   resolutionId: string;
 };
 
-export type DisbursementCommand = "PAYMENT_COMPLETE" | "ITEM_PAYMENT_COMPLETE" | "PAYMENT_HOLD" | "VOUCHER_CREATE" | "VOUCHER_CONFIRM";
+export type DisbursementCommand = "PAYMENT_COMPLETE" | "ITEM_PAYMENT_COMPLETE" | "PAYMENT_HOLD" | "VOUCHER_CREATE" | "VOUCHER_CONFIRM" | "VOUCHER_CANCEL";
 
 export type DisbursementTransitionInput = {
   actorLabel: string;
@@ -33,11 +33,21 @@ export function transitionExpenseDisbursement(input: DisbursementTransitionInput
   if (input.command === "ITEM_PAYMENT_COMPLETE") return completeItemPayment(input);
   if (input.command === "PAYMENT_HOLD") return holdPayment(input);
   if (input.command === "VOUCHER_CREATE") return createVoucher(input);
+  if (input.command === "VOUCHER_CANCEL") return cancelVoucher(input);
   return confirmVoucher(input);
+}
+
+function cancelVoucher(input: DisbursementTransitionInput) {
+  const { resolution } = input;
+  if (!resolution.voucherNo || !["전표초안", "전표확정"].includes(resolution.voucherStatus ?? "")) throw new DisbursementWorkflowError("취소할 지출전표가 없습니다.");
+  const reason = input.reason?.trim();
+  if (!reason) throw new DisbursementWorkflowError("전표취소 사유를 입력해주세요.");
+  return { ...resolution, expenseItems: resolution.expenseItems.map((item) => item.voucherNo ? { ...item, voucherStatus: "전표취소" as const } : item), history: [...resolution.history, history(input, "지출전표 취소", "UPDATED", `${resolution.voucherNo} · ${reason}`)], voucherStatus: "전표취소" as const };
 }
 
 function completePayment(input: DisbursementTransitionInput) {
   const { resolution } = input;
+  if (resolution.expenseKind === "BANK_POST_APPROVAL") throw new DisbursementWorkflowError("이미 통장에서 출금된 사후결의는 추가 지급할 수 없습니다.");
   assertPayable(resolution);
   const amount = input.actualPaidAmount ?? resolution.totalPaymentAmount;
   if (amount !== resolution.totalPaymentAmount) throw new DisbursementWorkflowError("일괄 지급액은 총 결의금액과 일치해야 합니다.");
@@ -49,12 +59,14 @@ function completePayment(input: DisbursementTransitionInput) {
     expenseItems: resolution.resolutionType === "BATCH" ? resolution.expenseItems.map((item) => ({ ...item, actualPaidAmount: item.totalAmount, paidAt: input.paidAt, paymentMethod: input.paymentMethod!, paymentStatus: "지급완료" as const })) : resolution.expenseItems,
     history: [...resolution.history, history(input, "지급완료", "PAYMENT_COMPLETED", input.paymentMemo || `${input.paymentMethod} 지급완료`)],
     paidAt: input.paidAt,
+    disbursedAt: input.paidAt,
     paymentAccountNo: input.paymentAccountNo,
     paymentBank: input.paymentBank ?? resolution.paymentBank,
     paymentMemo: input.paymentMemo,
     paymentMethod: input.paymentMethod,
     paymentStatus: "지급완료" as const,
-    settlementStatus: resolution.settlementStatus === "추가지급" ? "정산완료" as const : resolution.settlementStatus,
+    settlementCompletedAt: resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? input.paidAt : resolution.settlementCompletedAt,
+    settlementStatus: resolution.expenseKind === "PERSONAL_REIMBURSEMENT" || resolution.settlementStatus === "추가지급" ? "정산완료" as const : resolution.settlementStatus,
     transferReceiptStatus: "이체확인증 첨부 대기",
   };
 }
@@ -98,6 +110,7 @@ function createVoucher(input: DisbursementTransitionInput) {
   const { resolution, voucherNo } = input;
   if (resolution.paymentStatus !== "지급완료") throw new DisbursementWorkflowError("지급완료 문서만 전표를 생성할 수 있습니다.");
   if (resolution.voucherNo) return resolution;
+  if (resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId) throw new DisbursementWorkflowError("연결된 통장거래 없이 사후결의 전표를 생성할 수 없습니다.");
   if (!voucherNo) throw new DisbursementWorkflowError("전표번호가 필요합니다.");
   if (resolution.resolutionType === "BATCH" && resolution.voucherCreationMode === "ITEM_VOUCHER") {
     const expenseItems = resolution.expenseItems.map((item) => ({ ...item, voucherNo: `${voucherNo}-${String(item.itemNo).padStart(2, "0")}`, voucherStatus: "전표초안" as const }));

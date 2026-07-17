@@ -1,0 +1,4 @@
+-- 조직 연결은 기존 데이터의 귀속정보이므로 롤백 시에도 보존한다.
+-- 기본값 그대로인 지출 관리설정만 제거하려면 아래 문장을 수동 실행한다.
+-- delete from finance.expense_compliance_settings
+-- where organization_id = (select id from core.organizations where name = '대방동 지역주택조합' order by created_at limit 1);

@@ -1,7 +1,8 @@
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
+import { validateExpenseCompliance } from "./expense-compliance";
 import type { ApprovalStep, ExpenseResolutionHistoryItem, ManagedExpenseResolution, PaymentStatus, SettlementStatus } from "./expense-resolution-page";
 
-export type ApprovalWorkflowCommand = "REQUEST" | "APPROVE" | "REJECT";
+export type ApprovalWorkflowCommand = "REQUEST" | "APPROVE" | "REJECT" | "CANCEL";
 
 export type ApprovalTransitionRequest = {
   actorLabel: string;
@@ -25,7 +26,16 @@ export class ApprovalWorkflowError extends Error {}
 export function transitionExpenseApproval({ actorLabel, command, reason, resolution, transitionedAt = currentSeoulDateTime() }: ApprovalWorkflowInput) {
   if (command === "REQUEST") return requestApproval(resolution, actorLabel, transitionedAt);
   if (command === "APPROVE") return approveCurrentStep(resolution, actorLabel, transitionedAt);
+  if (command === "CANCEL") return cancelFinalApproval(resolution, actorLabel, reason, transitionedAt);
   return rejectCurrentStep(resolution, actorLabel, reason, transitionedAt);
+}
+
+function cancelFinalApproval(resolution: ManagedExpenseResolution, actorLabel: string, reason: string | undefined, transitionedAt: string) {
+  if (resolution.approvalStatus !== "승인완료") throw new ApprovalWorkflowError("승인완료 문서만 승인취소할 수 있습니다.");
+  if (resolution.paymentStatus === "지급완료" || resolution.voucherNo) throw new ApprovalWorkflowError("지급 또는 전표 생성 후에는 승인취소할 수 없습니다. 정정결의를 작성해주세요.");
+  const comment = reason?.trim();
+  if (!comment) throw new ApprovalWorkflowError("승인취소 사유를 입력해주세요.");
+  return { ...resolution, approvalLine: resetApprovalLine(resolution.approvalLine), approvalStatus: "작성중" as const, approvedAt: undefined, currentApprover: undefined, history: [...resolution.history, createHistory(transitionedAt, "승인취소", "UPDATED", actorLabel, comment)], paymentStatus: "지급전" as PaymentStatus };
 }
 
 function requestApproval(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string) {
@@ -33,6 +43,19 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
     throw new ApprovalWorkflowError("작성중 또는 반려 문서만 승인요청할 수 있습니다.");
   }
   if (resolution.author !== actorLabel) throw new ApprovalWorkflowError("작성자만 승인요청 또는 재상신할 수 있습니다.");
+  if (resolution.expenseKind) {
+    const compliance = validateExpenseCompliance({
+      actualExpenseDate: resolution.actualExpenseDate,
+      bankTransactionId: resolution.bankTransactionId,
+      evidenceKind: resolution.evidenceKind ?? "NONE",
+      evidenceStatus: resolution.evidenceStatus ?? "NONE",
+      expenseKind: resolution.expenseKind,
+      missingEvidenceReason: resolution.missingEvidenceReason,
+      pettyCashItems: resolution.pettyCashTransactions,
+      postApprovalReason: resolution.postApprovalReason,
+    });
+    if (compliance.errors.length) throw new ApprovalWorkflowError(compliance.errors.join(" "));
+  }
   const isResubmission = resolution.approvalStatus === "반려";
   const approvalLine = resetApprovalLine(resolution.approvalLine);
   const firstApprover = approvalLine[0];
@@ -68,6 +91,8 @@ function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: st
   const { paymentStatus, settlementStatus } = getFinalApprovalStatuses(resolution);
   return {
     ...resolution,
+    approvedAt: transitionedAt,
+    disbursedAt: resolution.expenseKind === "BANK_POST_APPROVAL" ? resolution.actualExpenseDate : resolution.disbursedAt,
     approvalLine,
     approvalStatus: "승인완료" as const,
     currentApprover: undefined,
@@ -117,6 +142,7 @@ function defaultApprovalLine(): ApprovalStep[] {
 }
 
 function getFinalApprovalStatuses(resolution: ManagedExpenseResolution): { paymentStatus: PaymentStatus; settlementStatus: SettlementStatus } {
+  if (resolution.expenseKind === "BANK_POST_APPROVAL") return { paymentStatus: "지급완료", settlementStatus: "정산없음" };
   const timing = normalizeExpenseTiming(resolution);
   const alreadyPaid = timing === "REIMBURSEMENT" && (resolution.expenseBurdenType === "CORPORATE_CARD" || resolution.expenseBurdenType === "ORGANIZATION_PAID");
   const paymentStatus: PaymentStatus = timing === "SETTLEMENT" ? ((resolution.settlementDifference ?? 0) < 0 ? "지급대기" : "지급완료") : alreadyPaid ? "지급완료" : "지급대기";

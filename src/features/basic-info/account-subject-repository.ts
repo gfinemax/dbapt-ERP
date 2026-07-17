@@ -92,7 +92,12 @@ export async function createAccountSubjectsInSupabase(subjects: RegisteredAccoun
     throw new Error("Supabase is not configured.");
   }
 
-  const inserts = subjects.map(mapAccountSubjectToInsert);
+  const codes = subjects.map((subject) => subject.code);
+  const existing = await supabase.schema(accountSubjectRepositorySchema).from("account_subjects").select(accountSubjectSelect).in("code", codes);
+  if (existing.error) throw new Error(`계정과목 중복 확인에 실패했습니다: ${existing.error.message}`);
+  const existingCodes = new Set((existing.data as SupabaseAccountSubjectRow[]).map((row) => row.code));
+  const inserts = subjects.filter((subject) => !existingCodes.has(subject.code)).map(mapAccountSubjectToInsert);
+  if (!inserts.length) return (existing.data as SupabaseAccountSubjectRow[]).map(mapAccountSubjectFromRow);
   const { data, error } = await supabase
     .schema(accountSubjectRepositorySchema)
     .from("account_subjects")

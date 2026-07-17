@@ -63,13 +63,19 @@ export type EvidenceOcrJobProgress = {
 };
 
 export function sanitizeVendorName(value: string) {
-  return value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9\s]/g, "");
+  return value.replace(/[^가-힣ㄱ-ㅎㅏ-ㅣA-Za-z0-9()\s]/g, "");
+}
+
+export function normalizeVendorName(value: string) {
+  const sanitized = sanitizeVendorName(value.normalize("NFKC")).replace(/\s{2,}/g, " ").trim();
+  if (/^주아성다이소\s*봉천본점$/.test(sanitized)) return "(주)아성다이소봉천본점";
+  return sanitized;
 }
 
 export function normalizeEvidenceVendorFields(data: EvidenceOcrData): EvidenceOcrData {
   return compactOcrData({
     ...data,
-    issuer: data.issuer ? sanitizeVendorName(data.issuer).replace(/\s{2,}/g, " ").trim() : undefined,
+    issuer: data.issuer ? normalizeVendorName(data.issuer) : undefined,
     issuerAddress: cleanOcrCell(data.issuerAddress, /(?:업\s*태|종\s*목|연\s*락\s*처)/),
     issuerBusinessCategory: cleanOcrCell(data.issuerBusinessCategory, /(?:연\s*락\s*처|전\s*화)/),
     issuerBusinessType: cleanOcrCell(data.issuerBusinessType, /(?:종\s*목|연\s*락\s*처|전\s*화)/),

@@ -6,6 +6,14 @@ export type ExpenseResolutionFilters = {
   dateTo?: string;
   overdueOnly?: boolean;
   paymentStatus?: string;
+  expenseKind?: string;
+  evidenceStatus?: string;
+  postApproval?: string;
+  bankLinked?: string;
+  spender?: string;
+  accountTitle?: string;
+  vendor?: string;
+  pettyCashBatch?: string;
   query?: string;
 };
 
@@ -33,8 +41,20 @@ export function filterExpenseResolutions(resolutions: ManagedExpenseResolution[]
     if (query && !searchable.includes(query)) return false;
     if (filters.approvalStatus && resolution.approvalStatus !== filters.approvalStatus) return false;
     if (filters.paymentStatus && resolution.paymentStatus !== filters.paymentStatus) return false;
-    if (filters.dateFrom && resolution.createdAt < filters.dateFrom) return false;
-    if (filters.dateTo && resolution.createdAt > filters.dateTo) return false;
+    if (filters.expenseKind && (resolution.expenseKind ?? "GENERAL") !== filters.expenseKind) return false;
+    if (filters.evidenceStatus && (resolution.evidenceStatus ?? "NONE") !== filters.evidenceStatus) return false;
+    if (filters.postApproval === "YES" && !resolution.isPostApproval) return false;
+    if (filters.postApproval === "NO" && resolution.isPostApproval) return false;
+    if (filters.bankLinked === "YES" && !resolution.bankTransactionId) return false;
+    if (filters.bankLinked === "NO" && resolution.bankTransactionId) return false;
+    if (filters.spender && !(resolution.advancePayer ?? "").toLocaleLowerCase("ko-KR").includes(filters.spender.toLocaleLowerCase("ko-KR"))) return false;
+    if (filters.accountTitle && ![resolution.representativeAccountTitle, ...(resolution.accountAllocations ?? []).map((item) => item.accountTitle), ...resolution.expenseItems.map((item) => item.accountTitle)].some((value) => value?.toLocaleLowerCase("ko-KR").includes(filters.accountTitle!.toLocaleLowerCase("ko-KR")))) return false;
+    if (filters.vendor && ![resolution.vendorName, resolution.representativeVendorName, ...resolution.expenseItems.map((item) => item.vendorName)].some((value) => value?.toLocaleLowerCase("ko-KR").includes(filters.vendor!.toLocaleLowerCase("ko-KR")))) return false;
+    if (filters.pettyCashBatch === "YES" && resolution.expenseKind !== "PETTY_CASH_BATCH") return false;
+    if (filters.pettyCashBatch === "NO" && resolution.expenseKind === "PETTY_CASH_BATCH") return false;
+    const filterDate = resolution.actualExpenseDate ?? resolution.createdAt;
+    if (filters.dateFrom && filterDate < filters.dateFrom) return false;
+    if (filters.dateTo && filterDate > filters.dateTo) return false;
     if (filters.overdueOnly && !isSettlementOverdue(resolution)) return false;
     return true;
   });
