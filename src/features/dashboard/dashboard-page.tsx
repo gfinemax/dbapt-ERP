@@ -19,7 +19,10 @@ import Link from "next/link";
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { buildApprovalDashboard } from "@/features/approval/approval-dashboard";
-import { approvalStatusLabels, type ApprovalDocument } from "@/features/approval/approval-domain";
+import {
+  approvalStatusLabels,
+  type ApprovalDocument,
+} from "@/features/approval/approval-domain";
 import type { ApprovalBudgetSummary } from "@/features/approval/approval-repository";
 import {
   cashFlowWidget,
@@ -50,7 +53,10 @@ const statusClasses = {
   확인: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
 };
 
-const cashFlowChartKeys: Record<CashFlowViewMode, keyof typeof cashFlowWidget.chart> = {
+const cashFlowChartKeys: Record<
+  CashFlowViewMode,
+  keyof typeof cashFlowWidget.chart
+> = {
   일별: "daily",
   월별: "monthly",
   분기별: "quarterly",
@@ -65,7 +71,9 @@ const ringClasses: Record<Tone, string> = {
   neutral: "text-[var(--color-stone)]",
 };
 
-function isPercentStat(stat: DashboardStat): stat is Extract<DashboardStat, { kind: "percent" }> {
+function isPercentStat(
+  stat: DashboardStat,
+): stat is Extract<DashboardStat, { kind: "percent" }> {
   return stat.kind === "percent";
 }
 
@@ -75,7 +83,11 @@ type DashboardPageProps = {
   dashboardStats?: DashboardStat[];
 };
 
-export function DashboardPage({ approvalBudget = { approved: 0, available: 0, executed: 0, reserved: 0 }, approvalDocuments = [], dashboardStats: stats = buildDashboardStats() }: DashboardPageProps = {}) {
+export function DashboardPage({
+  approvalBudget = { approved: 0, available: 0, executed: 0, reserved: 0 },
+  approvalDocuments = [],
+  dashboardStats: stats = buildDashboardStats(),
+}: DashboardPageProps = {}) {
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const approvalDashboard = buildApprovalDashboard(approvalDocuments);
 
@@ -112,17 +124,190 @@ export function DashboardPage({ approvalBudget = { approved: 0, available: 0, ex
 
         <DashboardKpiSummary dashboardStats={stats} />
 
-        <section aria-label="기안·결재 업무 요약" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          {approvalDashboard.cards.map((card) => <Link className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5 shadow-[var(--shadow-air)] transition hover:-translate-y-0.5" href={card.href} key={card.label}><p className="text-sm font-bold text-[var(--color-stone)]">{card.label}</p><p className="mt-2 text-3xl font-bold">{card.count}건</p><p className="mt-2 text-xs text-[var(--color-deep-cobalt)]">{card.note}</p></Link>)}
+        <section
+          aria-label="기안·결재 업무 요약"
+          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+        >
+          {approvalDashboard.cards.map((card) => (
+            <Link
+              className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5 shadow-[var(--shadow-air)] transition hover:-translate-y-0.5"
+              href={card.href}
+              key={card.label}
+            >
+              <p className="text-sm font-bold text-[var(--color-stone)]">
+                {card.label}
+              </p>
+              <p className="mt-2 text-3xl font-bold">{card.count}건</p>
+              <p className="mt-2 text-xs text-[var(--color-deep-cobalt)]">
+                {card.note}
+              </p>
+            </Link>
+          ))}
         </section>
 
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">기안·결재 오늘의 업무</h2><p className="text-sm text-[var(--color-stone)]">결재·의결·집행에서 바로 처리할 항목이야.</p></div><div className="flex flex-wrap gap-2"><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/new">기안 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/new?type=EXPENSE">지출품의 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/finance/exp">지출결의서 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/small-expense">소액경비 등록</Link></div></div>
-          {!approvalDashboard.tasks.length ? <p className="mt-4 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm text-[var(--color-stone)]">현재 처리할 기안 업무가 없어.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead><tr className="text-xs text-[var(--color-stone)]">{["우선순위","문서명","기안번호","현재 상태","금액","담당자","실행"].map((label)=><th className="px-3 py-2" key={label}>{label}</th>)}</tr></thead><tbody className="divide-y divide-[var(--color-soft-border)]">{approvalDashboard.tasks.map((document)=><tr key={document.id}><td className="px-3 py-3"><span className="rounded-full bg-[var(--color-sunset-soft)] px-2 py-1 text-xs font-bold">{document.amount >= 100_000_000 ? "긴급" : "일반"}</span></td><td className="px-3 py-3 font-bold">{document.title}</td><td className="px-3 py-3">{document.documentNo}</td><td className="px-3 py-3">{approvalStatusLabels[document.approvalStatus]}</td><td className="px-3 py-3">{document.amount.toLocaleString("ko-KR")}원</td><td className="px-3 py-3">{document.approvalSteps.find((step)=>step.status==="PENDING")?.approverLabel ?? document.drafterLabel}</td><td className="px-3 py-3"><Link className="font-bold text-[var(--color-deep-cobalt)]" href={`/approval/${document.id}`}>검토</Link></td></tr>)}</tbody></table></div>}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-xl font-bold">기안·결재 오늘의 업무</h2>
+              <p className="text-sm text-[var(--color-stone)]">
+                결재·의결·집행에서 바로 처리할 항목이야.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold"
+                href="/approval/new"
+              >
+                기안 작성
+              </Link>
+              <Link
+                className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold"
+                href="/approval/new?type=EXPENSE"
+              >
+                지출품의 작성
+              </Link>
+              <Link
+                className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold"
+                href="/finance/exp"
+              >
+                지출결의서 작성
+              </Link>
+              <Link
+                className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold"
+                href="/approval/small-expense"
+              >
+                소액경비 등록
+              </Link>
+            </div>
+          </div>
+          {!approvalDashboard.tasks.length ? (
+            <p className="mt-4 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm text-[var(--color-stone)]">
+              현재 처리할 기안 업무가 없어.
+            </p>
+          ) : (
+            <div className="mt-4 overflow-x-auto">
+              <table className="w-full min-w-[920px] text-left text-sm">
+                <thead>
+                  <tr className="text-xs text-[var(--color-stone)]">
+                    {[
+                      "우선순위",
+                      "문서명",
+                      "기안번호",
+                      "현재 상태",
+                      "금액",
+                      "처리기한",
+                      "담당자",
+                      "실행",
+                    ].map((label) => (
+                      <th className="px-3 py-2" key={label}>
+                        {label}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-[var(--color-soft-border)]">
+                  {approvalDashboard.tasks.map((document) => {
+                    const priority =
+                      document.isUrgent || document.isOutOfBudget
+                        ? "긴급"
+                        : document.meetingStatus === "REQUIRED" ||
+                            document.approvalStatus === "REVISION_REQUESTED"
+                          ? "주의"
+                          : "일반";
+                    const action =
+                      document.meetingStatus === "REQUIRED"
+                        ? "안건 확인"
+                        : document.approvalStatus === "REVISION_REQUESTED"
+                          ? "보완"
+                          : document.approvalStatus === "APPROVED" &&
+                              !document.expenseResolutionId
+                            ? "지출결의서 생성"
+                            : "검토";
+                    return (
+                      <tr key={document.id}>
+                        <td className="px-3 py-3">
+                          <span
+                            className={`rounded-full px-2 py-1 text-xs font-bold ${priority === "긴급" ? "bg-[var(--color-sunset-soft)] text-red-800" : priority === "주의" ? "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]" : "bg-[var(--color-cloud-veil)]"}`}
+                          >
+                            {priority}
+                          </span>
+                        </td>
+                        <td className="px-3 py-3 font-bold">
+                          {document.title}
+                        </td>
+                        <td className="px-3 py-3">{document.documentNo}</td>
+                        <td className="px-3 py-3">
+                          {approvalStatusLabels[document.approvalStatus]}
+                        </td>
+                        <td className="px-3 py-3">
+                          {document.amount.toLocaleString("ko-KR")}원
+                        </td>
+                        <td className="px-3 py-3">
+                          {document.paymentDueDate ??
+                            document.desiredExecutionDate ??
+                            "-"}
+                        </td>
+                        <td className="px-3 py-3">
+                          {document.approvalSteps.find(
+                            (step) => step.status === "PENDING",
+                          )?.approverLabel ?? document.drafterLabel}
+                        </td>
+                        <td className="px-3 py-3">
+                          <Link
+                            className="font-bold text-[var(--color-deep-cobalt)]"
+                            href={`/approval/${document.id}`}
+                          >
+                            {action}
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </section>
 
-        <CashFlowProcessingWidget onOpenSettings={() => setIsPeriodModalOpen(true)} />
-        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">예산 현황</h2><p className="text-sm text-[var(--color-stone)]">집행예정액은 실제 집행액과 분리해 표시해.</p></div><Link className="text-sm font-bold text-[var(--color-deep-cobalt)]" href="/approval?view=execution">구성 문서 보기</Link></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["편성예산",approvalBudget.approved],["실제 집행액",approvalBudget.executed],["승인된 집행예정액",approvalBudget.reserved],["실질 사용 가능액",approvalBudget.available]].map(([label,amount])=><div className="rounded-xl bg-[var(--color-cloud-veil)] p-4" key={String(label)}><p className="text-xs font-bold text-[var(--color-stone)]">{label}</p><p className="mt-1 text-lg font-bold">{Number(amount).toLocaleString("ko-KR")}원</p></div>)}</div></section>
+        <CashFlowProcessingWidget
+          onOpenSettings={() => setIsPeriodModalOpen(true)}
+        />
+        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+          <div className="flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-bold">예산 현황</h2>
+              <p className="text-sm text-[var(--color-stone)]">
+                집행예정액은 실제 집행액과 분리해 표시해.
+              </p>
+            </div>
+            <Link
+              className="text-sm font-bold text-[var(--color-deep-cobalt)]"
+              href="/approval?view=execution"
+            >
+              구성 문서 보기
+            </Link>
+          </div>
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            {[
+              ["편성예산", approvalBudget.approved],
+              ["실제 집행액", approvalBudget.executed],
+              ["승인된 집행예정액", approvalBudget.reserved],
+              ["실질 사용 가능액", approvalBudget.available],
+            ].map(([label, amount]) => (
+              <div
+                className="rounded-xl bg-[var(--color-cloud-veil)] p-4"
+                key={String(label)}
+              >
+                <p className="text-xs font-bold text-[var(--color-stone)]">
+                  {label}
+                </p>
+                <p className="mt-1 text-lg font-bold">
+                  {Number(amount).toLocaleString("ko-KR")}원
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
         <DepositBalanceWidget />
 
         <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
@@ -137,21 +322,38 @@ export function DashboardPage({ approvalBudget = { approved: 0, available: 0, ex
               <TriangleAlert className="size-5 text-[var(--color-tangerine)]" />
             </div>
             <div className="grid gap-3 sm:grid-cols-2">
-              {dashboardWarnings.map((warning) => (
-                <article
-                  className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4"
-                  key={warning.title}
-                >
-                  <span
-                    className={`mb-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses[warning.tone]}`}
-                  >
-                    {warning.title}
-                  </span>
-                  <p className="text-sm leading-6 text-[var(--color-stone)]">
-                    {warning.detail}
-                  </p>
-                </article>
-              ))}
+              {approvalDashboard.alerts.length
+                ? approvalDashboard.alerts.map((warning) => (
+                    <Link
+                      className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4"
+                      href={warning.href}
+                      key={`${warning.documentId}-${warning.label}`}
+                    >
+                      <span
+                        className={`mb-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${warning.severity === "긴급" ? toneClasses.orange : toneClasses.mustard}`}
+                      >
+                        {warning.severity} · {warning.label}
+                      </span>
+                      <p className="text-sm leading-6 text-[var(--color-stone)]">
+                        {warning.detail}
+                      </p>
+                    </Link>
+                  ))
+                : dashboardWarnings.map((warning) => (
+                    <article
+                      className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4"
+                      key={warning.title}
+                    >
+                      <span
+                        className={`mb-3 inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${toneClasses[warning.tone]}`}
+                      >
+                        {warning.title}
+                      </span>
+                      <p className="text-sm leading-6 text-[var(--color-stone)]">
+                        {warning.detail}
+                      </p>
+                    </article>
+                  ))}
             </div>
           </div>
 
@@ -172,7 +374,9 @@ export function DashboardPage({ approvalBudget = { approved: 0, available: 0, ex
                   key={item.source}
                 >
                   <div className="min-w-0">
-                    <p className="truncate text-sm font-semibold">{item.source}</p>
+                    <p className="truncate text-sm font-semibold">
+                      {item.source}
+                    </p>
                     <p className="text-xs text-[var(--color-fog)]">
                       {item.module} · {item.lastSync}
                     </p>
@@ -241,7 +445,10 @@ export function DashboardPage({ approvalBudget = { approved: 0, available: 0, ex
               <h2 className="text-xl font-bold">최근 변경 이력</h2>
               <div className="mt-4 space-y-4">
                 {dashboardActivity.map((activity) => (
-                  <div className="flex gap-3" key={`${activity.time}-${activity.text}`}>
+                  <div
+                    className="flex gap-3"
+                    key={`${activity.time}-${activity.text}`}
+                  >
                     <div className="mt-1 flex size-7 shrink-0 items-center justify-center rounded-full bg-[var(--color-morning-tint)]">
                       {activity.text.includes("지연") ? (
                         <Clock3 className="size-3.5 text-[var(--color-tangerine)]" />
@@ -265,12 +472,18 @@ export function DashboardPage({ approvalBudget = { approved: 0, available: 0, ex
         </section>
       </div>
 
-      {isPeriodModalOpen ? <PeriodSettingsDialog onClose={() => setIsPeriodModalOpen(false)} /> : null}
+      {isPeriodModalOpen ? (
+        <PeriodSettingsDialog onClose={() => setIsPeriodModalOpen(false)} />
+      ) : null}
     </ErpShell>
   );
 }
 
-function DashboardKpiSummary({ dashboardStats }: { dashboardStats: DashboardStat[] }) {
+function DashboardKpiSummary({
+  dashboardStats,
+}: {
+  dashboardStats: DashboardStat[];
+}) {
   const percentStats = dashboardStats.filter(isPercentStat);
   const tableStats = dashboardStats.filter((stat) => !isPercentStat(stat));
 
@@ -287,21 +500,41 @@ function DashboardKpiSummary({ dashboardStats }: { dashboardStats: DashboardStat
           </span>
         </div>
         <div className="overflow-hidden rounded-lg border border-[var(--color-soft-border)]">
-          <table aria-label="핵심 운영 지표 요약" className="w-full table-fixed text-left text-sm">
+          <table
+            aria-label="핵심 운영 지표 요약"
+            className="w-full table-fixed text-left text-sm"
+          >
             <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
               <tr>
-                <th className="px-3 py-2 font-bold" scope="col">지표</th>
-                <th className="px-3 py-2 font-bold" scope="col">값</th>
-                <th className="px-3 py-2 font-bold" scope="col">기준</th>
+                <th className="px-3 py-2 font-bold" scope="col">
+                  지표
+                </th>
+                <th className="px-3 py-2 font-bold" scope="col">
+                  값
+                </th>
+                <th className="px-3 py-2 font-bold" scope="col">
+                  기준
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)] bg-white">
               {tableStats.map((stat) => (
                 <tr key={stat.label}>
-                  <th className="px-3 py-2 text-xs font-bold text-[var(--color-stone)]" scope="row">{stat.label}</th>
-                  <td className="px-3 py-2 text-lg font-bold tracking-normal">{stat.value}</td>
+                  <th
+                    className="px-3 py-2 text-xs font-bold text-[var(--color-stone)]"
+                    scope="row"
+                  >
+                    {stat.label}
+                  </th>
+                  <td className="px-3 py-2 text-lg font-bold tracking-normal">
+                    {stat.value}
+                  </td>
                   <td className="truncate px-3 py-2 text-xs font-semibold">
-                    <span className={`rounded-full px-2 py-1 ${toneClasses[stat.tone]}`}>{stat.description}</span>
+                    <span
+                      className={`rounded-full px-2 py-1 ${toneClasses[stat.tone]}`}
+                    >
+                      {stat.description}
+                    </span>
                   </td>
                 </tr>
               ))}
@@ -319,7 +552,11 @@ function DashboardKpiSummary({ dashboardStats }: { dashboardStats: DashboardStat
   );
 }
 
-function CircularKpi({ stat }: { stat: Extract<DashboardStat, { kind: "percent" }> }) {
+function CircularKpi({
+  stat,
+}: {
+  stat: Extract<DashboardStat, { kind: "percent" }>;
+}) {
   const radius = 31;
   const circumference = 2 * Math.PI * radius;
   const progressOffset = circumference - (stat.percent / 100) * circumference;
@@ -334,7 +571,11 @@ function CircularKpi({ stat }: { stat: Extract<DashboardStat, { kind: "percent" 
         className={`relative size-20 ${ringClasses[stat.tone]}`}
         role="progressbar"
       >
-        <svg aria-hidden="true" className="size-20 -rotate-90" viewBox="0 0 80 80">
+        <svg
+          aria-hidden="true"
+          className="size-20 -rotate-90"
+          viewBox="0 0 80 80"
+        >
           <circle
             className="stroke-[var(--color-cloud-veil)]"
             cx="40"
@@ -361,22 +602,35 @@ function CircularKpi({ stat }: { stat: Extract<DashboardStat, { kind: "percent" 
       </div>
       <div className="min-w-0">
         <p className="text-sm font-bold">{stat.label}</p>
-        <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">{stat.description}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">
+          {stat.description}
+        </p>
       </div>
     </article>
   );
 }
 
-function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => void }) {
-  const [selectedViewMode, setSelectedViewMode] = useState<CashFlowViewMode>("월별");
-  const selectedPoints = cashFlowWidget.chart[cashFlowChartKeys[selectedViewMode]];
-  const maxAmount = Math.max(...selectedPoints.flatMap((point) => [point.income, point.expense]), 1);
+function CashFlowProcessingWidget({
+  onOpenSettings,
+}: {
+  onOpenSettings: () => void;
+}) {
+  const [selectedViewMode, setSelectedViewMode] =
+    useState<CashFlowViewMode>("월별");
+  const selectedPoints =
+    cashFlowWidget.chart[cashFlowChartKeys[selectedViewMode]];
+  const maxAmount = Math.max(
+    ...selectedPoints.flatMap((point) => [point.income, point.expense]),
+    1,
+  );
 
   return (
     <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
       <div className="flex flex-col gap-3 border-b border-[var(--color-soft-border)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <p className="text-xl font-bold">2026.06.07 <span className="text-sm">(일)</span></p>
+          <p className="text-xl font-bold">
+            2026.06.07 <span className="text-sm">(일)</span>
+          </p>
           <h2 className="mt-3 text-lg font-bold">{cashFlowWidget.title}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-stone)]">
@@ -394,7 +648,11 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
             <div className="space-y-2 text-xs">
               <Legend color="bg-[#ef3f6b]" label="수입" value="102,753천원" />
               <Legend color="bg-[#2878e5]" label="지출" value="20,238천원" />
-              <Legend color="bg-[var(--color-green-ink)]" label="순증감" value="82,515천원" />
+              <Legend
+                color="bg-[var(--color-green-ink)]"
+                label="순증감"
+                value="82,515천원"
+              />
             </div>
             <div className="flex overflow-hidden rounded-md border border-[var(--color-soft-border)] bg-white">
               {cashFlowWidget.viewModes.map((mode) => (
@@ -408,7 +666,12 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
                   {mode}
                 </button>
               ))}
-              <button aria-label="조회기간 설정" className="min-h-8 border-l border-[var(--color-soft-border)] px-3 text-[var(--color-deep-cobalt)]" onClick={onOpenSettings} type="button">
+              <button
+                aria-label="조회기간 설정"
+                className="min-h-8 border-l border-[var(--color-soft-border)] px-3 text-[var(--color-deep-cobalt)]"
+                onClick={onOpenSettings}
+                type="button"
+              >
                 <Settings2 className="size-4" />
               </button>
             </div>
@@ -417,15 +680,32 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
           <div className="mt-10 h-56">
             <div className="flex h-full items-end justify-between gap-4 border-b border-[var(--color-soft-border)] px-2">
               {selectedPoints.map((point) => {
-                const incomeHeight = Math.max((point.income / maxAmount) * 170, point.income > 0 ? 24 : 0);
-                const expenseHeight = Math.max((point.expense / maxAmount) * 170, point.expense > 0 ? 18 : 0);
+                const incomeHeight = Math.max(
+                  (point.income / maxAmount) * 170,
+                  point.income > 0 ? 24 : 0,
+                );
+                const expenseHeight = Math.max(
+                  (point.expense / maxAmount) * 170,
+                  point.expense > 0 ? 18 : 0,
+                );
                 return (
-                  <div className="flex h-full min-w-16 flex-1 flex-col justify-end" key={point.label}>
+                  <div
+                    className="flex h-full min-w-16 flex-1 flex-col justify-end"
+                    key={point.label}
+                  >
                     <div className="flex h-44 items-end justify-center gap-1 border-l border-[var(--color-soft-border)]">
-                      <div className="w-5 bg-[#ef3f6b]" style={{ height: `${incomeHeight}px` }} />
-                      <div className="w-8 bg-[#2878e5]" style={{ height: `${expenseHeight}px` }} />
+                      <div
+                        className="w-5 bg-[#ef3f6b]"
+                        style={{ height: `${incomeHeight}px` }}
+                      />
+                      <div
+                        className="w-8 bg-[#2878e5]"
+                        style={{ height: `${expenseHeight}px` }}
+                      />
                     </div>
-                    <p className="mt-2 text-center text-xs font-semibold text-[var(--color-stone)]">{point.label}</p>
+                    <p className="mt-2 text-center text-xs font-semibold text-[var(--color-stone)]">
+                      {point.label}
+                    </p>
                   </div>
                 );
               })}
@@ -434,18 +714,30 @@ function CashFlowProcessingWidget({ onOpenSettings }: { onOpenSettings: () => vo
         </div>
 
         <div className="p-5">
-          <p className="text-xs font-bold text-[var(--color-fog)]">{cashFlowWidget.periodLabel}</p>
+          <p className="text-xs font-bold text-[var(--color-fog)]">
+            {cashFlowWidget.periodLabel}
+          </p>
           <div className="mt-4 space-y-5">
             {cashFlowWidget.statusGroups.map((group) => (
-              <div className="border-b border-[var(--color-soft-border)] pb-4 last:border-b-0 last:pb-0" key={group.title}>
-                <h3 className={`border-l-2 pl-3 text-sm font-bold ${group.tone === "income" ? "border-[#ef3f6b] text-[#e3234f]" : "border-[#2878e5] text-[#1160ce]"}`}>
+              <div
+                className="border-b border-[var(--color-soft-border)] pb-4 last:border-b-0 last:pb-0"
+                key={group.title}
+              >
+                <h3
+                  className={`border-l-2 pl-3 text-sm font-bold ${group.tone === "income" ? "border-[#ef3f6b] text-[#e3234f]" : "border-[#2878e5] text-[#1160ce]"}`}
+                >
                   {group.title}
                 </h3>
                 <div className="mt-3 space-y-2">
                   {group.items.map((item) => (
-                    <div className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs" key={`${group.title}-${item.label}`}>
+                    <div
+                      className="grid grid-cols-[1fr_auto_auto] items-center gap-3 text-xs"
+                      key={`${group.title}-${item.label}`}
+                    >
                       <span className="font-semibold">{item.label}</span>
-                      <span className="text-right text-[var(--color-stone)]">{item.amount}</span>
+                      <span className="text-right text-[var(--color-stone)]">
+                        {item.amount}
+                      </span>
                       <span className="text-right font-semibold text-[var(--color-deep-cobalt)]">
                         {item.status} {item.countLabel}
                       </span>
@@ -466,16 +758,23 @@ function DepositBalanceWidget() {
     <section className="grid min-h-28 overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] sm:grid-cols-[280px_1fr_auto]">
       <div className="border-b border-[var(--color-soft-border)] px-5 py-5 sm:border-b-0 sm:border-r">
         <h2 className="text-sm font-bold">{depositBalanceWidget.title}</h2>
-        <p className="mt-3 text-lg font-bold text-[var(--color-deep-cobalt)]">{depositBalanceWidget.totalAmount}</p>
+        <p className="mt-3 text-lg font-bold text-[var(--color-deep-cobalt)]">
+          {depositBalanceWidget.totalAmount}
+        </p>
       </div>
       <div className="flex flex-wrap items-center gap-8 px-5 py-5">
         {depositBalanceWidget.accounts.map((account) => (
-          <div className="flex min-w-52 items-center gap-4" key={account.bankName}>
+          <div
+            className="flex min-w-52 items-center gap-4"
+            key={account.bankName}
+          >
             <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]">
               <Landmark className="size-6" />
             </div>
             <div>
-              <p className="text-xs text-[var(--color-stone)]">{account.bankName}</p>
+              <p className="text-xs text-[var(--color-stone)]">
+                {account.bankName}
+              </p>
               <p className="mt-1 text-sm font-bold">{account.amount}</p>
             </div>
           </div>
@@ -488,7 +787,15 @@ function DepositBalanceWidget() {
   );
 }
 
-function Legend({ color, label, value }: { color: string; label: string; value: string }) {
+function Legend({
+  color,
+  label,
+  value,
+}: {
+  color: string;
+  label: string;
+  value: string;
+}) {
   return (
     <div className="flex items-center gap-2">
       <span className={`size-2.5 ${color}`} />
@@ -501,7 +808,12 @@ function Legend({ color, label, value }: { color: string; label: string; value: 
 function PeriodSettingsDialog({ onClose }: { onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/35 px-4">
-      <section aria-label="조회기간 설정" aria-modal="true" className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-[0_24px_80px_rgba(16,20,24,0.28)]" role="dialog">
+      <section
+        aria-label="조회기간 설정"
+        aria-modal="true"
+        className="w-full max-w-2xl overflow-hidden rounded-lg bg-white shadow-[0_24px_80px_rgba(16,20,24,0.28)]"
+        role="dialog"
+      >
         <div className="flex items-center justify-between bg-[#4b5968] px-5 py-4 text-white">
           <h2 className="text-base font-bold">조회기간 설정</h2>
           <button aria-label="닫기" onClick={onClose} type="button">
@@ -512,27 +824,63 @@ function PeriodSettingsDialog({ onClose }: { onClose: () => void }) {
           <div className="flex flex-col gap-3 bg-[#f4f4f5] p-4 sm:flex-row sm:items-center">
             <span className="text-sm font-bold">기준연도</span>
             <div className="flex items-center rounded-md border border-[var(--color-soft-border)] bg-white">
-              <button className="px-3 py-1 text-lg text-[var(--color-stone)]" type="button">‹</button>
+              <button
+                className="px-3 py-1 text-lg text-[var(--color-stone)]"
+                type="button"
+              >
+                ‹
+              </button>
               <span className="px-4 text-sm font-bold">2026</span>
-              <button className="px-3 py-1 text-lg text-[var(--color-stone)]" type="button">›</button>
+              <button
+                className="px-3 py-1 text-lg text-[var(--color-stone)]"
+                type="button"
+              >
+                ›
+              </button>
             </div>
-            <span className="text-sm font-bold">{cashFlowWidget.periodRange}</span>
+            <span className="text-sm font-bold">
+              {cashFlowWidget.periodRange}
+            </span>
           </div>
 
           <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-4">
-            {["1년", "상반기", "하반기", "분기별", "1/4분기", "2/4분기", "3/4분기", "4/4분기"].map((label) => (
-              <button className={`min-h-11 border border-[var(--color-soft-border)] text-sm font-bold ${label === "1년" ? "bg-[var(--color-deep-cobalt)] text-white" : "bg-white text-[var(--color-stone)]"}`} key={label} type="button">
+            {[
+              "1년",
+              "상반기",
+              "하반기",
+              "분기별",
+              "1/4분기",
+              "2/4분기",
+              "3/4분기",
+              "4/4분기",
+            ].map((label) => (
+              <button
+                className={`min-h-11 border border-[var(--color-soft-border)] text-sm font-bold ${label === "1년" ? "bg-[var(--color-deep-cobalt)] text-white" : "bg-white text-[var(--color-stone)]"}`}
+                key={label}
+                type="button"
+              >
                 {label}
               </button>
             ))}
           </div>
 
           <div className="mt-7">
-            <p className="text-sm font-bold">대시보드 조회 기준을 설정합니다.</p>
+            <p className="text-sm font-bold">
+              대시보드 조회 기준을 설정합니다.
+            </p>
             <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-              {["세금계산서 등", "거래명세표", "은행/카드 거래내역", "전표 처리일 기준"].map((label) => (
+              {[
+                "세금계산서 등",
+                "거래명세표",
+                "은행/카드 거래내역",
+                "전표 처리일 기준",
+              ].map((label) => (
                 <label className="flex items-center gap-2" key={label}>
-                  <input defaultChecked={label === "은행/카드 거래내역"} type="radio" name="dashboard-period-source" />
+                  <input
+                    defaultChecked={label === "은행/카드 거래내역"}
+                    type="radio"
+                    name="dashboard-period-source"
+                  />
                   {label}
                 </label>
               ))}
@@ -540,7 +888,10 @@ function PeriodSettingsDialog({ onClose }: { onClose: () => void }) {
           </div>
 
           <div className="mt-5 flex justify-center gap-2 border-t border-[var(--color-soft-border)] pt-4">
-            <Button className="bg-[var(--color-deep-cobalt)] text-white hover:bg-[var(--color-midnight-ink)]" size="sm">
+            <Button
+              className="bg-[var(--color-deep-cobalt)] text-white hover:bg-[var(--color-midnight-ink)]"
+              size="sm"
+            >
               적용
             </Button>
             <Button onClick={onClose} size="sm" variant="outline">
