@@ -10,6 +10,7 @@ import {
   ChevronRight,
   CreditCard,
   FileCheck2,
+  FilePenLine,
   FileText,
   Home,
   LogOut,
@@ -25,6 +26,7 @@ import { useState } from "react";
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
+  { label: "기안·결재", icon: FilePenLine, href: "/approval" },
   { label: "회계/자금", icon: Wallet, href: "/finance/expense-resolutions" },
   { label: "조합원", icon: Users, href: "/members" },
   { label: "총회", icon: CalendarCheck, href: "#" },
@@ -49,6 +51,19 @@ type WorkspaceMenu = {
 };
 
 const workspaceMenus: Record<string, WorkspaceMenu[]> = {
+  "기안·결재": [
+    {
+      defaultDetailLabel: "기안 목록",
+      href: "/approval",
+      label: "기안·결재",
+      items: [
+        { label: "기안 목록", href: "/approval" },
+        { label: "새 기안", href: "/approval/new" },
+        { label: "소액결의", href: "/approval/small-expense" },
+        { label: "결재 설정", href: "/basic-info/approval" },
+      ],
+    },
+  ],
   "회계/자금": [
     {
       defaultDetailLabel: "거래처등록",

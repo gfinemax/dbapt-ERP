@@ -1,0 +1,5 @@
+"use server";
+import {revalidatePath} from "next/cache";import {redirect} from "next/navigation";import {createSmallExpense,createSmallExpenseBatch} from "@/features/approval/small-expense-repository";
+const text=(d:FormData,k:string)=>String(d.get(k)??"").trim();
+export async function createSmallExpenseAction(data:FormData){const file=data.get("evidence");await createSmallExpense({accountSubjectName:text(data,"accountSubjectName"),amount:Number(text(data,"amount")),description:text(data,"description"),evidence:file instanceof File&&file.size?file:undefined,expenseDate:text(data,"expenseDate"),memo:text(data,"memo"),partnerName:text(data,"partnerName"),payerLabel:text(data,"payerLabel"),projectName:text(data,"projectName")});revalidatePath("/approval/small-expense");}
+export async function createSmallExpenseBatchAction(data:FormData){await createSmallExpenseBatch(data.getAll("ids").map(String),text(data,"actorLabel"));revalidatePath("/approval/small-expense");revalidatePath("/finance/exp");redirect("/finance/exp");}

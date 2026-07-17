@@ -14,9 +14,13 @@ import {
   X,
 } from "lucide-react";
 import { useState } from "react";
+import Link from "next/link";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import { buildApprovalDashboard } from "@/features/approval/approval-dashboard";
+import { approvalStatusLabels, type ApprovalDocument } from "@/features/approval/approval-domain";
+import type { ApprovalBudgetSummary } from "@/features/approval/approval-repository";
 import {
   cashFlowWidget,
   dashboardActivity,
@@ -66,11 +70,14 @@ function isPercentStat(stat: DashboardStat): stat is Extract<DashboardStat, { ki
 }
 
 type DashboardPageProps = {
+  approvalBudget?: ApprovalBudgetSummary;
+  approvalDocuments?: ApprovalDocument[];
   dashboardStats?: DashboardStat[];
 };
 
-export function DashboardPage({ dashboardStats: stats = buildDashboardStats() }: DashboardPageProps = {}) {
+export function DashboardPage({ approvalBudget = { approved: 0, available: 0, executed: 0, reserved: 0 }, approvalDocuments = [], dashboardStats: stats = buildDashboardStats() }: DashboardPageProps = {}) {
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
+  const approvalDashboard = buildApprovalDashboard(approvalDocuments);
 
   return (
     <ErpShell>
@@ -105,7 +112,17 @@ export function DashboardPage({ dashboardStats: stats = buildDashboardStats() }:
 
         <DashboardKpiSummary dashboardStats={stats} />
 
+        <section aria-label="기안·결재 업무 요약" className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          {approvalDashboard.cards.map((card) => <Link className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5 shadow-[var(--shadow-air)] transition hover:-translate-y-0.5" href={card.href} key={card.label}><p className="text-sm font-bold text-[var(--color-stone)]">{card.label}</p><p className="mt-2 text-3xl font-bold">{card.count}건</p><p className="mt-2 text-xs text-[var(--color-deep-cobalt)]">{card.note}</p></Link>)}
+        </section>
+
+        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">기안·결재 오늘의 업무</h2><p className="text-sm text-[var(--color-stone)]">결재·의결·집행에서 바로 처리할 항목이야.</p></div><div className="flex flex-wrap gap-2"><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/new">기안 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/new?type=EXPENSE">지출품의 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/finance/exp">지출결의서 작성</Link><Link className="rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-xs font-bold" href="/approval/small-expense">소액경비 등록</Link></div></div>
+          {!approvalDashboard.tasks.length ? <p className="mt-4 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm text-[var(--color-stone)]">현재 처리할 기안 업무가 없어.</p> : <div className="mt-4 overflow-x-auto"><table className="w-full min-w-[780px] text-left text-sm"><thead><tr className="text-xs text-[var(--color-stone)]">{["우선순위","문서명","기안번호","현재 상태","금액","담당자","실행"].map((label)=><th className="px-3 py-2" key={label}>{label}</th>)}</tr></thead><tbody className="divide-y divide-[var(--color-soft-border)]">{approvalDashboard.tasks.map((document)=><tr key={document.id}><td className="px-3 py-3"><span className="rounded-full bg-[var(--color-sunset-soft)] px-2 py-1 text-xs font-bold">{document.amount >= 100_000_000 ? "긴급" : "일반"}</span></td><td className="px-3 py-3 font-bold">{document.title}</td><td className="px-3 py-3">{document.documentNo}</td><td className="px-3 py-3">{approvalStatusLabels[document.approvalStatus]}</td><td className="px-3 py-3">{document.amount.toLocaleString("ko-KR")}원</td><td className="px-3 py-3">{document.approvalSteps.find((step)=>step.status==="PENDING")?.approverLabel ?? document.drafterLabel}</td><td className="px-3 py-3"><Link className="font-bold text-[var(--color-deep-cobalt)]" href={`/approval/${document.id}`}>검토</Link></td></tr>)}</tbody></table></div>}
+        </section>
+
         <CashFlowProcessingWidget onOpenSettings={() => setIsPeriodModalOpen(true)} />
+        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5"><div className="flex items-center justify-between"><div><h2 className="text-xl font-bold">예산 현황</h2><p className="text-sm text-[var(--color-stone)]">집행예정액은 실제 집행액과 분리해 표시해.</p></div><Link className="text-sm font-bold text-[var(--color-deep-cobalt)]" href="/approval?view=execution">구성 문서 보기</Link></div><div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{[["편성예산",approvalBudget.approved],["실제 집행액",approvalBudget.executed],["승인된 집행예정액",approvalBudget.reserved],["실질 사용 가능액",approvalBudget.available]].map(([label,amount])=><div className="rounded-xl bg-[var(--color-cloud-veil)] p-4" key={String(label)}><p className="text-xs font-bold text-[var(--color-stone)]">{label}</p><p className="mt-1 text-lg font-bold">{Number(amount).toLocaleString("ko-KR")}원</p></div>)}</div></section>
         <DepositBalanceWidget />
 
         <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">
