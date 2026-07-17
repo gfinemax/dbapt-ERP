@@ -2,6 +2,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { meetingStatusForAmount, validateApprovalDraft, type ApprovalDocument, type ApprovalDraftInput, type ApprovalStep } from "./approval-domain";
 import { createDefaultApprovalLines, type ExpenseResolution } from "@/features/finance/finance-model";
 import { toManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
+import { getApprovalSettings, listMeetingRules } from "./approval-settings-repository";
 
 type DocumentRow = {
   amount: number | string;
@@ -75,9 +76,17 @@ export async function getApprovalDocument(id: string) {
 export async function createApprovalDocument(input: ApprovalDraftInput, submit = false) {
   validateApprovalDraft(input);
   const client = requireClient();
-  const document = { ...input, meetingStatus: input.finalMeetingBody ? "REQUIRED" : meetingStatusForAmount(input.amount) };
+  const [settings, rules] = await Promise.all([getApprovalSettings(), listMeetingRules()]);
+  const searchable = `${input.title} ${input.purpose} ${input.body}`;
+  const matchedRule = rules.find((rule) => rule.is_active && searchable.includes(rule.keyword));
+  const recommendedBody = matchedRule?.recommended_body ?? (input.amount >= settings.meetingThresholdAmount ? "BOARD" : undefined);
+  const document = { ...input, meetingStatus: input.finalMeetingBody || recommendedBody ? "REQUIRED" : meetingStatusForAmount(input.amount, settings.meetingThresholdAmount) };
   const { data, error } = await client.schema("approval").rpc("create_document", { p_document: document, p_lines: input.lines ?? [], p_steps: input.approvalSteps, p_submit: submit });
   if (error) throw new Error(`기안을 저장하지 못했어: ${error.message}`);
+  if (recommendedBody) {
+    const { error: recommendationError } = await client.schema("approval").from("documents").update({ recommended_meeting_body: recommendedBody, recommendation_reason: matchedRule?.reason ?? `${settings.meetingThresholdAmount.toLocaleString("ko-KR")}원 이상 금액 기준`, regulation_reference: matchedRule?.regulation_reference || null }).eq("id", data);
+    if (recommendationError) throw new Error(`의결기관 추천을 저장하지 못했어: ${recommendationError.message}`);
+  }
   return data as string;
 }
 
