@@ -9,6 +9,7 @@ build
 .vercel
 .turbo
 coverage
+*.tsbuildinfo
 .tmp-repos
 *.log
 
