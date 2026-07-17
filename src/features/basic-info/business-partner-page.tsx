@@ -23,15 +23,23 @@ import {
   registeredCreditCards,
   type BankAccountInput,
   type BusinessPartner,
+  type BusinessPartnerInput,
+  type CreditCardInput,
+  type ItemInput,
+  type RegisteredItem,
   type RegisteredBankAccount,
   type RegisteredCreditCard,
 } from "./business-partner-data";
 
 export type BasicInfoSection = "partners" | "items" | "bank-accounts" | "cards" | "account-subjects";
-type ModalType = "bank-account" | "card" | null;
+type ModalType = "partner" | "item" | "bank-account" | "card" | null;
 type CreateBankAccount = (input: BankAccountInput) => Promise<RegisteredBankAccount>;
 type UpdateBankAccount = (id: string, input: BankAccountInput) => Promise<RegisteredBankAccount>;
 type CreateAccountSubjects = (input: RegisteredAccountSubject[]) => Promise<RegisteredAccountSubject[]>;
+type CreateBusinessPartner = (input: BusinessPartnerInput) => Promise<BusinessPartner>;
+type UpdateBusinessPartner = (id: string, input: BusinessPartnerInput) => Promise<BusinessPartner>;
+type CreateItem = (input: ItemInput) => Promise<RegisteredItem>;
+type CreateCreditCard = (input: CreditCardInput) => Promise<RegisteredCreditCard>;
 
 const badgeClasses: Record<string, string> = {
   매출: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
@@ -74,32 +82,47 @@ function maskCardNo(cardNo: string) {
 export function BusinessPartnerPage({
   createAccountSubjects,
   createBankAccount,
+  createBusinessPartner,
+  createCreditCard,
+  createItem,
   initialAccountSubjects,
   initialBankAccounts,
   initialBusinessPartners,
+  initialCreditCards,
+  initialItems,
   initialSection,
+  updateBusinessPartner,
   updateBankAccount,
 }: {
   createAccountSubjects?: CreateAccountSubjects;
   createBankAccount?: CreateBankAccount;
+  createBusinessPartner?: CreateBusinessPartner;
+  createCreditCard?: CreateCreditCard;
+  createItem?: CreateItem;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
   initialBusinessPartners?: BusinessPartner[];
+  initialCreditCards?: RegisteredCreditCard[];
+  initialItems?: RegisteredItem[];
   initialSection?: BasicInfoSection;
+  updateBusinessPartner?: UpdateBusinessPartner;
   updateBankAccount?: UpdateBankAccount;
 } = {}) {
   const activeSection = initialSection ?? "partners";
   const [accountSubjects, setAccountSubjects] = useState<RegisteredAccountSubject[]>(initialAccountSubjects ?? registeredAccountSubjects);
   const [bankAccounts, setBankAccounts] = useState<RegisteredBankAccount[]>(initialBankAccounts ?? registeredBankAccounts);
-  const partners = initialBusinessPartners ?? businessPartners;
-  const [creditCards, setCreditCards] = useState<RegisteredCreditCard[]>(registeredCreditCards);
+  const [partners, setPartners] = useState(initialBusinessPartners ?? businessPartners);
+  const [items, setItems] = useState(initialItems ?? []);
+  const [creditCards, setCreditCards] = useState<RegisteredCreditCard[]>(initialCreditCards ?? registeredCreditCards);
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalType, setModalType] = useState<ModalType>(null);
+  const [editingBusinessPartner, setEditingBusinessPartner] = useState<BusinessPartner | null>(null);
   const [editingBankAccount, setEditingBankAccount] = useState<RegisteredBankAccount | null>(null);
   const activeDetailLabel = detailLabels[activeSection];
 
   function closeModal() {
     setModalError(null);
+    setEditingBusinessPartner(null);
     setEditingBankAccount(null);
     setModalType(null);
   }
@@ -107,7 +130,11 @@ export function BusinessPartnerPage({
   return (
     <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="기초정보">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
-        {activeSection === "bank-accounts" ? (
+        {activeSection === "partners" ? (
+          <PartnerSection onAdd={() => { setEditingBusinessPartner(null); setModalType("partner"); }} onEdit={(partner) => { setEditingBusinessPartner(partner); setModalError(null); setModalType("partner"); }} partners={partners} />
+        ) : activeSection === "items" ? (
+          <ItemSection items={items} onAdd={() => setModalType("item")} />
+        ) : activeSection === "bank-accounts" ? (
           <BankAccountSection
             accounts={bankAccounts}
             onAdd={() => {
@@ -132,9 +159,7 @@ export function BusinessPartnerPage({
             }}
             subjects={accountSubjects}
           />
-        ) : (
-          <PartnerSection partners={partners} />
-        )}
+        ) : null}
       </div>
 
       {modalType === "bank-account" ? (
@@ -162,18 +187,22 @@ export function BusinessPartnerPage({
 
       {modalType === "card" ? (
         <CreditCardModal
-          onClose={() => setModalType(null)}
-          onSave={(card) => {
-            setCreditCards((current) => [...current, card]);
-            setModalType(null);
+          onClose={closeModal}
+          onSave={async (input) => {
+            setModalError(null);
+            try { const card = createCreditCard ? await createCreditCard(input) : buildLocalCreditCard(input); setCreditCards((current) => [...current, card]); closeModal(); }
+            catch (error) { setModalError(error instanceof Error ? error.message : "신용카드 저장에 실패했습니다."); }
           }}
+          saveError={modalError}
         />
       ) : null}
+      {modalType === "partner" ? <BusinessPartnerModal initialPartner={editingBusinessPartner} onClose={closeModal} onSave={async (input) => { setModalError(null); try { if (editingBusinessPartner) { const partner = updateBusinessPartner ? await updateBusinessPartner(editingBusinessPartner.id, input) : buildUpdatedLocalPartner(editingBusinessPartner, input); setPartners((current) => current.map((item) => item.id === partner.id ? partner : item)); } else { const partner = createBusinessPartner ? await createBusinessPartner(input) : buildLocalPartner(input); setPartners((current) => [...current, partner]); } closeModal(); } catch (error) { setModalError(error instanceof Error ? error.message : "거래처 저장에 실패했습니다."); } }} saveError={modalError} /> : null}
+      {modalType === "item" ? <ItemModal onClose={closeModal} onSave={async (input) => { setModalError(null); try { const item = createItem ? await createItem(input) : buildLocalItem(input); setItems((current) => [...current, item]); closeModal(); } catch (error) { setModalError(error instanceof Error ? error.message : "품목 저장에 실패했습니다."); } }} saveError={modalError} /> : null}
     </ErpShell>
   );
 }
 
-function PartnerSection({ partners }: { partners: BusinessPartner[] }) {
+function PartnerSection({ onAdd, onEdit, partners }: { onAdd: () => void; onEdit: (partner: BusinessPartner) => void; partners: BusinessPartner[] }) {
   const summary = getBusinessPartnerSummary(partners);
 
   return (
@@ -193,7 +222,7 @@ function PartnerSection({ partners }: { partners: BusinessPartner[] }) {
             <Upload className="size-4" />
             엑셀 일괄등록
           </Button>
-          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" size="lg">
+          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onAdd} size="lg">
             <Plus className="size-4" />
             건별등록
           </Button>
@@ -308,7 +337,7 @@ function PartnerSection({ partners }: { partners: BusinessPartner[] }) {
                   </td>
                   <td className="px-4 py-4 text-right font-semibold">{formatKrw(partner.balanceAmount)}</td>
                   <td className="px-4 py-4">
-                    <Badge value={partner.evidenceProfileStatus} />
+                    <div className="flex items-center justify-center gap-2"><Badge value={partner.evidenceProfileStatus} /><button aria-label={`${partner.name} 수정`} className="inline-flex size-8 items-center justify-center rounded-full border border-[var(--color-soft-border)] text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]" onClick={() => onEdit(partner)} title="거래처 수정" type="button"><Pencil className="size-3.5" /></button></div>
                   </td>
                 </tr>
               ))}
@@ -318,6 +347,16 @@ function PartnerSection({ partners }: { partners: BusinessPartner[] }) {
       </section>
     </>
   );
+}
+
+function ItemSection({ items, onAdd }: { items: RegisteredItem[]; onAdd: () => void }) {
+  return <>
+    <RegistrationHeader actionLabel="품목 추가" description="전표 적요와 거래 분류에 사용할 품목 기본정보를 등록합니다." onAdd={onAdd} title="품목등록" />
+    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+      <table className="w-full border-collapse text-left text-sm"><thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]"><tr>{["품목코드", "품목명", "분류", "단위", "설명", "사용여부"].map((label) => <th className="px-4 py-3 text-center" key={label}>{label}</th>)}</tr></thead>
+      <tbody className="divide-y divide-[var(--color-soft-border)]">{items.length ? items.map((item) => <tr key={item.id}><td className="px-4 py-4 font-semibold">{item.code}</td><td className="px-4 py-4 font-semibold">{item.name}</td><td className="px-4 py-4">{item.category}</td><td className="px-4 py-4">{item.unit}</td><td className="px-4 py-4 text-[var(--color-stone)]">{item.description}</td><td className="px-4 py-4"><Badge value={item.usageStatus} /></td></tr>) : <tr><td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={6}>등록된 품목이 없습니다.</td></tr>}</tbody></table>
+    </section>
+  </>;
 }
 
 function AccountSubjectSection({
@@ -703,10 +742,10 @@ function BankAccountModal({
     event.preventDefault();
 
     await onSave({
-      accountName: form.accountName || "신규 운영계좌",
-      accountNo: form.accountNo || "계좌번호 미입력",
+      accountName: form.accountName,
+      accountNo: form.accountNo,
       accountType: form.accountType,
-      bankName: form.bankName || "우리은행",
+      bankName: form.bankName,
       createdAt: form.createdAt || getTodayDate(),
     });
   }
@@ -755,6 +794,22 @@ function buildUpdatedLocalBankAccount(account: RegisteredBankAccount, input: Ban
   };
 }
 
+function buildLocalPartner(input: BusinessPartnerInput): BusinessPartner {
+  return { ...input, address: input.address, balanceAmount: 0, code: `BP-${Date.now()}`, evidenceProfileStatus: "미비", id: `partner-${Date.now()}`, registrationSource: "직접등록" };
+}
+
+function buildUpdatedLocalPartner(partner: BusinessPartner, input: BusinessPartnerInput): BusinessPartner {
+  return { ...partner, ...input, evidenceProfileStatus: input.name.trim() && input.registrationNo.trim() && input.representative.trim() ? "완료" : "미비" };
+}
+
+function buildLocalItem(input: ItemInput): RegisteredItem {
+  return { ...input, id: `item-${Date.now()}`, usageStatus: "사용" };
+}
+
+function buildLocalCreditCard(input: CreditCardInput): RegisteredCreditCard {
+  return { ...input, cardNo: maskCardNo(input.cardNo), id: `card-${Date.now()}`, lastSyncedAt: "미연동", limitAmount: 0, settlementBank: "미지정", status: "확인필요", usageStatus: "사용" };
+}
+
 function mergeAccountSubjects(current: RegisteredAccountSubject[], additions: RegisteredAccountSubject[]) {
   const existingNames = new Set(current.map((subject) => subject.name));
   const nextSubjects = additions.filter((subject) => !existingNames.has(subject.name));
@@ -762,7 +817,24 @@ function mergeAccountSubjects(current: RegisteredAccountSubject[], additions: Re
   return [...current, ...nextSubjects].sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
 }
 
-function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (card: RegisteredCreditCard) => void }) {
+function BusinessPartnerModal({ initialPartner, onClose, onSave, saveError }: { initialPartner: BusinessPartner | null; onClose: () => void; onSave: (input: BusinessPartnerInput) => Promise<void>; saveError: string | null }) {
+  const [form, setForm] = useState<BusinessPartnerInput>(initialPartner ? { address: initialPartner.address ?? "", balanceType: initialPartner.balanceType, businessCategory: initialPartner.businessCategory, businessItem: initialPartner.businessItem, name: initialPartner.name, ownerType: initialPartner.ownerType, phone: initialPartner.phone, projectScope: initialPartner.projectScope, registrationNo: initialPartner.registrationNo, representative: initialPartner.representative, type: initialPartner.type } : { address: "", balanceType: "채무", businessCategory: "", businessItem: "", name: "", ownerType: "사업자", phone: "", projectScope: "회계/자금", registrationNo: "", representative: "", type: "매입" });
+  const change = <K extends keyof BusinessPartnerInput>(key: K, value: BusinessPartnerInput[K]) => setForm((current) => ({ ...current, [key]: value }));
+  return <ModalFrame onClose={onClose} title={initialPartner ? "거래처 정보 수정" : "거래처 건별등록"}><form className="grid gap-4" onSubmit={(event) => { event.preventDefault(); void onSave(form); }}>
+    <div className="grid gap-4 sm:grid-cols-2"><FormInput label="거래처명" onChange={(v) => change("name", v)} value={form.name} /><FormInput label="사업자등록번호" onChange={(v) => change("registrationNo", v)} value={form.registrationNo} /><FormInput label="대표자" onChange={(v) => change("representative", v)} value={form.representative} /><FormInput label="전화번호" onChange={(v) => change("phone", v)} value={form.phone} /><FormInput label="업태" onChange={(v) => change("businessCategory", v)} value={form.businessCategory} /><FormInput label="종목" onChange={(v) => change("businessItem", v)} value={form.businessItem} /></div>
+    <FormInput label="주소" onChange={(v) => change("address", v)} value={form.address ?? ""} />
+    <FormInput label="프로젝트" onChange={(v) => change("projectScope", v)} value={form.projectScope} />
+    <div className="grid gap-4 sm:grid-cols-3"><FormSelect label="거래유형" onChange={(v) => change("type", v as BusinessPartnerInput["type"])} options={["매출","매입","혼합"]} value={form.type} /><FormSelect label="사업자구분" onChange={(v) => change("ownerType", v as BusinessPartnerInput["ownerType"])} options={["사업자","개인"]} value={form.ownerType} /><FormSelect label="채권/채무" onChange={(v) => change("balanceType", v as BusinessPartnerInput["balanceType"])} options={["채권","채무","정산"]} value={form.balanceType} /></div>
+    {saveError ? <SaveError message={saveError} /> : null}<ModalActions onClose={onClose} />
+  </form></ModalFrame>;
+}
+
+function ItemModal({ onClose, onSave, saveError }: { onClose: () => void; onSave: (input: ItemInput) => Promise<void>; saveError: string | null }) {
+  const [form, setForm] = useState<ItemInput>({ category: "운영비", code: "", description: "", name: "", unit: "식" });
+  return <ModalFrame onClose={onClose} title="품목 등록"><form className="grid gap-4" onSubmit={(e) => { e.preventDefault(); void onSave(form); }}><FormInput label="품목코드" onChange={(v) => setForm((c) => ({...c, code:v}))} value={form.code} /><FormInput label="품목명" onChange={(v) => setForm((c) => ({...c, name:v}))} value={form.name} /><FormInput label="분류" onChange={(v) => setForm((c) => ({...c, category:v}))} value={form.category} /><FormInput label="단위" onChange={(v) => setForm((c) => ({...c, unit:v}))} value={form.unit} /><FormInput label="설명" onChange={(v) => setForm((c) => ({...c, description:v}))} value={form.description} />{saveError ? <SaveError message={saveError} /> : null}<ModalActions onClose={onClose} /></form></ModalFrame>;
+}
+
+function CreditCardModal({ onClose, onSave, saveError }: { onClose: () => void; onSave: (input: CreditCardInput) => Promise<void>; saveError: string | null }) {
   const [form, setForm] = useState({
     cardCompany: "KB국민카드",
     cardName: "",
@@ -774,19 +846,7 @@ function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (ca
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    onSave({
-      cardCompany: form.cardCompany || "KB국민카드",
-      cardName: form.cardName || "신규 법인카드",
-      cardNo: maskCardNo(form.cardNo),
-      cardType: form.cardType,
-      createdAt: form.createdAt || getTodayDate(),
-      id: `card-${Date.now()}`,
-      lastSyncedAt: "미연동",
-      limitAmount: 0,
-      settlementBank: "미지정",
-      status: "확인필요",
-      usageStatus: "사용",
-    });
+    void onSave({ cardCompany: form.cardCompany || "KB국민카드", cardName: form.cardName || "신규 법인카드", cardNo: form.cardNo, cardType: form.cardType, createdAt: form.createdAt || getTodayDate() });
   }
 
   return (
@@ -807,6 +867,7 @@ function CreditCardModal({ onClose, onSave }: { onClose: () => void; onSave: (ca
             <option>업무대행카드</option>
           </select>
         </label>
+        {saveError ? <SaveError message={saveError} /> : null}
         <ModalActions onClose={onClose} />
       </form>
     </ModalFrame>
@@ -853,6 +914,14 @@ function FormInput({ label, onChange, type = "text", value }: { label: string; o
       />
     </label>
   );
+}
+
+function FormSelect({ label, onChange, options, value }: { label: string; onChange: (value: string) => void; options: string[]; value: string }) {
+  return <label className="grid gap-1.5 text-sm font-semibold">{label}<select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm" onChange={(event) => onChange(event.target.value)} value={value}>{options.map((option) => <option key={option}>{option}</option>)}</select></label>;
+}
+
+function SaveError({ message }: { message: string }) {
+  return <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{message}</p>;
 }
 
 function getTodayDate() {

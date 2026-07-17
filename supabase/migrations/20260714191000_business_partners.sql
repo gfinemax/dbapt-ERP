@@ -1,4 +1,4 @@
-create table if not exists core.business_partners (
+create table if not exists finance.business_partners (
   id uuid primary key default gen_random_uuid(),
   organization_id uuid references core.organizations(id),
   code text not null,
@@ -26,6 +26,8 @@ create table if not exists core.business_partners (
   unique (code)
 );
 
-grant select, insert, update on core.business_partners to service_role;
-create index if not exists business_partners_name_idx on core.business_partners (name);
-create index if not exists business_partners_registration_no_idx on core.business_partners (registration_no);
+grant select, insert, update on finance.business_partners to service_role;
+alter table finance.business_partners enable row level security;
+create index if not exists business_partners_name_idx on finance.business_partners (name);
+create index if not exists business_partners_registration_no_idx on finance.business_partners (registration_no);
+create index if not exists business_partners_organization_id_idx on finance.business_partners (organization_id);

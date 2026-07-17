@@ -41,6 +41,23 @@ export type BusinessPartnerRegistrationResult = {
   status: "CREATED" | "EXISTING";
 };
 
+export type BusinessPartnerInput = Pick<
+  BusinessPartner,
+  "address" | "balanceType" | "businessCategory" | "businessItem" | "name" | "ownerType" | "phone" | "projectScope" | "registrationNo" | "representative" | "type"
+>;
+
+export type RegisteredItem = {
+  id: string;
+  code: string;
+  name: string;
+  category: string;
+  unit: string;
+  description: string;
+  usageStatus: "사용" | "사용안함";
+};
+
+export type ItemInput = Pick<RegisteredItem, "category" | "code" | "description" | "name" | "unit">;
+
 export type RegisteredBankAccount = {
   accountName: string;
   accountNo: string;
@@ -69,6 +86,8 @@ export type RegisteredCreditCard = {
   status: "정상" | "확인필요";
   usageStatus: "사용" | "사용안함";
 };
+
+export type CreditCardInput = Pick<RegisteredCreditCard, "cardCompany" | "cardName" | "cardNo" | "cardType" | "createdAt">;
 
 export const businessPartnerFilters = ["전체", "매출", "매입", "혼합"];
 

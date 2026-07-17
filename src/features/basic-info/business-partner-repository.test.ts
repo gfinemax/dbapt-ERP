@@ -1,7 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { mapBusinessPartnerFromRow, mapOcrPartnerToInsert, normalizeBusinessRegistrationNo } from "./business-partner-repository";
+import { businessPartnerRepositorySchema, mapBusinessPartnerFromRow, mapOcrPartnerToInsert, normalizeBusinessRegistrationNo } from "./business-partner-repository";
 
 describe("business partner OCR registration repository", () => {
+  it("uses the finance schema exposed by the server Data API", () => {
+    expect(businessPartnerRepositorySchema).toBe("finance");
+  });
   it("normalizes a business registration number", () => {
     expect(normalizeBusinessRegistrationNo("123 22 92770")).toBe("123-22-92770");
   });

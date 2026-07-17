@@ -1,7 +1,7 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import type { BusinessPartner, BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "./business-partner-data";
+import type { BusinessPartner, BusinessPartnerInput, BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "./business-partner-data";
 
-export const businessPartnerRepositorySchema = "core";
+export const businessPartnerRepositorySchema = "finance";
 const partnerSelect = "id,code,partner_type,owner_type,name,registration_no,representative,business_category,business_item,address,project_scope,phone,balance_type,balance_amount,evidence_profile_status,registration_source,first_transaction_date,source_resolution_no,source_evidence_id";
 
 export type SupabaseBusinessPartnerRow = {
@@ -107,4 +107,57 @@ export async function ensureBusinessPartnerFromOcrInSupabase(input: BusinessPart
     throw new Error(`거래처 자동등록 실패: ${error.message}`);
   }
   return { partner: mapBusinessPartnerFromRow(data as SupabaseBusinessPartnerRow), status: "CREATED" };
+}
+
+export async function createBusinessPartnerInSupabase(input: BusinessPartnerInput): Promise<BusinessPartner> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const registrationNo = normalizeBusinessRegistrationNo(input.registrationNo);
+  if (!input.name.trim()) throw new Error("거래처명을 입력해 주세요.");
+  if (input.ownerType === "사업자" && registrationNo.replace(/\D/g, "").length !== 10) throw new Error("사업자등록번호 10자리를 확인해 주세요.");
+  const digits = registrationNo.replace(/\D/g, "");
+  const row = {
+    address: input.address?.trim() || null, balance_amount: 0, balance_type: input.balanceType,
+    business_category: input.businessCategory.trim() || "미입력", business_item: input.businessItem.trim() || "미입력",
+    code: `BP-${digits || Date.now()}`, evidence_profile_status: input.name.trim() && registrationNo && input.representative.trim() ? "완료" : "미비",
+    first_transaction_date: null, name: input.name.trim(), owner_type: input.ownerType, partner_type: input.type,
+    phone: input.phone.trim(), project_scope: input.projectScope.trim() || "회계/자금", registration_no: registrationNo,
+    registration_source: "직접등록", representative: input.representative.trim() || "미입력", source_evidence_id: null, source_resolution_no: null,
+  };
+  const { data, error } = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").insert(row).select(partnerSelect).single();
+  if (error) throw new Error(error.message.toLowerCase().includes("duplicate") ? "같은 사업자번호의 거래처가 이미 등록되어 있습니다." : `거래처 저장에 실패했습니다: ${error.message}`);
+  return mapBusinessPartnerFromRow(data as SupabaseBusinessPartnerRow);
+}
+
+export async function updateBusinessPartnerInSupabase(id: string, input: BusinessPartnerInput): Promise<BusinessPartner> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const registrationNo = normalizeBusinessRegistrationNo(input.registrationNo);
+  if (!input.name.trim()) throw new Error("거래처명을 입력해 주세요.");
+  if (input.ownerType === "사업자" && registrationNo.replace(/\D/g, "").length !== 10) throw new Error("사업자등록번호 10자리를 확인해 주세요.");
+
+  const { data, error } = await supabase
+    .schema(businessPartnerRepositorySchema)
+    .from("business_partners")
+    .update({
+      address: input.address?.trim() || null,
+      balance_type: input.balanceType,
+      business_category: input.businessCategory.trim() || "미입력",
+      business_item: input.businessItem.trim() || "미입력",
+      evidence_profile_status: input.name.trim() && registrationNo && input.representative.trim() ? "완료" : "미비",
+      name: input.name.trim(),
+      owner_type: input.ownerType,
+      partner_type: input.type,
+      phone: input.phone.trim(),
+      project_scope: input.projectScope.trim() || "회계/자금",
+      registration_no: registrationNo,
+      representative: input.representative.trim() || "미입력",
+    })
+    .eq("id", id)
+    .is("deleted_at", null)
+    .select(partnerSelect)
+    .single();
+
+  if (error) throw new Error(error.message.toLowerCase().includes("duplicate") ? "같은 사업자번호의 거래처가 이미 등록되어 있습니다." : `거래처 수정에 실패했습니다: ${error.message}`);
+  return mapBusinessPartnerFromRow(data as SupabaseBusinessPartnerRow);
 }

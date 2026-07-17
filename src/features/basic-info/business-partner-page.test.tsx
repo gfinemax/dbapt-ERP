@@ -23,6 +23,62 @@ describe("BusinessPartnerPage", () => {
     expect(screen.getByText("대한토지신탁")).toBeInTheDocument();
   });
 
+  it("registers a business partner through the configured server action", async () => {
+    const createBusinessPartner = vi.fn(async (input) => ({ ...input, balanceAmount: 0, code: "BP-1000", evidenceProfileStatus: "완료" as const, id: "partner-db-1", registrationSource: "직접등록" as const }));
+    render(<BusinessPartnerPage createBusinessPartner={createBusinessPartner} initialBusinessPartners={[]} initialSection="partners" />);
+    fireEvent.click(screen.getByRole("button", { name: "건별등록" }));
+    fireEvent.change(screen.getByLabelText("거래처명"), { target: { value: "신규 거래처" } });
+    fireEvent.change(screen.getByLabelText("사업자등록번호"), { target: { value: "123-45-67890" } });
+    fireEvent.change(screen.getByLabelText("대표자"), { target: { value: "홍길동" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByText("신규 거래처")).toBeInTheDocument();
+    expect(createBusinessPartner).toHaveBeenCalledOnce();
+  });
+
+  it("loads an existing business partner into the edit form and saves the changes", async () => {
+    const partner = {
+      address: "서울 동작구",
+      balanceAmount: 0,
+      balanceType: "채무" as const,
+      businessCategory: "미입력",
+      businessItem: "미입력",
+      code: "BP-OCR-2138152063",
+      evidenceProfileStatus: "완료" as const,
+      id: "partner-1",
+      name: "주아성다이소봉천본점",
+      ownerType: "사업자" as const,
+      phone: "",
+      projectScope: "회계/자금",
+      registrationNo: "213-81-52063",
+      representative: "김기호",
+      type: "매입" as const,
+    };
+    const updateBusinessPartner = vi.fn(async (id, input) => ({ ...partner, ...input, id }));
+    render(<BusinessPartnerPage initialBusinessPartners={[partner]} initialSection="partners" updateBusinessPartner={updateBusinessPartner} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "주아성다이소봉천본점 수정" }));
+    expect(screen.getByRole("heading", { name: "거래처 정보 수정" })).toBeInTheDocument();
+    expect(screen.getByLabelText("사업자등록번호")).toHaveValue("213-81-52063");
+    fireEvent.change(screen.getByLabelText("업태"), { target: { value: "소매업" } });
+    fireEvent.change(screen.getByLabelText("종목"), { target: { value: "생활용품" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+
+    expect(updateBusinessPartner).toHaveBeenCalledWith("partner-1", expect.objectContaining({ businessCategory: "소매업", businessItem: "생활용품" }));
+    expect(await screen.findByText("소매업")).toBeInTheDocument();
+  });
+
+  it("renders the item section and persists a new item through the configured action", async () => {
+    const createItem = vi.fn(async (input) => ({ ...input, id: "item-db-1", usageStatus: "사용" as const }));
+    render(<BusinessPartnerPage createItem={createItem} initialItems={[]} initialSection="items" />);
+    expect(screen.getByRole("heading", { name: "품목등록" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "품목 추가" }));
+    fireEvent.change(screen.getByLabelText("품목코드"), { target: { value: "ITEM-001" } });
+    fireEvent.change(screen.getByLabelText("품목명"), { target: { value: "인쇄용역" } });
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    expect(await screen.findByText("인쇄용역")).toBeInTheDocument();
+    expect(createItem).toHaveBeenCalledOnce();
+  });
+
   it("renders bank account registration list and adds an account from the modal", () => {
     render(<BusinessPartnerPage initialSection="bank-accounts" />);
 

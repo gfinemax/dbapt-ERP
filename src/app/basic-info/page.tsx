@@ -2,8 +2,10 @@ import { BusinessPartnerPage, type BasicInfoSection } from "@/features/basic-inf
 import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
 import { listBusinessPartnersFromSupabase } from "@/features/basic-info/business-partner-repository";
+import { listCreditCardsFromSupabase } from "@/features/basic-info/credit-card-repository";
+import { listItemsFromSupabase } from "@/features/basic-info/item-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
-import { createAccountSubjectsAction, createBankAccountAction, updateBankAccountAction } from "./actions";
+import { createAccountSubjectsAction, createBankAccountAction, createCreditCardAction, createItemAction, createManualBusinessPartnerAction, updateBankAccountAction, updateBusinessPartnerAction } from "./actions";
 
 type BasicInfoRouteProps = {
   searchParams?: Promise<{
@@ -36,6 +38,8 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
   const initialAccountSubjects = initialSection === "account-subjects" ? await listAccountSubjectsFromSupabase() : null;
   const initialBankAccounts = initialSection === "bank-accounts" ? await listBankAccountsFromSupabase() : null;
   const initialBusinessPartners = initialSection === "partners" ? await listBusinessPartnersFromSupabase() : null;
+  const initialItems = initialSection === "items" ? await listItemsFromSupabase() : null;
+  const initialCreditCards = initialSection === "cards" ? await listCreditCardsFromSupabase() : null;
   const hasRemoteWriteConfig = hasSupabaseSecretConfig();
 
   return (
@@ -50,10 +54,16 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
           ? createBankAccountAction
           : undefined
       }
+      createBusinessPartner={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "partners", initialBusinessPartners) ? createManualBusinessPartnerAction : undefined}
+      createCreditCard={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "cards", initialCreditCards) ? createCreditCardAction : undefined}
+      createItem={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "items", initialItems) ? createItemAction : undefined}
       initialAccountSubjects={initialAccountSubjects ?? undefined}
       initialBankAccounts={initialBankAccounts ?? undefined}
       initialBusinessPartners={initialBusinessPartners ?? undefined}
+      initialCreditCards={initialCreditCards ?? undefined}
+      initialItems={initialItems ?? undefined}
       initialSection={initialSection}
+      updateBusinessPartner={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "partners", initialBusinessPartners) ? updateBusinessPartnerAction : undefined}
       updateBankAccount={
         shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "bank-accounts", initialBankAccounts)
           ? updateBankAccountAction
