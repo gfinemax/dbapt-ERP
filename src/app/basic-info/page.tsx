@@ -38,12 +38,16 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
   const initialAccountSubjects = initialSection === "account-subjects" ? await listAccountSubjectsFromSupabase() : null;
   const initialBankAccounts = initialSection === "bank-accounts" ? await listBankAccountsFromSupabase() : null;
   const initialBusinessPartners = initialSection === "partners" ? await listBusinessPartnersFromSupabase() : null;
+  const businessPartnerLoadError = initialSection === "partners" && initialBusinessPartners === null
+    ? "거래처 정보를 불러오지 못했습니다. Supabase 연결과 finance.business_partners 테이블을 확인해 주세요."
+    : undefined;
   const initialItems = initialSection === "items" ? await listItemsFromSupabase() : null;
   const initialCreditCards = initialSection === "cards" ? await listCreditCardsFromSupabase() : null;
   const hasRemoteWriteConfig = hasSupabaseSecretConfig();
 
   return (
     <BusinessPartnerPage
+      businessPartnerLoadError={businessPartnerLoadError}
       createAccountSubjects={
         shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "account-subjects", initialAccountSubjects)
           ? createAccountSubjectsAction
@@ -59,7 +63,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       createItem={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "items", initialItems) ? createItemAction : undefined}
       initialAccountSubjects={initialAccountSubjects ?? undefined}
       initialBankAccounts={initialBankAccounts ?? undefined}
-      initialBusinessPartners={initialBusinessPartners ?? undefined}
+      initialBusinessPartners={initialSection === "partners" ? initialBusinessPartners ?? [] : undefined}
       initialCreditCards={initialCreditCards ?? undefined}
       initialItems={initialItems ?? undefined}
       initialSection={initialSection}

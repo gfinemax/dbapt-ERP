@@ -1,10 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BusinessPartnerPage } from "./business-partner-page";
+import { businessPartners } from "./business-partner-data";
 
 describe("BusinessPartnerPage", () => {
   it("renders the basic info partner registration workflow", () => {
-    render(<BusinessPartnerPage />);
+    render(<BusinessPartnerPage initialBusinessPartners={businessPartners} />);
 
     expect(screen.getByRole("heading", { name: "거래처 관리" })).toBeInTheDocument();
     expect(screen.getByText("세금계산서 및 채권/채무 관리를 위한 거래처 정보를 등록합니다.")).toBeInTheDocument();
@@ -21,6 +22,14 @@ describe("BusinessPartnerPage", () => {
     expect(screen.getByText("채권")).toBeInTheDocument();
     expect(screen.getAllByText("채무").length).toBeGreaterThan(0);
     expect(screen.getByText("대한토지신탁")).toBeInTheDocument();
+  });
+
+  it("does not present sample partners as stored data when the remote list is unavailable", () => {
+    render(<BusinessPartnerPage businessPartnerLoadError="거래처 정보를 불러오지 못했습니다." initialBusinessPartners={[]} />);
+
+    expect(screen.getByRole("alert")).toHaveTextContent("거래처 정보를 불러오지 못했습니다.");
+    expect(screen.getByText("등록된 거래처가 없습니다.")).toBeInTheDocument();
+    expect(screen.queryByText("대한토지신탁")).not.toBeInTheDocument();
   });
 
   it("registers a business partner through the configured server action", async () => {

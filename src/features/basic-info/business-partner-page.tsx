@@ -16,7 +16,6 @@ import {
 import {
   basicInfoWorkflows,
   businessPartnerFilters,
-  businessPartners,
   formatKrw,
   getBusinessPartnerSummary,
   registeredBankAccounts,
@@ -85,6 +84,7 @@ export function BusinessPartnerPage({
   createBusinessPartner,
   createCreditCard,
   createItem,
+  businessPartnerLoadError,
   initialAccountSubjects,
   initialBankAccounts,
   initialBusinessPartners,
@@ -99,6 +99,7 @@ export function BusinessPartnerPage({
   createBusinessPartner?: CreateBusinessPartner;
   createCreditCard?: CreateCreditCard;
   createItem?: CreateItem;
+  businessPartnerLoadError?: string;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
   initialBusinessPartners?: BusinessPartner[];
@@ -111,7 +112,7 @@ export function BusinessPartnerPage({
   const activeSection = initialSection ?? "partners";
   const [accountSubjects, setAccountSubjects] = useState<RegisteredAccountSubject[]>(initialAccountSubjects ?? registeredAccountSubjects);
   const [bankAccounts, setBankAccounts] = useState<RegisteredBankAccount[]>(initialBankAccounts ?? registeredBankAccounts);
-  const [partners, setPartners] = useState(initialBusinessPartners ?? businessPartners);
+  const [partners, setPartners] = useState(initialBusinessPartners ?? []);
   const [items, setItems] = useState(initialItems ?? []);
   const [creditCards, setCreditCards] = useState<RegisteredCreditCard[]>(initialCreditCards ?? registeredCreditCards);
   const [modalError, setModalError] = useState<string | null>(null);
@@ -131,7 +132,7 @@ export function BusinessPartnerPage({
     <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="기초정보">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         {activeSection === "partners" ? (
-          <PartnerSection onAdd={() => { setEditingBusinessPartner(null); setModalType("partner"); }} onEdit={(partner) => { setEditingBusinessPartner(partner); setModalError(null); setModalType("partner"); }} partners={partners} />
+          <PartnerSection loadError={businessPartnerLoadError} onAdd={() => { setEditingBusinessPartner(null); setModalType("partner"); }} onEdit={(partner) => { setEditingBusinessPartner(partner); setModalError(null); setModalType("partner"); }} partners={partners} />
         ) : activeSection === "items" ? (
           <ItemSection items={items} onAdd={() => setModalType("item")} />
         ) : activeSection === "bank-accounts" ? (
@@ -202,7 +203,7 @@ export function BusinessPartnerPage({
   );
 }
 
-function PartnerSection({ onAdd, onEdit, partners }: { onAdd: () => void; onEdit: (partner: BusinessPartner) => void; partners: BusinessPartner[] }) {
+function PartnerSection({ loadError, onAdd, onEdit, partners }: { loadError?: string; onAdd: () => void; onEdit: (partner: BusinessPartner) => void; partners: BusinessPartner[] }) {
   const summary = getBusinessPartnerSummary(partners);
 
   return (
@@ -256,6 +257,8 @@ function PartnerSection({ onAdd, onEdit, partners }: { onAdd: () => void; onEdit
           </a>
         ))}
       </section>
+
+      {loadError ? <p className="rounded-xl border border-[var(--color-sunset-soft)] bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{loadError}</p> : null}
 
       <section className="grid gap-4 lg:grid-cols-4">
         <SummaryTile label="등록 거래처" value={`${summary.totalPartners}건`} />
@@ -319,7 +322,7 @@ function PartnerSection({ onAdd, onEdit, partners }: { onAdd: () => void; onEdit
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
-              {partners.map((partner) => (
+              {partners.length ? partners.map((partner) => (
                 <tr className="bg-white/70" key={partner.id}>
                   <td className="px-4 py-4 font-semibold">{partner.code}</td>
                   <td className="px-4 py-4">
@@ -340,7 +343,7 @@ function PartnerSection({ onAdd, onEdit, partners }: { onAdd: () => void; onEdit
                     <div className="flex items-center justify-center gap-2"><Badge value={partner.evidenceProfileStatus} /><button aria-label={`${partner.name} 수정`} className="inline-flex size-8 items-center justify-center rounded-full border border-[var(--color-soft-border)] text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]" onClick={() => onEdit(partner)} title="거래처 수정" type="button"><Pencil className="size-3.5" /></button></div>
                   </td>
                 </tr>
-              ))}
+              )) : <tr><td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={12}>등록된 거래처가 없습니다.</td></tr>}
             </tbody>
           </table>
         </div>

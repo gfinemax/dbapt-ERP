@@ -4,8 +4,7 @@ import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-r
 import { listUnresolvedWithdrawalTransactions } from "@/features/finance/expense-compliance-repository";
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseEvidenceAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
-export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<{ bankTransactionId?: string }> } = {}) {
-  const initialBankTransactionId = (await searchParams)?.bankTransactionId;
+export default async function ExpenseResolutionsRoute() {
   let dataLoadError: string | undefined;
   let initialResolutions: ManagedExpenseResolution[] = [];
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
@@ -30,7 +29,6 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       getEvidenceOcrJob={getExpenseEvidenceOcrJobAction}
       initialResolutions={initialResolutions}
       initialBankTransactions={initialBankTransactions}
-      initialBankTransactionId={initialBankTransactionId}
       persistResolution={saveExpenseResolutionAction}
       saveFactConfirmation={saveExpenseFactConfirmationAction}
       listFactConfirmations={listExpenseFactConfirmationsAction}
