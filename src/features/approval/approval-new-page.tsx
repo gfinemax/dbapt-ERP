@@ -24,7 +24,7 @@ export function ApprovalNewPage({
   const [budgetId, setBudgetId] = useState("");
   const selectedBudget = budgets.find((item) => item.id === budgetId);
   return (
-    <ErpShell activeLabel="기안·결재">
+    <ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재">
       <main className="mx-auto max-w-6xl space-y-5">
         <header className="rounded-[28px] border border-[var(--color-soft-border)] bg-white p-6">
           <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">
