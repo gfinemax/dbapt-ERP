@@ -159,14 +159,17 @@ export const approvalStatusLabels: Record<ApprovalStatus, string> = {
   CANCELLED: "취소",
 };
 
-export function validateApprovalDraft(input: ApprovalDraftInput) {
+export function validateApprovalDraft(
+  input: ApprovalDraftInput,
+  { submit = true }: { submit?: boolean } = {},
+) {
   if (!input.title.trim()) throw new Error("제목을 입력해줘.");
   if (!input.drafterLabel.trim()) throw new Error("기안자를 입력해줘.");
   if (!input.departmentLabel.trim()) throw new Error("부서를 입력해줘.");
   if (!input.purpose.trim()) throw new Error("기안 목적을 입력해줘.");
   if (input.amount < 0 || !Number.isFinite(input.amount))
     throw new Error("금액을 올바르게 입력해줘.");
-  if (input.documentType !== "GENERAL" && input.amount <= 0)
+  if (submit && input.documentType !== "GENERAL" && input.amount <= 0)
     throw new Error("지출·계약 기안은 금액이 필요해.");
   if (!input.approvalSteps.length)
     throw new Error("결재자를 한 명 이상 지정해줘.");
@@ -174,7 +177,7 @@ export function validateApprovalDraft(input: ApprovalDraftInput) {
     (sum, line) => sum + line.supplyAmount + line.vatAmount,
     0,
   );
-  if (input.lines?.length && lineTotal !== input.amount)
+  if (submit && input.lines?.length && lineTotal !== input.amount)
     throw new Error("세부항목 합계와 기안 총액이 일치해야 해.");
 }
 

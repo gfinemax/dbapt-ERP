@@ -5,10 +5,10 @@ import type { ManagedExpenseResolution } from "./expense-resolution-page";
 function createResolution(overrides: Partial<ManagedExpenseResolution> = {}) {
   return {
     id: "resolution-1",
-    author: "오학동 사무장",
+    author: "오학동 사무국장",
     approvalLine: [
-      { approver: "장현제", order: 1, role: "부장", status: "대기" },
-      { approver: "오학동", order: 2, role: "사무장", status: "대기" },
+      { approver: "장현제", order: 1, role: "담당자", status: "대기" },
+      { approver: "오학동", order: 2, role: "사무국장", status: "대기" },
       { approver: "안동연", order: 3, role: "조합장", status: "대기" },
     ],
     approvalStatus: "작성중",
@@ -25,35 +25,35 @@ function createResolution(overrides: Partial<ManagedExpenseResolution> = {}) {
 
 describe("expense approval workflow", () => {
   it("requests approval and advances only the current approver in order", () => {
-    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: createResolution(), transitionedAt: "2026-07-12 10:00" });
-    expect(requested).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 부장" });
+    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution(), transitionedAt: "2026-07-12 10:00" });
+    expect(requested).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 담당자" });
     expect(requested.approvalLine.map((step) => step.status)).toEqual(["결재대기", "대기", "대기"]);
 
-    const firstApproved = transitionExpenseApproval({ actorLabel: "장현제 부장", command: "APPROVE", resolution: requested, transitionedAt: "2026-07-12 10:10" });
-    expect(firstApproved.currentApprover).toBe("오학동 사무장");
+    const firstApproved = transitionExpenseApproval({ actorLabel: "장현제 담당자", command: "APPROVE", resolution: requested, transitionedAt: "2026-07-12 10:10" });
+    expect(firstApproved.currentApprover).toBe("오학동 사무국장");
     expect(firstApproved.approvalLine.map((step) => step.status)).toEqual(["승인완료", "결재대기", "대기"]);
   });
 
   it("rejects unauthorized or duplicate approval attempts", () => {
-    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: createResolution() });
+    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution() });
     expect(() => transitionExpenseApproval({ actorLabel: "안동연 조합장", command: "APPROVE", resolution: requested })).toThrow(ApprovalWorkflowError);
   });
 
   it("requires a reason for rejection and supports a clean resubmission", () => {
-    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: createResolution() });
-    expect(() => transitionExpenseApproval({ actorLabel: "장현제 부장", command: "REJECT", reason: " ", resolution: requested })).toThrow("반려사유");
-    const rejected = transitionExpenseApproval({ actorLabel: "장현제 부장", command: "REJECT", reason: "계좌정보 보완", resolution: requested, transitionedAt: "2026-07-12 11:00" });
+    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution() });
+    expect(() => transitionExpenseApproval({ actorLabel: "장현제 담당자", command: "REJECT", reason: " ", resolution: requested })).toThrow("반려사유");
+    const rejected = transitionExpenseApproval({ actorLabel: "장현제 담당자", command: "REJECT", reason: "계좌정보 보완", resolution: requested, transitionedAt: "2026-07-12 11:00" });
     expect(rejected).toMatchObject({ approvalStatus: "반려", currentApprover: undefined, rejectionReason: "계좌정보 보완" });
 
-    const resubmitted = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: rejected, transitionedAt: "2026-07-12 11:30" });
-    expect(resubmitted).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 부장", rejectionReason: undefined });
+    const resubmitted = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: rejected, transitionedAt: "2026-07-12 11:30" });
+    expect(resubmitted).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 담당자", rejectionReason: undefined });
     expect(resubmitted.approvalLine.map((step) => step.status)).toEqual(["결재대기", "대기", "대기"]);
     expect(resubmitted.history.at(-1)?.actionLabel).toBe("재상신");
   });
 
   it("moves to payment waiting only after final approval without creating a voucher", () => {
-    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: createResolution() });
-    for (const actorLabel of ["장현제 부장", "오학동 사무장", "안동연 조합장"]) {
+    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution() });
+    for (const actorLabel of ["장현제 담당자", "오학동 사무국장", "안동연 조합장"]) {
       resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution, transitionedAt: "2026-07-12 12:00" });
     }
     expect(resolution).toMatchObject({ approvalStatus: "승인완료", currentApprover: undefined, paymentStatus: "지급대기" });
@@ -61,8 +61,8 @@ describe("expense approval workflow", () => {
   });
 
   it("completes a bank post-approval without scheduling a duplicate payment", () => {
-    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
-    for (const actorLabel of ["장현제 부장", "오학동 사무장", "안동연 조합장"]) resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution });
+    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
+    for (const actorLabel of ["장현제 담당자", "오학동 사무국장", "안동연 조합장"]) resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution });
     expect(resolution).toMatchObject({ approvalStatus: "승인완료", paymentStatus: "지급완료" });
   });
 

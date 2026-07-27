@@ -1,6 +1,7 @@
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
 import { validateExpenseCompliance } from "./expense-compliance";
 import type { ApprovalStep, ExpenseResolutionHistoryItem, ManagedExpenseResolution, PaymentStatus, SettlementStatus } from "./expense-resolution-page";
+import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
 
 export type ApprovalWorkflowCommand = "REQUEST" | "APPROVE" | "REJECT" | "CANCEL";
 
@@ -134,11 +135,10 @@ function resetApprovalLine(existing: ApprovalStep[]) {
 }
 
 function defaultApprovalLine(): ApprovalStep[] {
-  return [
-    { approver: "장현제", order: 1, role: "부장", status: "결재대기" },
-    { approver: "오학동", order: 2, role: "사무장", status: "대기" },
-    { approver: "안동연", order: 3, role: "조합장", status: "대기" },
-  ];
+  return getOrganizationExpenseApprovalLine().map((step, index) => ({
+    ...step,
+    status: index === 0 ? "결재대기" : "대기",
+  }));
 }
 
 function getFinalApprovalStatuses(resolution: ManagedExpenseResolution): { paymentStatus: PaymentStatus; settlementStatus: SettlementStatus } {

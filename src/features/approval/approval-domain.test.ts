@@ -23,4 +23,12 @@ describe("approval domain", () => {
     expect(canExecute({ approvalStatus: "APPROVED", meetingStatus: "APPROVED" })).toBe(true);
   });
   it("validates line totals with integer amounts", () => { expect(() => validateApprovalDraft({ ...draft, lines: [{ accountSubjectName: "광고비", description: "", partnerName: "거래처", supplyAmount: 8_000, vatAmount: 1_000 }] })).toThrow("합계"); });
+  it("allows incomplete expense amounts while saving a draft", () => {
+    expect(() =>
+      validateApprovalDraft(
+        { ...draft, amount: 0, lines: [] },
+        { submit: false },
+      ),
+    ).not.toThrow();
+  });
 });

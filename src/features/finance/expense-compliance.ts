@@ -8,6 +8,11 @@ export const evidenceKinds = ["E_TAX_INVOICE", "INVOICE", "CARD_RECEIPT", "CASH_
 export type EvidenceKind = (typeof evidenceKinds)[number];
 
 export type ExpenseComplianceSettings = {
+  allowDirectExpense?: boolean;
+  directExpenseLimit?: number;
+  directExpenseRequiredKeywords?: string[];
+  directExpenseRecommendedKeywords?: string[];
+  allowOtherApprovalSkipReason?: boolean;
   pettyCashLimit: number;
   monthlyPersonWarningLimit: number;
   pettyCashAllowedAccounts: string[];
@@ -21,6 +26,11 @@ export type ExpenseComplianceSettings = {
 };
 
 export const defaultExpenseComplianceSettings: ExpenseComplianceSettings = {
+  allowDirectExpense: true,
+  directExpenseLimit: 5_000_000,
+  directExpenseRequiredKeywords: ["신규 계약", "조합원 환불", "추가부담", "차입", "상환", "소송", "토지매입", "예산 외"],
+  directExpenseRecommendedKeywords: ["신규 사업", "신규 거래처", "비정기", "자산 취득"],
+  allowOtherApprovalSkipReason: true,
   pettyCashLimit: 30_000,
   monthlyPersonWarningLimit: 100_000,
   pettyCashAllowedAccounts: ["사무용품비", "소모품비", "우편료·택배비", "복사·출력비", "소액 교통비·주차비", "업무용 생수·음료", "기타 통상적인 사무국 운영비"],
@@ -29,8 +39,8 @@ export const defaultExpenseComplianceSettings: ExpenseComplianceSettings = {
   noEvidenceApproverRole: "조합장",
   allowPersonalReimbursement: true,
   postApprovalMaxDays: 180,
-  factConfirmerRoles: ["사무장", "조합장"],
-  approvalLine: ["부장", "사무장", "조합장"],
+  factConfirmerRoles: ["사무국장", "조합장"],
+  approvalLine: ["담당자", "사무국장", "조합장"],
 };
 
 export type PettyCashTransaction = {

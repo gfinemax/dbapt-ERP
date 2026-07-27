@@ -16,12 +16,25 @@ import {
   uploadApprovalAttachment,
 } from "@/features/approval/approval-repository";
 import type { ApprovalDocumentType } from "@/features/approval/approval-domain";
+import { getOrganizationApprovalSteps } from "@/features/approval/organization-approval-line";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
 }
 
+function currentSeoulDate() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(
+    new Date(),
+  );
+}
+
 export async function createApprovalAction(formData: FormData) {
+  const today = currentSeoulDate();
+  const title = text(formData, "title");
+  const submit = text(formData, "intent") === "submit";
+  const budgetEnabled = formData.get("budgetEnabled") === "on";
+  if (submit && budgetEnabled && !text(formData, "budgetItem"))
+    throw new Error("예산을 사용하는 기안은 예산 항목을 선택해줘.");
   const lines = [1, 2, 3]
     .map((index) => ({
       accountSubjectName: text(formData, `accountSubject${index}`),
@@ -40,41 +53,29 @@ export async function createApprovalAction(formData: FormData) {
     );
   const draft = {
     amount: Number(text(formData, "amount")) || 0,
-    approvalSteps: [
-      {
-        approverLabel: text(formData, "approver1"),
-        approverRole: text(formData, "approverRole1"),
-      },
-      ...(text(formData, "approver2")
-        ? [
-            {
-              approverLabel: text(formData, "approver2"),
-              approverRole: text(formData, "approverRole2"),
-            },
-          ]
-        : []),
-    ],
-    body: text(formData, "body"),
+    approvalSteps: getOrganizationApprovalSteps(),
+    body: text(formData, "body") || title,
     budgetItem: text(formData, "budgetItem") || undefined,
     counterpartyName: text(formData, "counterpartyName") || undefined,
-    departmentLabel: text(formData, "departmentLabel"),
+    departmentLabel: text(formData, "departmentLabel") || "사무국",
     documentType: text(formData, "documentType") as ApprovalDocumentType,
-    drafterLabel: text(formData, "drafterLabel"),
-    purpose: text(formData, "purpose"),
-    title: text(formData, "title"),
+    drafterLabel: text(formData, "drafterLabel") || "오학동",
+    purpose: text(formData, "purpose") || title,
+    title,
     lines,
     contractRelated: formData.get("contractRelated") === "on",
-    desiredExecutionDate: text(formData, "desiredExecutionDate"),
+    desiredExecutionDate: text(formData, "desiredExecutionDate") || today,
     evidenceKind: text(formData, "evidenceKind"),
     expectedEffect: text(formData, "expectedEffect"),
     finalMeetingBody: text(formData, "finalMeetingBody"),
-    fiscalYear: Number(text(formData, "fiscalYear")) || undefined,
+    fiscalYear:
+      Number(text(formData, "fiscalYear")) || Number(today.slice(0, 4)),
     installmentPayment: formData.get("installmentPayment") === "on",
     meetingConfirmed: formData.get("meetingConfirmed") === "on",
     memberBurden: formData.get("memberBurden") === "on",
     outOfBudget: formData.get("outOfBudget") === "on",
-    paymentDueDate: text(formData, "paymentDueDate"),
-    paymentMethod: text(formData, "paymentMethod"),
+    paymentDueDate: text(formData, "paymentDueDate") || today,
+    paymentMethod: text(formData, "paymentMethod") || "계좌이체",
     projectName: text(formData, "projectName"),
     relatedDocument: text(formData, "relatedDocument"),
     securityLevel: (text(formData, "securityLevel") || "INTERNAL") as
@@ -90,11 +91,11 @@ export async function createApprovalAction(formData: FormData) {
         memo: text(formData, `scheduleMemo${index}`),
       }))
       .filter((item) => item.amount || item.dueDate),
-    approvalLineRuleId: text(formData, "approvalLineRuleId") || undefined,
+    approvalLineRuleId: undefined,
   };
   const id = await createApprovalDocument(
     draft,
-    text(formData, "intent") === "submit",
+    submit,
   );
   const attachment = formData.get("attachment");
   if (attachment instanceof File && attachment.size)

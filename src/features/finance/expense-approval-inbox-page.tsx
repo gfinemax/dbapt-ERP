@@ -21,7 +21,7 @@ import { transitionExpenseApproval, type ApprovalTransitionRequest } from "./exp
 const today = "2026-07-02";
 const currentApprover = {
   name: "오학동",
-  role: "사무장",
+  role: "사무국장",
 };
 const currentApproverLabel = `${currentApprover.name} ${currentApprover.role}`;
 
@@ -32,7 +32,7 @@ const approvalInboxSeeds = [
       id: "approval-inbox-0101",
       resolutionNo: "지결-2026-0101",
       createdAt: "2026-07-01",
-      author: "장현제 부장",
+      author: "장현제 담당자",
       vendorName: "한빛전기안전",
       expenseType: "용역비" as const,
       budgetItem: "운영비 > 안전점검",
@@ -86,7 +86,7 @@ const approvalInboxSeeds = [
       id: "approval-inbox-0104",
       resolutionNo: "지결-2026-0104",
       createdAt: "2026-07-02",
-      author: "오학동 사무장",
+      author: "오학동 사무국장",
       vendorName: "법무법인 정담",
       expenseType: "법무비" as const,
       budgetItem: "운영비 > 법무자문",
@@ -104,7 +104,7 @@ const approvalInboxSeeds = [
       id: "approval-inbox-0105",
       resolutionNo: "지결-2026-0105",
       createdAt: "2026-07-02",
-      author: "오학동 사무장",
+      author: "오학동 사무국장",
       vendorName: "대방사무용품",
       expenseType: "운영비" as const,
       budgetItem: "운영비 > 사무관리",

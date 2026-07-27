@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
-import { ExpenseResolutionPage, formatApprovalDateTime } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime } from "./expense-resolution-page";
 
 describe("ExpenseResolutionPage", () => {
   it("formats approval dates with month, day, and time", () => {
@@ -263,6 +263,10 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "자동입력 이전으로 되돌리기" }));
     expect(within(dialog).getByLabelText("판매처 상호명")).toHaveValue("");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(0);
+  });
+  it("uses the resolution number and subject as the PDF file name", () => {
+    expect(buildExpenseResolutionPdfFileName("지결-2026-0001", "사무국 비품 구입")).toBe("지결-2026-0001(사무국 비품 구입).pdf");
+    expect(buildExpenseResolutionPdfFileName("지결:2026/0001", "계약서 검토? *최종*")).toBe("지결 2026 0001(계약서 검토 최종).pdf");
   });
 
   it("uses an OCR total as the single expense amount when a receipt has no supply amount", async () => {

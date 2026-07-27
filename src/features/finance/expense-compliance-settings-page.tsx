@@ -19,6 +19,11 @@ export function ExpenseComplianceSettingsPage({ initialSettings = defaultExpense
       <h1 className="mt-2 text-3xl font-bold">지출결의 관리설정</h1>
       <p className="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-4 font-bold text-amber-900">소액경비 기준은 지출결의서 작성 면제 기준이 아니라 월별 일괄결의가 가능한 내부 관리기준입니다.</p>
       <section className="mt-6 grid gap-5 rounded-2xl border border-[var(--color-soft-border)] bg-white p-6 md:grid-cols-2">
+        <label className="flex items-center gap-3 rounded-xl border p-4 font-bold md:col-span-2"><input checked={settings.allowDirectExpense ?? true} onChange={(event) => setSettings((current) => ({ ...current, allowDirectExpense: event.target.checked }))} type="checkbox" />기안 없는 직접 지출결의 허용</label>
+        <SettingNumber label="직접 지출 가능 한도" value={settings.directExpenseLimit ?? 5_000_000} onChange={(value) => setSettings((current) => ({ ...current, directExpenseLimit: value }))} />
+        <SettingList label="기안 필수 업무 키워드" value={settings.directExpenseRequiredKeywords ?? []} onChange={(value) => setSettings((current) => ({ ...current, directExpenseRequiredKeywords: value }))} />
+        <SettingList label="기안 연결 권장 업무 키워드" value={settings.directExpenseRecommendedKeywords ?? []} onChange={(value) => setSettings((current) => ({ ...current, directExpenseRecommendedKeywords: value }))} />
+        <label className="flex items-center gap-3 rounded-xl border p-4 font-bold"><input checked={settings.allowOtherApprovalSkipReason ?? true} onChange={(event) => setSettings((current) => ({ ...current, allowOtherApprovalSkipReason: event.target.checked }))} type="checkbox" />기타 기안 생략 사유 직접 입력 허용</label>
         <SettingNumber label="소액경비 기준금액" value={settings.pettyCashLimit} onChange={(value) => setSettings((current) => ({ ...current, pettyCashLimit: value }))} />
         <SettingNumber label="지출자별 월 누계 경고금액" value={settings.monthlyPersonWarningLimit} onChange={(value) => setSettings((current) => ({ ...current, monthlyPersonWarningLimit: value }))} />
         <SettingList label="소액경비 일괄결의 허용 계정과목" value={settings.pettyCashAllowedAccounts} onChange={(value) => setSettings((current) => ({ ...current, pettyCashAllowedAccounts: value }))} />

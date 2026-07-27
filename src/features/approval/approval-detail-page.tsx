@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { ErpShell } from "@/components/erp-shell";
+import { ApprovalPrint } from "./approval-print";
 import {
   closeApprovalAction,
   createContractAction,
@@ -37,12 +38,15 @@ export function ApprovalDetailPage({
               </p>
               <h1 className="mt-2 text-3xl font-bold">{document.title}</h1>
             </div>
-            <Link
-              className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-bold"
-              href="/approval"
-            >
-              목록
-            </Link>
+            <div className="flex items-center gap-2">
+              <ApprovalPrint document={document} />
+              <Link
+                className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-bold"
+                href="/approval"
+              >
+                목록
+              </Link>
+            </div>
           </div>
           <div className="mt-5 grid gap-3 sm:grid-cols-3">
             <Status

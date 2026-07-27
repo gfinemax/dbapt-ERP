@@ -44,6 +44,11 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
   return {
     ...(organizationId ? { organization_id: organizationId } : {}),
     id: resolution.id,
+    creation_source: resolution.creationSource ?? (resolution.approvalDocumentId ? "APPROVAL_LINKED" : "DIRECT"),
+    direct_expense_decision: resolution.directExpenseDecision ?? "ALLOWED",
+    direct_expense_reasons: resolution.directExpenseReasons ?? [],
+    approval_skip_reason: resolution.approvalSkipReason ?? null,
+    approval_document_id: resolution.approvalDocumentId ?? null,
     resolution_no: resolution.resolutionNo,
     author_label: resolution.author,
     current_approver_label: resolution.currentApprover ?? null,

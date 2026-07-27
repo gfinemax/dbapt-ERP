@@ -484,7 +484,7 @@ const expenseResolution: ExpenseResolution = {
       id: "print-0001",
       printNo: "PRINT-2026-0001",
       printedAt: "2026-07-03 10:10",
-      printedBy: "오학동 사무장",
+      printedBy: "오학동 사무국장",
       printPurpose: "보관용",
       copyKind: "원본",
       storageLocation: "2026년 운영비 지출결의서 / 7월 / 001",

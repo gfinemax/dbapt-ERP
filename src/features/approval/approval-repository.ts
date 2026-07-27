@@ -10,7 +10,7 @@ import {
   createDefaultApprovalLines,
   type ExpenseResolution,
 } from "@/features/finance/finance-model";
-import { toManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
+import { toManagedExpenseResolutionDraft } from "@/features/finance/expense-resolution-draft-adapter";
 import {
   getApprovalSettings,
   listMeetingRules,
@@ -299,7 +299,7 @@ export async function createApprovalDocument(
       throw new Error("기안금액이 결재선 규칙 범위를 벗어났어.");
     effectiveInput = { ...input, approvalSteps: rule.steps };
   }
-  validateApprovalDraft(effectiveInput);
+  validateApprovalDraft(effectiveInput, { submit });
   const scheduleTotal = (effectiveInput.paymentSchedule ?? []).reduce(
     (sum, item) => sum + item.amount,
     0,
@@ -519,7 +519,7 @@ export async function createExpenseDraftFromApproval(
     .rpc("create_expense_draft", {
       p_actor_label: actorLabel,
       p_document_id: id,
-      p_resolution_data: toManagedExpenseResolution(base),
+      p_resolution_data: { ...toManagedExpenseResolutionDraft(base), approvalDocumentId: id, approvalDocumentNo: document.documentNo, creationSource: "APPROVAL_LINKED", directExpenseDecision: "ALLOWED", directExpenseReasons: ["승인된 기안에서 생성된 지출결의입니다."] },
     });
   if (error)
     throw new Error(`지출결의서 초안을 만들지 못했어: ${error.message}`);
@@ -624,7 +624,7 @@ export async function createContractPaymentExpense(
     .rpc("create_contract_payment_expense", {
       p_actor_label: actorLabel,
       p_payment_id: paymentId,
-      p_resolution_data: toManagedExpenseResolution(base),
+      p_resolution_data: { ...toManagedExpenseResolutionDraft(base), approvalDocumentId: documentId, approvalDocumentNo: document.documentNo, creationSource: "CONTRACT_PAYMENT", directExpenseDecision: "ALLOWED", directExpenseReasons: ["승인된 계약기안의 분할지급입니다."] },
     });
   if (error)
     throw new Error(`분할지급 지출결의서를 만들지 못했어: ${error.message}`);

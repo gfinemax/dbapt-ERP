@@ -35,12 +35,12 @@ describe("ExpenseApprovalInboxPage", () => {
       settlementStatus: "정산없음" as const,
       paymentFlowType: "사전결의" as const,
       approvalLine: [
-        { approver: "장현제", order: 1, processedAt: "2026-07-01 10:00", role: "부장", status: "승인완료" as const },
-        { approver: "오학동", order: 2, role: "사무장", status: "결재대기" as const },
+        { approver: "장현제", order: 1, processedAt: "2026-07-01 10:00", role: "담당자", status: "승인완료" as const },
+        { approver: "오학동", order: 2, role: "사무국장", status: "결재대기" as const },
         { approver: "안동연", order: 3, role: "조합장", status: "대기" as const },
       ],
       approvalStatus: "승인대기" as const,
-      currentApprover: "오학동 사무장",
+      currentApprover: "오학동 사무국장",
     } as ManagedExpenseResolution;
     const transitionApproval = vi.fn().mockResolvedValue({
       ...resolution,
@@ -50,9 +50,9 @@ describe("ExpenseApprovalInboxPage", () => {
     render(<ExpenseApprovalInboxPage initialResolutions={[resolution]} transitionApproval={transitionApproval} />);
     fireEvent.click(screen.getByRole("button", { name: "승인" }));
     await waitFor(() => expect(transitionApproval).toHaveBeenCalledWith(expect.objectContaining({
-      actorLabel: "오학동 사무장",
+      actorLabel: "오학동 사무국장",
       command: "APPROVE",
-      expectedCurrentApprover: "오학동 사무장",
+      expectedCurrentApprover: "오학동 사무국장",
       expectedStatus: "승인대기",
       resolutionId: resolution.id,
     })));

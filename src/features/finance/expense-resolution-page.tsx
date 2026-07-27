@@ -7,6 +7,12 @@ import { createPortal } from "react-dom";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import { buildDocumentPdfFileName } from "@/features/shared/document-print-filename";
+import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
+import type { ApprovalDocument } from "@/features/approval/approval-domain";
+import type { ExpenseComplianceSettings } from "./expense-compliance";
+import { defaultExpenseComplianceSettings } from "./expense-compliance";
+import { evaluateDirectExpensePolicy, type DirectExpenseDecision, type ExpenseCreationSource } from "./direct-expense-policy";
 import { validateExpenseCompliance, type EvidenceKind, type EvidenceStatus, type ExpenseKind, type PettyCashTransaction } from "./expense-compliance";
 import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
@@ -181,6 +187,12 @@ export type PrintRecordItem = {
 };
 
 export type ManagedExpenseResolution = {
+  creationSource?: ExpenseCreationSource;
+  approvalDocumentId?: string;
+  approvalDocumentNo?: string;
+  approvalSkipReason?: string;
+  directExpenseDecision?: DirectExpenseDecision;
+  directExpenseReasons?: string[];
   actualPaidAmount?: number;
   accountHolder: string;
   approvalLine: ApprovalStep[];
@@ -295,6 +307,11 @@ function mapEvidenceTypeToComplianceKind(value: string): EvidenceKind {
 }
 
 type ResolutionFormState = {
+  creationSource: ExpenseCreationSource;
+  approvalDocumentId: string;
+  approvalDocumentNo: string;
+  approvalSkipReason: string;
+  approvalSkipReasonDetail: string;
   expenseKind: ExpenseKind;
   accountingDate: string;
   actualExpenseDate: string;
@@ -379,7 +396,7 @@ const paymentTargets: PaymentTarget[] = [
     accountNumber: "110-123-456789",
     bankName: "국민은행",
     id: "staff-oh",
-    label: "오학동 사무장",
+    label: "오학동 사무국장",
     sourceLabel: "직원 기본정보",
   },
   {
@@ -799,11 +816,7 @@ const statusClasses: Record<string, string> = {
 };
 
 export function buildApprovalLine(): ApprovalStep[] {
-  return [
-    { order: 1, approver: "장현제", role: "부장", status: "대기" },
-    { order: 2, approver: "오학동", role: "사무장", status: "대기" },
-    { order: 3, approver: "안동연", role: "조합장", status: "대기" },
-  ];
+  return getOrganizationExpenseApprovalLine();
 }
 
 export function getApproverLabel(step?: ApprovalStep) {
@@ -1254,6 +1267,14 @@ function getResolutionSubject(resolution: ManagedExpenseResolution) {
   return resolution.subject?.trim() || (resolution.resolutionType === "BATCH" ? resolution.projectName : resolution.operationExpenseDetail) || "건명 미입력";
 }
 
+export function buildExpenseResolutionPdfFileName(resolutionNo: string, subject: string) {
+  return buildDocumentPdfFileName(resolutionNo, subject, "지출결의서");
+}
+
+function escapeHtmlText(value: string) {
+  return value.replace(/[&<>"']/g, (character) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[character] ?? character);
+}
+
 function getSingleExpenseTaxCategory(item: { supplyAmount: number | string; taxCategory?: SingleExpenseTaxCategory; vatAmount: number | string }): SingleExpenseTaxCategory {
   return item.taxCategory ?? (toNumber(String(item.supplyAmount)) > 0 && toNumber(String(item.vatAmount)) === 0 ? "NO_VAT" : "TAXABLE");
 }
@@ -1521,7 +1542,7 @@ export function createHistoryItem({
 }
 
 function getSeedActorLabel(resolution: Pick<ManagedExpenseResolution, "id" | "author">) {
-  return resolution.id.startsWith("expense-resolution-") ? "오학동 사무장" : resolution.author;
+  return resolution.id.startsWith("expense-resolution-") ? "오학동 사무국장" : resolution.author;
 }
 
 function getApprovalActionAt(order: number) {
@@ -1875,6 +1896,11 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution): Manag
 
 function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFormState {
   return {
+    creationSource: resolution.creationSource ?? (resolution.approvalDocumentId ? "APPROVAL_LINKED" : "DIRECT"),
+    approvalDocumentId: resolution.approvalDocumentId ?? "",
+    approvalDocumentNo: resolution.approvalDocumentNo ?? "",
+    approvalSkipReason: resolution.approvalSkipReason ?? "승인 예산 내 일상 지출",
+    approvalSkipReasonDetail: resolution.approvalSkipReason && !["승인 예산 내 일상 지출", "정기·반복 지출", "기존 계약에 따른 지급", "소액경비 일괄결의"].includes(resolution.approvalSkipReason) ? resolution.approvalSkipReason : "",
     expenseKind: resolution.expenseKind ?? "GENERAL",
     accountingDate: resolution.accountingDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
     actualExpenseDate: resolution.actualExpenseDate ?? resolution.advancePaidAt ?? resolution.createdAt,
@@ -1956,6 +1982,11 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
 
 function createFormState(nextNo: string, currentDate = getCurrentDateIso()): ResolutionFormState {
   return applyPaymentTarget({
+    creationSource: "DIRECT",
+    approvalDocumentId: "",
+    approvalDocumentNo: "",
+    approvalSkipReason: "승인 예산 내 일상 지출",
+    approvalSkipReasonDetail: "",
     expenseKind: "GENERAL",
     accountingDate: currentDate,
     actualExpenseDate: currentDate,
@@ -2496,6 +2527,8 @@ export function ExpenseResolutionPage({
   getEvidenceOcrJob,
   initialResolutions,
   initialBankTransactions = [],
+  initialApprovalDocuments = [],
+  directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
   persistResolution,
   saveFactConfirmation,
@@ -2515,6 +2548,8 @@ export function ExpenseResolutionPage({
   getEvidenceOcrJob?: (id: string) => Promise<EvidenceOcrJobProgress>;
   initialResolutions?: ManagedExpenseResolution[];
   initialBankTransactions?: BankTransactionResolutionCandidate[];
+  initialApprovalDocuments?: ApprovalDocument[];
+  directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
   saveFactConfirmation?: (input: ExpenseFactConfirmationInput) => Promise<string>;
@@ -3287,7 +3322,13 @@ export function ExpenseResolutionPage({
     const batchSummary = summarizeBatchItems(formState.batchItems);
     const isBatch = formState.resolutionType === "BATCH";
     const totalPaymentAmount = isBatch ? batchSummary.totalAmount : formTotalAmount;
+    const linkedApproval = initialApprovalDocuments.find((document) => document.id === formState.approvalDocumentId);
+    const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
     if (mode === "approval-request") {
+      if (directPolicy.decision === "REQUIRED" && (!linkedApproval || linkedApproval.approvalStatus !== "APPROVED")) { setSaveError(`승인된 기안을 연결해야 합니다. ${directPolicy.reasons.join(" ")}`); return; }
+      if (formState.creationSource === "APPROVAL_LINKED" && !linkedApproval) { setSaveError("승인 완료된 기안을 선택해주세요."); return; }
+      if (linkedApproval && totalPaymentAmount > linkedApproval.amount) { setSaveError(`지출금액이 기안 승인금액 ${linkedApproval.amount.toLocaleString("ko-KR")}원을 초과했습니다.`); return; }
+      if (formState.creationSource === "DIRECT" && (!formState.approvalSkipReason.trim() || (formState.approvalSkipReason === "기타" && !formState.approvalSkipReasonDetail.trim()))) { setSaveError("기안 생략 사유를 입력해주세요."); return; }
       if (isBatch && formState.expenseTiming === "SETTLEMENT" && formState.inputMethod === "EVIDENCE_OCR") {
         const evidenceSettlement = calculateBatchEvidenceSettlement({ advancePaidAmount: toNumber(formState.advancePaidAmount), evidenceFiles: formState.evidenceFiles });
         const settlementErrors = [...evidenceSettlement.errors];
@@ -3324,6 +3365,12 @@ export function ExpenseResolutionPage({
     const compliance = validateExpenseCompliance({ actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason });
     if (mode === "approval-request" && compliance.errors.length) { setSaveError(compliance.errors.join(" ")); return; }
     const nextResolution: ManagedExpenseResolution = {
+      creationSource: formState.creationSource,
+      approvalDocumentId: linkedApproval?.id,
+      approvalDocumentNo: linkedApproval?.documentNo,
+      approvalSkipReason: formState.creationSource === "DIRECT" ? (formState.approvalSkipReason === "기타" ? formState.approvalSkipReasonDetail.trim() : formState.approvalSkipReason) : undefined,
+      directExpenseDecision: directPolicy.decision,
+      directExpenseReasons: directPolicy.reasons,
       expenseKind: formState.expenseKind,
       accountingDate: formState.accountingDate,
       actualExpenseDate: formState.actualExpenseDate,
@@ -3867,7 +3914,7 @@ export function ExpenseResolutionPage({
 
                     return (
                       <tr className="bg-white/70" key={resolution.id}>
-                        <td className="px-4 py-4 text-center font-bold">{resolution.resolutionNo}</td>
+                        <td className="px-4 py-4 text-center font-bold"><span>{resolution.resolutionNo}</span><span className="mx-auto mt-1 block w-fit rounded-full bg-[var(--color-cloud-veil)] px-2 py-0.5 text-[10px] text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : resolution.creationSource === "SMALL_EXPENSE" ? "소액일괄" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접"}</span></td>
                         <td className="px-4 py-4 text-center text-[var(--color-stone)]">
                           <p className="font-bold text-[var(--color-midnight-ink)]">{resolution.actualExpenseDate ?? "-"}</p>
                           <p className="text-xs">작성 {resolution.createdAt}</p>
@@ -4034,6 +4081,8 @@ export function ExpenseResolutionPage({
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
           bankTransactionCandidates={initialBankTransactions}
+          approvalDocuments={initialApprovalDocuments}
+          directExpenseSettings={directExpenseSettings}
           settlementCandidates={resolutions.filter((resolution) => normalizeExpenseTiming(resolution) === "ADVANCE" && resolution.paymentStatus === "지급완료")}
           isEditing={Boolean(editingResolutionId)}
           isEvidenceUploading={isEvidenceUploading}
@@ -4132,6 +4181,8 @@ export function ExpenseResolutionPage({
 
 function ExpenseResolutionCreateModal({
   bankTransactionCandidates,
+  approvalDocuments,
+  directExpenseSettings,
   batchImportError,
   batchImportFileName,
   batchImportResult,
@@ -4173,6 +4224,8 @@ function ExpenseResolutionCreateModal({
   onAccountAllocationChange,
 }: {
   bankTransactionCandidates: BankTransactionResolutionCandidate[];
+  approvalDocuments: ApprovalDocument[];
+  directExpenseSettings: ExpenseComplianceSettings;
   batchImportError: string;
   batchImportFileName: string;
   batchImportResult: ExpenseResolutionImportResult | null;
@@ -4214,6 +4267,8 @@ function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const isBatch = formState.resolutionType === "BATCH";
+  const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
+  const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
   const presetApplied = Boolean(formState.projectName && hasProjectExpensePreset(formState.projectName));
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
@@ -4599,6 +4654,16 @@ function ExpenseResolutionCreateModal({
               </section>
             ) : null}
             </> : null}
+            {currentStep === 1 ? <section className="grid gap-4 rounded-xl border border-[var(--color-soft-border)] bg-white p-5">
+              <div><h3 className="font-bold">작성 방식</h3><p className="mt-1 text-sm text-[var(--color-stone)]">일상·정기 지출은 바로 작성하고, 계약·고액·예산 외 지출은 승인된 기안을 연결합니다.</p></div>
+              <div className="grid gap-3 md:grid-cols-2">
+                <button aria-pressed={formState.creationSource === "DIRECT"} className={`rounded-xl border p-4 text-left ${formState.creationSource === "DIRECT" ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]/45" : "border-[var(--color-soft-border)]"}`} onClick={() => { onChange("creationSource", "DIRECT"); onChange("approvalDocumentId", ""); onChange("approvalDocumentNo", ""); }} type="button"><b>기안 없이 직접 작성</b><span className="mt-1 block text-xs text-[var(--color-stone)]">승인 예산 내 일상·정기 지출</span></button>
+                <button aria-pressed={formState.creationSource === "APPROVAL_LINKED"} className={`rounded-xl border p-4 text-left ${formState.creationSource === "APPROVAL_LINKED" ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]/45" : "border-[var(--color-soft-border)]"}`} onClick={() => onChange("creationSource", "APPROVAL_LINKED")} type="button"><b>승인된 기안에서 작성</b><span className="mt-1 block text-xs text-[var(--color-stone)]">계약·고액·예산 외·의결 대상</span></button>
+              </div>
+              <div aria-live="polite" className={`rounded-xl border p-4 text-sm ${directPolicy.decision === "REQUIRED" ? "border-red-300 bg-red-50 text-red-800" : directPolicy.decision === "RECOMMENDED" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-green-300 bg-green-50 text-green-800"}`}><b>{directPolicy.decision === "REQUIRED" ? "기안 연결 필수" : directPolicy.decision === "RECOMMENDED" ? "기안 연결 권장" : "기안 없이 처리 가능"}</b><p className="mt-1">{directPolicy.reasons.join(" ")}</p></div>
+              {formState.creationSource === "APPROVAL_LINKED" || directPolicy.decision === "REQUIRED" ? <label className="grid gap-2 text-sm font-bold"><span>승인된 기안 연결</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => { const selected = approvalDocuments.find((document) => document.id === event.target.value); onChange("approvalDocumentId", event.target.value); onChange("approvalDocumentNo", selected?.documentNo ?? ""); if (selected) { onChange("creationSource", "APPROVAL_LINKED"); onChange("subject", selected.title); onChange("projectName", selected.projectName ?? ""); onChange("vendorName", selected.counterpartyName ?? ""); onChange("budgetItem", selected.budgetItem ?? ""); if (selected.amount > 0) { onChange("singleItems", [createSingleExpenseItem({ itemName: selected.title, quantity: "1", taxCategory: "NO_VAT", unitPrice: String(selected.amount), vatAmount: 0 })]); onChange("accountAllocations", [createAccountAllocation({ accountTitle: selected.budgetItem || "미지정", amount: String(selected.amount), budgetItem: selected.budgetItem || "" })]); } } }} value={formState.approvalDocumentId}><option value="">문서번호·제목·거래처로 선택</option>{approvalDocuments.map((document) => <option key={document.id} value={document.id}>{document.documentNo} · {document.title} · {document.counterpartyName ?? "거래처 미지정"} · {document.amount.toLocaleString("ko-KR")}원</option>)}</select>{selectedApprovalDocument ? <span className="text-xs text-[var(--color-green-ink)]">승인완료 · 승인금액 {selectedApprovalDocument.amount.toLocaleString("ko-KR")}원</span> : null}</label> : null}
+              {formState.creationSource === "DIRECT" ? <div className="grid gap-3"><label className="grid gap-2 text-sm font-bold"><span>기안 생략 사유</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => onChange("approvalSkipReason", event.target.value)} value={formState.approvalSkipReason}><option>승인 예산 내 일상 지출</option><option>정기·반복 지출</option><option>기존 계약에 따른 지급</option><option>소액경비 일괄결의</option>{directExpenseSettings.allowOtherApprovalSkipReason ?? true ? <option>기타</option> : null}</select></label>{formState.approvalSkipReason === "기타" ? <label className="grid gap-2 text-sm font-bold"><span>기타 생략 사유</span><input className="h-11 rounded-lg border px-3" onChange={(event) => onChange("approvalSkipReasonDetail", event.target.value)} placeholder="기안을 생략할 수 있는 구체적인 사유" value={formState.approvalSkipReasonDetail} /></label> : null}</div> : null}
+            </section> : null}
             <FormSection layout="compact" title={currentStep === 1 ? "기본정보" : "지출내역·금액"}>
               {currentStep === 1 ? <>
               <TextInput label="결의서번호" readOnly value={formState.resolutionNo} />
@@ -5570,6 +5635,7 @@ export function ExpenseResolutionDetailModal({
 
           <DetailSection title="기본정보">
             <DetailItem label="결의서번호" value={resolution.resolutionNo} />
+            <DetailItem label="작성경로" value={resolution.creationSource === "APPROVAL_LINKED" ? `기안연결 · ${resolution.approvalDocumentNo ?? "문서번호 미확인"}` : resolution.creationSource === "SMALL_EXPENSE" ? "소액경비 일괄결의" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약 분할지급" : `직접 작성 · ${resolution.approvalSkipReason ?? "생략 사유 미입력"}`} />
             <DetailItem label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
             <DetailItem label="건명" value={getResolutionSubject(resolution)} wide />
             <DetailItem label="작성일" value={resolution.createdAt} />
@@ -5977,6 +6043,20 @@ function ExpenseResolutionPrintPreviewModal({
     setIsPreparingPrint(true);
     setPrintPreparationError("");
 
+    const pdfFileName = buildExpenseResolutionPdfFileName(resolution.resolutionNo, getResolutionSubject(resolution));
+    const printTitle = pdfFileName.replace(/\.pdf$/i, "");
+    const originalDocumentTitle = document.title;
+    let titleRestored = false;
+    const restoreDocumentTitle = () => {
+      if (titleRestored) return;
+      titleRestored = true;
+      document.title = originalDocumentTitle;
+    };
+
+    // Chrome uses the top-level document title, rather than the hidden print
+    // iframe title, as the suggested "Save as PDF" file name.
+    document.title = printTitle;
+
     const frame = document.createElement("iframe");
     frame.setAttribute("aria-hidden", "true");
     frame.style.position = "fixed";
@@ -5993,6 +6073,7 @@ function ExpenseResolutionPrintPreviewModal({
     const printWindow = frame.contentWindow;
     if (!printDocument || !printWindow) {
       frame.remove();
+      restoreDocumentTitle();
       return;
     }
 
@@ -6001,18 +6082,22 @@ function ExpenseResolutionPrintPreviewModal({
       .join("\n");
 
     printDocument.open();
-    printDocument.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${resolution.resolutionNo} 지출결의서</title>${styles}</head><body>${printShell.outerHTML}</body></html>`);
+    printDocument.write(`<!doctype html><html lang="ko"><head><meta charset="utf-8"><title>${escapeHtmlText(printTitle)}</title>${styles}</head><body>${printShell.outerHTML}</body></html>`);
     printDocument.close();
 
     try {
       await waitForExpensePrintLayout(printDocument, printWindow);
-      const cleanup = () => frame.remove();
+      const cleanup = () => {
+        restoreDocumentTitle();
+        frame.remove();
+      };
       printWindow.addEventListener("afterprint", cleanup, { once: true });
       printWindow.focus();
       printWindow.print();
       window.setTimeout(cleanup, 60_000);
     } catch (error) {
       frame.remove();
+      restoreDocumentTitle();
       setPrintPreparationError(error instanceof Error ? error.message : "출력 스타일을 준비하지 못했습니다. 다시 시도해주세요.");
     } finally {
       setIsPreparingPrint(false);
