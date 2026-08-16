@@ -1,15 +1,17 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ErpShell } from "@/components/erp-shell";
 import { createApprovalAction } from "@/app/approval/actions";
 import type { ApprovalBudgetOption } from "./approval-settings-repository";
 import type { ApprovalDocumentType } from "./approval-domain";
 import { organizationApprovalLine } from "./organization-approval-line";
+import { suggestApprovalDraft } from "./approval-draft-assistant";
 
 const inputClass =
   "mt-1 w-full rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2.5 text-sm outline-none focus:border-[var(--color-deep-cobalt)]";
+const LOCAL_DRAFT_KEY = "dbapt-erp:approval-new-draft:v1";
 
 export function ApprovalNewPage({
   accountSubjects = [],
@@ -38,7 +40,22 @@ export function ApprovalNewPage({
   const [splitLines, setSplitLines] = useState(false);
   const [contractRelated, setContractRelated] = useState(false);
   const [installmentPayment, setInstallmentPayment] = useState(false);
+  const [savedAt, setSavedAt] = useState("");
+  const [assistantMessage, setAssistantMessage] = useState("");
   const selectedBudget = budgets.find((item) => item.id === budgetId);
+  const suggestion = useMemo(
+    () => suggestApprovalDraft({ accountSubjects, body, budgets, counterpartyName, documentType }),
+    [accountSubjects, body, budgets, counterpartyName, documentType],
+  );
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      if (!title && !body && !counterpartyName && !amount) return;
+      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({ amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title }));
+      setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit" }).format(new Date()));
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title]);
 
   function changeTitle(value: string) {
     setTitle(value);
@@ -52,17 +69,55 @@ export function ApprovalNewPage({
     setContractRelated(value === "CONTRACT");
   }
 
+  function applySuggestion() {
+    if (suggestion.title) setTitle(suggestion.title);
+    if (suggestion.accountSubject) setAccountSubject(suggestion.accountSubject);
+    if (suggestion.budgetId) {
+      setBudgetEnabled(true);
+      setBudgetId(suggestion.budgetId);
+    }
+    if (!purposeEdited && suggestion.title) setPurpose(suggestion.title);
+    setAssistantMessage("추천 내용을 적용했어요. 상신 전에 한 번 확인해주세요.");
+  }
+
+  function restoreLocalDraft() {
+    const raw = window.localStorage.getItem(LOCAL_DRAFT_KEY);
+    if (!raw) {
+      setAssistantMessage("불러올 임시저장 기안이 없어요.");
+      return;
+    }
+    try {
+      const draft = JSON.parse(raw) as Partial<{ amount: number; body: string; budgetEnabled: boolean; budgetId: string; counterpartyName: string; documentType: ApprovalDocumentType; title: string }>;
+      setAmount(draft.amount ?? 0);
+      setBody(draft.body ?? "");
+      setBudgetEnabled(Boolean(draft.budgetEnabled));
+      setBudgetId(draft.budgetId ?? "");
+      setCounterpartyName(draft.counterpartyName ?? "");
+      setDocumentType(draft.documentType ?? "GENERAL");
+      setTitle(draft.title ?? "");
+      setBodyEdited(Boolean(draft.body));
+      setAssistantMessage("마지막 임시저장 기안을 불러왔어요.");
+    } catch {
+      setAssistantMessage("임시저장 기안을 불러오지 못했어요.");
+    }
+  }
+
   return (
     <ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재">
-      <main className="mx-auto max-w-5xl space-y-5">
-        <header className="rounded-[28px] border border-[var(--color-soft-border)] bg-white p-6">
-          <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">
-            핵심 내용만 입력하면 나머지는 자동으로 채워져
-          </p>
-          <h1 className="mt-2 text-3xl font-bold">간편 기안 작성</h1>
+      <main className="mx-auto max-w-[1480px] space-y-4">
+        <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-soft-border)] bg-white px-5 py-4">
+          <div>
+            <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">핵심 내용만 입력하면 나머지는 자동으로 채워져</p>
+            <h1 className="mt-1 text-2xl font-bold">간편 기안 작성</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            {savedAt ? <p className="text-xs font-semibold text-[var(--color-stone)]" role="status">{savedAt} 자동 저장</p> : null}
+            <button className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-bold" onClick={restoreLocalDraft} type="button">이전 기안 불러오기</button>
+          </div>
         </header>
 
-        <form action={createApprovalAction} className="space-y-5">
+        <form action={createApprovalAction} className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <div className="space-y-5">
           <Section title="기본 내용">
             <label className="text-sm font-semibold">
               기안 유형
@@ -102,6 +157,13 @@ export function ApprovalNewPage({
                 value={body}
               />
             </label>
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-[var(--color-cloud-veil)] px-4 py-3 md:col-span-2">
+              <div>
+                <p className="text-sm font-bold">내용을 바탕으로 제목과 회계 항목을 추천할 수 있어요</p>
+                <p className="mt-0.5 text-xs text-[var(--color-stone)]">추천값은 자동 확정되지 않으며 언제든 수정할 수 있습니다.</p>
+              </div>
+              <button className="rounded-full bg-[var(--color-deep-cobalt)] px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled={!body.trim()} onClick={applySuggestion} type="button">자동 추천</button>
+            </div>
             <label className="text-sm font-semibold">
               총금액
               <input
@@ -149,6 +211,7 @@ export function ApprovalNewPage({
                   onChange={(event) =>
                     setBudgetId(event.target.selectedOptions[0]?.dataset.id ?? "")
                   }
+                  value={selectedBudget?.budgetItem ?? ""}
                 >
                   <option value="">예산 선택</option>
                   {budgets.map((budget) => (
@@ -215,23 +278,6 @@ export function ApprovalNewPage({
               {installmentPayment ? <PaymentSchedule /> : null}
             </Section>
           ) : null}
-
-          <Section title="자동 설정">
-            <AutoValue label="기안자" value="오학동" />
-            <AutoValue label="부서" value="사무국" />
-            <AutoValue label="시행 희망일" value={today} />
-            <AutoValue label="공개·보안" value="내부" />
-            <AutoValue label="예산" value={budgetEnabled ? "예산 사용" : "예산 없음"} />
-            <AutoValue label="의결" value="자동 검토 중" />
-            <div className="rounded-xl bg-[var(--color-cloud-veil)] p-4 md:col-span-2">
-              <p className="text-xs font-bold text-[var(--color-stone)]">공통 결재선</p>
-              <p className="mt-1 text-sm font-semibold">
-                {organizationApprovalLine
-                  .map((step) => `${step.approverRole} ${step.approverLabel}`)
-                  .join(" → ")}
-              </p>
-            </div>
-          </Section>
 
           <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
             <button
@@ -310,14 +356,21 @@ export function ApprovalNewPage({
               </>
             )}
           </section>
+          </div>
 
           <datalist id="approval-partners">{partners.map((name) => <option key={name} value={name} />)}</datalist>
           <datalist id="approval-account-subjects">{accountSubjects.map((name) => <option key={name} value={name} />)}</datalist>
-          <div className="flex flex-wrap justify-end gap-2">
-            <Link className="rounded-full border border-[var(--color-soft-border)] px-5 py-3 text-sm font-bold" href="/approval">취소</Link>
-            <button className="rounded-full border border-[var(--color-soft-border)] px-5 py-3 text-sm font-bold" name="intent" value="draft">임시저장</button>
-            <button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 py-3 text-sm font-bold text-white" name="intent" value="submit">결재 요청</button>
-          </div>
+          <ApprovalReviewPanel
+            accountSubject={accountSubject}
+            amount={amount}
+            assistantMessage={assistantMessage}
+            body={body}
+            budgetEnabled={budgetEnabled}
+            counterpartyName={counterpartyName}
+            selectedBudget={selectedBudget}
+            suggestion={suggestion}
+            title={title}
+          />
         </form>
       </main>
     </ErpShell>
@@ -353,6 +406,100 @@ function PaymentSchedule() {
 
 function Section({ children, title }: { children: React.ReactNode; title: string }) {
   return <section className="grid gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-white p-5 md:grid-cols-2"><h2 className="text-lg font-bold md:col-span-2">{title}</h2>{children}</section>;
+}
+
+function ApprovalReviewPanel({
+  accountSubject,
+  amount,
+  assistantMessage,
+  body,
+  budgetEnabled,
+  counterpartyName,
+  selectedBudget,
+  suggestion,
+  title,
+}: {
+  accountSubject: string;
+  amount: number;
+  assistantMessage: string;
+  body: string;
+  budgetEnabled: boolean;
+  counterpartyName: string;
+  selectedBudget?: ApprovalBudgetOption;
+  suggestion: ReturnType<typeof suggestApprovalDraft>;
+  title: string;
+}) {
+  const checks = [
+    { complete: Boolean(title.trim()), label: "제목" },
+    { complete: Boolean(body.trim()), label: "기안 내용" },
+    { complete: amount > 0 || !budgetEnabled, label: "기안 금액" },
+    { complete: !budgetEnabled || Boolean(selectedBudget), label: "예산 항목" },
+    { complete: !budgetEnabled || Boolean(accountSubject), label: "계정과목" },
+  ];
+  const completeCount = checks.filter((item) => item.complete).length;
+  const balance = selectedBudget ? selectedBudget.availableAmount - amount : 0;
+
+  return (
+    <aside className="space-y-4 xl:sticky xl:top-4">
+      <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-bold">상신 전 검토</h2>
+          <span className="rounded-full bg-[var(--color-cloud-veil)] px-3 py-1 text-xs font-bold">{completeCount}/{checks.length}</span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          {checks.map((item) => (
+            <p className={`flex items-center justify-between rounded-lg px-3 py-2 text-sm font-semibold ${item.complete ? "bg-emerald-50 text-emerald-800" : "bg-amber-50 text-amber-900"}`} key={item.label}>
+              <span>{item.label}</span><span>{item.complete ? "완료" : "확인 필요"}</span>
+            </p>
+          ))}
+        </div>
+      </section>
+
+      {body.trim() ? (
+        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+          <p className="text-xs font-bold text-[var(--color-deep-cobalt)]">스마트 추천 · 신뢰도 {suggestion.confidence}</p>
+          <h2 className="mt-1 text-base font-bold">{suggestion.title}</h2>
+          <dl className="mt-3 grid gap-2 text-sm">
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-stone)]">계정과목</dt><dd className="font-bold">{suggestion.accountSubject || "등록 항목에서 선택 필요"}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[var(--color-stone)]">예산</dt><dd className="text-right font-bold">{suggestion.budgetItem || "추천 가능한 예산 없음"}</dd></div>
+          </dl>
+          <p className="mt-3 text-xs leading-5 text-[var(--color-stone)]">{suggestion.reason}</p>
+          {assistantMessage ? <p className="mt-3 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-xs font-bold" role="status">{assistantMessage}</p> : null}
+        </section>
+      ) : null}
+
+      <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+        <h2 className="text-lg font-bold">자동 설정</h2>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <AutoValue label="기안자" value="오학동" />
+          <AutoValue label="부서" value="사무국" />
+          <AutoValue label="공개·보안" value="내부" />
+          <AutoValue label="예산" value={budgetEnabled ? "예산 사용" : "예산 없음"} />
+          <AutoValue label="의결" value="자동 검토 중" />
+        </div>
+        <div className="mt-3 rounded-xl bg-[var(--color-cloud-veil)] p-3">
+          <p className="text-xs font-bold text-[var(--color-stone)]">공통 결재선</p>
+          <p className="mt-1 text-sm font-semibold">{organizationApprovalLine.map((step) => `${step.approverRole} ${step.approverLabel}`).join(" → ")}</p>
+        </div>
+      </section>
+
+      {budgetEnabled ? (
+        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
+          <h2 className="text-lg font-bold">예산 요약</h2>
+          {selectedBudget ? <div className="mt-3 grid gap-2"><Summary label="사용 가능액" value={selectedBudget.availableAmount} /><Summary label="이번 기안금액" value={amount} /><Summary label="승인 후 예상잔액" value={balance} /></div> : <p className="mt-3 text-sm text-[var(--color-stone)]">예산 항목을 선택하면 잔액을 확인할 수 있어요.</p>}
+        </section>
+      ) : null}
+
+      <section className="sticky bottom-3 rounded-2xl border border-[var(--color-soft-border)] bg-white p-4 shadow-lg shadow-slate-900/5">
+        <p className="mb-3 truncate text-sm font-bold">{title || counterpartyName || "새 기안"}</p>
+        <div className="grid grid-cols-2 gap-2">
+          <Link className="rounded-full border border-[var(--color-soft-border)] px-4 py-3 text-center text-sm font-bold" href="/approval">취소</Link>
+          <button className="rounded-full border border-[var(--color-soft-border)] px-4 py-3 text-sm font-bold" name="intent" value="draft">임시저장</button>
+          <button className="col-span-2 rounded-full bg-[var(--color-pressed-charcoal)] px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled={completeCount < checks.length} name="intent" value="submit">결재 요청</button>
+        </div>
+      </section>
+    </aside>
+  );
 }
 
 function Field({ defaultValue, label, name, required, type = "text", min, placeholder }: { defaultValue?: string; label: string; name: string; required?: boolean; type?: string; min?: string; placeholder?: string }) {

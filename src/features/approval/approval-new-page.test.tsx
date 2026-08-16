@@ -77,4 +77,22 @@ describe("ApprovalNewPage", () => {
     });
     expect(screen.getByRole("heading", { name: "계약 정보" })).toBeInTheDocument();
   });
+
+  it("applies title, account subject, and budget recommendations after confirmation", () => {
+    render(
+      <ApprovalNewPage
+        accountSubjects={["회의비", "용역비"]}
+        budgets={[{ approvedAmount: 1_000_000, availableAmount: 800_000, budgetItem: "회의비", executedAmount: 200_000, fiscalYear: 2026, id: "budget-meeting", reservedAmount: 0 }]}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("기안 유형"), { target: { value: "EXPENSE" } });
+    fireEvent.change(screen.getByLabelText("기안 내용"), { target: { value: "운영위원회 회의용 음료 8잔 주문" } });
+    fireEvent.click(screen.getByRole("button", { name: "자동 추천" }));
+
+    expect(screen.getByLabelText("제목")).toHaveValue("운영위원회 회의용 음료 8잔 주문 지출품의");
+    expect(screen.getByLabelText("계정과목")).toHaveValue("회의비");
+    expect(screen.getByLabelText("예산 항·목·세목")).toHaveValue("회의비");
+    expect(screen.getByText("추천 내용을 적용했어요. 상신 전에 한 번 확인해주세요.")).toBeInTheDocument();
+  });
 });
