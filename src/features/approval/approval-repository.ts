@@ -652,6 +652,39 @@ export async function updateApprovalDocument(
   if (error) throw new Error(`기안을 수정하지 못했어: ${error.message}`);
 }
 
+export async function resubmitApprovalDocument(
+  id: string,
+  actorLabel: string,
+  changes: {
+    amount: number;
+    body: string;
+    budgetItem: string;
+    counterpartyName: string;
+    projectName: string;
+    purpose: string;
+    title: string;
+  },
+) {
+  const document = await getApprovalDocument(id);
+  if (!document || !["REJECTED", "REVISION_REQUESTED"].includes(document.approvalStatus))
+    throw new Error("반려 또는 보완요청 문서만 재상신할 수 있어.");
+  if (document.drafterLabel.trim() !== actorLabel.trim())
+    throw new Error("기안자만 수정 후 재상신할 수 있어.");
+  if (!changes.title.trim() || !changes.body.trim() || !changes.purpose.trim())
+    throw new Error("제목, 기안 내용, 목적을 입력해주세요.");
+  if (changes.amount < 0 || (document.documentType !== "GENERAL" && changes.amount <= 0))
+    throw new Error("지출·계약 기안은 올바른 금액이 필요해.");
+
+  const { error } = await requireClient()
+    .schema("approval")
+    .rpc("resubmit_document", {
+      p_actor_label: actorLabel,
+      p_changes: changes,
+      p_document_id: id,
+    });
+  if (error) throw new Error(`기안을 재상신하지 못했어: ${error.message}`);
+}
+
 export async function closeApprovalDocument(
   id: string,
   actorLabel: string,

@@ -12,6 +12,7 @@ import {
   createMeetingAgenda,
   decideApprovalDocument,
   decideMeetingAgenda,
+  resubmitApprovalDocument,
   updateApprovalDocument,
   uploadApprovalAttachment,
 } from "@/features/approval/approval-repository";
@@ -104,16 +105,34 @@ export async function createApprovalAction(formData: FormData) {
   redirect(`/approval/${id}`);
 }
 
-export async function decideApprovalAction(formData: FormData) {
+export type ApprovalDecisionActionState = {
+  error?: string;
+  success?: boolean;
+};
+
+export async function decideApprovalAction(
+  _previousState: ApprovalDecisionActionState,
+  formData: FormData,
+): Promise<ApprovalDecisionActionState> {
   const id = text(formData, "id");
-  await decideApprovalDocument(
-    id,
-    text(formData, "actorLabel"),
-    text(formData, "decision") as "APPROVE" | "REJECT",
-    text(formData, "comment"),
-  );
-  revalidatePath("/approval");
-  revalidatePath(`/approval/${id}`);
+  try {
+    await decideApprovalDocument(
+      id,
+      text(formData, "actorLabel"),
+      text(formData, "decision") as "APPROVE" | "REJECT",
+      text(formData, "comment"),
+    );
+    revalidatePath("/approval");
+    revalidatePath(`/approval/${id}`);
+    return { success: true };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "결재 처리 중 오류가 발생했어요. 다시 시도해주세요.",
+    };
+  }
 }
 
 export async function createLinkedExpenseAction(formData: FormData) {
@@ -181,6 +200,39 @@ export async function updateApprovalAction(formData: FormData) {
   });
   revalidatePath(`/approval/${id}`);
   revalidatePath("/approval");
+}
+
+export type ApprovalResubmitActionState = {
+  error?: string;
+  success?: boolean;
+};
+
+export async function resubmitApprovalAction(
+  _previousState: ApprovalResubmitActionState,
+  formData: FormData,
+): Promise<ApprovalResubmitActionState> {
+  const id = text(formData, "id");
+  try {
+    await resubmitApprovalDocument(id, text(formData, "actorLabel"), {
+      amount: Number(text(formData, "amount")) || 0,
+      body: text(formData, "body"),
+      budgetItem: text(formData, "budgetItem"),
+      counterpartyName: text(formData, "counterpartyName"),
+      projectName: text(formData, "projectName"),
+      purpose: text(formData, "purpose"),
+      title: text(formData, "title"),
+    });
+    revalidatePath(`/approval/${id}`);
+    revalidatePath("/approval");
+    return { success: true };
+  } catch (error) {
+    return {
+      error:
+        error instanceof Error
+          ? error.message
+          : "기안을 재상신하지 못했어요. 다시 시도해주세요.",
+    };
+  }
 }
 export async function closeApprovalAction(formData: FormData) {
   const id = text(formData, "id");

@@ -7,11 +7,12 @@ import {
   createContractPaymentExpenseAction,
   createLinkedExpenseAction,
   createMeetingAgendaAction,
-  decideApprovalAction,
   decideMeetingAgendaAction,
   openApprovalAttachmentAction,
   updateApprovalAction,
 } from "@/app/approval/actions";
+import { ApprovalDecisionForm } from "./approval-decision-form";
+import { ApprovalResubmitForm } from "./approval-resubmit-form";
 import {
   approvalStatusLabels,
   approvalTypeLabels,
@@ -26,6 +27,11 @@ export function ApprovalDetailPage({
   const current = document.approvalSteps.find(
     (step) => step.status === "PENDING",
   );
+  const rejectionReason =
+    document.auditLogs?.find((log) =>
+      ["REJECTED", "REVISION_REQUESTED"].includes(log.actionType),
+    )?.comment ??
+    document.approvalSteps.find((step) => step.status === "REJECTED")?.comment;
   return (
     <ErpShell activeLabel="기안·결재">
       <main className="mx-auto max-w-6xl space-y-5">
@@ -273,6 +279,14 @@ export function ApprovalDetailPage({
             </div>
           </section>
           <aside className="space-y-5">
+            {["REJECTED", "REVISION_REQUESTED"].includes(
+              document.approvalStatus,
+            ) ? (
+              <ApprovalResubmitForm
+                document={document}
+                rejectionReason={rejectionReason}
+              />
+            ) : null}
             {document.contractId ? (
               <Card title="계약 누적 지급">
                 <p className="text-sm font-bold">
@@ -358,41 +372,10 @@ export function ApprovalDetailPage({
             </Card>
             {current ? (
               <Card title="현재 결재 처리">
-                <form action={decideApprovalAction} className="space-y-3">
-                  <input name="id" type="hidden" value={document.id} />
-                  <label className="text-sm font-semibold">
-                    처리자
-                    <input
-                      className="mt-1 w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2"
-                      name="actorLabel"
-                      defaultValue={current.approverLabel}
-                      required
-                    />
-                  </label>
-                  <label className="text-sm font-semibold">
-                    의견
-                    <textarea
-                      className="mt-1 min-h-20 w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2"
-                      name="comment"
-                    />
-                  </label>
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      className="rounded-full bg-[var(--color-deep-cobalt)] px-4 py-2 text-sm font-bold text-white"
-                      name="decision"
-                      value="APPROVE"
-                    >
-                      승인
-                    </button>
-                    <button
-                      className="rounded-full bg-red-600 px-4 py-2 text-sm font-bold text-white"
-                      name="decision"
-                      value="REJECT"
-                    >
-                      반려
-                    </button>
-                  </div>
-                </form>
+                <ApprovalDecisionForm
+                  approverLabel={current.approverLabel}
+                  documentId={document.id}
+                />
               </Card>
             ) : null}
             {document.approvalStatus === "APPROVED" &&
@@ -512,7 +495,12 @@ export function ApprovalDetailPage({
                 </form>
               </Card>
             ) : null}
-            {!["WITHDRAWN", "CANCELLED"].includes(document.approvalStatus) ? (
+            {![
+              "REJECTED",
+              "REVISION_REQUESTED",
+              "WITHDRAWN",
+              "CANCELLED",
+            ].includes(document.approvalStatus) ? (
               <Card title="수정·변경통제">
                 <form action={updateApprovalAction} className="space-y-2">
                   <input name="id" type="hidden" value={document.id} />
