@@ -3881,22 +3881,21 @@ export function ExpenseResolutionPage({
               </Button>
             </div>
             <div className="overflow-x-auto">
-              <table aria-label="지출결의서 목록" className="w-full min-w-[1080px] border-collapse text-left text-sm">
+              <table aria-label="지출결의서 목록" className="w-full min-w-[1040px] border-collapse text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
-                    <th className="w-[140px] px-4 py-3 text-center">결의번호</th>
-                    <th className="w-[145px] px-4 py-3 text-center">일자</th>
+                    <th className="w-[180px] px-4 py-3 text-left">결의정보</th>
                     <th className="px-4 py-3 text-left">결의내용</th>
-                    <th className="w-[160px] px-4 py-3 text-left">거래처</th>
-                    <th className="w-[150px] px-4 py-3 text-right">총지급액</th>
-                    <th className="w-[210px] px-4 py-3 text-left">상태</th>
-                    <th className="sticky right-0 z-20 w-[190px] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">액션</th>
+                    <th className="w-[180px] px-4 py-3 text-left">거래처</th>
+                    <th className="w-[140px] px-4 py-3 text-right">지급금액</th>
+                    <th className="sticky right-[150px] z-20 w-[190px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left">진행상태</th>
+                    <th className="sticky right-0 z-20 w-[150px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]">처리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
                   {visibleResolutions.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={7}>
+                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={6}>
                         등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요.
                       </td>
                     </tr>
@@ -3916,23 +3915,26 @@ export function ExpenseResolutionPage({
                           : getVoucherStatusLabel(resolution);
 
                     return (
-                      <tr className="bg-white/70" key={resolution.id}>
-                        <td className="px-4 py-4 text-center font-bold"><span>{resolution.resolutionNo}</span><span className="mx-auto mt-1 block w-fit rounded-full bg-[var(--color-cloud-veil)] px-2 py-0.5 text-[10px] text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : resolution.creationSource === "SMALL_EXPENSE" ? "소액일괄" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접"}</span></td>
-                        <td className="px-4 py-4 text-center text-[var(--color-stone)]">
-                          <p className="font-bold text-[var(--color-midnight-ink)]">{resolution.actualExpenseDate ?? "-"}</p>
-                          <p className="text-xs">작성 {resolution.createdAt}</p>
+                      <tr className="group bg-white/70 [content-visibility:auto] hover:bg-[var(--color-cloud-veil)]/55" key={resolution.id}>
+                        <td className="px-4 py-3 align-top">
+                          <button className="font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} type="button">
+                            {resolution.resolutionNo}
+                          </button>
+                          <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
+                          {resolution.actualExpenseDate ? <p className="mt-0.5 text-xs text-[var(--color-stone)]">지출 {resolution.actualExpenseDate}</p> : null}
+                          <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : resolution.creationSource === "SMALL_EXPENSE" ? "소액일괄" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
                         </td>
-                        <td className="px-4 py-4 align-top">
-                          <p className="font-bold text-[var(--color-midnight-ink)]">
+                        <td className="px-4 py-3 align-top">
+                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} title={getResolutionSubject(resolution)} type="button">
                             {getResolutionSubject(resolution)}
-                          </p>
-                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)} · {resolution.projectName || "프로젝트 없음"}</p>
-                          <div className="mt-2 flex flex-wrap gap-1">
+                          </button>
+                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
+                          {resolution.projectName ? <p className="mt-1 truncate text-xs text-[var(--color-stone)]" title={resolution.projectName}>프로젝트: {resolution.projectName}</p> : null}
+                          {resolution.representativeAccountTitle ? <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={resolution.representativeAccountTitle}>계정: {resolution.representativeAccountTitle}</p> : null}
+                          <div className="mt-1.5 flex flex-wrap gap-1">
                             {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
-                            {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <ComplianceBadge label="개인 선지출" /> : null}
-                            {resolution.expenseKind === "PETTY_CASH_BATCH" ? <ComplianceBadge label="소액 일괄" /> : null}
                             {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
-                            {resolution.bankTransactionId ? <ComplianceBadge label="통장연결" tone="success" /> : null}
+                            {resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId ? <ComplianceBadge label="통장 미연결" tone="danger" /> : null}
                             {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
                             {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
                             {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
@@ -3940,20 +3942,17 @@ export function ExpenseResolutionPage({
                           </div>
                           <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
-                          <p className="mt-1 text-sm font-semibold text-[var(--color-stone)]">
-                            {resolution.representativeVendorName} / {resolution.representativeAccountTitle}
-                          </p>
                           <span className="sr-only">{resolution.representativeAccountTitle}</span>
                         </td>
-                        <td className="px-4 py-4 text-sm font-semibold">{resolution.settlementRecipient || resolution.representativeVendorName || resolution.vendorName}</td>
-                        <td className="px-4 py-4 text-right font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
-                        <td className="px-4 py-4">
+                        <td className="px-4 py-3 align-top text-sm font-semibold">{resolution.settlementRecipient || resolution.representativeVendorName || resolution.vendorName || "-"}</td>
+                        <td className="whitespace-nowrap px-4 py-3 text-right align-top font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
+                        <td className="sticky right-[150px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
                           <Badge value={primaryStatus} />
                           <span className="sr-only">{resolution.approvalStatus}</span>
                           <span className="sr-only">{resolution.paymentStatus}</span>
                           <span className="sr-only">{getVoucherStatusLabel(resolution)}</span>
                           {resolution.currentApprover ? <span className="sr-only">{resolution.currentApprover}</span> : null}
-                          {resolution.currentApprover ? <p className="mt-1 text-xs text-[var(--color-stone)]">현재결재자 {resolution.currentApprover}</p> : null}
+                          {resolution.currentApprover ? <p className="mt-1 text-xs text-[var(--color-stone)]">{resolution.currentApprover} 결재 대기</p> : null}
                           {resolution.rejectionReason ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{resolution.rejectionReason}</p> : null}
                           {resolution.paidAt ? <p className="mt-1 text-xs text-[var(--color-stone)]">지급일 {resolution.paidAt}</p> : null}
                           {resolution.transferReceiptStatus ? (
@@ -3963,22 +3962,20 @@ export function ExpenseResolutionPage({
                             </label>
                           ) : null}
                         </td>
-                        <td className="sticky right-0 z-10 bg-white px-4 py-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
-                          <div className="flex flex-wrap gap-1.5">
+                        <td className="sticky right-0 z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[var(--color-cloud-veil)]">
+                          <div className="flex flex-col items-start gap-1.5">
                             <button
-                              className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
+                              aria-label="상세보기"
+                              className="order-last rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
                               onClick={() => setSelectedDetailId(resolution.id)}
                               type="button"
                             >
-                              상세보기
+                              상세
                             </button>
                             {resolution.approvalStatus === "작성중" ? (
                               <>
-                                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]" type="button">
-                                  수정
-                                </button>
                                 <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
+                                  className="rounded-full bg-[var(--color-deep-cobalt)] px-3 py-1.5 text-xs font-bold text-white"
                                   onClick={() => requestApproval(resolution.id)}
                                   type="button"
                                 >
@@ -3990,17 +3987,10 @@ export function ExpenseResolutionPage({
                               <>
                                 <button
                                   className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => approveResolution(resolution.id)}
+                                  onClick={() => setSelectedDetailId(resolution.id)}
                                   type="button"
                                 >
-                                  승인
-                                </button>
-                                <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-tangerine)]"
-                                  onClick={() => rejectResolution(resolution.id)}
-                                  type="button"
-                                >
-                                  반려
+                                  결재하기
                                 </button>
                               </>
                             ) : null}
@@ -4044,7 +4034,7 @@ export function ExpenseResolutionPage({
                 </tbody>
                   <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
                     <tr>
-                    <td className="px-4 py-3 text-right" colSpan={4}>
+                    <td className="px-4 py-3 text-right" colSpan={3}>
                       {activeTabItem.label} 합계
                     </td>
                     <td className="px-4 py-3 text-right">
