@@ -22,9 +22,14 @@ describe("ExpenseResolutionPage", () => {
   it("renders an empty list and does not show the obsolete static creation guide", () => {
     render(<ExpenseResolutionPage />);
 
+    const listTable = screen.getByRole("table", { name: "지출결의서 목록" });
     expect(screen.getByRole("heading", { name: "지출결의서 관리" })).toBeInTheDocument();
     expect(screen.getByText("등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "전체 0" })).toBeInTheDocument();
+    expect(within(listTable).getAllByRole("columnheader")).toHaveLength(7);
+    expect(within(listTable).getByRole("columnheader", { name: "액션" })).toHaveClass("sticky", "right-0");
+    expect(within(listTable).queryByRole("columnheader", { name: "예산상태" })).not.toBeInTheDocument();
+    expect(within(listTable).queryByRole("columnheader", { name: "증빙" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "작성 양식" })).not.toBeInTheDocument();
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
   });

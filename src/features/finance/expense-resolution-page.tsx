@@ -3881,27 +3881,22 @@ export function ExpenseResolutionPage({
               </Button>
             </div>
             <div className="overflow-x-auto">
-              <table aria-label="지출결의서 목록" className="w-full min-w-[1800px] border-collapse text-left text-sm">
+              <table aria-label="지출결의서 목록" className="w-full min-w-[1080px] border-collapse text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
                     <th className="w-[140px] px-4 py-3 text-center">결의번호</th>
-                    <th className="w-[150px] px-4 py-3 text-center">실제 지출일 / 작성일</th>
-                    <th className="w-[140px] px-4 py-3 text-center">지출 유형</th>
-                    <th className="px-4 py-3 text-left">결의요약</th>
-                    <th className="w-[150px] px-4 py-3 text-left">거래처/정산대상자</th>
+                    <th className="w-[145px] px-4 py-3 text-center">일자</th>
+                    <th className="px-4 py-3 text-left">결의내용</th>
+                    <th className="w-[160px] px-4 py-3 text-left">거래처</th>
                     <th className="w-[150px] px-4 py-3 text-right">총지급액</th>
-                    <th className="w-[120px] px-4 py-3 text-center">예산상태</th>
-                    <th className="w-[210px] px-4 py-3 text-left">진행상태</th>
-                    <th className="w-[110px] px-4 py-3 text-center">증빙</th>
-                    <th className="w-[90px] px-4 py-3 text-center">사후결의</th>
-                    <th className="w-[100px] px-4 py-3 text-center">통장연결</th>
-                    <th className="w-[190px] px-4 py-3 text-left">액션</th>
+                    <th className="w-[210px] px-4 py-3 text-left">상태</th>
+                    <th className="sticky right-0 z-20 w-[190px] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">액션</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
                   {visibleResolutions.length === 0 ? (
                     <tr>
-                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={12}>
+                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={7}>
                         등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요.
                       </td>
                     </tr>
@@ -3911,6 +3906,14 @@ export function ExpenseResolutionPage({
                     const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
                     const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
                     const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
+                    const expenseKindLabel = resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : resolution.expenseKind === "PETTY_CASH_BATCH" ? "소액경비 일괄" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출";
+                    const primaryStatus = resolution.approvalStatus === "반려"
+                      ? "반려"
+                      : resolution.approvalStatus !== "승인완료"
+                        ? resolution.approvalStatus
+                        : resolution.paymentStatus !== "지급완료"
+                          ? resolution.paymentStatus
+                          : getVoucherStatusLabel(resolution);
 
                     return (
                       <tr className="bg-white/70" key={resolution.id}>
@@ -3919,12 +3922,11 @@ export function ExpenseResolutionPage({
                           <p className="font-bold text-[var(--color-midnight-ink)]">{resolution.actualExpenseDate ?? "-"}</p>
                           <p className="text-xs">작성 {resolution.createdAt}</p>
                         </td>
-                        <td className="px-4 py-4 text-center text-xs font-bold">{resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : resolution.expenseKind === "PETTY_CASH_BATCH" ? "소액경비 일괄" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출"}</td>
                         <td className="px-4 py-4 align-top">
                           <p className="font-bold text-[var(--color-midnight-ink)]">
                             {getResolutionSubject(resolution)}
                           </p>
-                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{getResolutionTypeLabel(resolution.resolutionType)} · {resolution.projectName || "프로젝트 없음"}</p>
+                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)} · {resolution.projectName || "프로젝트 없음"}</p>
                           <div className="mt-2 flex flex-wrap gap-1">
                             {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
                             {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <ComplianceBadge label="개인 선지출" /> : null}
@@ -3934,6 +3936,7 @@ export function ExpenseResolutionPage({
                             {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
                             {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
                             {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
+                            {resolution.totalOverBudgetAmount > 0 ? <ComplianceBadge label={`예산초과 ${formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}`} tone="warning" /> : null}
                           </div>
                           <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
@@ -3944,16 +3947,8 @@ export function ExpenseResolutionPage({
                         </td>
                         <td className="px-4 py-4 text-sm font-semibold">{resolution.settlementRecipient || resolution.representativeVendorName || resolution.vendorName}</td>
                         <td className="px-4 py-4 text-right font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
-                        <td className="px-4 py-4 text-center">
-                          <Badge value={getBudgetOverLabel(resolution.overBudgetItemCount)} />
-                          {resolution.totalOverBudgetAmount > 0 ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}</p> : null}
-                        </td>
-                        <td className="px-4 py-4 text-center">{resolution.isPostApproval ? "예" : "아니오"}</td>
-                        <td className="px-4 py-4 text-center">{resolution.bankTransactionId ? "연결완료" : "미연결"}</td>
                         <td className="px-4 py-4">
-                          <p className="font-semibold text-[var(--color-midnight-ink)]">
-                            {resolution.approvalStatus} · {resolution.paymentStatus} · {getVoucherStatusLabel(resolution)}
-                          </p>
+                          <Badge value={primaryStatus} />
                           <span className="sr-only">{resolution.approvalStatus}</span>
                           <span className="sr-only">{resolution.paymentStatus}</span>
                           <span className="sr-only">{getVoucherStatusLabel(resolution)}</span>
@@ -3968,10 +3963,7 @@ export function ExpenseResolutionPage({
                             </label>
                           ) : null}
                         </td>
-                        <td className="px-4 py-4 text-center">
-                          <Badge value={resolution.evidenceStatus === "QUALIFIED" ? "적격증빙" : resolution.evidenceStatus === "GENERAL" ? "일반증빙" : resolution.evidenceStatus === "ALTERNATIVE" ? "대체증빙" : resolution.evidenceStatus === "DEFICIENT" ? "증빙불비" : resolution.evidenceAttached ? "첨부완료" : "증빙 없음"} />
-                        </td>
-                        <td className="px-4 py-4">
+                        <td className="sticky right-0 z-10 bg-white px-4 py-4 shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.45)]">
                           <div className="flex flex-wrap gap-1.5">
                             <button
                               className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
@@ -4052,13 +4044,13 @@ export function ExpenseResolutionPage({
                 </tbody>
                   <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
                     <tr>
-                    <td className="px-4 py-3 text-right" colSpan={5}>
+                    <td className="px-4 py-3 text-right" colSpan={4}>
                       {activeTabItem.label} 합계
                     </td>
                     <td className="px-4 py-3 text-right">
                       {formatExpenseResolutionAmount(visibleResolutions.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0))}
                     </td>
-                    <td className="px-4 py-3" colSpan={6}>
+                    <td className="px-4 py-3" colSpan={2}>
                       표시 건수 {visibleResolutions.length}건
                     </td>
                   </tr>
