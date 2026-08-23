@@ -275,6 +275,36 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("판매처 상호명")).toHaveValue("");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(0);
   });
+
+  it("uses the multipart upload API when no Server Action uploader is provided", async () => {
+    vi.useRealTimers();
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      attachment: {
+        contentType: "image/png",
+        evidenceType: "영수증",
+        fileName: "우편영수증.png",
+        fileSize: 120,
+        id: "evidence-route",
+        ocrData: {},
+        ocrJobId: "evidence-route",
+        ocrStatus: "REVIEW_REQUIRED",
+        storageBucket: "expense-evidence",
+        storagePath: "expense-resolutions/2026-0001/evidence-route.png",
+        uploadedAt: "2026-08-23T11:00:00.000Z",
+        uploadedBy: "오학동 사무국장",
+      },
+      ok: true,
+    }), { headers: { "Content-Type": "application/json" }, status: 201 }));
+    render(<ExpenseResolutionPage initialResolutions={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "우편영수증.png", { type: "image/png" })] } });
+
+    expect(await within(dialog).findByText("우편영수증.png")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/finance/expense-evidence", expect.objectContaining({ method: "POST" }));
+    expect(fetchMock.mock.calls[0][1]?.body).toBeInstanceOf(FormData);
+  });
   it("uses the resolution number and subject as the PDF file name", () => {
     expect(buildExpenseResolutionPdfFileName("지결-2026-0001", "사무국 비품 구입")).toBe("지결-2026-0001(사무국 비품 구입).pdf");
     expect(buildExpenseResolutionPdfFileName("지결:2026/0001", "계약서 검토? *최종*")).toBe("지결 2026 0001(계약서 검토 최종).pdf");

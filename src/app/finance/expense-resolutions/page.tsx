@@ -6,7 +6,7 @@ import { getExpenseComplianceSettings } from "@/features/finance/expense-complia
 import { getDefaultOrganizationId } from "@/features/finance/expense-compliance-repository";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
-import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseEvidenceAction, uploadExpenseFactSupportingFileAction } from "./actions";
+import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export default async function ExpenseResolutionsRoute() {
   let dataLoadError: string | undefined;
@@ -52,7 +52,6 @@ export default async function ExpenseResolutionsRoute() {
       retryEvidenceOcrJob={retryExpenseEvidenceOcrJobAction}
       transitionApproval={transitionExpenseApprovalAction}
       transitionDisbursement={transitionExpenseDisbursementAction}
-      uploadEvidence={uploadExpenseEvidenceAction}
     />
   );
 }

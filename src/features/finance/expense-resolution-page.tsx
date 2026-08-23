@@ -2227,6 +2227,15 @@ export function getEvidenceUploadErrorMessage(error: unknown) {
   return message;
 }
 
+export async function uploadExpenseEvidenceViaRoute(formData: FormData): Promise<ExpenseEvidenceUploadResult> {
+  const response = await fetch("/api/finance/expense-evidence", { body: formData, method: "POST" });
+  const result = await response.json().catch(() => null) as ExpenseEvidenceUploadResult | null;
+  if (result && typeof result === "object" && "ok" in result) return result;
+  throw new Error(response.ok
+    ? "증빙자료 처리 결과를 확인하지 못했습니다. 다시 시도해 주세요."
+    : "증빙자료를 전송하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+}
+
 function OcrValue({ confirmed = false, label, value }: { confirmed?: boolean; label: string; value: string }) {
   const missing = value === "-";
   const status = missing ? "인식 안 됨" : confirmed ? "사용자 확인" : "자동입력 · 확인 필요";
@@ -2577,6 +2586,7 @@ export function ExpenseResolutionPage({
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
   uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult>;
 } = {}) {
+  const uploadEvidenceRequest = uploadEvidence ?? uploadExpenseEvidenceViaRoute;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? expenseResolutions.map(toManagedExpenseResolution),
   );
@@ -2955,10 +2965,6 @@ export function ExpenseResolutionPage({
   }
 
   async function attachBatchEvidence(itemNo: number, file: File) {
-    if (!uploadEvidence) {
-      setEvidenceUploadError("증빙 저장소가 연결되지 않았습니다.");
-      return;
-    }
     const item = formState.batchItems.find((entry) => entry.itemNo === itemNo);
     if (!item) return;
     setIsEvidenceUploading(true);
@@ -2968,7 +2974,7 @@ export function ExpenseResolutionPage({
       formData.set("file", file);
       formData.set("resolutionNo", formState.resolutionNo);
       formData.set("evidenceType", item.evidenceType || formState.evidenceType);
-      const uploaded = { ...unwrapEvidenceUploadResult(await uploadEvidence(formData)), itemId: item.id };
+      const uploaded = { ...unwrapEvidenceUploadResult(await uploadEvidenceRequest(formData)), itemId: item.id };
       setFormState((current) => ({
         ...current,
         batchItems: current.batchItems.map((entry) => entry.itemNo === itemNo ? {
@@ -3041,10 +3047,6 @@ export function ExpenseResolutionPage({
 
   async function uploadEvidenceFiles(files: File[]) {
     setEvidenceUploadError("");
-    if (!uploadEvidence) {
-      setEvidenceUploadError("증빙 저장소가 연결되지 않았습니다.");
-      return 0;
-    }
     const remainingSlots = Math.max(0, 10 - formState.evidenceFiles.length);
     if (files.length > remainingSlots) {
       setEvidenceUploadError(`증빙은 최대 10개까지 등록할 수 있습니다. 현재 ${formState.evidenceFiles.length}개가 등록되어 있습니다.`);
@@ -3063,7 +3065,7 @@ export function ExpenseResolutionPage({
             formData.set("file", file);
             formData.set("resolutionNo", formState.resolutionNo);
             formData.set("evidenceType", formState.evidenceType);
-            const attachment = unwrapEvidenceUploadResult(await uploadEvidence!(formData));
+            const attachment = unwrapEvidenceUploadResult(await uploadEvidenceRequest(formData));
             uploadedCount += 1;
             setFormState((current) => {
               const withAttachment = { ...current, evidenceFiles: [...current.evidenceFiles, attachment], evidenceType: attachment.evidenceType as EvidenceType };
