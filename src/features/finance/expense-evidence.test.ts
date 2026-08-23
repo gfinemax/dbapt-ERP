@@ -77,6 +77,16 @@ describe("expense evidence OCR helpers", () => {
     });
   });
 
+  it("does not mistake a payment notice file name for a bank transfer confirmation", () => {
+    expect(classifyExpenseEvidence({
+      fileName: "납입금 확인 2차 안내문 우편발송(260821).png",
+      modelDocumentType: "우체국 영수증",
+      recognizedText: "서울신길동우체국 국내일반우편물 합계 68통 40,120원 영수증이 필요합니다.",
+    })).toMatchObject({
+      normalizedEvidenceType: "영수증",
+    });
+  });
+
   it("removes table separators and stops vendor fields at the next OCR label", () => {
     expect(normalizeEvidenceVendorFields({
       issuerAddress: "| 인천 서구 완정로 45번길 52",
