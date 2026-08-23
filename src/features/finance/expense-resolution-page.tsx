@@ -6056,7 +6056,7 @@ function ExpenseResolutionPrintPreviewModal({
     : resolution.singleItems?.length
       ? resolution.singleItems.map((item, index) => ({
           description: item.itemName + (item.memo ? `\n${item.memo}` : ""),
-          expenseDate: resolution.plannedPaymentDate,
+          expenseDate: resolution.plannedPaymentDate || resolution.actualExpenseDate || "",
           id: item.id,
           itemNo: index + 1,
           supplyAmount: String(item.supplyAmount),
@@ -6069,7 +6069,7 @@ function ExpenseResolutionPrintPreviewModal({
         {
           id: `${resolution.id}-print-item`,
           itemNo: 1,
-          expenseDate: resolution.plannedPaymentDate,
+          expenseDate: resolution.plannedPaymentDate || resolution.actualExpenseDate || "",
           vendorName: resolution.vendorName,
           itemTitle: resolution.operationExpenseDetail || resolution.expenseType,
           accountTitle: resolution.expenseType,
@@ -6080,14 +6080,21 @@ function ExpenseResolutionPrintPreviewModal({
           totalAmount: resolution.totalPaymentAmount,
         },
         ];
-  const firstPageItems = printExpenseItems.slice(0, 4);
-  const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 4) / 12) }, (_, pageIndex) =>
-    printExpenseItems.slice(4 + pageIndex * 12, 4 + (pageIndex + 1) * 12),
+  const firstPageItems = printExpenseItems.slice(0, 7);
+  const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 7) / 12) }, (_, pageIndex) =>
+    printExpenseItems.slice(7 + pageIndex * 12, 7 + (pageIndex + 1) * 12),
   );
   const totalPrintPages = 1 + continuationPages.length;
+  const evidenceCount = resolution.evidenceMaterials.length + resolution.expenseItems.filter((item) => item.evidenceFileName).length;
+  const attachedEvidenceTypes = Array.from(new Set(
+    (resolution.evidenceFiles ?? [])
+      .map((file) => file.ocrData.normalizedEvidenceType || file.evidenceType)
+      .filter(Boolean),
+  ));
   const evidenceSummary = isBatchResolution
     ? Array.from(new Set(resolution.expenseItems.map((item) => item.evidenceType).filter(Boolean))).join(", ") || "증빙 미첨부"
-    : resolution.evidenceType || resolution.evidenceMaterials.join(", ") || "증빙 미첨부";
+    : attachedEvidenceTypes.join(", ") || resolution.evidenceType || resolution.evidenceMaterials.join(", ") || "증빙 미첨부";
+  const evidenceText = evidenceCount > 0 ? `${evidenceSummary} ${evidenceCount}건` : "증빙 미첨부";
 
   async function handleBrowserPrint() {
     const printShell = document.querySelector<HTMLElement>(".print-modal-shell");
@@ -6178,41 +6185,28 @@ function ExpenseResolutionPrintPreviewModal({
         </div>
 
         <div className="print-expense-resolution bg-[var(--color-cloud-veil)] p-6">
-          <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white p-8 text-sm shadow-sm">
-            <header className="expense-resolution-print-header grid grid-cols-[1fr_1fr_1fr] items-stretch gap-4 border-b-2 border-[var(--color-midnight-ink)] pb-4 pt-7">
-              <div className="flex flex-col justify-end text-xs leading-5">
-                <p className="font-semibold">아래와 같이 지출을 결의하오니</p>
-                <p className="font-semibold">승인하여 주시기 바랍니다.</p>
-                <p className="mt-2"><span className="font-bold">문서번호</span> {resolution.resolutionNo}</p>
-                <p><span className="font-bold">작성일</span> {resolution.createdAt}</p>
-              </div>
-              <div className="flex flex-col items-center justify-center text-center">
-                <h3 className="text-[42px] font-black tracking-[0.18em]">지출결의서</h3>
-                <p className="mt-2 text-[17.4px] text-[var(--color-stone)]">대방동 지역주택조합</p>
+          <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white shadow-sm">
+            <header className="expense-resolution-print-header grid grid-cols-[1fr_70mm] items-center gap-8 border-b-2 border-[var(--color-midnight-ink)] pb-5">
+              <div className="min-w-0">
+                <p className="mb-2 inline-flex rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-[9px] font-bold text-[var(--color-stone)]">{getExpenseTimingLabel(expenseTiming)}</p>
+                <h3 className="text-[34px] font-black tracking-[0.16em]">지출결의서</h3>
+                <p className="mt-1.5 text-[13px] font-semibold text-[var(--color-stone)]">대방동 지역주택조합</p>
               </div>
               <ExpenseApprovalBox resolution={resolution} />
             </header>
 
             <section className="expense-resolution-print-section mt-6">
-              <h4 className="mb-2 text-base font-bold">결의 및 지출 정보</h4>
+              <h4 className="mb-2 text-[13px] font-bold">핵심 결의정보</h4>
               <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
                 <PrintCell label="결의서번호" value={resolution.resolutionNo} />
                 <PrintCell label="작성일" value={resolution.createdAt} />
-                <PrintCell label="회계 귀속일" value={resolution.accountingDate ?? "-"} />
-                <PrintCell label="실제 지출일" value={resolution.actualExpenseDate ?? "-"} />
-                <PrintCell label="결재일" value={resolution.approvedAt ?? "-"} />
-                <PrintCell label="지급일/통장 출금일" value={resolution.disbursedAt ?? resolution.paidAt ?? resolution.actualExpenseDate ?? "-"} />
-                <PrintCell label="작성자" value={resolution.author} />
-                <PrintCell label="지출 유형" value={resolution.expenseKind ?? "GENERAL"} />
-                {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <><PrintCell label="실제 지출자" value={resolution.advancePayer ?? "-"} /><PrintCell label="정산받을 사람" value={resolution.settlementRecipient ?? "-"} /><PrintCell label="정산 상태" value={resolution.settlementStatus} /><PrintCell label="조합 정산일" value={resolution.settlementCompletedAt ?? "-"} /></> : null}
-                <PrintCell label="업무유형" value={getExpenseTimingLabel(expenseTiming)} />
-                <PrintCell label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
-                <PrintCell label={getExpenseDateLabel(expenseTiming)} value={resolution.plannedPaymentDate} />
                 {isBatchResolution ? <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} wide /> : null}
-                <PrintCell className="border-t-2 border-t-[var(--color-midnight-ink)]" label="지출구분" value={resolution.expenseType} />
-                <PrintCell className="border-t-2 border-t-[var(--color-midnight-ink)]" label="예산항목" value={resolution.budgetItem || "-"} />
-                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
                 <PrintCell label="건명" value={getResolutionSubject(resolution)} wide />
+                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
+                <PrintCell label="예산항목" value={resolution.budgetItem || "-"} wide />
+                <PrintCell label="작성자" value={resolution.author} />
+                <PrintCell label="지출일" value={resolution.plannedPaymentDate || resolution.actualExpenseDate || "-"} />
+                {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <PrintCell label="정산정보" value={`${resolution.settlementRecipient ?? resolution.advancePayer ?? "-"} · ${resolution.settlementStatus}`} wide /> : null}
               </div>
             </section>
 
@@ -6227,38 +6221,31 @@ function ExpenseResolutionPrintPreviewModal({
                   ))}
                 </div>
               ) : <div className="flex items-center justify-between gap-4">
-                <div>
-                  <p className="text-xs font-bold text-[var(--color-stone)]">{printAmountSummary.primaryLabel}</p>
-                  <p className="mt-1 text-sm font-semibold">{getResolutionSubject(resolution)}</p>
-                </div>
-                <p className="text-2xl font-black tracking-tight">{formatExpenseResolutionAmount(printAmountSummary.primaryValue)}</p>
+                <p className="text-[11px] font-bold text-[var(--color-stone)]">{printAmountSummary.primaryLabel}</p>
+                <p className="text-[25px] font-black tracking-tight">{formatExpenseResolutionAmount(printAmountSummary.primaryValue)}</p>
               </div>}
             </section>
 
             <section className="expense-resolution-print-section expense-resolution-print-items mt-5">
               <div className="mb-2 flex items-end justify-between gap-3">
-                <h4 className="text-base font-bold">세부 지출내역</h4>
+                <h4 className="text-[13px] font-bold">세부 지출내역</h4>
                 {isBatchResolution ? <p className="text-xs font-semibold text-[var(--color-stone)]">{resolution.projectName.trim() || "프로젝트 미입력"} · {printExpenseItems.length}건</p> : null}
               </div>
               <ExpensePrintItemsTable items={firstPageItems} totalLabel={continuationPages.length ? "본지 소계" : "전체 합계"} />
             </section>
 
-            <section className="expense-resolution-print-section expense-resolution-print-approval mt-5">
-              <h4 className="mb-2 text-base font-bold">지출사유</h4>
-              <div className={`min-h-24 whitespace-pre-wrap border border-[var(--color-soft-border)] p-3 leading-6 ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</div>
-            </section>
-
             <section className="expense-resolution-print-section mt-5">
-              <h4 className="mb-2 text-base font-bold">증빙 요약</h4>
-              <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
-                <PrintCell label="증빙 유형" value={evidenceSummary} />
-                <PrintCell label="증빙 상태" value={resolution.evidenceStatus ?? "NONE"} />
-                <PrintCell label="첨부 현황" value={`${resolution.evidenceMaterials.length + resolution.expenseItems.filter((item) => item.evidenceFileName).length}건`} />
+              <h4 className="mb-2 text-[13px] font-bold">지출사유 및 증빙</h4>
+              <div className="border border-[var(--color-soft-border)]">
+                <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
+                <PrintCell label="증빙" value={evidenceText} wide />
               </div>
             </section>
+
+            <ExpensePrintFooter page={1} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
           </article>
           {continuationPages.map((items, pageIndex) => (
-            <article className="erp-print-page expense-resolution-print-page expense-resolution-continuation-page mx-auto mt-6 rounded-sm bg-white p-8 text-sm shadow-sm" key={`continuation-${pageIndex + 1}`}>
+            <article className="erp-print-page expense-resolution-print-page expense-resolution-continuation-page mx-auto mt-6 rounded-sm bg-white shadow-sm" key={`continuation-${pageIndex + 1}`}>
               <header className="border-b-2 border-[var(--color-midnight-ink)] pb-4">
                 <div className="flex items-end justify-between gap-4">
                   <div>
@@ -6276,6 +6263,7 @@ function ExpenseResolutionPrintPreviewModal({
                   totals={pageIndex === continuationPages.length - 1 ? { supplyAmount: resolution.supplyAmount, totalAmount: resolution.totalPaymentAmount, vatAmount: resolution.vat } : undefined}
                 />
               </section>
+              <ExpensePrintFooter page={pageIndex + 2} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
             </article>
           ))}
         </div>
@@ -6337,6 +6325,18 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
   );
 }
 
+function ExpensePrintFooter({ page, resolutionNo, totalPages }: { page: number; resolutionNo: string; totalPages: number }) {
+  return (
+    <footer className="mt-auto flex items-end justify-between gap-6 border-t border-[var(--color-soft-border)] pt-4 text-[8px] text-[var(--color-stone)]">
+      <div>
+        <p className="text-[10px] font-bold text-[var(--color-midnight-ink)]">대방동 지역주택조합</p>
+        <p className="mt-1">조합원의 소중한 자금을 투명하고 책임 있게 집행합니다.</p>
+      </div>
+      <p className="shrink-0 text-right">{resolutionNo} · 출력일 {getCurrentDateIso()} · {page} / {totalPages}</p>
+    </footer>
+  );
+}
+
 function ExpensePrintItemsTable({
   items,
   totalLabel,
@@ -6355,7 +6355,7 @@ function ExpensePrintItemsTable({
       <table className="w-full table-fixed border-collapse text-[11px]">
         <thead className="bg-[var(--color-cloud-veil)]">
           <tr>
-            {["순번", "지출예정일", "거래처", "내역 및 산출근거", "공급가액", "세금구분", "부가세", "합계"].map((label) => (
+            {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
               <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-left last:border-r-0" key={label}>{label}</th>
             ))}
           </tr>
@@ -6363,12 +6363,10 @@ function ExpensePrintItemsTable({
         <tbody>
           {items.map((item) => (
             <tr className="expense-resolution-print-item-row" key={item.id}>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-center">{item.itemNo}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{item.expenseDate || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
               <td className="w-2/5 whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-center whitespace-nowrap">{getSingleExpenseTaxCategoryLabel(item)}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
               <td className="border-b border-[var(--color-soft-border)] px-2 py-2 text-right font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             </tr>
@@ -6376,7 +6374,7 @@ function ExpensePrintItemsTable({
         </tbody>
         <tfoot className="bg-[var(--color-cloud-veil)] font-bold">
           <tr>
-            <td className="px-2 py-2 text-right" colSpan={4}>{totalLabel}</td>
+            <td className="px-2 py-2 text-right" colSpan={3}>{totalLabel}</td>
             <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
             <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.vatAmount ?? pageVatAmount)}</td>
             <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.totalAmount ?? pageTotalAmount)}</td>
@@ -6584,9 +6582,9 @@ function PrintValidationWarningModal({
 
 function PrintCell({ className = "", label, value, valueClassName = "", wide }: { className?: string; label: string; value: ReactNode; valueClassName?: string; wide?: boolean }) {
   return (
-    <div className={`grid grid-cols-[110px_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
-      <span className="bg-[var(--color-cloud-veil)] px-3 py-2 font-bold text-[var(--color-stone)]">{label}</span>
-      <span className={`whitespace-normal px-3 py-2 font-semibold ${valueClassName}`}>{value}</span>
+    <div className={`grid min-h-[8mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
+      <span className="flex items-center bg-[var(--color-cloud-veil)] px-2.5 py-2 text-[10px] font-bold text-[var(--color-stone)]">{label}</span>
+      <span className={`flex items-center whitespace-normal px-3 py-2 text-[10px] font-semibold ${valueClassName}`}>{value}</span>
     </div>
   );
 }

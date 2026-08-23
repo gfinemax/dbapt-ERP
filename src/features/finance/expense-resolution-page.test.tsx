@@ -297,7 +297,8 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "보관용 출력 전 확인" })).getByRole("button", { name: "그래도 출력하기" }));
 
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
-    expect(within(printDialog).getByRole("heading", { name: "결의 및 지출 정보" })).toBeInTheDocument();
+    expect(within(printDialog).getByRole("heading", { name: "핵심 결의정보" })).toBeInTheDocument();
+    expect(within(printDialog).queryByRole("heading", { name: "결의 및 지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "결의 기본정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).getByText("프로젝트명")).toBeInTheDocument();
@@ -307,7 +308,14 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     expect(within(printDialog).getByRole("heading", { name: "결재선" })).toBeInTheDocument();
     expect(within(printDialog).getByText("총 결의금액")).toBeInTheDocument();
-    expect(within(printDialog).getByRole("heading", { name: "증빙 요약" })).toBeInTheDocument();
+    expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
+    expect(within(printDialog).queryByRole("heading", { name: "증빙 요약" })).not.toBeInTheDocument();
+    expect(within(printDialog).queryByText("작성방식")).not.toBeInTheDocument();
+    expect(within(printDialog).queryByText("지출 유형")).not.toBeInTheDocument();
+    expect(within(printDialog).queryByText("증빙 상태")).not.toBeInTheDocument();
+    expect(within(printDialog).queryByText("세금구분")).not.toBeInTheDocument();
+    expect(within(printDialog).queryByText("순번")).not.toBeInTheDocument();
+    expect(within(printDialog).getByText("조합원의 소중한 자금을 투명하고 책임 있게 집행합니다.")).toBeInTheDocument();
     expect(within(printDialog).queryByText("사무기기 구입")).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("비품비 > 사무기기")).not.toBeInTheDocument();
     expect(within(printDialog).getByText("사무용품 및 소모품 구입")).toBeInTheDocument();
