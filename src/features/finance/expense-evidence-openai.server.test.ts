@@ -55,4 +55,21 @@ describe("OpenAI expense evidence analysis", () => {
 
     expect(result.issuer).toBe("스마트기획");
   });
+
+  it("keeps the postal fee total when the receipt also contains a mail count", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      confidence: 0.99, documentDate: "2026-08-21", documentType: "우편요금 영수증", issuer: "서울신길동우체국",
+      issuerAddress: null, issuerBusinessCategory: null, issuerBusinessNumber: "101-83-02925", issuerBusinessType: null,
+      issuerContact: null, issuerRepresentative: null, itemName: "보통", quantity: 68,
+      items: [{ itemName: "보통", quantity: 68, supplyAmount: null, totalAmount: 40120, unitPrice: 590, vatAmount: null }],
+      recognizedText: "합계 68통 40,120원\n총요금: (즉납) 40,120원\n수납요금: 40,120원",
+      supplyAmount: null, totalAmount: 40120, vatAmount: null,
+    }) } }] }), { status: 200 }));
+    const image = await sharp({ create: { background: "white", channels: 3, height: 300, width: 300 } }).jpeg().toBuffer();
+
+    const result = await extractExpenseEvidenceWithOpenAI(new File([new Uint8Array(image)], "우편요금.jpg", { type: "image/jpeg" }), { apiKey: "test-key", fetcher });
+
+    expect(result.totalAmount).toBe(40120);
+    expect(result.quantity).toBe(68);
+  });
 });

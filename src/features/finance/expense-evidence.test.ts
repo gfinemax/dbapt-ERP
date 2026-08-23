@@ -31,6 +31,12 @@ describe("expense evidence OCR helpers", () => {
     expect(extractEvidenceText("상 호 스마트기획 성 명 서광표\n합계 60,000").issuer).toBe("스마트기획");
   });
 
+  it("uses the won amount instead of the item count on postal receipts", () => {
+    const data = extractEvidenceText("합계 68통 40,120원\n총요금: (즉납) 40,120원\n수납요금: 40,120원");
+
+    expect(data.totalAmount).toBe(40120);
+  });
+
   it("removes OCR punctuation from vendor names while preserving Korean, English, numbers, and spaces", () => {
     expect(sanitizeVendorName("스마트기획 | Smart-2026_#")).toBe("스마트기획  Smart2026");
   });

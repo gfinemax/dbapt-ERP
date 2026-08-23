@@ -175,7 +175,8 @@ export function extractEvidenceText(text: string): EvidenceOcrData {
   const documentDate = normalizeDate(matchText(normalized, /(?:작\s*성\s*(?:년\s*월\s*일|일)|발\s*행\s*일|거\s*래\s*일|일\s*자)\s*[:：]?\s*([0-9]{4}\s*[./-]\s*[0-9]{1,2}\s*[./-]\s*[0-9]{1,2})/));
   const supplyAmount = matchAmount(normalized, /(?:공\s*급\s*가\s*액|공\s*급\s*금\s*액|공\s*급\s*대\s*가\s*총\s*액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   const vatAmount = matchAmount(normalized, /(?:부가세|세액)\s*[:：]?\s*([0-9,]+)\s*원?/);
-  const totalAmount = matchAmount(normalized, /(?:합계|총액|결제금액)\s*[:：]?\s*([0-9,]+)\s*원?/);
+  const totalAmount = matchAmount(normalized, /(?:합계|총액|총요금|수납요금|결제금액)\s*[:：]?\s*(?:\([^\n)]*\)\s*)?[^\n]*?([0-9][0-9,]*)\s*원/)
+    ?? matchAmount(normalized, /(?:합계|총액|결제금액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   return normalizeEvidenceVendorFields({ documentDate, issuer, issuerAddress, issuerBusinessCategory, issuerBusinessNumber: issuerBusinessNumber?.replace(/\s/g, ""), issuerBusinessType, issuerRepresentative, supplyAmount, totalAmount, vatAmount });
 }
 

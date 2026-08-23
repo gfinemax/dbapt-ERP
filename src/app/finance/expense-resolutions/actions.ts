@@ -207,16 +207,18 @@ async function processExpenseEvidenceOcrJob(id: string) {
     if (downloadError || !blob) throw new Error(`증빙파일 읽기 실패: ${downloadError?.message ?? "파일이 없습니다."}`);
     const file = new File([blob], job.original_filename, { type: job.content_type });
     let result;
-    if (process.env.OPENAI_API_KEY && (file.type === "application/pdf" || file.type.startsWith("image/"))) {
+    const openAiApiKey = process.env.OPENAI_API_KEY?.trim();
+    if (openAiApiKey && (file.type === "application/pdf" || file.type.startsWith("image/"))) {
+      await updateOcrJob(id, "PREPROCESSING", 45, { provider: "OPENAI" });
       try {
         result = await extractExpenseEvidenceWithOpenAI(file, {
+          apiKey: openAiApiKey,
           onStage: async (stage) => updateOcrJob(id, stage, stage === "PREPROCESSING" ? 45 : stage === "RECOGNIZING" ? 65 : 85),
         });
       } catch (openAiError) {
         const openAiFailureMessage = openAiError instanceof Error ? openAiError.message : String(openAiError);
-        console.warn(`[expense-evidence] OpenAI vision unavailable; falling back to Tesseract for ${file.name}: ${openAiFailureMessage}`);
-        await updateOcrJob(id, "RECOGNIZING", 65, { provider: "TESSERACT" });
-        result = { ...await extractExpenseEvidenceFile(file), processingNote: `OpenAI 분석 실패 후 로컬 OCR로 처리됨: ${openAiFailureMessage}` };
+        console.error(`[expense-evidence] OpenAI vision failed for ${file.name}: ${openAiFailureMessage}`);
+        throw new Error("자동인식 서비스에 연결하지 못했습니다. 잠시 후 다시 분석해 주세요.");
       }
     } else {
       await updateOcrJob(id, "RECOGNIZING", 65, { provider: "TESSERACT" });
