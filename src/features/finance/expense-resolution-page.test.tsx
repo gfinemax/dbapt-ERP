@@ -354,6 +354,24 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("button", { name: "다른 파일 선택" })).toBeInTheDocument();
   });
 
+  it("shows the safe message returned by the evidence upload action", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockResolvedValue({
+      code: "STORAGE_FAILED",
+      message: "증빙파일을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+      ok: false,
+    });
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    const file = new File(["image"], "실패영수증.jpg", { type: "image/jpeg" });
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("증빙파일을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    expect(within(dialog).getByRole("alert")).not.toHaveTextContent("Server Components render");
+  });
+
   it("moves to the matching field when a missing-field validation message is clicked", () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));

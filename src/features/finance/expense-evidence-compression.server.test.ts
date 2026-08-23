@@ -22,4 +22,13 @@ describe("expense evidence compression", () => {
     expect(result.file).toBe(file);
     expect(result.savedBytes).toBe(0);
   });
+
+  it("falls back to the original file when image compression fails", async () => {
+    const file = new File(["not-a-real-jpeg"], "손상된영수증.jpg", { type: "image/jpeg" });
+    const result = await compressExpenseEvidenceFile(file);
+
+    expect(result.file).toBe(file);
+    expect(result.savedBytes).toBe(0);
+    expect(result.fallbackReason).toBeTruthy();
+  });
 });

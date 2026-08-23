@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { ensureBusinessPartnerFromOcrInSupabase } from "@/features/basic-info/business-partner-repository";
 import type { BusinessPartnerOcrInput } from "@/features/basic-info/business-partner-data";
-import { inferEvidenceType, type EvidenceOcrJobProgress, type EvidenceOcrJobStage, type ExpenseEvidenceAttachment } from "@/features/finance/expense-evidence";
+import { inferEvidenceType, type EvidenceOcrJobProgress, type EvidenceOcrJobStage, type ExpenseEvidenceAttachment, type ExpenseEvidenceUploadResult } from "@/features/finance/expense-evidence";
 import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-ocr.server";
 import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
 import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
@@ -55,72 +55,103 @@ export async function ensureBusinessPartnerFromOcrAction(input: BusinessPartnerO
   return result;
 }
 
-export async function uploadExpenseEvidenceAction(formData: FormData): Promise<ExpenseEvidenceAttachment> {
+export async function uploadExpenseEvidenceAction(formData: FormData): Promise<ExpenseEvidenceUploadResult> {
+  const startedAt = Date.now();
   const file = formData.get("file");
   const resolutionNo = String(formData.get("resolutionNo") ?? "").trim();
   const requestedEvidenceType = String(formData.get("evidenceType") ?? "기타");
-  if (!(file instanceof File) || !file.size) throw new Error("증빙파일을 선택해 주세요.");
-  if (!resolutionNo) throw new Error("결의서번호가 필요합니다.");
-  if (file.size > maxEvidenceFileSize) throw new Error("증빙파일은 10MB 이하만 업로드할 수 있습니다.");
-  if (!acceptedEvidenceTypes.has(file.type)) throw new Error("PDF, JPG, PNG, WEBP, TXT, CSV 파일만 업로드할 수 있습니다.");
+  if (!(file instanceof File) || !file.size) return uploadFailure("INVALID_FILE", "증빙파일을 선택해 주세요.");
+  if (!resolutionNo) return uploadFailure("INVALID_FILE", "결의서번호가 필요합니다.");
+  if (file.size > maxEvidenceFileSize) return uploadFailure("INVALID_FILE", "증빙파일은 10MB 이하만 업로드할 수 있습니다.");
+  if (!acceptedEvidenceTypes.has(file.type)) return uploadFailure("INVALID_FILE", "PDF, JPG, PNG, WEBP, TXT, CSV 파일만 업로드할 수 있습니다.");
 
   const supabase = getSupabaseServerClient();
-  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
-  const compression = await compressExpenseEvidenceFile(file);
-  const storedFile = compression.file;
-  if (compression.savedBytes > 0) {
-    console.info(`[expense-evidence] compressed ${file.name}: ${compression.originalSize} -> ${storedFile.size} bytes`);
-  }
+  if (!supabase) return uploadFailure("SERVER_CONFIG", "증빙 저장소 연결 설정을 확인해 주세요.");
   const id = randomUUID();
-  const storagePath = buildExpenseEvidenceStoragePath(resolutionNo, id, storedFile.type);
-  const ocrSourcePath = buildExpenseEvidenceOcrSourcePath(storagePath);
-  const { error } = await supabase.storage.from(expenseEvidenceBucket).upload(storagePath, storedFile, {
-    cacheControl: "3600",
-    contentType: storedFile.type,
-    upsert: false,
-  });
-  if (error) throw new Error(`증빙파일 저장 실패: ${error.message}`);
-  const usesVisionOcr = file.type === "application/pdf" || file.type.startsWith("image/");
-  if (usesVisionOcr) {
-    const { error: sourceError } = await supabase.storage.from(expenseEvidenceBucket).upload(ocrSourcePath, file, {
-      cacheControl: "60",
-      contentType: file.type,
+  let stage = "COMPRESSING";
+  let storagePath: string | undefined;
+  let ocrSourcePath: string | undefined;
+  let originalOcrSourceStored = false;
+  try {
+    const compression = await compressExpenseEvidenceFile(file);
+    const storedFile = compression.file;
+    if (compression.fallbackReason) {
+      console.warn(JSON.stringify({ error: compression.fallbackReason, fileName: file.name, fileSize: file.size, id, level: "warning", message: "expense evidence compression failed; using original", resolutionNo, stage }));
+    } else if (compression.savedBytes > 0) {
+      console.info(JSON.stringify({ compressedSize: storedFile.size, fileName: file.name, fileSize: file.size, id, level: "info", message: "expense evidence compressed", resolutionNo, stage }));
+    }
+    storagePath = buildExpenseEvidenceStoragePath(resolutionNo, id, storedFile.type);
+    ocrSourcePath = buildExpenseEvidenceOcrSourcePath(storagePath);
+    stage = "STORING";
+    const { error } = await supabase.storage.from(expenseEvidenceBucket).upload(storagePath, storedFile, {
+      cacheControl: "3600",
+      contentType: storedFile.type,
       upsert: false,
     });
-    if (sourceError) {
-      await supabase.storage.from(expenseEvidenceBucket).remove([storagePath]);
-      throw new Error(`OCR 원본 준비 실패: ${sourceError.message}`);
+    if (error) {
+      logEvidenceUploadFailure({ error, file, id, resolutionNo, stage, startedAt });
+      return uploadFailure("STORAGE_FAILED", "증빙파일을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
+    const usesVisionOcr = file.type === "application/pdf" || file.type.startsWith("image/");
+    if (usesVisionOcr) {
+      stage = "STORING_OCR_SOURCE";
+      const { error: sourceError } = await supabase.storage.from(expenseEvidenceBucket).upload(ocrSourcePath, file, {
+        cacheControl: "60",
+        contentType: file.type,
+        upsert: false,
+      });
+      if (sourceError) {
+        console.warn(JSON.stringify({ error: sourceError.message, fileName: file.name, fileSize: file.size, id, level: "warning", message: "expense evidence OCR source upload failed; using stored evidence", resolutionNo, stage }));
+      } else {
+        originalOcrSourceStored = true;
+      }
+    }
+    stage = "REGISTERING_JOB";
+    const evidenceType = inferEvidenceType(file.name, requestedEvidenceType);
+    const { error: jobError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").insert({
+      content_type: storedFile.type,
+      evidence_type: evidenceType,
+      id,
+      original_filename: file.name,
+      resolution_no: resolutionNo,
+      storage_bucket: expenseEvidenceBucket,
+      storage_path: storagePath,
+    });
+    if (jobError) {
+      await supabase.storage.from(expenseEvidenceBucket).remove(originalOcrSourceStored ? [storagePath, ocrSourcePath!] : [storagePath]);
+      logEvidenceUploadFailure({ error: jobError, file, id, resolutionNo, stage, startedAt });
+      return uploadFailure("JOB_REGISTRATION_FAILED", "증빙파일은 전송됐지만 자동입력 작업을 시작하지 못했습니다. 다시 업로드해 주세요.");
+    }
+    after(() => processExpenseEvidenceOcrJob(id));
+    const attachment: ExpenseEvidenceAttachment = {
+      contentType: file.type,
+      evidenceType,
+      fileName: file.name,
+      fileSize: storedFile.size,
+      id,
+      ocrData: {},
+      ocrJobId: id,
+      ocrStatus: "REVIEW_REQUIRED",
+      storageBucket: expenseEvidenceBucket,
+      storagePath,
+      uploadedAt: new Date().toISOString(),
+      uploadedBy: currentUserLabel,
+    };
+    console.info(JSON.stringify({ durationMs: Date.now() - startedAt, fileName: file.name, fileSize: file.size, id, level: "info", message: "expense evidence upload completed", resolutionNo, stage: "COMPLETED" }));
+    return { attachment, ok: true };
+  } catch (error) {
+    if (storagePath) await supabase.storage.from(expenseEvidenceBucket).remove(originalOcrSourceStored && ocrSourcePath ? [storagePath, ocrSourcePath] : [storagePath]);
+    logEvidenceUploadFailure({ error, file, id, resolutionNo, stage, startedAt });
+    return uploadFailure("UNEXPECTED", "증빙자료 처리 중 일시적인 오류가 발생했습니다. 파일은 등록되지 않았으니 다시 시도해 주세요.");
   }
-  const evidenceType = inferEvidenceType(file.name, requestedEvidenceType);
-  const { error: jobError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").insert({
-    content_type: storedFile.type,
-    evidence_type: evidenceType,
-    id,
-    original_filename: file.name,
-    resolution_no: resolutionNo,
-    storage_bucket: expenseEvidenceBucket,
-    storage_path: storagePath,
-  });
-  if (jobError) {
-    await supabase.storage.from(expenseEvidenceBucket).remove(usesVisionOcr ? [storagePath, ocrSourcePath] : [storagePath]);
-    throw new Error(`OCR 작업 등록 실패: ${jobError.message}`);
-  }
-  after(() => processExpenseEvidenceOcrJob(id));
-  return {
-    contentType: file.type,
-    evidenceType,
-    fileName: file.name,
-    fileSize: storedFile.size,
-    id,
-    ocrData: {},
-    ocrJobId: id,
-    ocrStatus: "REVIEW_REQUIRED",
-    storageBucket: expenseEvidenceBucket,
-    storagePath,
-    uploadedAt: new Date().toISOString(),
-    uploadedBy: "오학동 사무국장",
-  };
+}
+
+function uploadFailure(code: Extract<ExpenseEvidenceUploadResult, { ok: false }>["code"], message: string): ExpenseEvidenceUploadResult {
+  return { code, message, ok: false };
+}
+
+function logEvidenceUploadFailure({ error, file, id, resolutionNo, stage, startedAt }: { error: unknown; file: File; id: string; resolutionNo: string; stage: string; startedAt: number }) {
+  console.error(JSON.stringify({ durationMs: Date.now() - startedAt, error: error instanceof Error ? error.message : String(error), fileName: file.name, fileSize: file.size, id, level: "error", message: "expense evidence upload failed", resolutionNo, stage }));
 }
 
 export async function getExpenseEvidenceOcrJobAction(id: string): Promise<EvidenceOcrJobProgress> {

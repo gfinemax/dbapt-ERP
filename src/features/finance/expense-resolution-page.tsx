@@ -26,7 +26,7 @@ import {
 } from "./expense-resolution-data";
 import type { ExpenseResolution, ExpenseResolutionType, ResolutionHistory } from "./expense-resolution-data";
 import { getNextDocumentNo } from "./finance-numbering";
-import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment } from "./expense-evidence";
+import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment, type ExpenseEvidenceUploadResult } from "./expense-evidence";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
@@ -2211,6 +2211,14 @@ function formatFileSize(size: number) {
   return `${(size / (1024 * 1024)).toFixed(1)}MB`;
 }
 
+function unwrapEvidenceUploadResult(result: ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult) {
+  if ("ok" in result) {
+    if (!result.ok) throw new Error(result.message);
+    return result.attachment;
+  }
+  return result;
+}
+
 function OcrValue({ confirmed = false, label, value }: { confirmed?: boolean; label: string; value: string }) {
   const missing = value === "-";
   const status = missing ? "인식 안 됨" : confirmed ? "사용자 확인" : "자동입력 · 확인 필요";
@@ -2559,7 +2567,7 @@ export function ExpenseResolutionPage({
   retryEvidenceOcrJob?: (id: string) => Promise<void>;
   transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>;
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
-  uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment>;
+  uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult>;
 } = {}) {
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? expenseResolutions.map(toManagedExpenseResolution),
@@ -2952,7 +2960,7 @@ export function ExpenseResolutionPage({
       formData.set("file", file);
       formData.set("resolutionNo", formState.resolutionNo);
       formData.set("evidenceType", item.evidenceType || formState.evidenceType);
-      const uploaded = { ...(await uploadEvidence(formData)), itemId: item.id };
+      const uploaded = { ...unwrapEvidenceUploadResult(await uploadEvidence(formData)), itemId: item.id };
       setFormState((current) => ({
         ...current,
         batchItems: current.batchItems.map((entry) => entry.itemNo === itemNo ? {
@@ -3047,7 +3055,7 @@ export function ExpenseResolutionPage({
             formData.set("file", file);
             formData.set("resolutionNo", formState.resolutionNo);
             formData.set("evidenceType", formState.evidenceType);
-            const attachment = await uploadEvidence!(formData);
+            const attachment = unwrapEvidenceUploadResult(await uploadEvidence!(formData));
             uploadedCount += 1;
             setFormState((current) => {
               const withAttachment = { ...current, evidenceFiles: [...current.evidenceFiles, attachment], evidenceType: attachment.evidenceType as EvidenceType };

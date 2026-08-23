@@ -6,6 +6,7 @@ const maximumPdfPages = 50;
 const maximumImageDimension = 2400;
 
 export type CompressedEvidenceFile = {
+  fallbackReason?: string;
   file: File;
   originalSize: number;
   savedBytes: number;
@@ -15,18 +16,27 @@ export async function compressExpenseEvidenceFile(file: File): Promise<Compresse
   if (!file.type.startsWith("image/") && file.type !== "application/pdf") {
     return { file, originalSize: file.size, savedBytes: 0 };
   }
-  const source = new Uint8Array(await file.arrayBuffer());
-  const compressed = file.type === "application/pdf"
-    ? await compressPdf(source)
-    : await compressImage(source, file.type);
-  if (!compressed || compressed.byteLength >= source.byteLength) {
-    return { file, originalSize: file.size, savedBytes: 0 };
+  try {
+    const source = new Uint8Array(await file.arrayBuffer());
+    const compressed = file.type === "application/pdf"
+      ? await compressPdf(source)
+      : await compressImage(source, file.type);
+    if (!compressed || compressed.byteLength >= source.byteLength) {
+      return { file, originalSize: file.size, savedBytes: 0 };
+    }
+    return {
+      file: new File([compressed], file.name, { lastModified: file.lastModified, type: file.type }),
+      originalSize: file.size,
+      savedBytes: file.size - compressed.byteLength,
+    };
+  } catch (error) {
+    return {
+      fallbackReason: error instanceof Error ? error.message : String(error),
+      file,
+      originalSize: file.size,
+      savedBytes: 0,
+    };
   }
-  return {
-    file: new File([compressed], file.name, { lastModified: file.lastModified, type: file.type }),
-    originalSize: file.size,
-    savedBytes: file.size - compressed.byteLength,
-  };
 }
 
 async function compressImage(source: Uint8Array, contentType: string) {
