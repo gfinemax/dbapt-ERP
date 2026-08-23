@@ -27,4 +27,13 @@ describe("expense budget recommendation", () => {
     expect(recommendExpenseBudget({ itemName: "에끌라 깨끗한 물티슈 150매" })?.budgetItem).toBe("운영비 > 사무용품비");
     expect(recommendExpenseBudget({ itemName: "블랙 위생백 대형" })?.budgetItem).toBe("운영비 > 소모품비");
   });
+
+  it("recommends communications expense for postal receipts", () => {
+    expect(recommendExpenseBudget({ itemName: "보통", vendorName: "서울신길동우체국" })).toMatchObject({
+      accountTitle: "운영비",
+      budgetItem: "운영비 > 통신비",
+      confidence: "보통",
+      matchedKeyword: "우체국",
+    });
+  });
 });

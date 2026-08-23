@@ -22,7 +22,7 @@ const recommendationRules: RecommendationRule[] = [
   { accountTitle: "운영비", budgetItem: "운영비 > 수선비", keywords: ["수리", "수선", "보수공사"] },
   { accountTitle: "운영비", budgetItem: "운영비 > 광고비", keywords: ["광고", "현수막", "홍보"] },
   { accountTitle: "운영비", budgetItem: "운영비 > 수도광열비", keywords: ["수도요금", "전기요금", "가스요금", "광열비"] },
-  { accountTitle: "운영비", budgetItem: "운영비 > 통신비", keywords: ["전화요금", "인터넷", "팩스", "통신비"] },
+  { accountTitle: "운영비", budgetItem: "운영비 > 통신비", keywords: ["우편요금", "우편발송", "우편료", "등기우편", "일반우편", "우체국", "전화요금", "인터넷", "팩스", "통신비"] },
   { accountTitle: "운영비", budgetItem: "운영비 > 여비교통비", keywords: ["교통비", "주유", "주차", "출장"] },
   { accountTitle: "운영비", budgetItem: "운영비 > 지급수수료", keywords: ["송금수수료", "발급수수료", "열람수수료", "수수료"] },
   { accountTitle: "사업추진비", budgetItem: "사업추진비 > 회의비", keywords: ["대의원회의", "임원회의", "회의비", "회의수당"] },

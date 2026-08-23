@@ -58,7 +58,7 @@ export type VoucherCreationMode = "GROUP_VOUCHER" | "ITEM_VOUCHER";
 export type VoucherStatus = "전표초안" | "전표확정" | "전표취소";
 export type PaymentFlowType = "사전결의" | "선지급" | "사후정산";
 export type SettlementStatus = "정산없음" | "정산대기" | "정산완료" | "추가지급" | "환급필요" | "보류";
-export type BudgetCheckStatus = "정상" | "주의" | "예산초과";
+export type BudgetCheckStatus = "정상" | "주의" | "예산초과" | "예산항목 선택 필요";
 export type ExpenseResolutionHistoryActionType =
   | "CREATED"
   | "SAVED_DRAFT"
@@ -675,7 +675,7 @@ const operatingBudgetProfiles: Record<string, BudgetProfile> = {
   },
   "운영비 > 통신비": {
     budgetPeriod: "2026-07",
-    calculationBasis: "전화, 팩스, 인터넷 등",
+    calculationBasis: "전화, 팩스, 인터넷, 우편요금 등",
     currentAnnualBudgetAmount: 1200000,
     monthlyBudgetAmount: 100000,
     paymentWaitingAmount: 0,
@@ -805,6 +805,7 @@ const statusClasses: Record<string, string> = {
   정상: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
   주의: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
   예산초과: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
+  "예산항목 선택 필요": "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
   대기: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
   결재대기: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
   첨부완료: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
@@ -853,9 +854,10 @@ function getBudgetCheckStatus(remainingBudgetAmount: number, budgetUsageRate: nu
   return "정상";
 }
 
-function createBudgetSnapshot(budgetItem: string, requestAmount: number): BudgetSnapshot {
-  const profile = operatingBudgetProfiles[budgetItem] ?? {
-    budgetPeriod: "2026-07",
+function createBudgetSnapshot(budgetItem: string, requestAmount: number, requestedBudgetPeriod?: string): BudgetSnapshot {
+  const selectedProfile = operatingBudgetProfiles[budgetItem];
+  const profile = selectedProfile ?? {
+    budgetPeriod: requestedBudgetPeriod ?? getCurrentDateIso().slice(0, 7),
     calculationBasis: "예산항목을 선택해 주세요.",
     currentAnnualBudgetAmount: 0,
     monthlyBudgetAmount: 0,
@@ -866,12 +868,13 @@ function createBudgetSnapshot(budgetItem: string, requestAmount: number): Budget
   };
   const currentRequestAmount = requestAmount;
   const expectedUsedAmount = profile.usedAmount + profile.pendingApprovalAmount + profile.paymentWaitingAmount + currentRequestAmount;
-  const remainingBudgetAmount = profile.monthlyBudgetAmount - expectedUsedAmount;
-  const budgetUsageRate = profile.monthlyBudgetAmount > 0 ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1)) : 0;
+  const remainingBudgetAmount = selectedProfile ? profile.monthlyBudgetAmount - expectedUsedAmount : 0;
+  const budgetUsageRate = selectedProfile && profile.monthlyBudgetAmount > 0 ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1)) : 0;
 
   return {
     ...profile,
-    budgetCheckStatus: getBudgetCheckStatus(remainingBudgetAmount, budgetUsageRate),
+    budgetCheckStatus: selectedProfile ? getBudgetCheckStatus(remainingBudgetAmount, budgetUsageRate) : "예산항목 선택 필요",
+    budgetPeriod: requestedBudgetPeriod ?? profile.budgetPeriod,
     budgetUsageRate,
     currentRequestAmount,
     expectedUsedAmount,
@@ -1878,7 +1881,7 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution): Manag
             remainingBudgetAmount: resolution.remainingBudgetAmount ?? 0,
             usedAmount: resolution.usedAmount ?? 0,
           }
-        : createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount),
+        : createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount, resolution.budgetPeriod),
     printRecords: toPrintRecords(resolution.printRecords),
     rejectionReason: resolution.rejectionReason,
     history: resolution.history.map(toHistoryItem),
@@ -2011,7 +2014,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     inputMethod: "MANUAL",
     expenseType: "운영비",
     operationExpenseDetail: "기타",
-    budgetPeriod: "2026-07",
+    budgetPeriod: currentDate.slice(0, 7),
     budgetItem: "",
     budgetRecommendation: null,
     budgetOverReason: "",
@@ -2653,7 +2656,7 @@ export function ExpenseResolutionPage({
   const accountAllocationTotal = formState.accountAllocations.reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
   const formBatchSummary = summarizeBatchItems(formState.batchItems);
   const effectiveFormTotalAmount = formState.resolutionType === "BATCH" ? formBatchSummary.totalAmount : formTotalAmount;
-  const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount);
+  const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod);
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
   const tabItems = getResolutionTabItems(resolutions);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
@@ -3178,6 +3181,7 @@ export function ExpenseResolutionPage({
       ...current,
       budgetItem: budgetRecommendation?.budgetItem ?? current.budgetItem,
       budgetRecommendation,
+      budgetPeriod: ocr.documentDate?.slice(0, 7) ?? current.budgetPeriod,
       plannedPaymentDate: ocr.documentDate ?? current.plannedPaymentDate,
       evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrStatus: "CONFIRMED" as const } : file),
       vendorName: ocr.issuer ? normalizeVendorName(ocr.issuer) : current.vendorName,
@@ -3468,7 +3472,7 @@ export function ExpenseResolutionPage({
       originalResolutionId: formState.expenseTiming === "SETTLEMENT" ? formState.originalResolutionId : undefined,
       settlementDueDate: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementDueDate : undefined,
       settlementManager: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementManager : undefined,
-      budgetSnapshot: isBatch ? createBudgetSnapshot("운영비 > 임대료", batchSummary.totalAmount) : formBudgetSnapshot,
+      budgetSnapshot: isBatch ? createBudgetSnapshot("운영비 > 임대료", batchSummary.totalAmount, formState.budgetPeriod) : formBudgetSnapshot,
       printRecords: [],
       memo: formState.memo,
       history: [
@@ -4276,7 +4280,7 @@ function ExpenseResolutionCreateModal({
   const [evidenceProcessingStartedAt, setEvidenceProcessingStartedAt] = useState<number | null>(null);
   const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState("");
-  const [ocrUndoSnapshot, setOcrUndoSnapshot] = useState<Pick<ResolutionFormState, "plannedPaymentDate" | "vendorName" | "vendorAddress" | "vendorBusinessCategory" | "vendorBusinessNumber" | "vendorBusinessType" | "vendorContact" | "vendorRepresentative" | "singleItems" | "accountAllocations" | "budgetItem" | "budgetRecommendation" | "operationExpenseDetail" | "supplyAmount" | "vat"> | null>(null);
+  const [ocrUndoSnapshot, setOcrUndoSnapshot] = useState<Pick<ResolutionFormState, "plannedPaymentDate" | "vendorName" | "vendorAddress" | "vendorBusinessCategory" | "vendorBusinessNumber" | "vendorBusinessType" | "vendorContact" | "vendorRepresentative" | "singleItems" | "accountAllocations" | "budgetItem" | "budgetRecommendation" | "budgetPeriod" | "operationExpenseDetail" | "supplyAmount" | "vat"> | null>(null);
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
   const moveToField = (step: 1 | 2, fieldId: string) => {
     setCurrentStep(step);
@@ -4323,7 +4327,7 @@ function ExpenseResolutionCreateModal({
     { complete: Boolean(formState.plannedPaymentDate), label: getExpenseDateLabel(formState.expenseTiming) },
     { complete: Boolean(formState.paymentTargetId && formState.paymentBank && formState.paymentAccountNo && formState.accountHolder), label: "지급계좌 확인" },
     { complete: totalAmount > 0, label: "지급금액 입력" },
-    { complete: budgetSnapshot.remainingBudgetAmount >= 0 || Boolean(formState.budgetOverReason.trim()), label: "예산 확인" },
+    { complete: Boolean(formState.budgetItem) && (budgetSnapshot.remainingBudgetAmount >= 0 || Boolean(formState.budgetOverReason.trim())), label: "예산 확인" },
     { complete: Boolean(formState.reason.trim()), label: "지출사유 입력" },
     ...(!isBatch
       ? [
@@ -4402,6 +4406,7 @@ function ExpenseResolutionCreateModal({
       accountAllocations: formState.accountAllocations.map((item) => ({ ...item })),
       budgetItem: formState.budgetItem,
       budgetRecommendation: formState.budgetRecommendation,
+      budgetPeriod: formState.budgetPeriod,
       operationExpenseDetail: formState.operationExpenseDetail,
       plannedPaymentDate: formState.plannedPaymentDate,
       singleItems: formState.singleItems.map((item) => ({ ...item })),
@@ -4427,6 +4432,7 @@ function ExpenseResolutionCreateModal({
     onChange("accountAllocations", ocrUndoSnapshot.accountAllocations);
     onChange("budgetItem", ocrUndoSnapshot.budgetItem);
     onChange("budgetRecommendation", ocrUndoSnapshot.budgetRecommendation);
+    onChange("budgetPeriod", ocrUndoSnapshot.budgetPeriod);
     onChange("operationExpenseDetail", ocrUndoSnapshot.operationExpenseDetail);
     onChange("plannedPaymentDate", ocrUndoSnapshot.plannedPaymentDate);
     onChange("singleItems", ocrUndoSnapshot.singleItems);

@@ -60,6 +60,17 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
   });
 
+  it("shows a pending budget selection instead of a false budget overrun", () => {
+    render(<ExpenseResolutionPage initialResolutions={[]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+
+    expect(within(dialog).getAllByText("예산항목 선택 필요").length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
+  });
+
   it("restores locally saved resolutions when the remote store is unavailable", () => {
     const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} />);
     act(() => vi.runOnlyPendingTimers());
@@ -274,6 +285,45 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "자동입력 이전으로 되돌리기" }));
     expect(within(dialog).getByLabelText("판매처 상호명")).toHaveValue("");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(0);
+  });
+
+  it("maps a postal receipt to communications budget for the evidence month", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockResolvedValue({
+      contentType: "image/png",
+      evidenceType: "영수증",
+      fileName: "납입금 확인 2차 안내문 우편발송(260821).png",
+      fileSize: 158912,
+      id: "postal-evidence",
+      ocrData: {
+        documentDate: "2026-08-21",
+        issuer: "서울신길동우체국",
+        itemName: "보통",
+        items: [{ itemName: "보통", quantity: 68, totalAmount: 40120, unitPrice: 590 }],
+        normalizedEvidenceType: "영수증",
+        quantity: 68,
+        totalAmount: 40120,
+      },
+      ocrStatus: "EXTRACTED",
+      storageBucket: "expense-evidence",
+      storagePath: "expense-resolutions/2026-0001/postal-evidence.png",
+      uploadedAt: "2026-08-23T11:00:00.000Z",
+      uploadedBy: "오학동 사무국장",
+    });
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), {
+      target: { files: [new File(["postal receipt"], "납입금 확인 2차 안내문 우편발송(260821).png", { type: "image/png" })] },
+    });
+
+    expect(await within(dialog).findByText(/추천 예산항목: 운영비 > 통신비/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("운영비 > 통신비");
+    expect(within(dialog).getByText("2026-08")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("59,880원").length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
   });
 
   it("uses the multipart upload API when no Server Action uploader is provided", async () => {
