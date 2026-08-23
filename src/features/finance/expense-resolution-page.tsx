@@ -1292,6 +1292,13 @@ function getResolutionSubject(resolution: ManagedExpenseResolution) {
   return resolution.subject?.trim() || (resolution.resolutionType === "BATCH" ? resolution.projectName : resolution.operationExpenseDetail) || "건명 미입력";
 }
 
+export function getExpensePrintPersonName(value: string) {
+  return value
+    .trim()
+    .replace(/\s+(?:담당자|사무장|사무국장|팀장|실장|부장|차장|과장|대리|주임|본부장|이사|상무|전무|대표|조합장)$/u, "")
+    .trim();
+}
+
 export function buildExpenseResolutionPdfFileName(resolutionNo: string, subject: string) {
   return buildDocumentPdfFileName(resolutionNo, subject, "지출결의서");
 }
@@ -4201,6 +4208,7 @@ export function ExpenseResolutionPage({
 
       {printPreviewTarget ? (
         <ExpenseResolutionPrintPreviewModal
+          createEvidenceDownloadUrl={createEvidenceDownloadUrl}
           onClose={() => setPrintPreviewTargetId(null)}
           resolution={printPreviewTarget}
         />
@@ -6030,15 +6038,99 @@ export function getExpensePrintAmountSummary(input: {
   };
 }
 
+type ExpenseEvidencePrintPage = {
+  evidenceType: string;
+  fileName: string;
+  id: string;
+  sourcePage: number;
+  sourcePageCount: number;
+  src: string;
+};
+
+async function prepareExpenseEvidencePrintPages(
+  evidenceFiles: ExpenseEvidenceAttachment[],
+  createEvidenceDownloadUrl: (storagePath: string) => Promise<string>,
+) {
+  const printPages: ExpenseEvidencePrintPage[] = [];
+  for (const evidence of evidenceFiles) {
+    const signedUrl = await createEvidenceDownloadUrl(evidence.storagePath);
+    const response = await fetch(signedUrl);
+    if (!response.ok) throw new Error(`${evidence.fileName} 증빙 원본을 불러오지 못했습니다.`);
+    const responseContentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase();
+    const contentType = responseContentType || evidence.contentType.toLowerCase();
+    const isPdf = contentType === "application/pdf" || evidence.storagePath.toLowerCase().endsWith(".pdf") || evidence.fileName.toLowerCase().endsWith(".pdf");
+    const isImage = contentType.startsWith("image/") || evidence.contentType.startsWith("image/");
+
+    if (isPdf) {
+      const pageImages = await renderExpenseEvidencePdfPages(await response.arrayBuffer());
+      pageImages.forEach((src, pageIndex) => {
+        printPages.push({
+          evidenceType: evidence.ocrData.normalizedEvidenceType || evidence.evidenceType,
+          fileName: evidence.fileName,
+          id: `${evidence.id}-pdf-${pageIndex + 1}`,
+          sourcePage: pageIndex + 1,
+          sourcePageCount: pageImages.length,
+          src,
+        });
+      });
+    } else if (isImage) {
+      printPages.push({
+        evidenceType: evidence.ocrData.normalizedEvidenceType || evidence.evidenceType,
+        fileName: evidence.fileName,
+        id: `${evidence.id}-image`,
+        sourcePage: 1,
+        sourcePageCount: 1,
+        src: await blobToDataUrl(await response.blob()),
+      });
+    }
+  }
+  return printPages;
+}
+
+async function renderExpenseEvidencePdfPages(data: ArrayBuffer) {
+  const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+  pdfjs.GlobalWorkerOptions.workerSrc = new URL("pdfjs-dist/legacy/build/pdf.worker.min.mjs", import.meta.url).toString();
+  const document = await pdfjs.getDocument({ data }).promise;
+  const pageImages: string[] = [];
+  try {
+    for (let pageNo = 1; pageNo <= document.numPages; pageNo += 1) {
+      const page = await document.getPage(pageNo);
+      const viewport = page.getViewport({ scale: 2.4 });
+      const canvas = window.document.createElement("canvas");
+      canvas.width = Math.ceil(viewport.width);
+      canvas.height = Math.ceil(viewport.height);
+      await page.render({ canvas, intent: "print", viewport }).promise;
+      pageImages.push(canvas.toDataURL("image/jpeg", 0.94));
+      page.cleanup();
+    }
+  } finally {
+    await document.destroy();
+  }
+  return pageImages;
+}
+
+function blobToDataUrl(blob: Blob) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(String(reader.result)));
+    reader.addEventListener("error", () => reject(reader.error ?? new Error("증빙 이미지를 변환하지 못했습니다.")));
+    reader.readAsDataURL(blob);
+  });
+}
+
 function ExpenseResolutionPrintPreviewModal({
+  createEvidenceDownloadUrl,
   onClose,
   resolution,
 }: {
+  createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>;
   onClose: () => void;
   resolution: ManagedExpenseResolution;
 }) {
   const [isPreparingPrint, setIsPreparingPrint] = useState(false);
   const [printPreparationError, setPrintPreparationError] = useState("");
+  const [evidencePrintPages, setEvidencePrintPages] = useState<ExpenseEvidencePrintPage[]>([]);
+  const [isEvidencePreparing, setIsEvidencePreparing] = useState(Boolean((resolution.evidenceFiles?.length ?? 0) && createEvidenceDownloadUrl));
   const vendorMissing = !resolution.vendorName.trim() || resolution.vendorName === "거래처 미입력";
   const reasonText = resolution.reason.trim() || "지출사유 미입력";
   const warningTextClass = "font-bold text-[var(--color-tangerine)]";
@@ -6084,7 +6176,7 @@ function ExpenseResolutionPrintPreviewModal({
   const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 7) / 12) }, (_, pageIndex) =>
     printExpenseItems.slice(7 + pageIndex * 12, 7 + (pageIndex + 1) * 12),
   );
-  const totalPrintPages = 1 + continuationPages.length;
+  const totalPrintPages = 1 + continuationPages.length + evidencePrintPages.length;
   const evidenceCount = resolution.evidenceMaterials.length + resolution.expenseItems.filter((item) => item.evidenceFileName).length;
   const attachedEvidenceTypes = Array.from(new Set(
     (resolution.evidenceFiles ?? [])
@@ -6095,6 +6187,31 @@ function ExpenseResolutionPrintPreviewModal({
     ? Array.from(new Set(resolution.expenseItems.map((item) => item.evidenceType).filter(Boolean))).join(", ") || "증빙 미첨부"
     : attachedEvidenceTypes.join(", ") || resolution.evidenceType || resolution.evidenceMaterials.join(", ") || "증빙 미첨부";
   const evidenceText = evidenceCount > 0 ? `${evidenceSummary} ${evidenceCount}건` : "증빙 미첨부";
+  const evidenceConnectionError = (resolution.evidenceFiles?.length ?? 0) > 0 && !createEvidenceDownloadUrl
+    ? "증빙 원본을 출력할 수 있도록 연결되지 않았습니다."
+    : "";
+  const displayedPrintError = printPreparationError || evidenceConnectionError;
+
+  useEffect(() => {
+    const evidenceFiles = resolution.evidenceFiles ?? [];
+    if (!evidenceFiles.length || !createEvidenceDownloadUrl) return;
+
+    let cancelled = false;
+    void prepareExpenseEvidencePrintPages(evidenceFiles, createEvidenceDownloadUrl)
+      .then((pages) => {
+        if (!cancelled) setEvidencePrintPages(pages);
+      })
+      .catch((error) => {
+        if (!cancelled) setPrintPreparationError(error instanceof Error ? error.message : "증빙 원본을 출력용으로 준비하지 못했습니다.");
+      })
+      .finally(() => {
+        if (!cancelled) setIsEvidencePreparing(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [createEvidenceDownloadUrl, resolution.evidenceFiles]);
 
   async function handleBrowserPrint() {
     const printShell = document.querySelector<HTMLElement>(".print-modal-shell");
@@ -6204,7 +6321,7 @@ function ExpenseResolutionPrintPreviewModal({
                 <PrintCell label="건명" value={getResolutionSubject(resolution)} wide />
                 <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
                 <PrintCell label="예산항목" value={resolution.budgetItem || "-"} wide />
-                <PrintCell label="작성자" value={resolution.author} />
+                <PrintCell label="작성자" value={getExpensePrintPersonName(resolution.author)} />
                 <PrintCell label="지출일" value={resolution.plannedPaymentDate || resolution.actualExpenseDate || "-"} />
                 {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <PrintCell label="정산정보" value={`${resolution.settlementRecipient ?? resolution.advancePayer ?? "-"} · ${resolution.settlementStatus}`} wide /> : null}
               </div>
@@ -6266,15 +6383,34 @@ function ExpenseResolutionPrintPreviewModal({
               <ExpensePrintFooter page={pageIndex + 2} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
             </article>
           ))}
+          {evidencePrintPages.map((evidencePage, pageIndex) => {
+            const documentPage = 1 + continuationPages.length + pageIndex + 1;
+            return (
+              <article className="erp-print-page expense-resolution-print-page expense-resolution-evidence-page mx-auto mt-6 rounded-sm bg-white shadow-sm" key={evidencePage.id}>
+                <header className="flex items-end justify-between gap-6 border-b-2 border-[var(--color-midnight-ink)] pb-4">
+                  <div className="min-w-0">
+                    <h3 className="text-[22px] font-black tracking-[0.08em]">증빙자료</h3>
+                    <p className="mt-1.5 truncate text-[10px] font-semibold text-[var(--color-stone)]">{resolution.resolutionNo} · {evidencePage.fileName}</p>
+                  </div>
+                  <p className="shrink-0 text-[10px] font-bold text-[var(--color-stone)]">{evidencePage.evidenceType} · {evidencePage.sourcePage} / {evidencePage.sourcePageCount}</p>
+                </header>
+                <figure className="mt-6 flex h-[205mm] items-center justify-center overflow-hidden border border-[var(--color-soft-border)] bg-white p-4">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img alt={`${evidencePage.fileName} 증빙 ${evidencePage.sourcePage}페이지`} className="max-h-full max-w-full object-contain" src={evidencePage.src} />
+                </figure>
+                <ExpensePrintFooter page={documentPage} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
+              </article>
+            );
+          })}
         </div>
 
         <div className="expense-resolution-print-actions flex justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
-          {printPreparationError ? <p className="mr-auto self-center text-sm font-bold text-[var(--color-tangerine)]" role="alert">{printPreparationError}</p> : null}
+          {displayedPrintError ? <p className="mr-auto self-center text-sm font-bold text-[var(--color-tangerine)]" role="alert">{displayedPrintError}</p> : null}
           <Button className="rounded-full" onClick={onClose} variant="outline">
             닫기
           </Button>
-          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isPreparingPrint} onClick={() => void handleBrowserPrint()}>
-            {isPreparingPrint ? "출력 스타일 준비 중…" : "브라우저 프린트"}
+          <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isPreparingPrint || isEvidencePreparing || Boolean(displayedPrintError)} onClick={() => void handleBrowserPrint()}>
+            {isEvidencePreparing ? "증빙 준비 중…" : isPreparingPrint ? "출력 스타일 준비 중…" : "브라우저 프린트"}
           </Button>
         </div>
       </section>

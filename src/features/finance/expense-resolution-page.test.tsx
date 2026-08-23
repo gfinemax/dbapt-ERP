@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
 
 describe("ExpenseResolutionPage", () => {
   it("turns stale Server Action errors into a refresh instruction", () => {
@@ -12,6 +12,12 @@ describe("ExpenseResolutionPage", () => {
   it("formats approval dates with month, day, and time", () => {
     expect(formatApprovalDateTime("2026-07-11")).toBe("07.11 00:00");
     expect(formatApprovalDateTime("2026-07-11 14:35")).toBe("07.11 14:35");
+  });
+
+  it("prints staff names without their role suffix", () => {
+    expect(getExpensePrintPersonName("오학동 사무장")).toBe("오학동");
+    expect(getExpensePrintPersonName("장현제 부장")).toBe("장현제");
+    expect(getExpensePrintPersonName("안동연")).toBe("안동연");
   });
   beforeEach(() => {
     localStorage.clear();
@@ -309,6 +315,8 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).getByRole("heading", { name: "결재선" })).toBeInTheDocument();
     expect(within(printDialog).getByText("총 결의금액")).toBeInTheDocument();
     expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
+    expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
+    expect(within(printDialog).getByText("작성자").parentElement).not.toHaveTextContent("사무장");
     expect(within(printDialog).queryByRole("heading", { name: "증빙 요약" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("작성방식")).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("지출 유형")).not.toBeInTheDocument();
