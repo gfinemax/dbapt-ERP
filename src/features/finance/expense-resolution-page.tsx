@@ -223,6 +223,7 @@ export type ManagedExpenseResolution = {
   paidAt?: string;
   paymentAccountNo: string;
   paymentBank: string;
+  paymentTargetId?: string;
   paymentStatus: PaymentStatus;
   settlementStatus: SettlementStatus;
   advancePaidAt?: string;
@@ -1181,6 +1182,20 @@ function getPaymentTarget(id: string) {
   return paymentTargets.find((target) => target.id === id) ?? paymentTargets[0];
 }
 
+function getResolutionPaymentTargetId(resolution: Pick<ManagedExpenseResolution, "accountHolder" | "paymentAccountNo" | "paymentBank" | "paymentTargetId">) {
+  if (resolution.paymentTargetId && paymentTargets.some((target) => target.id === resolution.paymentTargetId)) {
+    return resolution.paymentTargetId;
+  }
+
+  const matchingTarget = paymentTargets.find((target) => (
+    target.id !== "manual"
+    && target.accountHolder === resolution.accountHolder
+    && target.accountNumber === resolution.paymentAccountNo
+    && target.bankName === resolution.paymentBank
+  ));
+  return matchingTarget?.id ?? "manual";
+}
+
 function applyPaymentTarget(formState: ResolutionFormState, paymentTargetId: string): ResolutionFormState {
   const target = getPaymentTarget(paymentTargetId);
 
@@ -1209,9 +1224,9 @@ function getExpenseBurdenLabel(value: ExpenseBurdenType) {
   }[value];
 }
 
-function getPaymentTargetSummary(target: PaymentTarget) {
+function getPaymentTargetSummary(target: PaymentTarget, formState: Pick<ResolutionFormState, "accountHolder" | "paymentAccountNo" | "paymentBank">) {
   if (target.id === "manual") {
-    return "이번 결의서에서 직접 지급정보를 입력합니다.";
+    return `${formState.paymentBank || "은행 미입력"} ${maskAccountNumber(formState.paymentAccountNo)} · 예금주 ${formState.accountHolder || "미입력"}`;
   }
 
   return `${target.bankName} ${maskAccountNumber(target.accountNumber)} · 예금주 ${target.accountHolder}`;
@@ -1260,9 +1275,9 @@ function createAccountAllocation(overrides: Partial<AccountAllocation> = {}): Ac
   };
 }
 
-function getPaymentTargetHeaderSummary(target: PaymentTarget) {
+function getPaymentTargetHeaderSummary(target: PaymentTarget, formState: Pick<ResolutionFormState, "paymentAccountNo" | "paymentBank">) {
   if (target.id === "manual") {
-    return "직접 입력 · 계좌 미등록";
+    return `직접 입력 · ${formState.paymentBank || "은행 미입력"} ${maskAccountNumber(formState.paymentAccountNo)}`;
   }
 
   return `${target.label} · ${target.bankName} ${maskAccountNumber(target.accountNumber)}`;
@@ -1961,7 +1976,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     inputMethod: normalizeInputMethod(resolution),
     memo: resolution.memo,
     operationExpenseDetail: resolution.operationExpenseDetail,
-    paymentTargetId: "",
+    paymentTargetId: getResolutionPaymentTargetId(resolution),
     paymentAccountNo: resolution.paymentAccountNo,
     paymentBank: resolution.paymentBank,
     paymentFlowType: resolution.paymentFlowType,
@@ -2794,6 +2809,10 @@ export function ExpenseResolutionPage({
         return applyPaymentTarget(nextState, value);
       }
 
+      if (["accountHolder", "paymentAccountNo", "paymentBank"].includes(key)) {
+        nextState.paymentTargetId = "manual";
+      }
+
       if (key === "evidenceType" && typeof value === "string") {
         nextState.evidenceFiles = current.evidenceFiles.map((file) => ({
           ...file,
@@ -3462,6 +3481,7 @@ export function ExpenseResolutionPage({
       paymentBank: formState.paymentBank,
       paymentAccountNo: formState.paymentAccountNo,
       accountHolder: formState.accountHolder,
+      paymentTargetId: formState.paymentTargetId,
       supplyAmount: isBatch ? batchSummary.totalSupplyAmount : formSingleSummary.supplyAmount,
       vat: isBatch ? batchSummary.totalVatAmount : formSingleSummary.vatAmount,
       totalPaymentAmount: isBatch ? batchSummary.totalAmount : formTotalAmount,
@@ -5099,7 +5119,7 @@ function ExpenseResolutionCreateModal({
               ) : null}
             </CollapsibleFormSection> : null}
 
-            {currentStep === 1 ? <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget)} title="지급정보">
+            {currentStep === 1 ? <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget, formState)} title="지급정보">
               <TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} />
               <label className="grid gap-1 text-sm font-semibold md:col-span-2">
                 <span>지급대상</span>
@@ -5117,9 +5137,11 @@ function ExpenseResolutionCreateModal({
               </label>
               <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 md:col-span-2">
                 <p className="text-xs font-bold text-[var(--color-stone)]">{selectedPaymentTarget.sourceLabel}</p>
-                <p className="mt-2 text-base font-bold text-[var(--color-midnight-ink)]">{getPaymentTargetSummary(selectedPaymentTarget)}</p>
+                <p className="mt-2 text-base font-bold text-[var(--color-midnight-ink)]">{getPaymentTargetSummary(selectedPaymentTarget, formState)}</p>
                 <p className="mt-1 break-keep text-sm font-semibold text-[var(--color-stone)]">
-                  등록된 기본 지급정보를 불러오며, 실제 지급 전 회계담당자가 최종 확인합니다.
+                  {selectedPaymentTarget.id === "manual"
+                    ? "이번 결의서에 입력한 지급정보이며, 실제 지급 전 회계담당자가 최종 확인합니다."
+                    : "등록된 기본 지급정보를 불러오며, 실제 지급 전 회계담당자가 최종 확인합니다."}
                 </p>
               </div>
               <TextInput label="지급은행" onChange={(value) => onChange("paymentBank", value)} value={formState.paymentBank} />

@@ -90,6 +90,43 @@ describe("ExpenseResolutionPage", () => {
     expect(persistResolution.mock.calls[0][0]).toMatchObject({ approvalStatus: "작성중", subject: "우편 발송비" });
   });
 
+  it("keeps a directly edited payment account when a resolution is saved and reopened", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+
+    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.change(within(createDialog).getByLabelText("지급은행"), { target: { value: "기업은행" } });
+    fireEvent.change(within(createDialog).getByLabelText("지급계좌번호"), { target: { value: "222-028736-02-019" } });
+
+    expect(within(createDialog).getByLabelText("지급대상")).toHaveValue("manual");
+    expect(within(createDialog).getByText("기업은행 ****2019 · 예금주 오학동")).toBeInTheDocument();
+    fireEvent.click(within(createDialog).getByRole("button", { name: "임시저장" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    const savedDraft = persistResolution.mock.calls[0][0];
+    expect(savedDraft).toMatchObject({
+      accountHolder: "오학동",
+      paymentAccountNo: "222-028736-02-019",
+      paymentBank: "기업은행",
+      paymentTargetId: "manual",
+    });
+    firstRender.unmount();
+
+    const legacyDraft = { ...savedDraft } as typeof savedDraft & { paymentTargetId?: string };
+    delete legacyDraft.paymentTargetId;
+    render(<ExpenseResolutionPage initialResolutions={[legacyDraft]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 상세" })).getByRole("button", { name: "수정" }));
+
+    const editDialog = screen.getByRole("dialog", { name: "지출결의서 수정" });
+    expect(within(editDialog).getByLabelText("지급대상")).toHaveValue("manual");
+    expect(within(editDialog).getByLabelText("지급은행")).toHaveValue("기업은행");
+    expect(within(editDialog).getByLabelText("지급계좌번호")).toHaveValue("222-028736-02-019");
+    expect(within(editDialog).getByText("기업은행 ****2019 · 예금주 오학동")).toBeInTheDocument();
+  });
+
   it("shows a pending budget selection instead of a false budget overrun", () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
