@@ -4002,7 +4002,7 @@ export function ExpenseResolutionPage({
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
                           <span className="sr-only">{resolution.representativeAccountTitle}</span>
                         </td>
-                        <td className="px-4 py-3 align-top text-sm font-semibold">{resolution.settlementRecipient || resolution.representativeVendorName || resolution.vendorName || "-"}</td>
+                        <td className="px-4 py-3 align-top text-sm font-semibold">{resolution.representativeVendorName || resolution.vendorName || "-"}</td>
                         <td className="whitespace-nowrap px-4 py-3 text-right align-top font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
                         <td className="sticky right-[150px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
                           <Badge value={primaryStatus} />

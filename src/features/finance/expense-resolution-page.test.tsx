@@ -127,6 +127,31 @@ describe("ExpenseResolutionPage", () => {
     expect(within(editDialog).getByText("기업은행 ****2019 · 예금주 오학동")).toBeInTheDocument();
   });
 
+  it("shows the vendor in the vendor column instead of the settlement recipient", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 작성" })).getByRole("button", { name: "임시저장" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    const draft = persistResolution.mock.calls[0][0];
+    firstRender.unmount();
+
+    render(<ExpenseResolutionPage initialResolutions={[{
+      ...draft,
+      representativeVendorName: "서울신길동우체국",
+      settlementRecipient: "오학동 사무장",
+      vendorName: "서울신길동우체국",
+    }]} />);
+
+    const listTable = screen.getByRole("table", { name: "지출결의서 목록" });
+    const resolutionRow = within(listTable).getByText(draft.resolutionNo).closest("tr");
+    expect(resolutionRow).not.toBeNull();
+    expect(within(resolutionRow!).getByText("서울신길동우체국")).toBeInTheDocument();
+    expect(within(resolutionRow!).queryByText("오학동 사무장")).not.toBeInTheDocument();
+  });
+
   it("shows a pending budget selection instead of a false budget overrun", () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
