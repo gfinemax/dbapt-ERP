@@ -4147,6 +4147,7 @@ export function ExpenseResolutionPage({
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={(detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
           onDelete={() => removeResolution(selectedDetail.id)}
+          onEdit={selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
           onProcessPayment={() => openPaymentModal(selectedDetail)}
@@ -5277,7 +5278,7 @@ function ExpenseResolutionCreateModal({
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onRequestApproval}>승인요청</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onRequestApproval}>{isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>
@@ -5519,6 +5520,7 @@ export function ExpenseResolutionDetailModal({
   onConfirmVoucher,
   onCreateFactConfirmation,
   onDelete,
+  onEdit,
   onCreateVoucher,
   onPrintArchive,
   onPrintPreview,
@@ -5535,6 +5537,7 @@ export function ExpenseResolutionDetailModal({
   onConfirmVoucher: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
   onDelete?: () => void;
+  onEdit?: () => void;
   onCreateVoucher: () => void;
   onPrintArchive: () => void;
   onPrintPreview: () => void;
@@ -5904,13 +5907,14 @@ export function ExpenseResolutionDetailModal({
           {resolution.approvalStatus === "작성중" ? (
             <>
               {onDelete ? <Button className="rounded-full text-red-700" onClick={onDelete} variant="outline">삭제</Button> : null}
-              <Button className="rounded-full" variant="outline">
-                수정
-              </Button>
+              {onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">수정</Button> : null}
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handleRequestApproval}>
                 승인요청
               </Button>
             </>
+          ) : null}
+          {resolution.approvalStatus === "승인대기" && onEdit ? (
+            <Button className="rounded-full" onClick={onEdit} variant="outline">수정 후 재요청</Button>
           ) : null}
           {resolution.approvalStatus === "승인대기" && canApprove ? (
             <>
@@ -5938,8 +5942,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.voucherStatus === "전표확정" ? (
             <><Button className="rounded-full" variant="outline">전표보기</Button>{onCancelVoucher ? <Button className="rounded-full text-red-700" onClick={onCancelVoucher} variant="outline">전표취소</Button> : null}</>
           ) : null}
-          {resolution.approvalStatus === "반려" ? (
-            <Button className="rounded-full" onClick={handleRequestApproval} variant="outline">
+          {resolution.approvalStatus === "반려" && onEdit ? (
+            <Button className="rounded-full" onClick={onEdit} variant="outline">
               수정 후 재요청
             </Button>
           ) : null}

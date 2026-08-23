@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage } from "./expense-resolution-page";
@@ -58,6 +58,36 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
+  });
+
+  it("lets the author reopen a pending resolution to correct its subject", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.change(within(createDialog).getByLabelText("건명 (필수)"), { target: { value: "통신 구입" } });
+    fireEvent.click(within(createDialog).getByRole("button", { name: "임시저장" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    const draft = persistResolution.mock.calls[0][0];
+    persistResolution.mockClear();
+    firstRender.unmount();
+
+    render(<ExpenseResolutionPage initialResolutions={[{ ...draft, approvalStatus: "승인대기", currentApprover: "장현재 담당자" }]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    fireEvent.click(within(detailDialog).getByRole("button", { name: "수정 후 재요청" }));
+
+    const editDialog = screen.getByRole("dialog", { name: "지출결의서 수정" });
+    expect(within(editDialog).getByLabelText("건명 (필수)")).toHaveValue("통신 구입");
+    expect(within(editDialog).getByText(/승인대기 문서는 저장 시 결재 상태를 다시 시작합니다/)).toBeInTheDocument();
+    fireEvent.change(within(editDialog).getByLabelText("건명 (필수)"), { target: { value: "우편 발송비" } });
+    expect(within(editDialog).getByLabelText("건명 (필수)")).toHaveValue("우편 발송비");
+    fireEvent.click(within(editDialog).getByRole("button", { name: "수정사항 저장" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    expect(persistResolution.mock.calls[0][0]).toMatchObject({ approvalStatus: "작성중", subject: "우편 발송비" });
   });
 
   it("shows a pending budget selection instead of a false budget overrun", () => {
