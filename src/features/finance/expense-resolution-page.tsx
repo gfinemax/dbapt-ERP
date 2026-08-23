@@ -306,6 +306,13 @@ function mapEvidenceTypeToComplianceKind(value: string): EvidenceKind {
   return "OTHER_ALTERNATIVE";
 }
 
+function getDefaultEvidenceStatus(kind: EvidenceKind): EvidenceStatus {
+  if (["E_TAX_INVOICE", "INVOICE", "CARD_RECEIPT", "CASH_RECEIPT"].includes(kind)) return "QUALIFIED";
+  if (["EXPENSE_FACT_CONFIRMATION", "OTHER_ALTERNATIVE"].includes(kind)) return "ALTERNATIVE";
+  if (kind === "NONE") return "NONE";
+  return "GENERAL";
+}
+
 type ResolutionFormState = {
   creationSource: ExpenseCreationSource;
   approvalDocumentId: string;
@@ -1285,6 +1292,7 @@ function getSingleExpenseTaxCategory(item: { supplyAmount: number | string; taxC
 function createBatchExpenseItemFromEvidence(evidence: ExpenseEvidenceAttachment, itemNo: number, reason: string) {
   const ocr = normalizeEvidenceVendorFields(evidence.ocrData);
   const itemNames = ocr.items?.map((item) => item.itemName).filter(Boolean) ?? (ocr.itemName ? [ocr.itemName] : []);
+  const evidenceKind = mapEvidenceTypeToComplianceKind(ocr.normalizedEvidenceType ?? evidence.evidenceType);
   const recommendation = recommendExpenseBudget({
     itemName: itemNames.join(" "),
     reason,
@@ -1304,6 +1312,8 @@ function createBatchExpenseItemFromEvidence(evidence: ExpenseEvidenceAttachment,
     description: itemNames.join("\n") || `${ocr.issuer ?? "거래처 미확인"} 증빙 지출`,
     evidenceFileName: evidence.fileName,
     evidenceId: evidence.id,
+    evidenceKind,
+    evidenceStatus: getDefaultEvidenceStatus(evidenceKind),
     evidenceType: ocr.normalizedEvidenceType ?? evidence.evidenceType,
     expenseDate: ocr.documentDate ?? getCurrentDateIso(),
     expenseType,
@@ -3169,6 +3179,9 @@ export function ExpenseResolutionPage({
     const evidence = current.evidenceFiles.find((file) => file.id === id);
     if (!evidence) return current;
     const ocr = normalizeEvidenceVendorFields(evidence.ocrData);
+    const detectedEvidenceType = ocr.normalizedEvidenceType ?? evidence.evidenceType ?? current.evidenceType;
+    const evidenceKind = current.evidenceKind === "NONE" ? mapEvidenceTypeToComplianceKind(detectedEvidenceType) : current.evidenceKind;
+    const evidenceStatus = current.evidenceStatus === "NONE" ? getDefaultEvidenceStatus(evidenceKind) : current.evidenceStatus;
     const ocrItemNames = ocr.items?.map((item) => item.itemName).filter(Boolean) ?? [];
     const budgetRecommendation = recommendExpenseBudget({
       itemName: ocrItemNames.join(" ") || ocr.itemName,
@@ -3183,6 +3196,9 @@ export function ExpenseResolutionPage({
       budgetRecommendation,
       budgetPeriod: ocr.documentDate?.slice(0, 7) ?? current.budgetPeriod,
       plannedPaymentDate: ocr.documentDate ?? current.plannedPaymentDate,
+      evidenceKind,
+      evidenceStatus,
+      missingEvidenceReason: evidenceStatus === "DEFICIENT" || evidenceStatus === "NONE" ? current.missingEvidenceReason : "",
       evidenceFiles: current.evidenceFiles.map((file) => file.id === id ? { ...file, ocrStatus: "CONFIRMED" as const } : file),
       vendorName: ocr.issuer ? normalizeVendorName(ocr.issuer) : current.vendorName,
       evidenceType: transactionEvidenceTypeOptions.includes(ocr.normalizedEvidenceType as EvidenceType)

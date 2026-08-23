@@ -282,6 +282,9 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("대표자명")).toHaveValue("김대표");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(10000);
     expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-07-15");
+    expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("E_TAX_INVOICE");
+    expect(within(dialog).getByLabelText("증빙 상태")).toHaveValue("QUALIFIED");
+    expect(within(dialog).queryByLabelText("증빙 미첨부 사유")).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "자동입력 이전으로 되돌리기" }));
     expect(within(dialog).getByLabelText("판매처 상호명")).toHaveValue("");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(0);
@@ -324,6 +327,9 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByText("2026-08")).toBeInTheDocument();
     expect(within(dialog).getAllByText("59,880원").length).toBeGreaterThan(0);
     expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
+    expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("SIMPLE_RECEIPT");
+    expect(within(dialog).getByLabelText("증빙 상태")).toHaveValue("GENERAL");
+    expect(within(dialog).queryByLabelText("증빙 미첨부 사유")).not.toBeInTheDocument();
   });
 
   it("uses the multipart upload API when no Server Action uploader is provided", async () => {
@@ -523,6 +529,8 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("운영비 > 도서인쇄비");
     expect(within(dialog).getByText(/추천 예산항목: 운영비 > 도서인쇄비/)).toBeInTheDocument();
     expect(within(dialog).getByLabelText("분할 적요 1")).toHaveValue("소봉투제작(5백매)");
+    expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("SIMPLE_RECEIPT");
+    expect(within(dialog).getByLabelText("증빙 상태")).toHaveValue("GENERAL");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     const subjectReviewRow = within(dialog).getByText("건명 입력").closest("div");
