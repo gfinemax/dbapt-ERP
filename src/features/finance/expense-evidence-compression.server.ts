@@ -1,5 +1,4 @@
 import { PDFDocument } from "pdf-lib";
-import { PDFParse } from "pdf-parse";
 import sharp from "sharp";
 
 const maximumPdfPages = 50;
@@ -51,6 +50,7 @@ async function compressImage(source: Uint8Array, contentType: string) {
 }
 
 async function compressPdf(source: Uint8Array) {
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: source });
   try {
     const screenshots = await parser.getScreenshot({ first: maximumPdfPages, imageBuffer: true, imageDataUrl: false, scale: 1.5 });

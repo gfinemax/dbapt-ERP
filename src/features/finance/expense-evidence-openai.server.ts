@@ -1,4 +1,3 @@
-import { PDFParse } from "pdf-parse";
 import { classifyExpenseEvidence, extractEvidenceText, normalizeEvidenceVendorFields, sanitizeVendorName, type EvidenceOcrData, type EvidenceOcrItem } from "./expense-evidence";
 import { buildExpenseEvidenceImageVariants } from "./expense-evidence-image.server";
 
@@ -134,6 +133,7 @@ async function getEvidenceImages(file: File) {
     })) satisfies EvidenceImage[];
   }
   if (file.type !== "application/pdf") return [];
+  const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {
     const screenshots = await parser.getScreenshot({ first: maximumPdfVisionPages, imageBuffer: true, imageDataUrl: false, scale: 2 });
