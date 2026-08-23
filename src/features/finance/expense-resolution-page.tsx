@@ -2219,6 +2219,14 @@ function unwrapEvidenceUploadResult(result: ExpenseEvidenceAttachment | ExpenseE
   return result;
 }
 
+export function getEvidenceUploadErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || "업로드 실패");
+  if (/Server Components render|Server Action.*not found|Failed to find Server Action|digest property/i.test(message)) {
+    return "화면이 새 버전으로 업데이트되었습니다. 새로고침한 후 증빙파일을 다시 선택해 주세요.";
+  }
+  return message;
+}
+
 function OcrValue({ confirmed = false, label, value }: { confirmed?: boolean; label: string; value: string }) {
   const missing = value === "-";
   const status = missing ? "인식 안 됨" : confirmed ? "사용자 확인" : "자동입력 · 확인 필요";
@@ -2973,7 +2981,7 @@ export function ExpenseResolutionPage({
         evidenceFiles: [...current.evidenceFiles, uploaded],
       }));
     } catch (error) {
-      setEvidenceUploadError(error instanceof Error ? error.message : "상세거래 증빙을 업로드하지 못했습니다.");
+      setEvidenceUploadError(getEvidenceUploadErrorMessage(error));
     } finally {
       setIsEvidenceUploading(false);
     }
@@ -3064,7 +3072,7 @@ export function ExpenseResolutionPage({
                 : withAttachment;
             });
           } catch (error) {
-            errors.push(`${file.name}: ${error instanceof Error ? error.message : "업로드 실패"}`);
+            errors.push(`${file.name}: ${getEvidenceUploadErrorMessage(error)}`);
           }
         }
       }
@@ -4507,7 +4515,11 @@ function ExpenseResolutionCreateModal({
               <div className="rounded-xl border border-[var(--color-tangerine)]/35 bg-[var(--color-sunset-soft)] px-5 py-4" role="alert">
                 <p className="font-bold text-[var(--color-tangerine)]">증빙자료를 처리하지 못했습니다.</p>
                 <p className="mt-1 text-sm text-[var(--color-stone)]">{evidenceUploadError}</p>
-                <button className="mt-3 rounded-full border border-[var(--color-tangerine)]/40 bg-white px-4 py-2 text-sm font-bold" onClick={() => evidenceFileInputRef.current?.click()} type="button">다른 파일 선택</button>
+                {evidenceUploadError.includes("새로고침") ? (
+                  <button className="mt-3 rounded-full border border-[var(--color-tangerine)]/40 bg-white px-4 py-2 text-sm font-bold" onClick={() => window.location.reload()} type="button">화면 새로고침</button>
+                ) : (
+                  <button className="mt-3 rounded-full border border-[var(--color-tangerine)]/40 bg-white px-4 py-2 text-sm font-bold" onClick={() => evidenceFileInputRef.current?.click()} type="button">다른 파일 선택</button>
+                )}
               </div>
             ) : null}
             {isEvidenceUploading ? (

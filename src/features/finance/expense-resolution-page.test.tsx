@@ -1,9 +1,14 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage } from "./expense-resolution-page";
 
 describe("ExpenseResolutionPage", () => {
+  it("turns stale Server Action errors into a refresh instruction", () => {
+    expect(getEvidenceUploadErrorMessage(new Error("An error occurred in the Server Components render. A digest property is included.")))
+      .toBe("화면이 새 버전으로 업데이트되었습니다. 새로고침한 후 증빙파일을 다시 선택해 주세요.");
+  });
+
   it("formats approval dates with month, day, and time", () => {
     expect(formatApprovalDateTime("2026-07-11")).toBe("07.11 00:00");
     expect(formatApprovalDateTime("2026-07-11 14:35")).toBe("07.11 14:35");
@@ -352,6 +357,20 @@ describe("ExpenseResolutionPage", () => {
     expect(await within(dialog).findByRole("alert")).toHaveTextContent("증빙자료를 처리하지 못했습니다");
     expect(within(dialog).getByRole("alert")).toHaveTextContent("PDF 업로드 요청이 실패했습니다");
     expect(within(dialog).getByRole("button", { name: "다른 파일 선택" })).toBeInTheDocument();
+  });
+
+  it("offers a refresh when an open form uses a stale Server Action", async () => {
+    vi.useRealTimers();
+    const uploadEvidence = vi.fn().mockRejectedValue(new Error("An error occurred in the Server Components render. A digest property is included."));
+    render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
+    fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "영수증.png", { type: "image/png" })] } });
+
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent("화면이 새 버전으로 업데이트되었습니다");
+    expect(within(dialog).getByRole("button", { name: "화면 새로고침" })).toBeInTheDocument();
+    expect(within(dialog).queryByText("Server Components render")).not.toBeInTheDocument();
   });
 
   it("shows the safe message returned by the evidence upload action", async () => {
