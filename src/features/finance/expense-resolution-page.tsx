@@ -6306,7 +6306,7 @@ function ExpenseResolutionPrintPreviewModal({
             <header className="expense-resolution-print-header grid grid-cols-[1fr_70mm] items-center gap-8 border-b-2 border-[var(--color-midnight-ink)] pb-5">
               <div className="min-w-0">
                 <p className="mb-2 inline-flex rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-[9px] font-bold text-[var(--color-stone)]">{getExpenseTimingLabel(expenseTiming)}</p>
-                <h3 className="text-[34px] font-black tracking-[0.16em]">지출결의서</h3>
+                <h3 className="text-[35px] font-black tracking-[0.16em]">지출결의서</h3>
                 <p className="mt-1.5 text-[15px] font-semibold text-[var(--color-stone)]">대방동 지역주택조합</p>
               </div>
               <ExpenseApprovalBox resolution={resolution} />
@@ -6498,7 +6498,7 @@ function ExpensePrintItemsTable({
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr className="expense-resolution-print-item-row" key={item.id}>
+            <tr className="expense-resolution-print-item-row text-[var(--color-stone)]" key={item.id}>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{item.expenseDate || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
               <td className="w-2/5 whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
@@ -6720,7 +6720,7 @@ function PrintCell({ className = "", label, value, valueClassName = "", wide }: 
   return (
     <div className={`grid min-h-[8mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
       <span className="flex items-center bg-[var(--color-cloud-veil)] px-2.5 py-2 text-[13px] font-bold text-[var(--color-stone)]">{label}</span>
-      <span className={`flex items-center whitespace-normal px-3 py-2 text-[13px] font-semibold ${valueClassName}`}>{value}</span>
+      <span className={`flex items-center whitespace-normal px-3 py-2 text-[13px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
     </div>
   );
 }
