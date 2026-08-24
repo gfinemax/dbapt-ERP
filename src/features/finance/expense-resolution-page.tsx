@@ -6489,10 +6489,18 @@ function ExpensePrintItemsTable({
   return (
     <div className="overflow-x-auto border border-[var(--color-soft-border)]">
       <table className="w-full table-fixed border-collapse text-[13px]">
+        <colgroup>
+          <col className="w-[14.5833%]" />
+          <col className="w-1/4" />
+          <col className="w-1/6" />
+          <col className="w-[14.5833%]" />
+          <col className="w-[14.5833%]" />
+          <col className="w-[14.5833%]" />
+        </colgroup>
         <thead className="bg-[var(--color-cloud-veil)]">
           <tr>
             {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
-              <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-left last:border-r-0" key={label}>{label}</th>
+              <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-center last:border-r-0" key={label}>{label}</th>
             ))}
           </tr>
         </thead>
@@ -6501,7 +6509,7 @@ function ExpensePrintItemsTable({
             <tr className="expense-resolution-print-item-row text-[var(--color-stone)]" key={item.id}>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{item.expenseDate || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
-              <td className="w-2/5 whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
+              <td className="whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
               <td className="border-b border-[var(--color-soft-border)] px-2 py-2 text-right font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>

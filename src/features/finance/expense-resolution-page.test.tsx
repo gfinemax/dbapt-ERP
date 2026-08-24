@@ -313,7 +313,12 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).getByText("건명")).toBeInTheDocument();
     const expenseItemsHeading = within(printDialog).getByRole("heading", { name: "세부 지출내역" });
     expect(expenseItemsHeading).toHaveClass("text-[15px]");
-    expect(expenseItemsHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
+    const expenseItemsTable = expenseItemsHeading.closest("section")?.querySelector("table");
+    expect(expenseItemsTable).toHaveClass("text-[13px]");
+    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("text-center");
+    expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
+    expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
+    expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
     expect(approvalHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
