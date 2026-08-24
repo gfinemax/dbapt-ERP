@@ -171,8 +171,8 @@
 }
 
 .expense-approval-vertical-label {
-  writing-mode: vertical-rl;
-  text-orientation: upright;
+  writing-mode: horizontal-tb;
+  text-orientation: mixed;
 }
 
 @page {
