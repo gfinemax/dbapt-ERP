@@ -6504,7 +6504,7 @@ function ExpensePrintItemsTable({
           <col className="w-[14.5833%]" />
           <col className="w-[14.5833%]" />
         </colgroup>
-        <thead className="bg-[var(--color-cloud-veil)]">
+        <thead className="border-y-2 border-solid border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)]">
           <tr>
             {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
               <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] text-center [border-bottom-style:dashed] last:border-r-0" key={label}>{label}</th>
@@ -6533,7 +6533,7 @@ function ExpensePrintItemsTable({
             </tr>
           ))}
         </tbody>
-        <tfoot className="bg-[var(--color-cloud-veil)] text-center font-bold">
+        <tfoot className="border-y-2 border-solid border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] text-center font-bold">
           <tr>
             <td className="px-2 py-[4.5px]" colSpan={3}>{totalLabel}</td>
             <td className="px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
