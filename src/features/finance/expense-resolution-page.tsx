@@ -6338,7 +6338,7 @@ function ExpenseResolutionPrintPreviewModal({
                   ))}
                 </div>
               ) : <div className="flex items-center justify-between gap-4">
-                <p className="text-[15px] font-bold">{printAmountSummary.primaryLabel}</p>
+                <p className="text-[17px] font-bold">{printAmountSummary.primaryLabel}</p>
                 <p className="text-[25px] font-black tracking-tight">{formatExpenseResolutionAmount(printAmountSummary.primaryValue)}</p>
               </div>}
             </section>
