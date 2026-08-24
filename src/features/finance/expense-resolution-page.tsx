@@ -6314,15 +6314,15 @@ function ExpenseResolutionPrintPreviewModal({
 
             <section className="expense-resolution-print-section mt-6">
               <h4 className="mb-2 text-[15px] font-bold">핵심 결의정보</h4>
-              <div className="grid grid-cols-2 border border-[var(--color-soft-border)]">
+              <div className="grid grid-cols-2 border-y-2 border-solid border-[#9ca3af]">
                 <PrintCell label="결의서번호" value={resolution.resolutionNo} />
-                <PrintCell label="작성일" value={resolution.createdAt} />
+                <PrintCell className="border-r-0" label="작성일" value={resolution.createdAt} />
                 {isBatchResolution ? <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} wide /> : null}
                 <PrintCell label="건명" value={getResolutionSubject(resolution)} wide />
                 <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
                 <PrintCell label="예산항목" value={resolution.budgetItem || "-"} wide />
                 <PrintCell label="작성자" value={getExpensePrintPersonName(resolution.author)} />
-                <PrintCell label="지출일" value={resolution.plannedPaymentDate || resolution.actualExpenseDate || "-"} />
+                <PrintCell className="border-r-0" label="지출일" value={resolution.plannedPaymentDate || resolution.actualExpenseDate || "-"} />
                 {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <PrintCell label="정산정보" value={`${resolution.settlementRecipient ?? resolution.advancePayer ?? "-"} · ${resolution.settlementStatus}`} wide /> : null}
               </div>
             </section>
@@ -6353,7 +6353,7 @@ function ExpenseResolutionPrintPreviewModal({
 
             <section className="expense-resolution-print-section mt-5">
               <h4 className="mb-2 text-[15px] font-bold">지출사유 및 증빙</h4>
-              <div className="border border-[var(--color-soft-border)]">
+              <div className="border-y-2 border-solid border-[#9ca3af]">
                 <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
                 <PrintCell label="증빙" value={evidenceText} wide />
               </div>
@@ -6743,7 +6743,7 @@ function PrintValidationWarningModal({
 
 function PrintCell({ className = "", label, value, valueClassName = "", wide }: { className?: string; label: string; value: ReactNode; valueClassName?: string; wide?: boolean }) {
   return (
-    <div className={`grid min-h-[8mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
+    <div className={`grid min-h-[8mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2 border-r-0" : ""} ${className}`}>
       <span className="flex items-center bg-[var(--color-cloud-veil)] px-2.5 py-2 text-[13px] font-bold text-[var(--color-stone)]">{label}</span>
       <span className={`flex items-center justify-center whitespace-normal px-3 py-2 text-center text-[13px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
     </div>

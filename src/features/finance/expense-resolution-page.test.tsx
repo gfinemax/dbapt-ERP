@@ -304,7 +304,10 @@ describe("ExpenseResolutionPage", () => {
 
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
     expect(within(printDialog).getByRole("heading", { name: "지출결의서" })).toHaveClass("text-[35px]");
-    expect(within(printDialog).getByRole("heading", { name: "핵심 결의정보" })).toHaveClass("text-[15px]");
+    const coreInfoHeading = within(printDialog).getByRole("heading", { name: "핵심 결의정보" });
+    expect(coreInfoHeading).toHaveClass("text-[15px]");
+    expect(coreInfoHeading.nextElementSibling).toHaveClass("border-y-2", "border-solid", "border-[#9ca3af]");
+    expect(coreInfoHeading.nextElementSibling).not.toHaveClass("border");
     expect(within(printDialog).queryByRole("heading", { name: "결의 및 지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "결의 기본정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "지출 정보" })).not.toBeInTheDocument();
@@ -342,7 +345,9 @@ describe("ExpenseResolutionPage", () => {
     expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveStyle({ display: "inline-flex", flexDirection: "column", gap: "10px" });
     expect(within(printDialog).getByText("총 결의금액")).toHaveClass("text-[17px]", "font-bold");
     expect(within(printDialog).getByText("총 결의금액")).not.toHaveClass("text-[var(--color-stone)]");
-    expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
+    const evidenceHeading = within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" });
+    expect(evidenceHeading.nextElementSibling).toHaveClass("border-y-2", "border-solid", "border-[#9ca3af]");
+    expect(evidenceHeading.nextElementSibling).not.toHaveClass("border");
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
     expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
     expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("text-[var(--color-stone)]");
