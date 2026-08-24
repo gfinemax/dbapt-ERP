@@ -6319,8 +6319,8 @@ function ExpenseResolutionPrintPreviewModal({
                 <PrintCell className="border-r-0" label="작성일" value={resolution.createdAt} />
                 {isBatchResolution ? <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} wide /> : null}
                 <PrintCell label="건명" value={getResolutionSubject(resolution)} wide />
-                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} wide />
-                <PrintCell label="예산항목" value={resolution.budgetItem || "-"} wide />
+                <PrintCell label="거래처" value={<span className={vendorMissing ? warningTextClass : ""}>{resolution.vendorName || "거래처 미입력"}</span>} />
+                <PrintCell className="border-r-0" label="예산항목" value={resolution.budgetItem || "-"} />
                 <PrintCell label="작성자" value={getExpensePrintPersonName(resolution.author)} />
                 <PrintCell className="border-r-0" label="지출일" value={resolution.plannedPaymentDate || resolution.actualExpenseDate || "-"} />
                 {resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? <PrintCell label="정산정보" value={`${resolution.settlementRecipient ?? resolution.advancePayer ?? "-"} · ${resolution.settlementStatus}`} wide /> : null}

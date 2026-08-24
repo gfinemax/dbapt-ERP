@@ -308,6 +308,10 @@ describe("ExpenseResolutionPage", () => {
     expect(coreInfoHeading).toHaveClass("text-[15px]");
     expect(coreInfoHeading.nextElementSibling).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(coreInfoHeading.nextElementSibling).not.toHaveClass("border");
+    const coreInfoTable = coreInfoHeading.nextElementSibling as HTMLElement;
+    expect(within(coreInfoTable).getByText("거래처").parentElement).not.toHaveClass("col-span-2");
+    expect(within(coreInfoTable).getByText("예산항목").parentElement).toHaveClass("border-r-0");
+    expect(within(coreInfoTable).getByText("예산항목").parentElement).not.toHaveClass("col-span-2");
     expect(within(printDialog).queryByRole("heading", { name: "결의 및 지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "결의 기본정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "지출 정보" })).not.toBeInTheDocument();
