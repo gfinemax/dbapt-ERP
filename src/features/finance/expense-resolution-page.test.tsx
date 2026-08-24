@@ -320,6 +320,8 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
+    expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(5);
+    expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(3);
     expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("text-center");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });

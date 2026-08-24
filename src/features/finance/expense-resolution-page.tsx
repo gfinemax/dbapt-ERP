@@ -6485,6 +6485,7 @@ function ExpensePrintItemsTable({
   const pageSupplyAmount = items.reduce((sum, item) => sum + toNumber(item.supplyAmount), 0);
   const pageVatAmount = items.reduce((sum, item) => sum + toNumber(item.vatAmount), 0);
   const pageTotalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
+  const emptyRowCount = Math.max(0, 5 - items.length);
 
   return (
     <div className="overflow-x-auto border border-[var(--color-soft-border)]">
@@ -6513,6 +6514,16 @@ function ExpensePrintItemsTable({
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
               <td className="border-b border-[var(--color-soft-border)] px-2 py-2 font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
+            </tr>
+          ))}
+          {Array.from({ length: emptyRowCount }, (_, rowIndex) => (
+            <tr aria-hidden="true" className="expense-resolution-print-empty-row text-center" key={`empty-${rowIndex}`}>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
             </tr>
           ))}
         </tbody>
