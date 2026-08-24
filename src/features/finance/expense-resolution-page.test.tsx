@@ -332,11 +332,11 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
     const approvalTable = approvalHeading.closest("section")?.querySelector("table");
-    expect(approvalTable).toHaveClass("ml-auto", "w-[228px]", "text-[13px]");
+    expect(approvalTable).toHaveClass("ml-auto", "w-[219px]", "text-[13px]");
     expect(approvalTable?.querySelectorAll("col")).toHaveLength(4);
-    expect(approvalTable?.querySelectorAll("col")[1]).toHaveClass("w-[70px]");
-    expect(approvalTable?.querySelectorAll("col")[2]).toHaveClass("w-[70px]");
-    expect(approvalTable?.querySelectorAll("col")[3]).toHaveClass("w-[70px]");
+    expect(approvalTable?.querySelectorAll("col")[1]).toHaveClass("w-[67px]");
+    expect(approvalTable?.querySelectorAll("col")[2]).toHaveClass("w-[67px]");
+    expect(approvalTable?.querySelectorAll("col")[3]).toHaveClass("w-[67px]");
     expect(within(approvalTable as HTMLTableElement).getAllByText("서명란")[0].closest("td")).toHaveClass("h-[52px]", "px-0.5", "py-0.5");
     expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveStyle({ display: "inline-flex", flexDirection: "column", gap: "10px" });
     expect(within(printDialog).getByText("총 결의금액")).toHaveClass("text-[17px]", "font-bold");

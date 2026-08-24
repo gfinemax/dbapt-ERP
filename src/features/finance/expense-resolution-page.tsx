@@ -6436,10 +6436,10 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
   return (
     <section className="expense-resolution-print-approval min-w-0 self-end">
       <h4 className="sr-only">결재선</h4>
-      <table className="ml-auto w-[228px] table-fixed border-collapse text-center text-[13px]">
+      <table className="ml-auto w-[219px] table-fixed border-collapse text-center text-[13px]">
         <colgroup>
           <col className="w-[18px]" />
-          {approvalLine.map((step) => <col className="w-[70px]" key={`approval-column-${step.order}`} />)}
+          {approvalLine.map((step) => <col className="w-[67px]" key={`approval-column-${step.order}`} />)}
         </colgroup>
         <tbody>
           <tr>
