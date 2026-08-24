@@ -6437,20 +6437,26 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
     <section className="expense-resolution-print-approval min-w-0 self-end">
       <h4 className="sr-only">결재선</h4>
       <table className="w-full table-fixed border-collapse text-center text-[13px]">
+        <colgroup>
+          <col className="w-[18px]" />
+          {approvalLine.map((step) => <col key={`approval-column-${step.order}`} style={{ width: "calc((100% - 18px) / 3)" }} />)}
+        </colgroup>
         <tbody>
           <tr>
-            <th className="expense-approval-vertical-label w-[18px] border border-[var(--color-midnight-ink)] font-black tracking-[0.1em]" rowSpan={2}>결재</th>
+            <th className="expense-approval-vertical-label w-[18px] border border-[var(--color-midnight-ink)] font-black" rowSpan={2}>
+              <span className="flex flex-col items-center gap-[10px]"><span>결</span><span>재</span></span>
+            </th>
             {approvalLine.map((step) => (
-              <th className="border border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] py-1 font-bold" key={`role-${step.order}`}>{step.role}</th>
+              <th className="border border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] py-0.5 font-bold" key={`role-${step.order}`}>{step.role}</th>
             ))}
           </tr>
           <tr>
             {approvalLine.map((step) => {
               const processedAt = formatApprovalDateTime(getApprovalProcessedAt(resolution, step));
               return (
-                <td className="h-14 border border-[var(--color-midnight-ink)] px-1 py-1" key={`approval-${step.order}`}>
+                <td className="h-[47px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.order}`}>
                   <span className="block font-bold">{step.approver}</span>
-                  <span className="mt-2 block whitespace-nowrap text-[var(--color-stone)]">{processedAt || "서명란"}</span>
+                  <span className="mt-1 block whitespace-nowrap text-[var(--color-stone)]">{processedAt || "서명란"}</span>
                 </td>
               );
             })}
