@@ -6488,7 +6488,7 @@ function ExpensePrintItemsTable({
   const emptyRowCount = Math.max(0, 5 - items.length);
 
   return (
-    <div className="overflow-x-auto border border-[var(--color-soft-border)]">
+    <div className="overflow-x-auto border-y border-[var(--color-soft-border)]">
       <table className="w-full table-fixed border-collapse text-[13px]">
         <colgroup>
           <col className="w-[14.5833%]" />
@@ -6501,38 +6501,38 @@ function ExpensePrintItemsTable({
         <thead className="bg-[var(--color-cloud-veil)]">
           <tr>
             {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
-              <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-center last:border-r-0" key={label}>{label}</th>
+              <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] text-center last:border-r-0" key={label}>{label}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {items.map((item) => (
             <tr className="expense-resolution-print-item-row text-center text-[var(--color-stone)]" key={item.id}>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{item.expenseDate || "-"}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
-              <td className="whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
-              <td className="border-b border-[var(--color-soft-border)] px-2 py-2 font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] whitespace-nowrap">{item.expenseDate || "-"}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] font-semibold">{item.vendorName || "거래처 미입력"}</td>
+              <td className="whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">{item.description || "-"}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
+              <td className="border-b border-[var(--color-soft-border)] px-2 py-[4.5px] font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             </tr>
           ))}
           {Array.from({ length: emptyRowCount }, (_, rowIndex) => (
             <tr aria-hidden="true" className="expense-resolution-print-empty-row text-center" key={`empty-${rowIndex}`}>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
-              <td className="border-b border-[var(--color-soft-border)] px-2 py-2">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
+              <td className="border-b border-[var(--color-soft-border)] px-2 py-[4.5px]">&nbsp;</td>
             </tr>
           ))}
         </tbody>
         <tfoot className="bg-[var(--color-cloud-veil)] text-center font-bold">
           <tr>
-            <td className="px-2 py-2" colSpan={3}>{totalLabel}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.vatAmount ?? pageVatAmount)}</td>
-            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.totalAmount ?? pageTotalAmount)}</td>
+            <td className="px-2 py-[4.5px]" colSpan={3}>{totalLabel}</td>
+            <td className="px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
+            <td className="px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(totals?.vatAmount ?? pageVatAmount)}</td>
+            <td className="px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(totals?.totalAmount ?? pageTotalAmount)}</td>
           </tr>
         </tfoot>
       </table>

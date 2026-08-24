@@ -315,7 +315,10 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsHeading).toHaveClass("text-[15px]");
     const expenseItemsTable = expenseItemsHeading.closest("section")?.querySelector("table");
     expect(expenseItemsTable).toHaveClass("text-[13px]");
+    expect(expenseItemsTable?.parentElement).toHaveClass("border-y");
+    expect(expenseItemsTable?.parentElement).not.toHaveClass("border");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("text-center");
+    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("py-[4.5px]");
     expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
