@@ -317,7 +317,8 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
     expect(approvalHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
-    expect(within(printDialog).getByText("총 결의금액")).toBeInTheDocument();
+    expect(within(printDialog).getByText("총 결의금액")).toHaveClass("text-[15px]", "font-bold");
+    expect(within(printDialog).getByText("총 결의금액")).not.toHaveClass("text-[var(--color-stone)]");
     expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
     expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
