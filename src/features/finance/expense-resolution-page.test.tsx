@@ -336,7 +336,7 @@ describe("ExpenseResolutionPage", () => {
     expect(approvalTable?.querySelectorAll("col")).toHaveLength(4);
     expect(approvalTable?.querySelectorAll("col")[1]).toHaveStyle({ width: "calc((100% - 18px) / 3)" });
     expect(within(approvalTable as HTMLTableElement).getAllByText("서명란")[0].closest("td")).toHaveClass("h-[47px]", "px-0.5", "py-0.5");
-    expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveClass("gap-[10px]");
+    expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveStyle({ display: "inline-flex", flexDirection: "column", gap: "10px" });
     expect(within(printDialog).getByText("총 결의금액")).toHaveClass("text-[17px]", "font-bold");
     expect(within(printDialog).getByText("총 결의금액")).not.toHaveClass("text-[var(--color-stone)]");
     expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();

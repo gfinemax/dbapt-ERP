@@ -6443,8 +6443,8 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
         </colgroup>
         <tbody>
           <tr>
-            <th className="expense-approval-vertical-label w-[18px] border border-[var(--color-midnight-ink)] font-black" rowSpan={2}>
-              <span className="flex flex-col items-center gap-[10px]"><span>결</span><span>재</span></span>
+            <th className="expense-approval-vertical-label w-[18px] border border-[var(--color-midnight-ink)] p-0 align-middle font-black" rowSpan={2}>
+              <span style={{ alignItems: "center", display: "inline-flex", flexDirection: "column", gap: "10px", lineHeight: 1 }}><span>결</span><span>재</span></span>
             </th>
             {approvalLine.map((step) => (
               <th className="border border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] py-0.5 font-bold" key={`role-${step.order}`}>{step.role}</th>
