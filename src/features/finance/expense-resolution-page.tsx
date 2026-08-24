@@ -6506,22 +6506,22 @@ function ExpensePrintItemsTable({
         </thead>
         <tbody>
           {items.map((item) => (
-            <tr className="expense-resolution-print-item-row text-[var(--color-stone)]" key={item.id}>
+            <tr className="expense-resolution-print-item-row text-center text-[var(--color-stone)]" key={item.id}>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{item.expenseDate || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 font-semibold">{item.vendorName || "거래처 미입력"}</td>
               <td className="whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-2 py-2">{item.description || "-"}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
-              <td className="border-b border-[var(--color-soft-border)] px-2 py-2 text-right font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
+              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
+              <td className="border-b border-[var(--color-soft-border)] px-2 py-2 font-bold whitespace-nowrap">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             </tr>
           ))}
         </tbody>
-        <tfoot className="bg-[var(--color-cloud-veil)] font-bold">
+        <tfoot className="bg-[var(--color-cloud-veil)] text-center font-bold">
           <tr>
-            <td className="px-2 py-2 text-right" colSpan={3}>{totalLabel}</td>
-            <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
-            <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.vatAmount ?? pageVatAmount)}</td>
-            <td className="px-2 py-2 text-right whitespace-nowrap">{formatExpenseResolutionAmount(totals?.totalAmount ?? pageTotalAmount)}</td>
+            <td className="px-2 py-2" colSpan={3}>{totalLabel}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.vatAmount ?? pageVatAmount)}</td>
+            <td className="px-2 py-2 whitespace-nowrap">{formatExpenseResolutionAmount(totals?.totalAmount ?? pageTotalAmount)}</td>
           </tr>
         </tfoot>
       </table>
@@ -6728,7 +6728,7 @@ function PrintCell({ className = "", label, value, valueClassName = "", wide }: 
   return (
     <div className={`grid min-h-[8mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2" : ""} ${className}`}>
       <span className="flex items-center bg-[var(--color-cloud-veil)] px-2.5 py-2 text-[13px] font-bold text-[var(--color-stone)]">{label}</span>
-      <span className={`flex items-center whitespace-normal px-3 py-2 text-[13px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
+      <span className={`flex items-center justify-center whitespace-normal px-3 py-2 text-center text-[13px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
     </div>
   );
 }

@@ -319,6 +319,8 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
+    expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
+    expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("text-center");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
     expect(approvalHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
@@ -328,6 +330,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
     expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
     expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("text-[var(--color-stone)]");
+    expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("justify-center", "text-center");
     expect(within(printDialog).getByText("작성자").parentElement).not.toHaveTextContent("사무장");
     expect(within(printDialog).queryByRole("heading", { name: "증빙 요약" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("작성방식")).not.toBeInTheDocument();
