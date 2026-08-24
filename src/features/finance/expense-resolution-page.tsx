@@ -6436,10 +6436,10 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
   return (
     <section className="expense-resolution-print-approval min-w-0 self-end">
       <h4 className="sr-only">결재선</h4>
-      <table className="w-full table-fixed border-collapse text-center text-[13px]">
+      <table className="ml-auto w-[228px] table-fixed border-collapse text-center text-[13px]">
         <colgroup>
           <col className="w-[18px]" />
-          {approvalLine.map((step) => <col key={`approval-column-${step.order}`} style={{ width: "calc((100% - 18px) / 3)" }} />)}
+          {approvalLine.map((step) => <col className="w-[70px]" key={`approval-column-${step.order}`} />)}
         </colgroup>
         <tbody>
           <tr>
@@ -6454,7 +6454,7 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
             {approvalLine.map((step) => {
               const processedAt = formatApprovalDateTime(getApprovalProcessedAt(resolution, step));
               return (
-                <td className="h-[47px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.order}`}>
+                <td className="h-[52px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.order}`}>
                   <span className="block font-bold">{step.approver}</span>
                   <span className="mt-1 block whitespace-nowrap text-[var(--color-stone)]">{processedAt || "서명란"}</span>
                 </td>
