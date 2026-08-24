@@ -6314,7 +6314,7 @@ function ExpenseResolutionPrintPreviewModal({
 
             <section className="expense-resolution-print-section mt-6">
               <h4 className="mb-2 text-[15px] font-bold">핵심 결의정보</h4>
-              <div className="grid grid-cols-2 border-y-2 border-solid border-[#9ca3af]">
+              <div className="grid grid-cols-2 border-y border-solid border-[#9ca3af]">
                 <PrintCell label="결의서번호" value={resolution.resolutionNo} />
                 <PrintCell className="border-r-0" label="작성일" value={resolution.createdAt} />
                 {isBatchResolution ? <PrintCell label="프로젝트명" value={<span className={resolution.projectName.trim() ? "" : warningTextClass}>{resolution.projectName.trim() || "프로젝트 미입력"}</span>} wide /> : null}
@@ -6353,7 +6353,7 @@ function ExpenseResolutionPrintPreviewModal({
 
             <section className="expense-resolution-print-section mt-5">
               <h4 className="mb-2 text-[15px] font-bold">지출사유 및 증빙</h4>
-              <div className="border-y-2 border-solid border-[#9ca3af]">
+              <div className="border-y border-solid border-[#9ca3af]">
                 <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
                 <PrintCell label="증빙" value={evidenceText} wide />
               </div>
@@ -6504,7 +6504,7 @@ function ExpensePrintItemsTable({
           <col className="w-[14.5833%]" />
           <col className="w-[14.5833%]" />
         </colgroup>
-        <thead className="border-y-2 border-solid border-[#9ca3af] bg-[var(--color-cloud-veil)]">
+        <thead className="border-y border-solid border-[#9ca3af] bg-[var(--color-cloud-veil)]">
           <tr>
             {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
               <th className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] text-center [border-bottom-style:dashed] last:border-r-0" key={label}>{label}</th>
@@ -6533,7 +6533,7 @@ function ExpensePrintItemsTable({
             </tr>
           ))}
         </tbody>
-        <tfoot className="border-y-2 border-solid border-[#9ca3af] bg-[var(--color-cloud-veil)] text-center font-bold">
+        <tfoot className="border-y border-solid border-[#9ca3af] bg-[var(--color-cloud-veil)] text-center font-bold">
           <tr>
             <td className="px-2 py-[4.5px]" colSpan={3}>{totalLabel}</td>
             <td className="px-2 py-[4.5px] whitespace-nowrap">{formatExpenseResolutionAmount(totals?.supplyAmount ?? pageSupplyAmount)}</td>
