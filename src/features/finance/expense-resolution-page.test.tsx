@@ -317,14 +317,17 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsTable).toHaveClass("text-[13px]");
     expect(expenseItemsTable?.parentElement).toHaveClass("border-y");
     expect(expenseItemsTable?.parentElement).not.toHaveClass("border");
+    expect(expenseItemsTable?.parentElement).toHaveClass("[border-bottom-style:dashed]", "[border-top-style:dashed]");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("text-center");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("py-[4.5px]");
+    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("[border-bottom-style:dashed]");
     expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
     expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(5);
     expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(3);
+    expect(expenseItemsTable?.querySelector("tbody tr[aria-hidden='true'] td")).toHaveClass("[border-bottom-style:dashed]");
     expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("text-center");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
     const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
