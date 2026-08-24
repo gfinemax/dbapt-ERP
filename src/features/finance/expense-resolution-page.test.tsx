@@ -303,19 +303,23 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "보관용 출력 전 확인" })).getByRole("button", { name: "그래도 출력하기" }));
 
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
-    expect(within(printDialog).getByRole("heading", { name: "핵심 결의정보" })).toBeInTheDocument();
+    expect(within(printDialog).getByRole("heading", { name: "핵심 결의정보" })).toHaveClass("text-[15px]");
     expect(within(printDialog).queryByRole("heading", { name: "결의 및 지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "결의 기본정보" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByRole("heading", { name: "지출 정보" })).not.toBeInTheDocument();
     expect(within(printDialog).getByText("프로젝트명")).toBeInTheDocument();
     expect(within(printDialog).getAllByText("사무국 비품 구입").length).toBeGreaterThan(0);
     expect(within(printDialog).getByText("건명")).toBeInTheDocument();
-    expect(within(printDialog).getByRole("heading", { name: "세부 지출내역" })).toBeInTheDocument();
+    const expenseItemsHeading = within(printDialog).getByRole("heading", { name: "세부 지출내역" });
+    expect(expenseItemsHeading).toHaveClass("text-[15px]");
+    expect(expenseItemsHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();
-    expect(within(printDialog).getByRole("heading", { name: "결재선" })).toBeInTheDocument();
+    const approvalHeading = within(printDialog).getByRole("heading", { name: "결재선" });
+    expect(approvalHeading.closest("section")?.querySelector("table")).toHaveClass("text-[13px]");
     expect(within(printDialog).getByText("총 결의금액")).toBeInTheDocument();
     expect(within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
+    expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
     expect(within(printDialog).getByText("작성자").parentElement).not.toHaveTextContent("사무장");
     expect(within(printDialog).queryByRole("heading", { name: "증빙 요약" })).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("작성방식")).not.toBeInTheDocument();
