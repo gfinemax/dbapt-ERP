@@ -5,6 +5,8 @@ import { listQuickExpenseRecords } from "@/features/finance/quick-expense-record
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { importCorporateCardTransactionsAction, linkQuickExpenseCardAction, saveQuickExpenseRecordAction } from "./actions";
 
+export const dynamic = "force-dynamic";
+
 export default async function QuickExpensesRoute() {
   const [bankResult, cardResult, recordResult] = await Promise.allSettled([listUnresolvedWithdrawalTransactions(), listUnresolvedCorporateCardTransactions(), listQuickExpenseRecords()]);
   return <QuickExpensePage importCardTransactions={hasSupabaseSecretConfig() ? importCorporateCardTransactionsAction : undefined} linkCardTransaction={hasSupabaseSecretConfig() ? linkQuickExpenseCardAction : undefined} initialBankTransactions={bankResult.status === "fulfilled" ? bankResult.value : []} initialCardTransactions={cardResult.status === "fulfilled" ? cardResult.value : []} initialRecords={recordResult.status === "fulfilled" ? recordResult.value : []} persistRecord={hasSupabaseSecretConfig() ? saveQuickExpenseRecordAction : undefined} />;
