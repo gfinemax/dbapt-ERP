@@ -364,7 +364,8 @@ type ResolutionFormState = {
   executionMethod: ExecutionMethod;
   expenseBurdenType: ExpenseBurdenType;
   inputMethod: ExpenseInputMethod;
-  quickEntryMode: "NONE" | "CORPORATE_CARD";
+  quickEntryMode: "NONE" | "BUDGET_DIRECT";
+  quickPaymentMethod: "CORPORATE_CARD" | "BANK_TRANSFER" | "AUTO_DEBIT" | "CASH" | "PERSONAL_PREPAID";
   quickExpenseCategory: "택시" | "주차" | "통행료" | "식대" | "소모품" | "기타";
   memo: string;
   operationExpenseDetail: string;
@@ -1998,7 +1999,16 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     executionMethod: resolution.executionMethod ?? "VENDOR_DIRECT",
     expenseBurdenType: resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
     inputMethod: normalizeInputMethod(resolution),
-    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId ? "CORPORATE_CARD" : "NONE",
+    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId || resolution.bankTransactionId ? "BUDGET_DIRECT" : "NONE",
+    quickPaymentMethod: resolution.cardReconciliationStatus || resolution.cardTransactionId
+      ? "CORPORATE_CARD"
+      : resolution.bankTransactionId
+        ? "BANK_TRANSFER"
+        : resolution.expenseKind === "PERSONAL_REIMBURSEMENT"
+          ? "PERSONAL_PREPAID"
+          : resolution.expenseBurdenType === "CASH"
+            ? "CASH"
+            : "BANK_TRANSFER",
     quickExpenseCategory: resolution.subject.includes("택시") ? "택시" : resolution.subject.includes("주차") ? "주차" : resolution.subject.includes("통행료") ? "통행료" : resolution.subject.includes("식대") ? "식대" : resolution.subject.includes("소모품") ? "소모품" : "기타",
     memo: resolution.memo,
     operationExpenseDetail: resolution.operationExpenseDetail,
@@ -2067,6 +2077,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     expenseBurdenType: "EMPLOYEE_PREPAID",
     inputMethod: "MANUAL",
     quickEntryMode: "NONE",
+    quickPaymentMethod: "CORPORATE_CARD",
     quickExpenseCategory: "택시",
     expenseType: "운영비",
     operationExpenseDetail: "기타",
@@ -2842,7 +2853,7 @@ export function ExpenseResolutionPage({
         return applyPaymentTarget(nextState, value);
       }
 
-      if (key === "quickEntryMode" && value === "CORPORATE_CARD") {
+      if (key === "quickEntryMode" && value === "BUDGET_DIRECT") {
         const category = current.quickExpenseCategory || "택시";
         const subject = current.subject.trim() || `${currentDateLabel(current.actualExpenseDate)} 업무용 ${category}비`;
         return {
@@ -2864,6 +2875,25 @@ export function ExpenseResolutionPage({
           subject,
           vendorName: current.vendorName.trim() || "법인카드 사용처 미확인",
         };
+      }
+
+      if (key === "quickPaymentMethod" && typeof value === "string") {
+        const common = {
+          ...nextState,
+          approvalSkipReason: value === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출",
+          bankTransactionId: value === "BANK_TRANSFER" || value === "AUTO_DEBIT" ? current.bankTransactionId : "",
+          cardReconciliationStatus: value === "CORPORATE_CARD" ? (current.cardTransactionId ? "MATCHED" as const : "PENDING" as const) : "PENDING" as const,
+          cardTransactionId: value === "CORPORATE_CARD" ? current.cardTransactionId : "",
+          creationSource: "DIRECT" as const,
+          expenseTiming: "REIMBURSEMENT" as const,
+          inputMethod: "MANUAL" as const,
+          paymentFlowType: "사후정산" as const,
+          quickEntryMode: "BUDGET_DIRECT" as const,
+        };
+        if (value === "CORPORATE_CARD") return { ...common, evidenceKind: "CARD_RECEIPT", evidenceStatus: "QUALIFIED", executionMethod: "CORPORATE_CARD", expenseBurdenType: "CORPORATE_CARD", expenseKind: "GENERAL" };
+        if (value === "BANK_TRANSFER" || value === "AUTO_DEBIT") return { ...common, evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", executionMethod: "AUTHORIZATION_ONLY", expenseBurdenType: "ORGANIZATION_PAID", expenseKind: "BANK_POST_APPROVAL", reason: current.reason.trim() || (value === "AUTO_DEBIT" ? "승인 예산 내 정기 자동이체 지출" : "승인 예산 내 계좌이체 지출") };
+        if (value === "PERSONAL_PREPAID") return { ...common, evidenceKind: "SIMPLE_RECEIPT", evidenceStatus: "GENERAL", executionMethod: "EMPLOYEE_ADVANCE", expenseBurdenType: "EMPLOYEE_PREPAID", expenseKind: "PERSONAL_REIMBURSEMENT", reason: current.reason.trim() || "승인 예산 내 개인 선결제 비용 정산" };
+        return { ...common, evidenceKind: "CASH_RECEIPT", evidenceStatus: "QUALIFIED", executionMethod: "AUTHORIZATION_ONLY", expenseBurdenType: "CASH", expenseKind: "GENERAL", reason: current.reason.trim() || "승인 예산 내 현금 지출" };
       }
 
       if (key === "cardTransactionId" && typeof value === "string") {
@@ -2889,7 +2919,8 @@ export function ExpenseResolutionPage({
           missingEvidenceReason: `공용 법인카드 승인내역으로 대체${transaction.approvalNo ? ` · 승인번호 ${transaction.approvalNo}` : ""}`,
           operationExpenseDetail: isTransport ? "여비교통비" : current.operationExpenseDetail,
           plannedPaymentDate: expenseDate,
-          quickEntryMode: "CORPORATE_CARD",
+          quickEntryMode: "BUDGET_DIRECT",
+          quickPaymentMethod: "CORPORATE_CARD",
           quickExpenseCategory: category,
           reason: current.reason.trim() || `업무 목적 ${category} 비용 · ${transaction.cardName} 승인내역`,
           singleItems: [createSingleExpenseItem({ itemName: `${transaction.merchantName} ${category}비`, taxCategory: "NO_VAT", unitPrice: amount })],
@@ -2898,7 +2929,7 @@ export function ExpenseResolutionPage({
         };
       }
 
-      if (key === "quickExpenseCategory" && typeof value === "string" && current.quickEntryMode === "CORPORATE_CARD") {
+      if (key === "quickExpenseCategory" && typeof value === "string" && current.quickEntryMode === "BUDGET_DIRECT" && current.quickPaymentMethod === "CORPORATE_CARD") {
         const isTransport = value === "택시" || value === "주차" || value === "통행료";
         return {
           ...nextState,
@@ -3539,7 +3570,7 @@ export function ExpenseResolutionPage({
       bankTransactionId: formState.bankTransactionId || undefined,
       cardTransactionId: formState.cardTransactionId || undefined,
       cardLastFour: formState.cardLastFour || undefined,
-      cardReconciliationStatus: formState.cardTransactionId ? "MATCHED" : formState.quickEntryMode === "CORPORATE_CARD" ? "PENDING" : undefined,
+      cardReconciliationStatus: formState.cardTransactionId ? "MATCHED" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? "PENDING" : undefined,
       settlementRecipient: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementRecipient || formState.advancePayer : undefined,
       settlementCompletedAt: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementCompletedAt || undefined : undefined,
       settlementAmount: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? totalPaymentAmount : undefined,
@@ -4759,8 +4790,8 @@ function ExpenseResolutionCreateModal({
               <QuestionChoiceGroup
                 label="지출내역을 어떻게 등록하시겠습니까?"
                 onChange={(value) => {
-                  if (value === "CORPORATE_CARD_SIMPLE") {
-                    onChange("quickEntryMode", "CORPORATE_CARD");
+                  if (value === "BUDGET_DIRECT_SIMPLE") {
+                    onChange("quickEntryMode", "BUDGET_DIRECT");
                     return;
                   }
                   onChange("quickEntryMode", "NONE");
@@ -4771,17 +4802,30 @@ function ExpenseResolutionCreateModal({
                   { label: "직접 입력", value: "MANUAL" },
                   ...(isBatch ? [{ label: "엑셀 일괄등록", value: "EXCEL" }] : []),
                   { label: "증빙자료 자동입력", value: "EVIDENCE_OCR" },
-                  ...(!isBatch ? [{ description: "택시·주차 등 공용 법인카드 사용 건을 최소 항목으로 작성합니다.", label: "법인카드 간편입력", value: "CORPORATE_CARD_SIMPLE" }] : []),
+                  ...(!isBatch ? [{ description: "법인카드·계좌이체·자동이체·현금·개인 선결제를 예산 안에서 간단히 처리합니다.", label: "예산 내 간편지출", value: "BUDGET_DIRECT_SIMPLE" }] : []),
                 ]}
-                value={formState.quickEntryMode === "CORPORATE_CARD" ? "CORPORATE_CARD_SIMPLE" : formState.inputMethod}
+                value={formState.quickEntryMode === "BUDGET_DIRECT" ? "BUDGET_DIRECT_SIMPLE" : formState.inputMethod}
               />
             </section>
-            {formState.quickEntryMode === "CORPORATE_CARD" ? (
+            {formState.quickEntryMode === "BUDGET_DIRECT" ? (
               <section className="grid gap-4 rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 p-5">
                 <div>
-                  <h3 className="font-bold text-[var(--color-deep-cobalt)]">공용 법인카드 간편결의</h3>
-                  <p className="mt-1 text-sm text-[var(--color-stone)]">미결의 카드 승인내역을 고르면 날짜·금액·가맹점과 계정과목을 자동으로 채웁니다.</p>
+                  <h3 className="font-bold text-[var(--color-deep-cobalt)]">예산 내 간편지출</h3>
+                  <p className="mt-1 text-sm text-[var(--color-stone)]">사전 기안 없이 승인된 예산 범위의 일상·정기 지출을 실제 거래와 연결해 기록합니다.</p>
                 </div>
+                <QuestionChoiceGroup
+                  label="어떻게 결제했나요?"
+                  onChange={(value) => onChange("quickPaymentMethod", value as ResolutionFormState["quickPaymentMethod"])}
+                  options={[
+                    { label: "법인카드", value: "CORPORATE_CARD" },
+                    { label: "계좌이체", value: "BANK_TRANSFER" },
+                    { label: "자동이체", value: "AUTO_DEBIT" },
+                    { label: "현금", value: "CASH" },
+                    { label: "개인 선결제", value: "PERSONAL_PREPAID" },
+                  ]}
+                  value={formState.quickPaymentMethod}
+                />
+                {formState.quickPaymentMethod === "CORPORATE_CARD" ? <>
                 <label className="grid gap-2 text-sm font-bold">
                   <span>법인카드 승인내역</span>
                   <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
@@ -4803,6 +4847,11 @@ function ExpenseResolutionCreateModal({
                   value={formState.quickExpenseCategory}
                 />
                 <p className="rounded-lg bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)]">사후 지출 · 공용 법인카드 · {formState.quickExpenseCategory === "택시" || formState.quickExpenseCategory === "주차" || formState.quickExpenseCategory === "통행료" ? "여비교통비" : "계정과목 직접 확인"}으로 설정했습니다.</p>
+                </> : null}
+                {formState.quickPaymentMethod === "BANK_TRANSFER" || formState.quickPaymentMethod === "AUTO_DEBIT" ? <label className="grid gap-2 text-sm font-bold"><span>통장 출금거래</span><select aria-label="간편지출 통장 출금거래" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => { const transaction = bankTransactionCandidates.find((item) => item.id === event.target.value); onChange("bankTransactionId", event.target.value); if (transaction) { const amount = String(transaction.withdrawalAmount); onChange("actualExpenseDate", transaction.transactedAt.slice(0, 10)); onChange("vendorName", transaction.counterparty || transaction.description); onChange("reason", transaction.description); onChange("singleItems", [createSingleExpenseItem({ itemName: transaction.description, quantity: "1", taxCategory: "NO_VAT", unitPrice: amount })]); onChange("accountAllocations", [createAccountAllocation({ amount, description: transaction.description })]); } }} value={formState.bankTransactionId}><option value="">미결의 출금거래 선택</option>{bankTransactionCandidates.map((transaction) => <option disabled={Boolean(transaction.linkedResolutionId)} key={transaction.id} value={transaction.id}>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</option>)}</select><span className="text-xs font-semibold text-[var(--color-stone)]">{formState.quickPaymentMethod === "AUTO_DEBIT" ? "정기·반복 지출로 기록하고 선택한 출금내역과 중복되지 않게 연결합니다." : "선택한 출금내역의 날짜·금액·거래처를 사용합니다."}</span></label> : null}
+                {formState.quickPaymentMethod === "PERSONAL_PREPAID" ? <div className="grid gap-3 md:grid-cols-2"><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /></div> : null}
+                {formState.quickPaymentMethod === "CASH" ? <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">현금영수증 또는 적격증빙을 첨부해야 하며, 관리자 설정 한도와 직접지출 정책을 그대로 적용합니다.</p> : null}
+                {formState.quickPaymentMethod !== "CORPORATE_CARD" ? <p className="rounded-lg bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)]">사용내용과 예산항목을 입력하면 예산 차감·처리자·증빙·수정이력을 간편 지출기록으로 남깁니다.</p> : null}
               </section>
             ) : null}
             {formState.inputMethod === "EVIDENCE_OCR" ? (
@@ -5187,7 +5236,7 @@ function ExpenseResolutionCreateModal({
             ) : null}
 
             {currentStep === 2 ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
-              {formState.quickEntryMode === "CORPORATE_CARD" ? (
+              {formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? (
                 <fieldset className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 md:col-span-3">
                   <legend className="px-1 text-sm font-bold">영수증 또는 대체증빙 상태</legend>
                   <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -5461,11 +5510,11 @@ function ExpenseResolutionCreateModal({
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
+            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId} onClick={onRequestApproval}>{formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>

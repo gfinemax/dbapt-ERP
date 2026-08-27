@@ -226,8 +226,9 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "법인카드 간편입력" }));
-    expect(within(dialog).getByText("공용 법인카드 간편결의")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
+    expect(within(dialog).getByRole("heading", { name: "예산 내 간편지출" })).toBeInTheDocument();
+    expect(within(dialog).getByText("어떻게 결제했나요?")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "택시" })).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).getByLabelText("비용부담 유형")).toHaveValue("CORPORATE_CARD");
     expect(within(dialog).getByRole("button", { name: "카드 사용 임시등록" })).toBeInTheDocument();
@@ -253,7 +254,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "법인카드 간편입력" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
     fireEvent.change(within(dialog).getByLabelText("법인카드 승인내역"), { target: { value: "card-tx-1" } });
 
     expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-07-02");
@@ -264,6 +265,31 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("카카오T 택시비");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(18500);
     expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
+  });
+
+  it("connects a bank withdrawal through the budget-direct quick expense flow", () => {
+    render(<ExpenseResolutionPage initialBankTransactions={[{
+      counterparty: "KT",
+      description: "사무실 인터넷 요금",
+      id: "bank-tx-1",
+      resolutionStatus: "UNRESOLVED",
+      transactedAt: "2026-08-27T09:00:00+09:00",
+      withdrawalAmount: 55000,
+    }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "계좌이체" }));
+    fireEvent.change(within(dialog).getByLabelText("간편지출 통장 출금거래"), { target: { value: "bank-tx-1" } });
+
+    expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-08-27");
+    expect(within(dialog).getByLabelText("거래처명")).toHaveValue("KT");
+    expect(within(dialog).getByText("선택한 출금내역의 날짜·금액·거래처를 사용합니다.")).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+    expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("사무실 인터넷 요금");
+    expect(within(dialog).getByLabelText("단가 1")).toHaveValue(55000);
   });
 
   it("shows fields that match the selected expense timing", () => {
