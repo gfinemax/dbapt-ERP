@@ -47,4 +47,21 @@ describe("QuickExpensePage", () => {
     expect(screen.getByRole("button", { name: "사용내용 등록" })).toBeEnabled();
     expect(screen.getByText(/입력 필요: 실제 거래, 금액/)).toBeInTheDocument();
   });
+
+  it("links a pending usage record to a matching card transaction", async () => {
+    const linkCardTransaction = vi.fn(async () => ({ recordStatus: "RECORDED" as const }));
+    render(<QuickExpensePage
+      initialBankTransactions={[]}
+      initialCardTransactions={[{ amount: 15800, approvedAt: "2026-08-27T12:10:00+09:00", cardLastFour: "5521", cardName: "KB법인", id: "card-1", merchantName: "카카오T" }]}
+      initialRecords={[{ amount: 15800, approvalSkipReason: "승인 예산 내 일상 지출", budgetItem: "운영비 > 여비교통비", counterparty: "카카오T", createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED", directExpenseReasons: ["카드내역 연결 필요"], evidenceStatus: "NONE", id: "quick-card-1", occurredAt: "2026-08-27T12:00:00+09:00", paymentMethod: "CORPORATE_CARD", recordedByLabel: "오학동 사무장", recordStatus: "SOURCE_PENDING", sourceType: "MANUAL", usageDescription: "업무협의 후 복귀 택시비" }]}
+      linkCardTransaction={linkCardTransaction}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "카드내역 연결대기" }));
+    fireEvent.click(screen.getByRole("button", { name: /카카오T.*연결/ }));
+
+    await waitFor(() => expect(linkCardTransaction).toHaveBeenCalledWith({ cardTransactionId: "card-1", recordId: "quick-card-1" }));
+    expect(await screen.findByText("카드 이용내역을 연결하고 예산 내 간편처리를 완료했어.")).toBeInTheDocument();
+    expect(screen.getByText("간편처리 완료")).toBeInTheDocument();
+  });
 });

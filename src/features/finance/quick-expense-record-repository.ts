@@ -54,6 +54,14 @@ export async function listQuickExpenseRecords(): Promise<QuickExpenseRecord[]> {
   return ((data ?? []) as QuickExpenseRecordRow[]).map(mapQuickExpenseRecord);
 }
 
+export async function getQuickExpenseRecord(recordId: string): Promise<QuickExpenseRecord | null> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+  const { data, error } = await supabase.schema("finance").from("quick_expense_records").select(selectFields).eq("id", recordId).maybeSingle();
+  if (error) throw new Error(`간편지출 기록 조회 실패: ${error.message}`);
+  return data ? mapQuickExpenseRecord(data as QuickExpenseRecordRow) : null;
+}
+
 export async function getQuickExpenseBudgetAvailability(organizationId: string, budgetItem: string, occurredAt: string) {
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
