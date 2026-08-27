@@ -169,15 +169,10 @@ export function FinanceListPage() {
           </div>
 
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <h2 className="text-lg font-bold">조합 회계 처리 사례</h2>
+            <h2 className="text-lg font-bold">회계 처리 안내</h2>
             <p className="mt-3 text-sm leading-6 text-[var(--color-stone)]">
-              법무법인 ○○에 동작구청 대응 및 업무대행계약 검토 관련 법무비 3,300,000원(부가세 포함)을 지급하고 세금계산서를 첨부했습니다.
+              실제 전표를 등록하면 거래처, 금액, 증빙과 은행·카드 매칭 상태가 이 화면에 표시돼.
             </p>
-            <dl className="mt-4 grid gap-3 text-sm">
-              <InfoLine label="증빙" value="세금계산서" />
-              <InfoLine label="거래처" value="법무법인 ○○" />
-              <InfoLine label="금액" value="3,300,000원" />
-            </dl>
           </div>
         </section>
 
@@ -265,6 +260,7 @@ export function FinanceListPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-[var(--color-soft-border)]">
+                    {!financeTransactions.length ? <tr><td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={13}>등록된 실제 전표가 없어.</td></tr> : null}
                     {financeTransactions.map((transaction) => (
                       <tr className="bg-white/70" key={transaction.id}>
                         <td className="px-4 py-4 text-[var(--color-stone)]">{transaction.date}</td>
@@ -311,6 +307,7 @@ export function FinanceListPage() {
               </Button>
             </div>
             <div className="mt-5 space-y-3">
+              {!bankCardConnections.length ? <p className="rounded-xl border border-dashed border-[var(--color-soft-border)] p-4 text-sm text-[var(--color-stone)]">연결된 실제 은행·카드 정보가 없어.</p> : null}
               {bankCardConnections.map((connection) => (
                 <div className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4" key={connection.id}>
                   <div className="flex items-start justify-between gap-3">

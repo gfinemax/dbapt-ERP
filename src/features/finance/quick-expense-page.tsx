@@ -11,27 +11,11 @@ import { parseCorporateCardTransactionText } from "./corporate-card-transaction-
 import { readBankTransactionFile } from "./bank-transaction-file";
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
-const budgetSuggestions = [
-  "복리후생비",
-  "업무추진비",
-  "회의비>이사회비",
-  "회의비>감사비",
-  "일반운영비>지급임차료",
-  "일반운영비>도서인쇄비",
-  "일반운영비>소모품비",
-  "일반운영비>수선비",
-  "제세공과금>통신비",
-  "제세공과금>여비교통비",
-  "제세공과금>수도광열비",
-  "제세공과금>지급수수료",
-  "기타운영비",
-  "예비비",
-];
-
-export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialCardTransactions, initialRecords, persistRecord }: {
+export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialCardTransactions, initialRecords, persistRecord }: {
   importCardTransactions?: (rows: CorporateCardTransactionImportRow[]) => Promise<unknown>;
   linkCardTransaction?: (input: { recordId: string; cardTransactionId: string }) => Promise<{ recordStatus: "RECORDED" | "NEEDS_RESOLUTION" }>;
   initialBankTransactions: BankTransactionResolutionCandidate[];
+  initialBudgetItems?: string[];
   initialCardTransactions: CorporateCardTransactionCandidate[];
   initialRecords: QuickExpenseRecord[];
   persistRecord?: (input: QuickExpenseRecordInput) => Promise<QuickExpenseRecord>;
@@ -123,7 +107,7 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
       {isManualCard ? <div className="grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-bold"><span>카드 사용일</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualOccurredAt(event.target.value)} type="date" value={manualOccurredAt} /></label><label className="grid gap-2 text-sm font-bold"><span>카드 사용금액</span><input className="h-11 rounded-lg border px-3" inputMode="numeric" onChange={(event) => setManualAmount(event.target.value.replace(/\D/g, ""))} value={manualAmount} /></label><label className="grid gap-2 text-sm font-bold"><span>가맹점·사용처</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualCounterparty(event.target.value)} value={manualCounterparty} /></label></div> : null}
       {!isBank && !isCard ? <div className="grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-bold"><span>금액</span><input className="h-11 rounded-lg border px-3" inputMode="numeric" onChange={(event) => setManualAmount(event.target.value.replace(/\D/g, ""))} value={manualAmount} /></label><label className="grid gap-2 text-sm font-bold"><span>거래처·지급대상</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualCounterparty(event.target.value)} value={manualCounterparty} /></label></div> : null}
       <label className="grid gap-2 text-sm font-bold"><span>사용내용</span><textarea className="min-h-24 rounded-lg border p-3" onChange={(event) => setUsageDescription(event.target.value)} placeholder="예: 조합 사무실 인터넷 요금" value={usageDescription} /></label>
-      <label className="grid gap-2 text-sm font-bold"><span>예산항목</span><input className="h-11 rounded-lg border px-3" list="quick-expense-budget-items" onChange={(event) => setBudgetItem(event.target.value)} placeholder="예산항목 선택 또는 입력" value={budgetItem} /><datalist id="quick-expense-budget-items">{budgetSuggestions.map((item) => <option key={item} value={item} />)}</datalist></label>
+      <label className="grid gap-2 text-sm font-bold"><span>예산항목</span><input className="h-11 rounded-lg border px-3" list="quick-expense-budget-items" onChange={(event) => setBudgetItem(event.target.value)} placeholder="예산항목 선택 또는 입력" value={budgetItem} /><datalist id="quick-expense-budget-items">{initialBudgetItems.map((item) => <option key={item} value={item} />)}</datalist></label>
       <div className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold">{amount > 0 ? `${counterparty || "거래처 미입력"} · ${amount.toLocaleString("ko-KR")}원` : "거래와 사용내용을 입력해줘."}</p><p className={`mt-1 text-xs font-semibold ${missingFields.length ? "text-[var(--color-tangerine)]" : "text-[var(--color-green-ink)]"}`}>{missingFields.length ? `입력 필요: ${missingFields.join(", ")}` : isManualCard ? "등록 후 카드내역 연결대기로 보관됩니다." : "등록할 수 있습니다."}</p></div><Button className="min-w-36 bg-[var(--color-pressed-charcoal)] text-white" disabled={isPending} onClick={submit}>{isPending ? "저장 중" : isManualCard ? "사용내용 임시등록" : "사용내용 등록"}</Button></div>
       {message ? <p aria-live="polite" className="rounded-lg bg-[var(--color-morning-tint)] px-4 py-3 text-sm font-bold text-[var(--color-deep-cobalt)]">{message}</p> : null}
     </section>

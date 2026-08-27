@@ -5,15 +5,11 @@ import { useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
-import { expenseResolutions, formatExpenseResolutionAmount } from "./expense-resolution-data";
+import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
-  buildApprovalLine,
-  buildExpenseResolutionHistory,
   ExpenseResolutionDetailModal,
   getNextExpenseVoucherNo,
   getVoucherStatusLabel,
-  toManagedExpenseResolution,
-  toPaymentStatus,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
@@ -30,129 +26,6 @@ type PaymentFormState = {
 };
 
 const today = "2026-07-02";
-
-function buildPaymentResolution(
-  sourceIndex: number,
-  override: Partial<ManagedExpenseResolution> & Pick<ManagedExpenseResolution, "id" | "resolutionNo" | "vendorName">,
-): ManagedExpenseResolution {
-  const source = expenseResolutions[sourceIndex];
-  const baseResolution = toManagedExpenseResolution(source);
-  const approvalLine = buildApprovalLine().map((step) => ({ ...step, status: "승인완료" as const, processedAt: today }));
-
-  const resolution = {
-    ...baseResolution,
-    ...override,
-    approvalLine,
-    approvalStatus: override.approvalStatus ?? "승인완료",
-    currentApprover: undefined,
-    paymentStatus: override.paymentStatus ?? toPaymentStatus(source.paymentStatus),
-  };
-
-  return {
-    ...resolution,
-    history: override.history ?? buildExpenseResolutionHistory(resolution),
-  };
-}
-
-function createPaymentResolutions(): ManagedExpenseResolution[] {
-  if (expenseResolutions.length === 0) {
-    return [];
-  }
-
-  return [
-    buildPaymentResolution(4, {
-      id: "payment-waiting-001",
-      resolutionNo: "지결-2026-0201",
-      createdAt: "2026-07-01",
-      plannedPaymentDate: today,
-      author: "오학동 사무국장",
-      vendorName: "대방사무용품",
-      expenseType: "운영비",
-      budgetItem: "운영비 > 사무관리",
-      paymentBank: "우리은행",
-      paymentAccountNo: "1002-333-444555",
-      accountHolder: "대방사무용품",
-      supplyAmount: 900000,
-      vat: 90000,
-      totalPaymentAmount: 990000,
-      reason: "사무국 복합기 토너 및 소모품 구입비 지급",
-      approvalStatus: "승인완료",
-      paymentStatus: "지급대기",
-      evidenceAttached: true,
-      evidenceMaterials: ["세금계산서", "견적서"],
-    }),
-    buildPaymentResolution(0, {
-      id: "payment-waiting-002",
-      resolutionNo: "지결-2026-0202",
-      createdAt: "2026-07-01",
-      plannedPaymentDate: "2026-07-03",
-      author: "회계담당자",
-      vendorName: "법무법인 정담",
-      expenseType: "법무비",
-      budgetItem: "운영비 > 법무자문",
-      paymentBank: "국민은행",
-      paymentAccountNo: "123456-78-901234",
-      accountHolder: "법무법인 정담",
-      supplyAmount: 3000000,
-      vat: 300000,
-      totalPaymentAmount: 3300000,
-      reason: "총회 의결 효력 검토 및 대관 대응 법률자문료 지급",
-      approvalStatus: "승인완료",
-      paymentStatus: "지급대기",
-      evidenceAttached: false,
-      evidenceMaterials: ["계약서"],
-    }),
-    buildPaymentResolution(2, {
-      id: "payment-completed-001",
-      resolutionNo: "지결-2026-0301",
-      createdAt: "2026-06-30",
-      plannedPaymentDate: "2026-07-01",
-      author: "사무국 관리자",
-      vendorName: "미래세무회계",
-      expenseType: "세무비",
-      budgetItem: "운영비 > 세무자문",
-      paymentBank: "하나은행",
-      paymentAccountNo: "555-910022-10004",
-      accountHolder: "미래세무회계",
-      supplyAmount: 2200000,
-      vat: 220000,
-      totalPaymentAmount: 2420000,
-      actualPaidAmount: 2420000,
-      paidAt: "2026-07-01",
-      paymentMethod: "계좌이체",
-      paymentStatus: "지급완료",
-      transferReceiptStatus: "이체확인증 첨부 완료",
-      evidenceAttached: true,
-      evidenceMaterials: ["세금계산서", "이체확인증"],
-    }),
-    buildPaymentResolution(1, {
-      id: "payment-completed-002",
-      resolutionNo: "지결-2026-0302",
-      createdAt: "2026-06-29",
-      plannedPaymentDate: "2026-07-01",
-      author: "오학동 사무국장",
-      vendorName: "대방측량기술",
-      expenseType: "토지매입비",
-      budgetItem: "사업비 > 토지비",
-      paymentBank: "신한은행",
-      paymentAccountNo: "110-123-456789",
-      accountHolder: "대방측량기술",
-      supplyAmount: 4500000,
-      vat: 0,
-      totalPaymentAmount: 4500000,
-      actualPaidAmount: 4500000,
-      paidAt: "2026-07-01",
-      paymentMethod: "계좌이체",
-      paymentStatus: "지급완료",
-      transferReceiptStatus: "이체확인증 첨부 대기",
-      evidenceAttached: false,
-      evidenceMaterials: ["계약서"],
-      voucherNo: "지출-2026-0002",
-      voucherGenerated: true,
-      voucherStatus: "전표초안",
-    }),
-  ];
-}
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -177,7 +50,7 @@ export function ExpensePaymentWorkflowPage({ dataLoadError, initialMode, initial
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
 }) {
   const [mode, setMode] = useState<PaymentWorkflowMode>(initialMode);
-  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? createPaymentResolutions());
+  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? []);
   const [transitionError, setTransitionError] = useState("");
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);

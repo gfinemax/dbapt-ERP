@@ -13,12 +13,6 @@ import { formatKrw } from "./finance-data";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
 import { readBankTransactionFile } from "./bank-transaction-file";
 
-const sampleTable = [
-  "항\t목\t거래일자\t거래시간\t거래종류\t적요\t입금\t출금\t잔액\t취급점",
-  "운영비\t통신비\t2026/07/04\t10:31\t지급\tKT 인터넷 요금\t\t55,000\t12,000,000\t우리은행",
-  "분양제비용\tM/H 설치비\t2026/07/05\t11:00\t지급\t모델하우스 설치\t\t900,000\t11,100,000\t신한은행",
-].join("\n");
-
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
   신규후보: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
@@ -40,7 +34,7 @@ export function BankTransactionUploadPage({
   const bankAccounts = initialBankAccounts.length > 0 ? initialBankAccounts : registeredBankAccounts;
   const accountSubjects = initialAccountSubjects.length > 0 ? initialAccountSubjects : registeredAccountSubjects;
   const [selectedAccountId, setSelectedAccountId] = useState(bankAccounts[1]?.id ?? bankAccounts[0]?.id ?? "");
-  const [tableText, setTableText] = useState(sampleTable);
+  const [tableText, setTableText] = useState("");
   const [previewRows, setPreviewRows] = useState<ParsedBankTransactionRow[]>([]);
   const [parseError, setParseError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);

@@ -404,7 +404,7 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
     expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(5);
-    expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(3);
+    expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(4);
     expect(expenseItemsTable?.querySelector("tbody tr[aria-hidden='true'] td")).toHaveClass("[border-bottom-style:dashed]");
     expect(expenseItemsTable?.querySelector("thead")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]", "text-center");
@@ -437,7 +437,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).getByText("조합원의 소중한 자금을 투명하고 책임 있게 집행합니다.")).toBeInTheDocument();
     expect(within(printDialog).queryByText("사무기기 구입")).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("비품비 > 사무기기")).not.toBeInTheDocument();
-    expect(within(printDialog).getByText("사무용품 및 소모품 구입")).toBeInTheDocument();
+    expect(within(printDialog).queryByText("사무용품 및 소모품 구입")).not.toBeInTheDocument();
   });
 
   it("imports valid Excel-compatible rows and reports invalid rows", async () => {
@@ -541,10 +541,9 @@ describe("ExpenseResolutionPage", () => {
       target: { files: [new File(["postal receipt"], "납입금 확인 2차 안내문 우편발송(260821).png", { type: "image/png" })] },
     });
 
-    expect(await within(dialog).findByText(/추천 예산항목: 운영비 > 통신비/)).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("운영비 > 통신비");
+    expect(await within(dialog).findByText(/추천 예산항목: 제세공과금>통신비/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("제세공과금>통신비");
     expect(within(dialog).getByText("2026-08")).toBeInTheDocument();
-    expect(within(dialog).getAllByText("59,880원").length).toBeGreaterThan(0);
     expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("SIMPLE_RECEIPT");
     expect(within(dialog).getByLabelText("증빙 상태")).toHaveValue("GENERAL");
@@ -745,8 +744,8 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("소봉투제작(5백매)");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(60000);
     expect(within(dialog).getByLabelText("분할 계정과목 1")).toHaveValue("운영비");
-    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("운영비 > 도서인쇄비");
-    expect(within(dialog).getByText(/추천 예산항목: 운영비 > 도서인쇄비/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("일반운영비>도서인쇄비");
+    expect(within(dialog).getByText(/추천 예산항목: 일반운영비>도서인쇄비/)).toBeInTheDocument();
     expect(within(dialog).getByLabelText("분할 적요 1")).toHaveValue("소봉투제작(5백매)");
     expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("SIMPLE_RECEIPT");
     expect(within(dialog).getByLabelText("증빙 상태")).toHaveValue("GENERAL");
@@ -754,7 +753,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     const subjectReviewRow = within(dialog).getByText("건명 입력").closest("div");
     expect(subjectReviewRow).not.toBeNull();
-    expect(within(subjectReviewRow!).getByText("추천: 인쇄물 구입")).toBeInTheDocument();
+    expect(within(subjectReviewRow!).getByText("추천: 일반운영비>도서인쇄 구입")).toBeInTheDocument();
     fireEvent.click(within(subjectReviewRow!).getByRole("button", { name: "추천 적용" }));
     expect(within(dialog).getByText("건명 입력").closest("div")).toHaveClass("bg-[var(--color-sprout)]");
     const projectReviewRow = within(dialog).getByText("프로젝트 선택").closest("div");

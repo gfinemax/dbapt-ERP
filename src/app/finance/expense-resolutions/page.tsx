@@ -7,6 +7,7 @@ import { getDefaultOrganizationId } from "@/features/finance/expense-compliance-
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
+import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export default async function ExpenseResolutionsRoute() {
@@ -16,6 +17,7 @@ export default async function ExpenseResolutionsRoute() {
   let initialCardTransactions: Awaited<ReturnType<typeof listUnresolvedCorporateCardTransactions>> = [];
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovalDocuments>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
+  let initialBudgetProfiles = {};
   try {
     initialResolutions = (await listExpenseResolutionsFromSupabase()) ?? [];
   } catch (error) {
@@ -30,14 +32,17 @@ export default async function ExpenseResolutionsRoute() {
     console.warn(`[expense-resolutions] Approval policy data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
-    const [bankResult, cardResult] = await Promise.allSettled([
+    const [bankResult, cardResult, budgetResult] = await Promise.allSettled([
       listUnresolvedWithdrawalTransactions(),
       listUnresolvedCorporateCardTransactions(),
+      listExpenseBudgetProfiles(),
     ]);
     if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
     else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
     if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
     else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
+    if (budgetResult.status === "fulfilled") initialBudgetProfiles = budgetResult.value;
+    else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
   } catch (error) {
     console.warn(`[expense-resolutions] Bank/card transaction data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -53,6 +58,7 @@ export default async function ExpenseResolutionsRoute() {
       initialBankTransactions={initialBankTransactions}
       initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}
+      initialBudgetProfiles={initialBudgetProfiles}
       directExpenseSettings={directExpenseSettings}
       persistResolution={saveExpenseResolutionAction}
       saveFactConfirmation={saveExpenseFactConfirmationAction}

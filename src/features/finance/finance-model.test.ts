@@ -9,7 +9,6 @@ import {
   expenseResolutionPaymentStatuses,
   expenseResolutionTypes,
   expensePaymentFlowTypes,
-  financeModelExample,
   financeModelRelations,
   memberPaymentMatchStatuses,
   budgetCheckStatuses,
@@ -158,48 +157,4 @@ describe("finance model", () => {
     ]);
   });
 
-  it("provides a connected example graph for the law-fee payment workflow", () => {
-    expect(financeModelExample.expenseResolution).toMatchObject({
-      resolutionNo: "지결-2026-0001",
-      expenseType: "법무비",
-      budgetItem: "budget-legal",
-      paymentStatus: "PAYMENT_PENDING",
-      approvalStatus: "PENDING",
-      paymentFlowType: "PRE_APPROVAL",
-      budgetPeriod: "2026-07",
-      calculationBasis: "기존 지출결의서 법무비 예산 연계",
-      currentAnnualBudgetAmount: 51600000,
-      monthlyBudgetAmount: 50000000,
-      previousAnnualBudgetAmount: 51600000,
-      budgetCheckStatus: "NORMAL",
-    });
-    expect(financeModelExample.expenseResolution.printRecords[0]).toMatchObject({
-      printPurpose: "보관용",
-      storageLocation: "2026년 운영비 지출결의서 / 7월 / 001",
-    });
-    expect(financeModelExample.voucher).toMatchObject({
-      voucherNo: "지출-2026-0001",
-      voucherType: "EXPENSE",
-      voucherStatus: "DRAFT",
-      relatedResolutionNo: financeModelExample.expenseResolution.resolutionNo,
-      evidenceLinked: true,
-      paymentConfirmed: false,
-      evidenceConfirmed: false,
-    });
-    expect(financeModelExample.evidenceFile).toMatchObject({
-      evidenceType: "TAX_INVOICE",
-      evidenceTypeLabel: "세금계산서",
-      amount: financeModelExample.expenseResolution.totalAmount,
-    });
-    expect(financeModelExample.accountTransaction).toMatchObject({
-      transactionKind: "출금",
-      matchStatus: "매칭확정",
-      matchedVoucherId: financeModelExample.voucher.id,
-    });
-    expect(financeModelExample.memberPayment).toMatchObject({
-      memberId: "member-000124",
-      paymentRound: 1,
-      matchStatus: "매칭확정",
-    });
-  });
 });

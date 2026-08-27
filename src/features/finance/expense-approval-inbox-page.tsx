@@ -5,15 +5,9 @@ import { useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
-import { expenseResolutions, formatExpenseResolutionAmount } from "./expense-resolution-data";
-import type { ExpenseResolution } from "./expense-resolution-data";
+import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
-  buildApprovalLine,
-  buildExpenseResolutionHistory,
   ExpenseResolutionDetailModal,
-  toApprovalStatus,
-  toManagedExpenseResolution,
-  toPaymentStatus,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { transitionExpenseApproval, type ApprovalTransitionRequest } from "./expense-approval-workflow";
@@ -24,146 +18,6 @@ const currentApprover = {
   role: "사무국장",
 };
 const currentApproverLabel = `${currentApprover.name} ${currentApprover.role}`;
-
-const approvalInboxSeeds = [
-  {
-    source: expenseResolutions[0],
-    override: {
-      id: "approval-inbox-0101",
-      resolutionNo: "지결-2026-0101",
-      createdAt: "2026-07-01",
-      author: "장현제 담당자",
-      vendorName: "한빛전기안전",
-      expenseType: "용역비" as const,
-      budgetItem: "운영비 > 안전점검",
-      supplyAmount: 3000000,
-      vat: 300000,
-      totalPaymentAmount: 3300000,
-      currentApprover: currentApproverLabel,
-      paymentStatus: "지급전" as const,
-      reason: "조합 사무실 및 홍보관 전기안전 점검 용역비 지급",
-    },
-  },
-  {
-    source: expenseResolutions[1],
-    override: {
-      id: "approval-inbox-0102",
-      resolutionNo: "지결-2026-0102",
-      createdAt: "2026-07-01",
-      author: "사무국 관리자",
-      vendorName: "대방측량기술",
-      expenseType: "토지매입비" as const,
-      budgetItem: "사업비 > 토지비",
-      supplyAmount: 4500000,
-      vat: 0,
-      totalPaymentAmount: 4500000,
-      currentApprover: currentApproverLabel,
-      paymentStatus: "지급전" as const,
-      reason: "사업부지 경계측량 관련 토지매입 부대비 지급",
-    },
-  },
-  {
-    source: expenseResolutions[2],
-    override: {
-      id: "approval-inbox-0103",
-      resolutionNo: "지결-2026-0103",
-      createdAt: "2026-07-02",
-      author: "회계담당자",
-      vendorName: "미래세무회계",
-      expenseType: "세무비" as const,
-      budgetItem: "운영비 > 세무자문",
-      supplyAmount: 2200000,
-      vat: 220000,
-      totalPaymentAmount: 2420000,
-      currentApprover: currentApproverLabel,
-      paymentStatus: "지급전" as const,
-      reason: "부가세 예정신고 검토 및 조합 회계 자문료 지급",
-    },
-  },
-  {
-    source: expenseResolutions[3],
-    override: {
-      id: "approval-inbox-0104",
-      resolutionNo: "지결-2026-0104",
-      createdAt: "2026-07-02",
-      author: "오학동 사무국장",
-      vendorName: "법무법인 정담",
-      expenseType: "법무비" as const,
-      budgetItem: "운영비 > 법무자문",
-      supplyAmount: 12000000,
-      vat: 300000,
-      totalPaymentAmount: 12300000,
-      currentApprover: "안동연 조합장",
-      paymentStatus: "지급전" as const,
-      reason: "총회 의결 효력 검토 및 대관 대응 법률자문료 지급",
-    },
-  },
-  {
-    source: expenseResolutions[4],
-    override: {
-      id: "approval-inbox-0105",
-      resolutionNo: "지결-2026-0105",
-      createdAt: "2026-07-02",
-      author: "오학동 사무국장",
-      vendorName: "대방사무용품",
-      expenseType: "운영비" as const,
-      budgetItem: "운영비 > 사무관리",
-      supplyAmount: 900000,
-      vat: 90000,
-      totalPaymentAmount: 990000,
-      currentApprover: undefined,
-      approvalStatus: "승인완료" as const,
-      paymentStatus: "지급대기" as const,
-      reason: "사무국 복합기 토너 및 소모품 구입비 지급",
-    },
-  },
-  {
-    source: expenseResolutions[4],
-    override: {
-      id: "approval-inbox-0106",
-      resolutionNo: "지결-2026-0106",
-      createdAt: "2026-06-30",
-      author: "회계담당자",
-      vendorName: "박서연 조합원",
-      expenseType: "환불금" as const,
-      budgetItem: "조합원 정산 > 환불금",
-      supplyAmount: 1500000,
-      vat: 0,
-      totalPaymentAmount: 1500000,
-      currentApprover: undefined,
-      approvalStatus: "반려" as const,
-      paymentStatus: "지급전" as const,
-      rejectionReason: "환불계좌 확인서 보완 필요",
-      reason: "계약 해지 조합원 환불금 지급 검토",
-    },
-  },
-];
-
-function buildInboxResolution(source: ExpenseResolution, override: Partial<ManagedExpenseResolution>): ManagedExpenseResolution {
-  const baseResolution = toManagedExpenseResolution(source);
-  const approvalLine = buildApprovalLine().map((step) =>
-    step.order === 1 || (override.currentApprover === "안동연 조합장" && step.order <= 2)
-      ? { ...step, status: "승인완료" as const, processedAt: today }
-      : step,
-  );
-
-  const resolution = {
-    ...baseResolution,
-    ...override,
-    approvalLine,
-    approvalStatus: override.approvalStatus ?? toApprovalStatus(source.approvalStatus),
-    paymentStatus: override.paymentStatus ?? toPaymentStatus(source.paymentStatus),
-  };
-
-  return {
-    ...resolution,
-    history: override.history ?? buildExpenseResolutionHistory(resolution),
-  };
-}
-
-function createInboxResolutions() {
-  return expenseResolutions.length > 0 ? approvalInboxSeeds.map((seed) => buildInboxResolution(seed.source, seed.override)) : [];
-}
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -181,7 +35,7 @@ function Badge({ value }: { value: string }) {
 }
 
 export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, transitionApproval }: { dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
-  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? createInboxResolutions());
+  const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? []);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");

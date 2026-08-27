@@ -10,6 +10,7 @@ export type ApprovalBudgetOption = {
   approvedAmount: number;
   availableAmount: number;
   budgetItem: string;
+  calculationBasis?: string;
   executedAmount: number;
   fiscalYear: number;
   id: string;
@@ -125,7 +126,7 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
   const { data, error } = await api
     .schema("approval")
     .from("budgets")
-    .select("id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount")
+    .select("id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount,calculation_basis")
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
@@ -162,6 +163,7 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
       approvedAmount,
       availableAmount: monthlyBudgetAmount - reservedAmount,
       budgetItem: row.budget_item,
+      calculationBasis: row.calculation_basis || undefined,
       executedAmount,
       fiscalYear: row.fiscal_year,
       id: row.id,

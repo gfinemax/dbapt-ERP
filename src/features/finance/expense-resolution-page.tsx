@@ -2,7 +2,7 @@
 
 import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { ErpShell } from "@/components/erp-shell";
@@ -22,7 +22,6 @@ import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./ex
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import {
   expenseResolutionTypeOptions,
-  expenseResolutions,
   formatExpenseResolutionAmount,
 } from "./expense-resolution-data";
 import type { ExpenseResolution, ExpenseResolutionType, ResolutionHistory } from "./expense-resolution-data";
@@ -513,278 +512,10 @@ const operatingExpenseDetailOptions = [
   "기타",
 ];
 
-type BudgetProfile = Omit<BudgetSnapshot, "budgetCheckStatus" | "budgetUsageRate" | "currentRequestAmount" | "expectedUsedAmount" | "remainingBudgetAmount">;
+export type BudgetProfile = Omit<BudgetSnapshot, "budgetCheckStatus" | "budgetUsageRate" | "currentRequestAmount" | "expectedUsedAmount" | "remainingBudgetAmount">;
 
-const operatingBudgetProfiles: Record<string, BudgetProfile> = {
-  "인건비 > 급여 > 조합장": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "조합장 급여",
-    currentAnnualBudgetAmount: 51600000,
-    monthlyBudgetAmount: 4000000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 51600000,
-    usedAmount: 0,
-  },
-  "인건비 > 급여 > 사무장": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "사무장 급여",
-    currentAnnualBudgetAmount: 42000000,
-    monthlyBudgetAmount: 3500000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 42000000,
-    usedAmount: 0,
-  },
-  "인건비 > 급여 > 사무직원": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "사무직원 급여",
-    currentAnnualBudgetAmount: 27600000,
-    monthlyBudgetAmount: 2300000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 27600000,
-    usedAmount: 0,
-  },
-  "인건비 > 상여금": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "연 4회 지급",
-    currentAnnualBudgetAmount: 39200004,
-    monthlyBudgetAmount: 3266667,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 39200004,
-    usedAmount: 0,
-  },
-  "인건비 > 보험료": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "조합부담 4대 보험료",
-    currentAnnualBudgetAmount: 11154960,
-    monthlyBudgetAmount: 929580,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 11154960,
-    usedAmount: 0,
-  },
-  "인건비 > 퇴직예치금": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "조합장, 직원 퇴직금 상당액 예치",
-    currentAnnualBudgetAmount: 9800004,
-    monthlyBudgetAmount: 816667,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 9800004,
-    usedAmount: 0,
-  },
-  "사업추진비 > 감사비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "15만원×4회 ×1인",
-    currentAnnualBudgetAmount: 600000,
-    monthlyBudgetAmount: 50000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 600000,
-    usedAmount: 0,
-  },
-  "사업추진비 > 회의비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "임·대의원 5인 × 15만 × 6회",
-    currentAnnualBudgetAmount: 4500000,
-    monthlyBudgetAmount: 375000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 4500000,
-    usedAmount: 0,
-  },
-  "사업추진비 > 업무추진비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "사업추진 관련 업무추진비, 경조사 등",
-    currentAnnualBudgetAmount: 7200000,
-    monthlyBudgetAmount: 600000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 7200000,
-    usedAmount: 0,
-  },
-  "운영비 > 임대료": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "사무실 임차료 등",
-    currentAnnualBudgetAmount: 15600000,
-    monthlyBudgetAmount: 1300000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 15600000,
-    usedAmount: 0,
-  },
-  "운영비 > 도서인쇄비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "신문, 소식지, 사업추진 및 업무 관련 인쇄물",
-    currentAnnualBudgetAmount: 2400000,
-    monthlyBudgetAmount: 200000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 2400000,
-    usedAmount: 0,
-  },
-  "운영비 > 사무등록비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "복사기, 회선, 문구류, 기타",
-    currentAnnualBudgetAmount: 3600000,
-    monthlyBudgetAmount: 300000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 3600000,
-    usedAmount: 0,
-  },
-  "운영비 > 사무용품비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "각종 사무용품(생수, 커피, 음료 및 비품 등)",
-    currentAnnualBudgetAmount: 2400000,
-    monthlyBudgetAmount: 200000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 2400000,
-    usedAmount: 0,
-  },
-  "운영비 > 소모품비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "복사용지, 토너 및 각종 소모품",
-    currentAnnualBudgetAmount: 1200000,
-    monthlyBudgetAmount: 100000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 1200000,
-    usedAmount: 0,
-  },
-  "운영비 > 복리후생비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "식비 등",
-    currentAnnualBudgetAmount: 7800000,
-    monthlyBudgetAmount: 650000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 7800000,
-    usedAmount: 0,
-  },
-  "운영비 > 수선비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "사무실 및 제반 수리비",
-    currentAnnualBudgetAmount: 1200000,
-    monthlyBudgetAmount: 100000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 1200000,
-    usedAmount: 0,
-  },
-  "운영비 > 광고비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "신문광고 및 현수막, 기타 홍보비 등",
-    currentAnnualBudgetAmount: 1200000,
-    monthlyBudgetAmount: 100000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 1200000,
-    usedAmount: 0,
-  },
-  "운영비 > 수도광열비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "수도, 전기, 가스요금 등",
-    currentAnnualBudgetAmount: 2400000,
-    monthlyBudgetAmount: 200000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 2400000,
-    usedAmount: 0,
-  },
-  "운영비 > 통신비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "전화, 팩스, 인터넷, 우편요금 등",
-    currentAnnualBudgetAmount: 1200000,
-    monthlyBudgetAmount: 100000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 1200000,
-    usedAmount: 0,
-  },
-  "운영비 > 여비교통비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "유관기관 방문 교통비, 주유비, 출장수당",
-    currentAnnualBudgetAmount: 3600000,
-    monthlyBudgetAmount: 300000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 3600000,
-    usedAmount: 0,
-  },
-  "운영비 > 지급수수료": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "송금수수료, 공부열람수수료, 인증수수료 등",
-    currentAnnualBudgetAmount: 2400000,
-    monthlyBudgetAmount: 200000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 2400000,
-    usedAmount: 0,
-  },
-  "운영비 > 예비비": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "인건비 제외한 운영비의 10% 이내",
-    currentAnnualBudgetAmount: 3600000,
-    monthlyBudgetAmount: 300000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 3600000,
-    usedAmount: 0,
-  },
-  "운영비 > 법무자문": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "기존 지출결의서 법무비 예산 연계",
-    currentAnnualBudgetAmount: 51600000,
-    monthlyBudgetAmount: 4300000,
-    paymentWaitingAmount: 3300000,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 51600000,
-    usedAmount: 0,
-  },
-  "운영비 > 세무자문": {
-    budgetPeriod: "2026-07",
-    calculationBasis: "기존 지출결의서 세무비 예산 연계",
-    currentAnnualBudgetAmount: 33000000,
-    monthlyBudgetAmount: 2750000,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: 0,
-    previousAnnualBudgetAmount: 33000000,
-    usedAmount: 33000000,
-  },
-};
-const operatingBudgetPrintItemKeys = [
-  "운영비 > 임대료",
-  "운영비 > 도서인쇄비",
-  "운영비 > 사무등록비",
-  "운영비 > 사무용품비",
-  "운영비 > 소모품비",
-  "운영비 > 복리후생비",
-  "운영비 > 수선비",
-  "운영비 > 광고비",
-  "운영비 > 수도광열비",
-  "운영비 > 통신비",
-  "운영비 > 여비교통비",
-  "운영비 > 지급수수료",
-  "운영비 > 예비비",
-] as const;
-const budgetItemOptions = Object.keys(operatingBudgetProfiles);
-const batchBudgetProfiles: Record<string, { allocatedBudget: number; executedAmount: number }> = {
-  "총회비 > 대관료": { allocatedBudget: 2000000, executedAmount: 0 },
-  "총회비 > 인쇄비": { allocatedBudget: 2500000, executedAmount: 0 },
-  "총회비 > 우편비": { allocatedBudget: 2500000, executedAmount: 0 },
-  "홍보비 > 제작비": { allocatedBudget: 1000000, executedAmount: 0 },
-  "행사운영비 > 장비임차료": { allocatedBudget: 1500000, executedAmount: 0 },
-  "비품비 > 사무기기": { allocatedBudget: 3000000, executedAmount: 0 },
-  "토지매입비 > 계약금": { allocatedBudget: 0, executedAmount: 0 },
-  "운영비 > 임대료": { allocatedBudget: 1300000, executedAmount: 0 },
-  "운영비 > 사무용품비": { allocatedBudget: 200000, executedAmount: 0 },
-};
-const batchBudgetItemOptions = Array.from(new Set([...budgetItemOptions, ...Object.keys(batchBudgetProfiles)]));
+const BudgetProfilesContext = createContext<Record<string, BudgetProfile>>({});
+
 type ResolutionTabKey = "all" | "mine" | "approvalInbox" | "rejected" | "paymentWaiting" | "partialPaid" | "paid" | "hold" | "voucherCreated";
 export type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";
 
@@ -877,8 +608,8 @@ function getBudgetCheckStatus(remainingBudgetAmount: number, budgetUsageRate: nu
   return "정상";
 }
 
-function createBudgetSnapshot(budgetItem: string, requestAmount: number, requestedBudgetPeriod?: string): BudgetSnapshot {
-  const selectedProfile = operatingBudgetProfiles[budgetItem];
+function createBudgetSnapshot(budgetItem: string, requestAmount: number, requestedBudgetPeriod: string | undefined, budgetProfiles: Record<string, BudgetProfile>): BudgetSnapshot {
+  const selectedProfile = budgetProfiles[budgetItem];
   const profile = selectedProfile ?? {
     budgetPeriod: requestedBudgetPeriod ?? getCurrentDateIso().slice(0, 7),
     calculationBasis: "예산항목을 선택해 주세요.",
@@ -907,24 +638,24 @@ function createBudgetSnapshot(budgetItem: string, requestAmount: number, request
 
 function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseItem> = {}): BatchExpenseItem {
   const baseItem: BatchExpenseItem = {
-    accountTitle: "총회대관료",
+    accountTitle: "",
     allocatedBudget: 0,
-    budgetItem: "총회비 > 대관료",
+    budgetItem: "",
     budgetStatus: "NORMAL",
     currentRequestAmount: 0,
-    description: "정기총회 장소 대관료",
+    description: "",
     actualSpender: "",
-    businessPurpose: "조합 업무 수행",
+    businessPurpose: "",
     evidenceFileName: "",
     evidenceKind: "NONE",
     evidenceStatus: "NONE",
-    evidenceType: "영수증",
+    evidenceType: "",
     executedAmount: 0,
     expenseDate: getCurrentDateIso(),
-    expenseType: "총회비",
+    expenseType: "기타",
     id: `batch-item-${itemNo}-${Date.now()}`,
     itemNo,
-    itemTitle: itemNo === 1 ? "장소 대관료" : "세부 지출항목",
+    itemTitle: "",
     memo: "",
     overBudgetAmount: 0,
     overBudgetReason: "",
@@ -938,259 +669,6 @@ function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseI
   };
 
   return calculateBatchExpenseItem({ ...baseItem, ...overrides, itemNo });
-}
-
-function createDefaultBatchItems() {
-  return [
-    createBatchExpenseItem(1, {
-      accountTitle: "총회대관료",
-      budgetItem: "총회비 > 대관료",
-      description: "정기총회 장소 대관료",
-      evidenceType: "세금계산서",
-      expenseType: "총회비",
-      itemTitle: "장소 대관료",
-      supplyAmount: "1363636",
-      vatAmount: "136364",
-      vendorName: "대방컨벤션센터",
-    }),
-    createBatchExpenseItem(2, {
-      accountTitle: "인쇄비",
-      budgetItem: "총회비 > 인쇄비",
-      description: "총회책자 인쇄 400부",
-      evidenceType: "견적서",
-      expenseType: "인쇄비",
-      itemTitle: "총회책자 인쇄",
-      supplyAmount: "2909091",
-      vatAmount: "290909",
-      vendorName: "대방인쇄기획",
-    }),
-  ];
-}
-
-type ProjectExpensePreset = {
-  batch?: {
-    batchPaymentMode?: BatchPaymentMode;
-    items: Array<Partial<BatchExpenseItem>>;
-    voucherCreationMode?: VoucherCreationMode;
-  };
-  single?: Partial<Pick<ResolutionFormState, "budgetItem" | "evidenceType" | "expenseType" | "operationExpenseDetail" | "paymentFlowType">>;
-};
-
-const projectExpensePresets: Record<string, ProjectExpensePreset> = {
-  "사무국 비품 구입": {
-    single: {
-      budgetItem: "운영비 > 사무용품비",
-      evidenceType: "영수증",
-      expenseType: "운영비",
-      operationExpenseDetail: "사무용품비",
-      paymentFlowType: "사전결의",
-    },
-    batch: {
-      batchPaymentMode: "ITEM",
-      voucherCreationMode: "ITEM_VOUCHER",
-      items: [
-        {
-          accountTitle: "비품비",
-          budgetItem: "비품비 > 사무기기",
-          description: "사무국 비품 구입",
-          evidenceType: "세금계산서",
-          expenseType: "비품비",
-          itemTitle: "사무기기 구입",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-        {
-          accountTitle: "사무용품비",
-          budgetItem: "운영비 > 사무용품비",
-          description: "사무용품 및 소모품 구입",
-          evidenceType: "영수증",
-          expenseType: "운영비",
-          itemTitle: "사무용품 구입",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-      ],
-    },
-  },
-  "사무국 운영관리": {
-    single: {
-      budgetItem: "운영비 > 임대료",
-      evidenceType: "세금계산서",
-      expenseType: "운영비",
-      operationExpenseDetail: "임대료",
-      paymentFlowType: "사전결의",
-    },
-  },
-  "2026년 정기총회 준비": {
-    batch: {
-      batchPaymentMode: "ITEM",
-      voucherCreationMode: "ITEM_VOUCHER",
-      items: [
-        {
-          accountTitle: "총회대관료",
-          budgetItem: "총회비 > 대관료",
-          description: "정기총회 장소 대관료",
-          evidenceType: "세금계산서",
-          expenseType: "총회비",
-          itemTitle: "장소 대관료",
-          supplyAmount: "1363636",
-          vatAmount: "136364",
-          vendorName: "대방컨벤션센터",
-        },
-        {
-          accountTitle: "인쇄비",
-          budgetItem: "총회비 > 인쇄비",
-          description: "총회책자 인쇄 400부",
-          evidenceType: "견적서",
-          expenseType: "인쇄비",
-          itemTitle: "총회책자 인쇄",
-          supplyAmount: "2909091",
-          vatAmount: "290909",
-          vendorName: "대방인쇄기획",
-        },
-      ],
-    },
-  },
-  "이사회 운영": {
-    single: {
-      budgetItem: "사업추진비 > 회의비",
-      evidenceType: "영수증",
-      expenseType: "운영비",
-      operationExpenseDetail: "회의비",
-      paymentFlowType: "사전결의",
-    },
-  },
-  "동작구청 실태조사 대응": {
-    single: {
-      budgetItem: "운영비 > 법무자문",
-      evidenceType: "세금계산서",
-      expenseType: "법무비",
-      operationExpenseDetail: "기타",
-      paymentFlowType: "사전결의",
-    },
-  },
-  "업무대행계약 해지 대응": {
-    single: {
-      budgetItem: "운영비 > 법무자문",
-      evidenceType: "계약서",
-      expenseType: "법무비",
-      operationExpenseDetail: "기타",
-      paymentFlowType: "사전결의",
-    },
-  },
-  "탈퇴·자격상실 환불관리": {
-    single: {
-      budgetItem: "운영비 > 지급수수료",
-      evidenceType: "이체확인증",
-      expenseType: "환불금",
-      operationExpenseDetail: "지급수수료",
-      paymentFlowType: "사전결의",
-    },
-  },
-  "제3차 사업부지 매입 추진": {
-    batch: {
-      batchPaymentMode: "ITEM",
-      voucherCreationMode: "ITEM_VOUCHER",
-      items: [
-        {
-          accountTitle: "토지계약금",
-          budgetItem: "토지매입비 > 계약금",
-          description: "사업부지 토지계약금",
-          evidenceType: "계약서",
-          expenseType: "토지매입비",
-          itemTitle: "토지계약금",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-        {
-          accountTitle: "감정평가비",
-          budgetItem: "운영비 > 지급수수료",
-          description: "토지 감정평가 수수료",
-          evidenceType: "세금계산서",
-          expenseType: "감정평가비",
-          itemTitle: "감정평가 수수료",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-      ],
-    },
-  },
-  "홈페이지·ERP 구축": {
-    batch: {
-      batchPaymentMode: "ITEM",
-      voucherCreationMode: "ITEM_VOUCHER",
-      items: [
-        {
-          accountTitle: "ERP개발비",
-          budgetItem: "운영비 > 지급수수료",
-          description: "ERP 구축 개발비",
-          evidenceType: "세금계산서",
-          expenseType: "운영비",
-          itemTitle: "ERP 구축",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-        {
-          accountTitle: "홈페이지관리비",
-          budgetItem: "운영비 > 지급수수료",
-          description: "홈페이지 구축 및 유지관리",
-          evidenceType: "세금계산서",
-          expenseType: "운영비",
-          itemTitle: "홈페이지 관리",
-          supplyAmount: "0",
-          vatAmount: "0",
-          vendorName: "",
-        },
-      ],
-    },
-  },
-  "세무·회계 정비": {
-    single: {
-      budgetItem: "운영비 > 세무자문",
-      evidenceType: "세금계산서",
-      expenseType: "세무비",
-      operationExpenseDetail: "기타",
-      paymentFlowType: "사전결의",
-    },
-  },
-};
-
-function hasProjectExpensePreset(projectName: string) {
-  return Boolean(projectExpensePresets[projectName]);
-}
-
-function buildPresetBatchItems(items: Array<Partial<BatchExpenseItem>>) {
-  return reindexBatchItems(items.map((item, index) => createBatchExpenseItem(index + 1, item)));
-}
-
-function applyProjectExpensePreset(formState: ResolutionFormState): ResolutionFormState {
-  const preset = projectExpensePresets[formState.projectName];
-  if (!preset) {
-    return formState;
-  }
-
-  if (formState.resolutionType === "BATCH" && preset.batch) {
-    return {
-      ...formState,
-      batchItems: buildPresetBatchItems(preset.batch.items),
-      batchPaymentMode: preset.batch.batchPaymentMode ?? formState.batchPaymentMode,
-      voucherCreationMode: preset.batch.voucherCreationMode ?? formState.voucherCreationMode,
-    };
-  }
-
-  if (formState.resolutionType === "SINGLE" && preset.single) {
-    return {
-      ...formState,
-      ...preset.single,
-    };
-  }
-
-  return formState;
 }
 
 function getPaymentTarget(id: string) {
@@ -1432,9 +910,7 @@ function calculateBatchExpenseItem(item: BatchExpenseItem): BatchExpenseItem {
   const supplyAmount = toNumber(item.supplyAmount);
   const vatAmount = toNumber(item.vatAmount);
   const totalAmount = supplyAmount + vatAmount;
-  const profile = item.allocatedBudget || item.executedAmount
-    ? { allocatedBudget: item.allocatedBudget, executedAmount: item.executedAmount }
-    : batchBudgetProfiles[item.budgetItem] ?? { allocatedBudget: 0, executedAmount: 0 };
+  const profile = { allocatedBudget: item.allocatedBudget, executedAmount: item.executedAmount };
   const currentRequestAmount = totalAmount;
   const remainingBudget = profile.allocatedBudget - profile.executedAmount - currentRequestAmount;
   const budgetStatus: BatchBudgetStatus = remainingBudget < 0 ? "OVER_BUDGET" : "NORMAL";
@@ -1500,9 +976,8 @@ function getBudgetOverLabel(count: number) {
   return count > 0 ? `예산초과 ${count}건` : "정상";
 }
 
-function getOperatingBudgetPrintRows(): OperatingBudgetPrintRow[] {
-  return operatingBudgetPrintItemKeys.map((key) => {
-    const profile = operatingBudgetProfiles[key];
+function getOperatingBudgetPrintRows(budgetProfiles: Record<string, BudgetProfile>): OperatingBudgetPrintRow[] {
+  return Object.entries(budgetProfiles).map(([key, profile]) => {
     const monthlyAmounts = Array.from({ length: 12 }, () => profile.monthlyBudgetAmount);
 
     return {
@@ -1822,7 +1297,7 @@ function toPaymentMethodLabel(method: NonNullable<ExpenseResolution["paymentMeth
   return labels[method];
 }
 
-export function toManagedExpenseResolution(resolution: ExpenseResolution): ManagedExpenseResolution {
+export function toManagedExpenseResolution(resolution: ExpenseResolution, budgetProfiles: Record<string, BudgetProfile> = {}): ManagedExpenseResolution {
   const expenseItems = reindexBatchItems(
     (resolution.expenseItems ?? []).map((item) =>
       createBatchExpenseItem(item.itemNo, {
@@ -1913,22 +1388,22 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution): Manag
       resolution.monthlyBudgetAmount !== undefined
         ? {
             budgetCheckStatus: toBudgetCheckStatus(resolution.budgetCheckStatus),
-            calculationBasis: resolution.calculationBasis ?? operatingBudgetProfiles[resolution.budgetItem]?.calculationBasis ?? "-",
+            calculationBasis: resolution.calculationBasis ?? budgetProfiles[resolution.budgetItem]?.calculationBasis ?? "-",
             budgetPeriod: resolution.budgetPeriod ?? "2026-07",
             budgetUsageRate: resolution.budgetUsageRate ?? 0,
             currentRequestAmount: resolution.currentRequestAmount ?? resolution.totalAmount,
             currentAnnualBudgetAmount:
-              resolution.currentAnnualBudgetAmount ?? operatingBudgetProfiles[resolution.budgetItem]?.currentAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
+              resolution.currentAnnualBudgetAmount ?? budgetProfiles[resolution.budgetItem]?.currentAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
             expectedUsedAmount: resolution.expectedUsedAmount ?? resolution.totalAmount,
             monthlyBudgetAmount: resolution.monthlyBudgetAmount,
             paymentWaitingAmount: resolution.paymentWaitingAmount ?? 0,
             pendingApprovalAmount: resolution.pendingApprovalAmount ?? 0,
             previousAnnualBudgetAmount:
-              resolution.previousAnnualBudgetAmount ?? operatingBudgetProfiles[resolution.budgetItem]?.previousAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
+              resolution.previousAnnualBudgetAmount ?? budgetProfiles[resolution.budgetItem]?.previousAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
             remainingBudgetAmount: resolution.remainingBudgetAmount ?? 0,
             usedAmount: resolution.usedAmount ?? 0,
           }
-        : createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount, resolution.budgetPeriod),
+        : createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount, resolution.budgetPeriod, budgetProfiles),
     printRecords: toPrintRecords(resolution.printRecords),
     rejectionReason: resolution.rejectionReason,
     history: resolution.history.map(toHistoryItem),
@@ -1974,7 +1449,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     budgetRecommendation: null,
     budgetOverReason: resolution.budgetOverReason,
     budgetPeriod: resolution.budgetSnapshot.budgetPeriod,
-    batchItems: resolution.resolutionType === "BATCH" ? resolution.expenseItems.map((item) => ({ ...item })) : createDefaultBatchItems(),
+    batchItems: resolution.resolutionType === "BATCH" ? resolution.expenseItems.map((item) => ({ ...item })) : [createBatchExpenseItem(1)],
     singleItems: resolution.singleItems?.length
       ? resolution.singleItems.map((item) => createSingleExpenseItem({
           ...item,
@@ -2085,7 +1560,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     budgetItem: "",
     budgetRecommendation: null,
     budgetOverReason: "",
-    batchItems: createDefaultBatchItems(),
+    batchItems: [createBatchExpenseItem(1)],
     singleItems: [createSingleExpenseItem()],
     accountAllocations: [createAccountAllocation()],
     batchPaymentMode: "ITEM",
@@ -2624,6 +2099,7 @@ export function ExpenseResolutionPage({
   initialBankTransactions = [],
   initialCardTransactions = [],
   initialApprovalDocuments = [],
+  initialBudgetProfiles = {},
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
   persistResolution,
@@ -2646,6 +2122,7 @@ export function ExpenseResolutionPage({
   initialBankTransactions?: BankTransactionResolutionCandidate[];
   initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocument[];
+  initialBudgetProfiles?: Record<string, BudgetProfile>;
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
@@ -2660,7 +2137,7 @@ export function ExpenseResolutionPage({
 } = {}) {
   const uploadEvidenceRequest = uploadEvidence ?? uploadExpenseEvidenceViaRoute;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
-    initialResolutions ?? expenseResolutions.map(toManagedExpenseResolution),
+    initialResolutions ?? [],
   );
   const initialBankDraft = initialBankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
   const [isLocalStorageHydrated, setIsLocalStorageHydrated] = useState(false);
@@ -2725,7 +2202,7 @@ export function ExpenseResolutionPage({
   const accountAllocationTotal = formState.accountAllocations.reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
   const formBatchSummary = summarizeBatchItems(formState.batchItems);
   const effectiveFormTotalAmount = formState.resolutionType === "BATCH" ? formBatchSummary.totalAmount : formTotalAmount;
-  const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod);
+  const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod, initialBudgetProfiles);
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
   const tabItems = getResolutionTabItems(resolutions);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
@@ -2987,12 +2464,11 @@ export function ExpenseResolutionPage({
         nextState.budgetRecommendation = null;
       }
 
-      if (key === "projectName" || key === "resolutionMode") {
-        const withProjectPreset = applyProjectExpensePreset(nextState);
-        if (withProjectPreset.resolutionType === "BATCH" && withProjectPreset.inputMethod === "EVIDENCE_OCR" && !withProjectPreset.evidenceFiles.length) {
-          return { ...withProjectPreset, batchItems: [] };
+      if (key === "resolutionMode") {
+        if (nextState.resolutionType === "BATCH" && nextState.inputMethod === "EVIDENCE_OCR" && !nextState.evidenceFiles.length) {
+          return { ...nextState, batchItems: [] };
         }
-        return withProjectPreset;
+        return nextState;
       }
       return nextState;
     });
@@ -3002,14 +2478,16 @@ export function ExpenseResolutionPage({
     setFormState((current) => ({
       ...current,
       batchItems: reindexBatchItems(
-        current.batchItems.map((item) =>
-          item.itemNo === itemNo
-            ? calculateBatchExpenseItem({
+        current.batchItems.map((item) => {
+          if (item.itemNo !== itemNo) return item;
+          const profile = key === "budgetItem" ? initialBudgetProfiles[value] : undefined;
+          return calculateBatchExpenseItem({
                 ...item,
                 [key]: value,
-              })
-            : item,
-        ),
+                allocatedBudget: profile?.monthlyBudgetAmount ?? item.allocatedBudget,
+                executedAmount: profile ? profile.usedAmount + profile.pendingApprovalAmount + profile.paymentWaitingAmount : item.executedAmount,
+              });
+        }),
       ),
     }));
   }
@@ -3642,7 +3120,7 @@ export function ExpenseResolutionPage({
       originalResolutionId: formState.expenseTiming === "SETTLEMENT" ? formState.originalResolutionId : undefined,
       settlementDueDate: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementDueDate : undefined,
       settlementManager: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementManager : undefined,
-      budgetSnapshot: isBatch ? createBudgetSnapshot("운영비 > 임대료", batchSummary.totalAmount, formState.budgetPeriod) : formBudgetSnapshot,
+      budgetSnapshot: isBatch ? createBudgetSnapshot(formState.budgetItem, batchSummary.totalAmount, formState.budgetPeriod, initialBudgetProfiles) : formBudgetSnapshot,
       printRecords: [],
       memo: formState.memo,
       history: [
@@ -3927,6 +3405,7 @@ export function ExpenseResolutionPage({
   }
 
   return (
+    <BudgetProfilesContext.Provider value={initialBudgetProfiles}>
     <ErpShell
       activeDetailLabel="지출결의서 관리"
       activeLabel="회계/자금"
@@ -4354,6 +3833,7 @@ export function ExpenseResolutionPage({
 
       {isOperatingBudgetPrintOpen ? <OperatingBudgetPrintModal onClose={() => setIsOperatingBudgetPrintOpen(false)} /> : null}
     </ErpShell>
+    </BudgetProfilesContext.Provider>
   );
 }
 
@@ -4446,6 +3926,13 @@ function ExpenseResolutionCreateModal({
   onSingleItemChange: (id: string, key: keyof SingleExpenseItem, value: string) => void;
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
+  const budgetProfiles = useContext(BudgetProfilesContext);
+  const budgetItemOptions = Array.from(new Set([
+    ...Object.keys(budgetProfiles),
+    formState.budgetItem,
+    ...formState.accountAllocations.map((allocation) => allocation.budgetItem),
+  ].filter(Boolean)));
+  const batchBudgetItemOptions = budgetItemOptions;
   const isBatch = formState.resolutionType === "BATCH";
   const cardMatchCandidates = useMemo(() => findCorporateCardMatchCandidates({ amount: totalAmount, cardLastFour: formState.cardLastFour, expenseDate: formState.actualExpenseDate, transactions: cardTransactionCandidates }), [cardTransactionCandidates, formState.actualExpenseDate, formState.cardLastFour, totalAmount]);
   const displayedCardTransactions = useMemo(() => {
@@ -4454,7 +3941,6 @@ function ExpenseResolutionCreateModal({
   }, [cardMatchCandidates, cardTransactionCandidates]);
   const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
   const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
-  const presetApplied = Boolean(formState.projectName && hasProjectExpensePreset(formState.projectName));
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
   const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
   const [evidenceProcessingFileName, setEvidenceProcessingFileName] = useState("");
@@ -5007,11 +4493,6 @@ function ExpenseResolutionCreateModal({
                   </label>
                 </>
               ) : null}
-              {presetApplied ? (
-                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-deep-cobalt)] md:col-span-2">
-                  {formState.projectName} 기준 추천값이 적용되었습니다.
-                </div>
-              ) : null}
               </> : null}
               {currentStep === 2 ? (
               <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 md:col-span-3 xl:col-span-4">
@@ -5542,6 +5023,8 @@ function BatchExpenseItemsSection({
   onDeleteBatchItem: (itemNo: number) => void;
   onReviewBatchBudget: (itemNo: number) => void;
 }) {
+  const budgetProfiles = useContext(BudgetProfilesContext);
+  const batchBudgetItemOptions = Object.keys(budgetProfiles);
   return (
     <section className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -6753,7 +6236,8 @@ function ExpensePrintItemsTable({
 }
 
 function OperatingBudgetPrintModal({ onClose }: { onClose: () => void }) {
-  const rows = getOperatingBudgetPrintRows();
+  const budgetProfiles = useContext(BudgetProfilesContext);
+  const rows = getOperatingBudgetPrintRows(budgetProfiles);
   const monthlyTotals = Array.from({ length: 12 }, (_, monthIndex) => rows.reduce((sum, row) => sum + row.monthlyAmounts[monthIndex], 0));
   const quarterlyTotals = [0, 1, 2, 3].map((quarterIndex) => rows.reduce((sum, row) => sum + row.quarterlyAmounts[quarterIndex], 0));
   const previousAnnualTotal = rows.reduce((sum, row) => sum + row.previousAnnualAmount, 0);
@@ -7179,8 +6663,14 @@ function SingleExpenseItemsEditor({ items, onAdd, onChange, onDelete }: { items:
 }
 
 function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommendation, onAdd, onChange, onDelete, totalAmount }: { allocations: AccountAllocation[]; allocationTotal: number; budgetRecommendation: ExpenseBudgetRecommendation | null; onAdd: () => void; onChange: (id: string, key: keyof AccountAllocation, value: string) => void; onDelete: (id: string) => void; totalAmount: number }) {
+  const budgetProfiles = useContext(BudgetProfilesContext);
+  const budgetItemOptions = Array.from(new Set([
+    ...Object.keys(budgetProfiles),
+    budgetRecommendation?.budgetItem ?? "",
+    ...allocations.map((allocation) => allocation.budgetItem),
+  ].filter(Boolean)));
   const matches = Math.abs(allocationTotal - totalAmount) <= 0.5;
-  const recommendationProfile = budgetRecommendation ? operatingBudgetProfiles[budgetRecommendation.budgetItem] : undefined;
+  const recommendationProfile = budgetRecommendation ? budgetProfiles[budgetRecommendation.budgetItem] : undefined;
   const recommendationRemaining = recommendationProfile
     ? recommendationProfile.monthlyBudgetAmount - recommendationProfile.usedAmount - recommendationProfile.pendingApprovalAmount - recommendationProfile.paymentWaitingAmount - totalAmount
     : 0;
@@ -7197,7 +6687,7 @@ function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommend
       <div className="mt-3 grid gap-3">
         {allocations.map((allocation, index) => <div className="grid min-w-0 gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_auto]" key={allocation.id}>
           <label className="grid min-w-0 gap-1 text-xs font-bold">예산 구분<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}>{expenseResolutionTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
-          <label className="grid min-w-0 gap-1 text-xs font-bold">세부 예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}><option value="">선택</option>{budgetItemOptions.filter((option) => option.startsWith(`${allocation.accountTitle} >`)).map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">세부 예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}><option value="">선택</option>{budgetItemOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">분할금액<input aria-label={`분할금액 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2 text-right" min="0" onChange={(event) => onChange(allocation.id, "amount", event.target.value)} type="number" value={allocation.amount} /></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">적요<input aria-label={`분할 적요 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "description", event.target.value)} value={allocation.description} /></label>
           <Button className="self-end" disabled={allocations.length === 1} onClick={() => onDelete(allocation.id)} type="button" variant="outline">삭제</Button>
