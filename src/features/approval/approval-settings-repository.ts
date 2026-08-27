@@ -13,6 +13,7 @@ export type ApprovalBudgetOption = {
   executedAmount: number;
   fiscalYear: number;
   id: string;
+  monthlyBudgetAmount?: number;
   reservedAmount: number;
 };
 export type ApprovalLineRule = {
@@ -116,10 +117,15 @@ export async function addMeetingRule(input: {
 
 export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
   const api = client();
+  const now = new Date();
+  const currentMonthStart = `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(now)}-01T00:00:00+09:00`;
+  const currentMonth = Number(currentMonthStart.slice(5, 7));
+  const currentYear = Number(currentMonthStart.slice(0, 4));
+  const nextMonthStart = currentMonth === 12 ? `${currentYear + 1}-01-01T00:00:00+09:00` : `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01T00:00:00+09:00`;
   const { data, error } = await api
     .schema("approval")
     .from("budgets")
-    .select("id,fiscal_year,budget_item,approved_amount,executed_amount")
+    .select("id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount")
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
@@ -135,7 +141,9 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
       .from("budget_reservations")
       .select("budget_id,amount,released_amount")
       .in("budget_id", ids)
-      .eq("status", "ACTIVE");
+      .eq("status", "ACTIVE")
+      .gte("created_at", currentMonthStart)
+      .lt("created_at", nextMonthStart);
     if (result.error)
       throw new Error(`집행예정액을 불러오지 못했어: ${result.error.message}`);
     reservations = result.data ?? [];
@@ -149,13 +157,15 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
       );
     const approvedAmount = Number(row.approved_amount);
     const executedAmount = Number(row.executed_amount);
+    const monthlyBudgetAmount = Number(row.monthly_amount) || Math.round(approvedAmount / 12);
     return {
       approvedAmount,
-      availableAmount: approvedAmount - executedAmount - reservedAmount,
+      availableAmount: monthlyBudgetAmount - reservedAmount,
       budgetItem: row.budget_item,
       executedAmount,
       fiscalYear: row.fiscal_year,
       id: row.id,
+      monthlyBudgetAmount,
       reservedAmount,
     };
   });
@@ -166,13 +176,15 @@ export async function saveApprovalBudget(input: {
   budgetItem: string;
   executedAmount: number;
   fiscalYear: number;
+  monthlyBudgetAmount: number;
   organizationId?: string;
 }) {
   if (!input.organizationId) throw new Error("예산을 저장할 조직이 없어.");
   if (
     !input.budgetItem.trim() ||
     input.approvedAmount < 0 ||
-    input.executedAmount < 0
+    input.executedAmount < 0 ||
+    input.monthlyBudgetAmount < 0
   )
     throw new Error("예산 입력값을 확인해줘.");
   const { error } = await client()
@@ -184,6 +196,7 @@ export async function saveApprovalBudget(input: {
         budget_item: input.budgetItem.trim(),
         executed_amount: input.executedAmount,
         fiscal_year: input.fiscalYear,
+        monthly_amount: input.monthlyBudgetAmount,
         organization_id: input.organizationId,
         updated_at: new Date().toISOString(),
       },

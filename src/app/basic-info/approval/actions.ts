@@ -37,6 +37,7 @@ export async function saveApprovalBudgetAction(data: FormData) {
     budgetItem: value(data, "budgetItem"),
     executedAmount: Number(value(data, "executedAmount")),
     fiscalYear: Number(value(data, "fiscalYear")),
+    monthlyBudgetAmount: Number(value(data, "monthlyBudgetAmount")),
     organizationId: current.organizationId,
   });
   revalidatePath("/basic-info/approval");

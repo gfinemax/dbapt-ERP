@@ -145,6 +145,14 @@ export default async function Page() {
             <input
               className={input}
               min="0"
+              name="monthlyBudgetAmount"
+              placeholder="월 예산"
+              type="number"
+              required
+            />
+            <input
+              className={input}
+              min="0"
               name="executedAmount"
               placeholder="실제 집행액"
               type="number"
@@ -169,10 +177,11 @@ export default async function Page() {
                       {[
                         "연도",
                         "예산항목",
-                        "편성예산",
-                        "실집행",
-                        "집행예정",
-                        "사용가능",
+                        "연간 편성",
+                        "월 예산",
+                        "연간 실집행",
+                        "이번 달 예정",
+                        "이번 달 사용가능",
                       ].map((label) => (
                         <th className="px-3 py-3 text-left" key={label}>
                           {label}
@@ -192,6 +201,9 @@ export default async function Page() {
                         </td>
                         <td className="px-3 py-3">
                           {budget.approvedAmount.toLocaleString("ko-KR")}원
+                        </td>
+                        <td className="px-3 py-3 font-bold text-[var(--color-deep-cobalt)]">
+                          {(budget.monthlyBudgetAmount ?? 0).toLocaleString("ko-KR")}원
                         </td>
                         <td className="px-3 py-3">
                           {budget.executedAmount.toLocaleString("ko-KR")}원

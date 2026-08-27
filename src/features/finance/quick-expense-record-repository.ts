@@ -65,18 +65,25 @@ export async function getQuickExpenseRecord(recordId: string): Promise<QuickExpe
 export async function getQuickExpenseBudgetAvailability(organizationId: string, budgetItem: string, occurredAt: string) {
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
-  const fiscalYear = Number(occurredAt.slice(0, 4));
+  const dateParts = new Intl.DateTimeFormat("en-CA", { day: "2-digit", month: "2-digit", timeZone: "Asia/Seoul", year: "numeric" }).formatToParts(new Date(occurredAt));
+  const fiscalYear = Number(dateParts.find((part) => part.type === "year")?.value);
+  const month = Number(dateParts.find((part) => part.type === "month")?.value);
+  const monthStart = `${fiscalYear}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`;
+  const nextMonthYear = month === 12 ? fiscalYear + 1 : fiscalYear;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const monthEnd = `${nextMonthYear}-${String(nextMonth).padStart(2, "0")}-01T00:00:00+09:00`;
   const [{ data: budget, error: budgetError }, { data: quickRecords, error: quickError }] = await Promise.all([
-    supabase.schema("approval").from("budgets").select("approved_amount,executed_amount").eq("organization_id", organizationId).eq("fiscal_year", fiscalYear).eq("budget_item", budgetItem).maybeSingle(),
-    supabase.schema("finance").from("quick_expense_records").select("amount").eq("organization_id", organizationId).eq("budget_item", budgetItem).eq("record_status", "RECORDED").gte("occurred_at", `${fiscalYear}-01-01T00:00:00+09:00`).lt("occurred_at", `${fiscalYear + 1}-01-01T00:00:00+09:00`),
+    supabase.schema("approval").from("budgets").select("approved_amount,executed_amount,monthly_amount").eq("organization_id", organizationId).eq("fiscal_year", fiscalYear).eq("budget_item", budgetItem).maybeSingle(),
+    supabase.schema("finance").from("quick_expense_records").select("amount").eq("organization_id", organizationId).eq("budget_item", budgetItem).eq("record_status", "RECORDED").gte("occurred_at", monthStart).lt("occurred_at", monthEnd),
   ]);
   if (budgetError) throw new Error(`승인예산 조회 실패: ${budgetError.message}`);
   if (quickError) throw new Error(`간편지출 예산집행 조회 실패: ${quickError.message}`);
   if (!budget) return null;
   const approvedAmount = Number(budget.approved_amount) || 0;
   const executedAmount = Number(budget.executed_amount) || 0;
-  const quickExpenseAmount = (quickRecords ?? []).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
-  return { approvedAmount, executedAmount, quickExpenseAmount, remainingAmount: approvedAmount - executedAmount - quickExpenseAmount };
+  const monthlyBudgetAmount = Number(budget.monthly_amount) || 0;
+  const monthlyUsedAmount = (quickRecords ?? []).reduce((sum, record) => sum + (Number(record.amount) || 0), 0);
+  return { approvedAmount, executedAmount, monthlyBudgetAmount, monthlyUsedAmount, remainingAmount: monthlyBudgetAmount - monthlyUsedAmount };
 }
 
 export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { directExpenseDecision: QuickExpenseRecord["directExpenseDecision"]; directExpenseReasons: string[]; recordStatus: QuickExpenseRecord["recordStatus"] }) {
