@@ -31,6 +31,8 @@ export type ExpenseResolutionWorkflowFields = {
   invalidItemCount?: number;
   accountAllocationTotal?: number;
   evidenceCount?: number;
+  evidenceStatus?: "QUALIFIED" | "GENERAL" | "ALTERNATIVE" | "DEFICIENT" | "NONE";
+  missingEvidenceReason?: string;
 };
 
 export function normalizeResolutionMode(value: ExpenseResolutionWorkflowFields & { resolutionType?: "SINGLE" | "BATCH" }): ResolutionMode {
@@ -60,13 +62,18 @@ export function validateExpenseResolutionWorkflow(value: ExpenseResolutionWorkfl
   if (!value.plannedPaymentDate) errors.push(timing === "ADVANCE" ? "집행예정일을 입력해주세요." : timing === "REIMBURSEMENT" ? "실제 지출일을 입력해주세요." : "정산일을 입력해주세요.");
   if (!value.totalPaymentAmount || value.totalPaymentAmount <= 0) errors.push("총금액은 0원보다 커야 합니다.");
   if (!value.reason?.trim()) errors.push(timing === "SETTLEMENT" ? "정산사유를 입력해주세요." : "지출사유를 입력해주세요.");
-  if (!value.paymentAccountNo?.trim()) errors.push("지급계좌를 확인해주세요.");
+  const isAlreadyPaidByOrganization = timing === "REIMBURSEMENT" && ["CORPORATE_CARD", "ORGANIZATION_PAID"].includes(value.expenseBurdenType ?? "");
+  if (!isAlreadyPaidByOrganization && !value.paymentAccountNo?.trim()) errors.push("지급계좌를 확인해주세요.");
   if (value.itemCount !== undefined && value.itemCount < 1) errors.push("품목을 한 개 이상 입력해주세요.");
   if (value.invalidItemCount) errors.push("품목명·수량·단가를 확인해주세요.");
   if (value.accountAllocationTotal !== undefined && value.totalPaymentAmount !== undefined && Math.abs(value.accountAllocationTotal - value.totalPaymentAmount) > 0.5) {
     errors.push("계정과목 분할금액 합계가 총지급금액과 일치해야 합니다.");
   }
-  if (value.evidenceCount !== undefined && value.evidenceCount < 1) errors.push("증빙자료를 한 개 이상 첨부해주세요.");
+  if (value.evidenceCount !== undefined && value.evidenceCount < 1) {
+    const allowsMissingFile = ["ALTERNATIVE", "DEFICIENT", "NONE"].includes(value.evidenceStatus ?? "");
+    if (!allowsMissingFile) errors.push("증빙자료를 한 개 이상 첨부하거나 증빙 없음 사유를 선택해주세요.");
+    if (allowsMissingFile && !value.missingEvidenceReason?.trim()) errors.push("증빙 미첨부 사유를 입력해주세요.");
+  }
   if (timing === "ADVANCE" && !value.executionMethod) errors.push("집행방식을 선택해주세요.");
   if (timing === "ADVANCE" && value.executionMethod === "EMPLOYEE_ADVANCE") {
     if (!value.settlementDueDate) errors.push("정산기한을 입력해주세요.");

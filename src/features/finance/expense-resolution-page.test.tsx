@@ -221,6 +221,22 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("증빙자료 자동입력 파일 선택")).toBeInTheDocument();
   });
 
+  it("provides a corporate-card quick entry flow with missing-receipt reasons", () => {
+    render(<ExpenseResolutionPage />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "법인카드 간편입력" }));
+    expect(within(dialog).getByText("공용 법인카드 간편결의")).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "택시" })).toHaveAttribute("aria-pressed", "true");
+    expect(within(dialog).getByLabelText("비용부담 유형")).toHaveValue("CORPORATE_CARD");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "영수증 미발행" }));
+    expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("영수증 미발행 · 공용 법인카드 사용내역 확인 필요");
+    expect(within(dialog).getByText(/결재권자의 추가 확인 대상/)).toBeInTheDocument();
+  });
+
   it("shows fields that match the selected expense timing", () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));

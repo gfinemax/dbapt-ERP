@@ -72,4 +72,24 @@ describe("expense resolution workflow domain", () => {
     });
     expect(result.errors).toContain("계정과목 분할금액 합계가 총지급금액과 일치해야 합니다.");
   });
+
+  it("allows a corporate-card reimbursement without a payment account or receipt file when a reason is recorded", () => {
+    const result = validateExpenseResolutionWorkflow({
+      accountAllocationTotal: 18500,
+      evidenceCount: 0,
+      evidenceStatus: "NONE",
+      expenseBurdenType: "CORPORATE_CARD",
+      expenseTiming: "REIMBURSEMENT",
+      itemCount: 1,
+      missingEvidenceReason: "영수증 미발행 · 공용 법인카드 사용내역 확인 필요",
+      plannedPaymentDate: "2026-08-27",
+      projectName: "조합 운영",
+      reason: "외부 미팅 이동",
+      resolutionMode: "SINGLE",
+      subject: "업무용 택시비",
+      totalPaymentAmount: 18500,
+    });
+
+    expect(result.errors).toEqual([]);
+  });
 });

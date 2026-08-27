@@ -314,6 +314,11 @@ function getDefaultEvidenceStatus(kind: EvidenceKind): EvidenceStatus {
   return "GENERAL";
 }
 
+function currentDateLabel(value: string) {
+  const [, month, day] = value.split("-");
+  return month && day ? `${Number(month)}월 ${Number(day)}일` : "당일";
+}
+
 type ResolutionFormState = {
   creationSource: ExpenseCreationSource;
   approvalDocumentId: string;
@@ -352,6 +357,8 @@ type ResolutionFormState = {
   executionMethod: ExecutionMethod;
   expenseBurdenType: ExpenseBurdenType;
   inputMethod: ExpenseInputMethod;
+  quickEntryMode: "NONE" | "CORPORATE_CARD";
+  quickExpenseCategory: "택시" | "주차" | "통행료" | "식대" | "소모품" | "기타";
   memo: string;
   operationExpenseDetail: string;
   paymentTargetId: string;
@@ -1981,6 +1988,8 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     executionMethod: resolution.executionMethod ?? "VENDOR_DIRECT",
     expenseBurdenType: resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
     inputMethod: normalizeInputMethod(resolution),
+    quickEntryMode: "NONE",
+    quickExpenseCategory: "택시",
     memo: resolution.memo,
     operationExpenseDetail: resolution.operationExpenseDetail,
     paymentTargetId: getResolutionPaymentTargetId(resolution),
@@ -2044,6 +2053,8 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     executionMethod: "VENDOR_DIRECT",
     expenseBurdenType: "EMPLOYEE_PREPAID",
     inputMethod: "MANUAL",
+    quickEntryMode: "NONE",
+    quickExpenseCategory: "택시",
     expenseType: "운영비",
     operationExpenseDetail: "기타",
     budgetPeriod: currentDate.slice(0, 7),
@@ -2814,6 +2825,40 @@ export function ExpenseResolutionPage({
 
       if (key === "paymentTargetId" && typeof value === "string") {
         return applyPaymentTarget(nextState, value);
+      }
+
+      if (key === "quickEntryMode" && value === "CORPORATE_CARD") {
+        const category = current.quickExpenseCategory || "택시";
+        const subject = current.subject.trim() || `${currentDateLabel(current.actualExpenseDate)} 업무용 ${category}비`;
+        return {
+          ...nextState,
+          accountAllocations: current.accountAllocations.map((allocation, index) => index === 0 ? { ...allocation, accountTitle: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : allocation.accountTitle, budgetItem: category === "택시" || category === "주차" || category === "통행료" ? "운영비 > 여비교통비" : allocation.budgetItem } : allocation),
+          approvalSkipReason: "승인 예산 내 일상 지출",
+          creationSource: "DIRECT",
+          evidenceKind: "CARD_RECEIPT",
+          evidenceStatus: "QUALIFIED",
+          expenseBurdenType: "CORPORATE_CARD",
+          expenseTiming: "REIMBURSEMENT",
+          executionMethod: "CORPORATE_CARD",
+          inputMethod: "MANUAL",
+          missingEvidenceReason: "",
+          operationExpenseDetail: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : current.operationExpenseDetail,
+          paymentFlowType: "사후정산",
+          reason: current.reason.trim() || `업무 목적 ${category} 비용 · 공용 법인카드 결제`,
+          subject,
+          vendorName: current.vendorName.trim() || "법인카드 사용처 미확인",
+        };
+      }
+
+      if (key === "quickExpenseCategory" && typeof value === "string" && current.quickEntryMode === "CORPORATE_CARD") {
+        const isTransport = value === "택시" || value === "주차" || value === "통행료";
+        return {
+          ...nextState,
+          accountAllocations: current.accountAllocations.map((allocation, index) => index === 0 && isTransport ? { ...allocation, accountTitle: "여비교통비", budgetItem: "운영비 > 여비교통비" } : allocation),
+          operationExpenseDetail: isTransport ? "여비교통비" : current.operationExpenseDetail,
+          reason: `업무 목적 ${value} 비용 · 공용 법인카드 결제`,
+          subject: `${currentDateLabel(current.actualExpenseDate)} 업무용 ${value}비`,
+        };
       }
 
       if (["accountHolder", "paymentAccountNo", "paymentBank"].includes(key)) {
@@ -4654,6 +4699,11 @@ function ExpenseResolutionCreateModal({
               <QuestionChoiceGroup
                 label="지출내역을 어떻게 등록하시겠습니까?"
                 onChange={(value) => {
+                  if (value === "CORPORATE_CARD_SIMPLE") {
+                    onChange("quickEntryMode", "CORPORATE_CARD");
+                    return;
+                  }
+                  onChange("quickEntryMode", "NONE");
                   onChange("inputMethod", value as ExpenseInputMethod);
                   if (value === "EVIDENCE_OCR") evidenceFileInputRef.current?.click();
                 }}
@@ -4661,10 +4711,26 @@ function ExpenseResolutionCreateModal({
                   { label: "직접 입력", value: "MANUAL" },
                   ...(isBatch ? [{ label: "엑셀 일괄등록", value: "EXCEL" }] : []),
                   { label: "증빙자료 자동입력", value: "EVIDENCE_OCR" },
+                  ...(!isBatch ? [{ description: "택시·주차 등 공용 법인카드 사용 건을 최소 항목으로 작성합니다.", label: "법인카드 간편입력", value: "CORPORATE_CARD_SIMPLE" }] : []),
                 ]}
-                value={formState.inputMethod}
+                value={formState.quickEntryMode === "CORPORATE_CARD" ? "CORPORATE_CARD_SIMPLE" : formState.inputMethod}
               />
             </section>
+            {formState.quickEntryMode === "CORPORATE_CARD" ? (
+              <section className="grid gap-4 rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 p-5">
+                <div>
+                  <h3 className="font-bold text-[var(--color-deep-cobalt)]">공용 법인카드 간편결의</h3>
+                  <p className="mt-1 text-sm text-[var(--color-stone)]">거래처를 모르면 ‘법인카드 사용처 미확인’으로 두고, 날짜·금액·업무 목적만 확인하면 됩니다.</p>
+                </div>
+                <QuestionChoiceGroup
+                  label="어떤 비용인가요?"
+                  onChange={(value) => onChange("quickExpenseCategory", value as ResolutionFormState["quickExpenseCategory"])}
+                  options={["택시", "주차", "통행료", "식대", "소모품", "기타"].map((label) => ({ label, value: label }))}
+                  value={formState.quickExpenseCategory}
+                />
+                <p className="rounded-lg bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)]">사후 지출 · 공용 법인카드 · {formState.quickExpenseCategory === "택시" || formState.quickExpenseCategory === "주차" || formState.quickExpenseCategory === "통행료" ? "여비교통비" : "계정과목 직접 확인"}으로 설정했습니다.</p>
+              </section>
+            ) : null}
             {formState.inputMethod === "EVIDENCE_OCR" ? (
               <div className="rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 px-5 py-4 text-sm">
                 <p className="font-bold text-[var(--color-deep-cobalt)]">증빙자료를 올리면 거래처·실제 지출일·금액을 자동 입력합니다.</p>
@@ -5047,11 +5113,28 @@ function ExpenseResolutionCreateModal({
             ) : null}
 
             {currentStep === 2 ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
+              {formState.quickEntryMode === "CORPORATE_CARD" ? (
+                <fieldset className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 md:col-span-3">
+                  <legend className="px-1 text-sm font-bold">영수증 또는 대체증빙 상태</legend>
+                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      { kind: "CARD_RECEIPT", label: "영수증 있음", reason: "", status: "QUALIFIED" },
+                      { kind: "OTHER_ALTERNATIVE", label: "카드 승인내역으로 대체", reason: "공용 법인카드 승인내역으로 대체", status: "ALTERNATIVE" },
+                      { kind: "NONE", label: "영수증 분실", reason: "영수증 분실 · 공용 법인카드 사용내역 확인 필요", status: "NONE" },
+                      { kind: "NONE", label: "영수증 미발행", reason: "영수증 미발행 · 공용 법인카드 사용내역 확인 필요", status: "NONE" },
+                    ].map((option) => {
+                      const selected = option.reason ? formState.missingEvidenceReason === option.reason : formState.evidenceKind === "CARD_RECEIPT" && !formState.missingEvidenceReason;
+                      return <button aria-pressed={selected} className={`rounded-lg border px-3 py-3 text-left text-sm font-bold ${selected ? "border-[var(--color-deep-cobalt)] bg-white text-[var(--color-deep-cobalt)]" : "border-[var(--color-soft-border)] bg-white/70"}`} key={option.label} onClick={() => { onChange("evidenceKind", option.kind as EvidenceKind); onChange("evidenceStatus", option.status as EvidenceStatus); onChange("missingEvidenceReason", option.reason); }} type="button">{option.label}</button>;
+                    })}
+                  </div>
+                  {formState.evidenceStatus === "NONE" || formState.evidenceStatus === "DEFICIENT" || formState.evidenceStatus === "ALTERNATIVE" ? <p className="text-xs font-semibold text-[var(--color-stone)]">증빙이 없어도 제출할 수 있지만, 사유와 함께 결재권자의 추가 확인 대상으로 표시됩니다.</p> : null}
+                </fieldset>
+              ) : null}
               {vendorRegistrationNotice ? <p className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-sprout)] px-4 py-3 text-sm font-bold text-[var(--color-green-ink)]">{vendorRegistrationNotice}</p> : null}
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 유형</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceKind", event.target.value as EvidenceKind)} value={formState.evidenceKind}><option value="E_TAX_INVOICE">전자세금계산서</option><option value="INVOICE">계산서</option><option value="CARD_RECEIPT">카드매출전표</option><option value="CASH_RECEIPT">현금영수증</option><option value="SIMPLE_RECEIPT">간이영수증</option><option value="BANK_TRANSFER">계좌이체확인증</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="BILL">청구서</option><option value="EXPENSE_FACT_CONFIRMATION">지출사실확인서</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option><option value="NONE">증빙 없음</option></select></label>
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 상태</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceStatus", event.target.value as EvidenceStatus)} value={formState.evidenceStatus}><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select></label>
               {formState.evidenceKind === "EXPENSE_FACT_CONFIRMATION" ? <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 md:col-span-3">지출사실확인서는 지출결의서를 대체하지 않으며 적격증빙으로 처리되지 않습니다.</p> : null}
-              {formState.evidenceStatus === "DEFICIENT" || formState.evidenceStatus === "NONE" ? <TextInput label="증빙 미첨부 사유" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} /> : null}
+              {formState.evidenceStatus === "DEFICIENT" || formState.evidenceStatus === "NONE" || (formState.evidenceStatus === "ALTERNATIVE" && !formState.evidenceFiles.length) ? <TextInput label="증빙 미첨부·대체 사유" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} /> : null}
               <label className="grid gap-1 text-sm font-semibold">
                 <span>거래 증빙 종류</span>
                 <select
