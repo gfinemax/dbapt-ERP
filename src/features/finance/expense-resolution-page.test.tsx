@@ -230,11 +230,40 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByText("공용 법인카드 간편결의")).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "택시" })).toHaveAttribute("aria-pressed", "true");
     expect(within(dialog).getByLabelText("비용부담 유형")).toHaveValue("CORPORATE_CARD");
+    expect(within(dialog).getByRole("button", { name: "카드 사용 임시등록" })).toBeInTheDocument();
+    expect(within(dialog).getByText("카드 승인내역 연결대기")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "영수증 미발행" }));
     expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("영수증 미발행 · 공용 법인카드 사용내역 확인 필요");
     expect(within(dialog).getByText(/결재권자의 추가 확인 대상/)).toBeInTheDocument();
+  });
+
+  it("creates a taxi expense draft from an unresolved corporate-card transaction", () => {
+    render(<ExpenseResolutionPage initialCardTransactions={[{
+      amount: 18500,
+      approvalNo: "48392011",
+      approvedAt: "2026-07-02T21:15:00+09:00",
+      cardLastFour: "5521",
+      cardName: "KB 공용 법인카드",
+      category: "택시",
+      id: "card-tx-1",
+      merchantName: "카카오T",
+    }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "법인카드 간편입력" }));
+    fireEvent.change(within(dialog).getByLabelText("법인카드 승인내역"), { target: { value: "card-tx-1" } });
+
+    expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-07-02");
+    expect(within(dialog).getByLabelText("건명 (필수)")).toHaveValue("7월 2일 업무용 택시비");
+    expect(within(dialog).getByText(/택시 자동분류/)).toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+    expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("카카오T 택시비");
+    expect(within(dialog).getByLabelText("단가 1")).toHaveValue(18500);
+    expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
   });
 
   it("shows fields that match the selected expense timing", () => {

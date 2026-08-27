@@ -6,12 +6,14 @@ import { getExpenseComplianceSettings } from "@/features/finance/expense-complia
 import { getDefaultOrganizationId } from "@/features/finance/expense-compliance-repository";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
+import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export default async function ExpenseResolutionsRoute() {
   let dataLoadError: string | undefined;
   let initialResolutions: ManagedExpenseResolution[] = [];
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
+  let initialCardTransactions: Awaited<ReturnType<typeof listUnresolvedCorporateCardTransactions>> = [];
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovalDocuments>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
   try {
@@ -28,9 +30,16 @@ export default async function ExpenseResolutionsRoute() {
     console.warn(`[expense-resolutions] Approval policy data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
-    initialBankTransactions = await listUnresolvedWithdrawalTransactions();
+    const [bankResult, cardResult] = await Promise.allSettled([
+      listUnresolvedWithdrawalTransactions(),
+      listUnresolvedCorporateCardTransactions(),
+    ]);
+    if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
+    else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
+    if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
+    else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
   } catch (error) {
-    console.warn(`[expense-resolutions] Bank transaction data unavailable: ${error instanceof Error ? error.message : String(error)}`);
+    console.warn(`[expense-resolutions] Bank/card transaction data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   return (
     <ExpenseResolutionPage
@@ -42,6 +51,7 @@ export default async function ExpenseResolutionsRoute() {
       getEvidenceOcrJob={getExpenseEvidenceOcrJobAction}
       initialResolutions={initialResolutions}
       initialBankTransactions={initialBankTransactions}
+      initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}
       directExpenseSettings={directExpenseSettings}
       persistResolution={saveExpenseResolutionAction}

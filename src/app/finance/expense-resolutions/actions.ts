@@ -279,6 +279,11 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
     if (linkedError) throw new Error(`통장거래 중복연결 확인 실패: ${linkedError.message}`);
     if (linked) throw new Error(`이미 ${linked.resolution_no} 결의서에 연결된 통장거래입니다.`);
   }
+  if (resolution.cardTransactionId) {
+    const { data: linkedCard, error: linkedCardError } = await supabase.schema("finance").from("corporate_card_transactions").select("linked_resolution_id").eq("id", resolution.cardTransactionId).maybeSingle();
+    if (linkedCardError) throw new Error(`법인카드 거래 중복연결 확인 실패: ${linkedCardError.message}`);
+    if (linkedCard?.linked_resolution_id && linkedCard.linked_resolution_id !== resolution.id) throw new Error("이미 다른 지출결의서에 연결된 법인카드 거래입니다.");
+  }
   if (resolution.expenseKind) {
     let settings: ExpenseComplianceSettings | undefined;
     try {
@@ -292,6 +297,7 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
     resolution = { ...resolution, evidenceStatus: normalizeEvidenceStatus(resolution.evidenceKind ?? "NONE", resolution.evidenceStatus ?? "NONE") };
   }
   if (resolution.approvalStatus === "승인대기") {
+    if (resolution.cardReconciliationStatus === "PENDING" && !resolution.cardTransactionId) throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
     let governanceSettings: ExpenseComplianceSettings | null = null;
     try { const organizationId = await getDefaultOrganizationId(); governanceSettings = organizationId ? await getExpenseComplianceSettings(organizationId) : null; } catch {}
     resolution = await validateDirectExpenseGovernance(resolution, governanceSettings);
@@ -315,6 +321,15 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
     const bankResolutionStatus = resolution.approvalStatus === "승인완료" ? "APPROVED" : resolution.evidenceStatus === "NONE" || resolution.evidenceStatus === "DEFICIENT" ? "EVIDENCE_MISSING" : "DRAFTING";
     const { error: bankStatusError } = await supabase.schema("finance").from("bank_transactions").update({ resolution_status: bankResolutionStatus }).eq("id", resolution.bankTransactionId);
     if (bankStatusError) throw new Error(`통장거래 상태 저장 실패: ${bankStatusError.message}`);
+  }
+  if (existingResolution?.cardTransactionId && existingResolution.cardTransactionId !== resolution.cardTransactionId) {
+    const { error: unlinkCardError } = await supabase.schema("finance").from("corporate_card_transactions").update({ linked_resolution_id: null, resolution_status: "UNRESOLVED", updated_at: new Date().toISOString() }).eq("id", existingResolution.cardTransactionId);
+    if (unlinkCardError) throw new Error(`기존 법인카드 거래 연결해제 실패: ${unlinkCardError.message}`);
+  }
+  if (resolution.cardTransactionId) {
+    const cardResolutionStatus = resolution.approvalStatus === "승인완료" ? "APPROVED" : resolution.evidenceStatus === "NONE" || resolution.evidenceStatus === "DEFICIENT" ? "EVIDENCE_MISSING" : "DRAFTING";
+    const { error: cardStatusError } = await supabase.schema("finance").from("corporate_card_transactions").update({ linked_resolution_id: resolution.id, resolution_status: cardResolutionStatus, updated_at: new Date().toISOString() }).eq("id", resolution.cardTransactionId);
+    if (cardStatusError) throw new Error(`법인카드 거래 연결상태 저장 실패: ${cardStatusError.message}`);
   }
   const { error: auditError } = await supabase.schema("finance").from("expense_workflow_audit_logs").insert({ action: existing ? "RESOLUTION_UPDATED" : "RESOLUTION_CREATED", actor_label: resolution.author, before_data: existing?.resolution_data ?? null, after_data: saved, resolution_id: resolution.id });
   if (auditError) throw new Error(`감사로그 저장 실패: ${auditError.message}`);
@@ -349,6 +364,8 @@ export async function deleteExpenseResolutionAction(resolutionId: string, actorL
   const { error } = await supabase.schema("finance").from("expense_resolutions").update({ deleted_at: deletedAt }).eq("id", resolutionId);
   if (error) throw new Error(`지출결의서 삭제 실패: ${error.message}`);
   if (current.bank_transaction_id) await supabase.schema("finance").from("bank_transactions").update({ resolution_status: "UNRESOLVED" }).eq("id", current.bank_transaction_id);
+  const deletedResolution = current.resolution_data as ManagedExpenseResolution;
+  if (deletedResolution.cardTransactionId) await supabase.schema("finance").from("corporate_card_transactions").update({ linked_resolution_id: null, resolution_status: "UNRESOLVED", updated_at: new Date().toISOString() }).eq("id", deletedResolution.cardTransactionId);
   const { error: auditError } = await supabase.schema("finance").from("expense_workflow_audit_logs").insert({ action: "RESOLUTION_DELETED", actor_label: actorLabel, before_data: current.resolution_data, after_data: { deletedAt }, resolution_id: resolutionId });
   if (auditError) throw new Error(`삭제 감사로그 저장 실패: ${auditError.message}`);
   revalidatePath("/finance/expense-resolutions");
@@ -422,6 +439,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
     console.warn(`[expense-approval] Settings unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   if (input.command === "REQUEST") {
+    if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
     workflowCurrent = await validateDirectExpenseGovernance(workflowCurrent, settings);
     const configuredLine = settings?.approvalLine?.map((role) => current.approvalLine.find((step) => step.role === role)).filter((step): step is NonNullable<typeof step> => Boolean(step));
     if (configuredLine?.length) workflowCurrent = { ...current, approvalLine: configuredLine.map((step, index) => ({ ...step, order: index + 1, status: "대기" as const })) };
@@ -449,6 +467,10 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (saved.approvalStatus === "승인완료" && saved.bankTransactionId) {
     const { error } = await approvalSupabase.schema("finance").from("bank_transactions").update({ resolution_status: "APPROVED" }).eq("id", saved.bankTransactionId);
     if (error) throw new Error(`통장거래 결재상태 저장 실패: ${error.message}`);
+  }
+  if (saved.approvalStatus === "승인완료" && saved.cardTransactionId) {
+    const { error } = await approvalSupabase.schema("finance").from("corporate_card_transactions").update({ resolution_status: "APPROVED", updated_at: new Date().toISOString() }).eq("id", saved.cardTransactionId);
+    if (error) throw new Error(`법인카드 거래 결재상태 저장 실패: ${error.message}`);
   }
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/approval-inbox");

@@ -15,6 +15,7 @@ import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { evaluateDirectExpensePolicy, type DirectExpenseDecision, type ExpenseCreationSource } from "./direct-expense-policy";
 import { validateExpenseCompliance, type EvidenceKind, type EvidenceStatus, type ExpenseKind, type PettyCashTransaction } from "./expense-compliance";
 import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
+import { findCorporateCardMatchCandidates, isTaxiCardTransaction, type CorporateCardReconciliationStatus, type CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
 import { recommendExpenseBudget, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
@@ -287,6 +288,9 @@ export type ManagedExpenseResolution = {
   evidenceStatus?: EvidenceStatus;
   missingEvidenceReason?: string;
   bankTransactionId?: string;
+  cardTransactionId?: string;
+  cardLastFour?: string;
+  cardReconciliationStatus?: CorporateCardReconciliationStatus;
   bankTransactionUid?: string;
   settlementRecipient?: string;
   settlementCompletedAt?: string;
@@ -332,6 +336,9 @@ type ResolutionFormState = {
   evidenceStatus: EvidenceStatus;
   missingEvidenceReason: string;
   bankTransactionId: string;
+  cardTransactionId: string;
+  cardLastFour: string;
+  cardReconciliationStatus: CorporateCardReconciliationStatus;
   settlementRecipient: string;
   settlementCompletedAt: string;
   accountHolder: string;
@@ -1950,6 +1957,9 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     evidenceStatus: resolution.evidenceStatus ?? "NONE",
     missingEvidenceReason: resolution.missingEvidenceReason ?? "",
     bankTransactionId: resolution.bankTransactionId ?? "",
+    cardTransactionId: resolution.cardTransactionId ?? "",
+    cardLastFour: resolution.cardLastFour ?? "",
+    cardReconciliationStatus: resolution.cardReconciliationStatus ?? (resolution.cardTransactionId ? "MATCHED" : "PENDING"),
     settlementRecipient: resolution.settlementRecipient ?? resolution.accountHolder,
     settlementCompletedAt: resolution.settlementCompletedAt ?? "",
     accountHolder: resolution.accountHolder,
@@ -1988,8 +1998,8 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     executionMethod: resolution.executionMethod ?? "VENDOR_DIRECT",
     expenseBurdenType: resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
     inputMethod: normalizeInputMethod(resolution),
-    quickEntryMode: "NONE",
-    quickExpenseCategory: "택시",
+    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId ? "CORPORATE_CARD" : "NONE",
+    quickExpenseCategory: resolution.subject.includes("택시") ? "택시" : resolution.subject.includes("주차") ? "주차" : resolution.subject.includes("통행료") ? "통행료" : resolution.subject.includes("식대") ? "식대" : resolution.subject.includes("소모품") ? "소모품" : "기타",
     memo: resolution.memo,
     operationExpenseDetail: resolution.operationExpenseDetail,
     paymentTargetId: getResolutionPaymentTargetId(resolution),
@@ -2038,6 +2048,9 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     evidenceStatus: "NONE",
     missingEvidenceReason: "",
     bankTransactionId: "",
+    cardTransactionId: "",
+    cardLastFour: "",
+    cardReconciliationStatus: "PENDING",
     settlementRecipient: "",
     settlementCompletedAt: "",
     resolutionNo: nextNo,
@@ -2598,6 +2611,7 @@ export function ExpenseResolutionPage({
   getEvidenceOcrJob,
   initialResolutions,
   initialBankTransactions = [],
+  initialCardTransactions = [],
   initialApprovalDocuments = [],
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
@@ -2619,6 +2633,7 @@ export function ExpenseResolutionPage({
   getEvidenceOcrJob?: (id: string) => Promise<EvidenceOcrJobProgress>;
   initialResolutions?: ManagedExpenseResolution[];
   initialBankTransactions?: BankTransactionResolutionCandidate[];
+  initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocument[];
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
@@ -2834,6 +2849,7 @@ export function ExpenseResolutionPage({
           ...nextState,
           accountAllocations: current.accountAllocations.map((allocation, index) => index === 0 ? { ...allocation, accountTitle: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : allocation.accountTitle, budgetItem: category === "택시" || category === "주차" || category === "통행료" ? "운영비 > 여비교통비" : allocation.budgetItem } : allocation),
           approvalSkipReason: "승인 예산 내 일상 지출",
+          cardReconciliationStatus: current.cardTransactionId ? "MATCHED" : "PENDING",
           creationSource: "DIRECT",
           evidenceKind: "CARD_RECEIPT",
           evidenceStatus: "QUALIFIED",
@@ -2847,6 +2863,38 @@ export function ExpenseResolutionPage({
           reason: current.reason.trim() || `업무 목적 ${category} 비용 · 공용 법인카드 결제`,
           subject,
           vendorName: current.vendorName.trim() || "법인카드 사용처 미확인",
+        };
+      }
+
+      if (key === "cardTransactionId" && typeof value === "string") {
+        const transaction = initialCardTransactions.find((candidate) => candidate.id === value);
+        if (!transaction) return { ...nextState, cardLastFour: "", cardReconciliationStatus: "PENDING" };
+        const expenseDate = transaction.approvedAt.slice(0, 10);
+        const category = isTaxiCardTransaction(transaction) ? "택시" : current.quickExpenseCategory;
+        const isTransport = category === "택시" || category === "주차" || category === "통행료";
+        const amount = String(transaction.amount);
+        return {
+          ...nextState,
+          accountAllocations: [createAccountAllocation({ accountTitle: isTransport ? "여비교통비" : "운영비", amount, budgetItem: isTransport ? "운영비 > 여비교통비" : "", description: `${transaction.merchantName} 법인카드 사용` })],
+          accountingDate: expenseDate,
+          actualExpenseDate: expenseDate,
+          actualUsedAmount: amount,
+          cardTransactionId: transaction.id,
+          cardLastFour: transaction.cardLastFour,
+          cardReconciliationStatus: "MATCHED",
+          evidenceKind: "OTHER_ALTERNATIVE",
+          evidenceStatus: "ALTERNATIVE",
+          expenseBurdenType: "CORPORATE_CARD",
+          expenseTiming: "REIMBURSEMENT",
+          missingEvidenceReason: `공용 법인카드 승인내역으로 대체${transaction.approvalNo ? ` · 승인번호 ${transaction.approvalNo}` : ""}`,
+          operationExpenseDetail: isTransport ? "여비교통비" : current.operationExpenseDetail,
+          plannedPaymentDate: expenseDate,
+          quickEntryMode: "CORPORATE_CARD",
+          quickExpenseCategory: category,
+          reason: current.reason.trim() || `업무 목적 ${category} 비용 · ${transaction.cardName} 승인내역`,
+          singleItems: [createSingleExpenseItem({ itemName: `${transaction.merchantName} ${category}비`, taxCategory: "NO_VAT", unitPrice: amount })],
+          subject: `${currentDateLabel(expenseDate)} 업무용 ${category}비`,
+          vendorName: transaction.merchantName || "법인카드 사용처 미확인",
         };
       }
 
@@ -3489,6 +3537,9 @@ export function ExpenseResolutionPage({
       evidenceStatus: formState.evidenceStatus,
       missingEvidenceReason: formState.missingEvidenceReason || undefined,
       bankTransactionId: formState.bankTransactionId || undefined,
+      cardTransactionId: formState.cardTransactionId || undefined,
+      cardLastFour: formState.cardLastFour || undefined,
+      cardReconciliationStatus: formState.cardTransactionId ? "MATCHED" : formState.quickEntryMode === "CORPORATE_CARD" ? "PENDING" : undefined,
       settlementRecipient: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementRecipient || formState.advancePayer : undefined,
       settlementCompletedAt: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementCompletedAt || undefined : undefined,
       settlementAmount: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? totalPaymentAmount : undefined,
@@ -4033,6 +4084,7 @@ export function ExpenseResolutionPage({
                           <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
                           {resolution.actualExpenseDate ? <p className="mt-0.5 text-xs text-[var(--color-stone)]">지출 {resolution.actualExpenseDate}</p> : null}
                           <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : resolution.creationSource === "SMALL_EXPENSE" ? "소액일괄" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
+                          {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">카드내역 매칭완료</p> : null}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} title={getResolutionSubject(resolution)} type="button">
@@ -4173,6 +4225,7 @@ export function ExpenseResolutionPage({
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
           bankTransactionCandidates={initialBankTransactions}
+          cardTransactionCandidates={initialCardTransactions}
           approvalDocuments={initialApprovalDocuments}
           directExpenseSettings={directExpenseSettings}
           settlementCandidates={resolutions.filter((resolution) => normalizeExpenseTiming(resolution) === "ADVANCE" && resolution.paymentStatus === "지급완료")}
@@ -4275,6 +4328,7 @@ export function ExpenseResolutionPage({
 
 function ExpenseResolutionCreateModal({
   bankTransactionCandidates,
+  cardTransactionCandidates,
   approvalDocuments,
   directExpenseSettings,
   batchImportError,
@@ -4318,6 +4372,7 @@ function ExpenseResolutionCreateModal({
   onAccountAllocationChange,
 }: {
   bankTransactionCandidates: BankTransactionResolutionCandidate[];
+  cardTransactionCandidates: CorporateCardTransactionCandidate[];
   approvalDocuments: ApprovalDocument[];
   directExpenseSettings: ExpenseComplianceSettings;
   batchImportError: string;
@@ -4361,6 +4416,11 @@ function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const isBatch = formState.resolutionType === "BATCH";
+  const cardMatchCandidates = useMemo(() => findCorporateCardMatchCandidates({ amount: totalAmount, cardLastFour: formState.cardLastFour, expenseDate: formState.actualExpenseDate, transactions: cardTransactionCandidates }), [cardTransactionCandidates, formState.actualExpenseDate, formState.cardLastFour, totalAmount]);
+  const displayedCardTransactions = useMemo(() => {
+    const recommendedIds = new Set(cardMatchCandidates.map((candidate) => candidate.id));
+    return [...cardMatchCandidates, ...cardTransactionCandidates.filter((transaction) => !recommendedIds.has(transaction.id))];
+  }, [cardMatchCandidates, cardTransactionCandidates]);
   const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
   const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
   const presetApplied = Boolean(formState.projectName && hasProjectExpensePreset(formState.projectName));
@@ -4720,8 +4780,22 @@ function ExpenseResolutionCreateModal({
               <section className="grid gap-4 rounded-xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/45 p-5">
                 <div>
                   <h3 className="font-bold text-[var(--color-deep-cobalt)]">공용 법인카드 간편결의</h3>
-                  <p className="mt-1 text-sm text-[var(--color-stone)]">거래처를 모르면 ‘법인카드 사용처 미확인’으로 두고, 날짜·금액·업무 목적만 확인하면 됩니다.</p>
+                  <p className="mt-1 text-sm text-[var(--color-stone)]">미결의 카드 승인내역을 고르면 날짜·금액·가맹점과 계정과목을 자동으로 채웁니다.</p>
                 </div>
+                <label className="grid gap-2 text-sm font-bold">
+                  <span>법인카드 승인내역</span>
+                  <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
+                    <option value="">아직 카드내역이 없음 · 연결대기로 임시등록</option>
+                    {displayedCardTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{cardMatchCandidates.some((candidate) => candidate.id === transaction.id) ? "추천 · " : ""}{transaction.approvedAt.slice(0, 10)} · {transaction.merchantName} · {transaction.amount.toLocaleString("ko-KR")}원 · {transaction.cardName} 끝 {transaction.cardLastFour}{isTaxiCardTransaction(transaction) ? " · 택시 자동분류" : ""}</option>)}
+                  </select>
+                  {cardTransactionCandidates.length ? <span className="text-xs font-semibold text-[var(--color-stone)]">미결의 승인내역 {cardTransactionCandidates.length}건 · 이미 결의서에 연결된 거래는 표시하지 않습니다.</span> : <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)]">불러온 미결의 카드 승인내역이 없습니다. 카드 내역 동기화 후 다시 확인해주세요.</span>}
+                </label>
+                <div className={`rounded-lg border px-4 py-3 text-sm ${formState.cardTransactionId ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
+                  <p className="font-bold">{formState.cardTransactionId ? "카드 승인내역 매칭완료" : "카드 승인내역 연결대기"}</p>
+                  <p className="mt-1 text-xs font-semibold">{formState.cardTransactionId ? "선택한 승인내역과 하나의 기록으로 통합해 중복 비용처리를 방지합니다." : "지금은 업무 목적만 임시등록합니다. 별도 지급·확정전표는 만들지 않고, 카드내역이 들어오면 날짜·금액으로 추천합니다."}</p>
+                </div>
+                {!formState.cardTransactionId ? <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} /> : null}
+                {!formState.cardTransactionId && cardMatchCandidates.length ? <div className="rounded-lg border border-[var(--color-deep-cobalt)]/25 bg-white px-4 py-3 text-sm"><p className="font-bold text-[var(--color-deep-cobalt)]">일치 가능성이 높은 카드내역 {cardMatchCandidates.length}건</p><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">금액과 결제일(±2일)이 일치합니다. 위 목록의 ‘추천’ 거래를 선택해 통합해주세요.</p></div> : null}
                 <QuestionChoiceGroup
                   label="어떤 비용인가요?"
                   onChange={(value) => onChange("quickExpenseCategory", value as ResolutionFormState["quickExpenseCategory"])}
@@ -5387,11 +5461,11 @@ function ExpenseResolutionCreateModal({
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : "임시저장"}</Button>
+            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onRequestApproval}>{isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId} onClick={onRequestApproval}>{formState.quickEntryMode === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>
@@ -7158,12 +7232,14 @@ const fieldControlClassName =
 
 function TextInput({
   label,
+  maxLength,
   onChange,
   readOnly,
   type = "text",
   value,
 }: {
   label: string;
+  maxLength?: number;
   onChange?: (value: string) => void;
   readOnly?: boolean;
   type?: "date" | "number" | "text";
@@ -7174,6 +7250,7 @@ function TextInput({
       <span className={fieldLabelClassName}>{label}</span>
       <input
         className={`${fieldControlClassName} ${readOnly ? "bg-[var(--color-cloud-veil)] text-[var(--color-deep-cobalt)]" : "bg-white"}`}
+        maxLength={maxLength}
         onChange={(event) => onChange?.(event.target.value)}
         readOnly={readOnly}
         type={type}
