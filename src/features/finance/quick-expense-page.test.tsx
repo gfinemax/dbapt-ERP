@@ -23,4 +23,28 @@ describe("QuickExpensePage", () => {
     expect(screen.getByLabelText("금액")).toBeInTheDocument();
     expect(screen.getByLabelText("거래처·지급대상")).toBeInTheDocument();
   });
+
+  it("shows a clear empty-card state and temporarily records usage without an approval transaction", async () => {
+    const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["카드내역 연결 필요"], id: "quick-card-1", recordStatus: "SOURCE_PENDING" as const }));
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} persistRecord={persistRecord} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "법인카드" }));
+    expect(screen.getByText("등록된 미처리 법인카드 승인내역이 없습니다.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "사용내용 임시등록" })).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("카드 사용금액"), { target: { value: "48000" } });
+    fireEvent.change(screen.getByLabelText("가맹점·사용처"), { target: { value: "교보문고" } });
+    fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "총회 참고도서 구매" } });
+    fireEvent.change(screen.getByLabelText("예산항목"), { target: { value: "운영비 > 기타" } });
+    fireEvent.click(screen.getByRole("button", { name: "사용내용 임시등록" }));
+
+    await waitFor(() => expect(persistRecord).toHaveBeenCalledWith(expect.objectContaining({ corporateCardTransactionId: undefined, paymentMethod: "CORPORATE_CARD", sourceType: "MANUAL" })));
+    expect(await screen.findByText(/카드 승인내역이 들어오면 실제 거래를 연결해줘/)).toBeInTheDocument();
+    expect(screen.getByText("카드내역 연결대기")).toBeInTheDocument();
+  });
+
+  it("keeps the registration button visible and explains missing fields", () => {
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
+    expect(screen.getByRole("button", { name: "사용내용 등록" })).toBeEnabled();
+    expect(screen.getByText(/입력 필요: 실제 거래, 금액/)).toBeInTheDocument();
+  });
 });

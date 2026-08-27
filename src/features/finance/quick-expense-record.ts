@@ -24,7 +24,7 @@ export type QuickExpenseRecord = QuickExpenseRecordInput & {
   directExpenseDecision: DirectExpenseDecision;
   directExpenseReasons: string[];
   id: string;
-  recordStatus: "RECORDED" | "NEEDS_RESOLUTION" | "CONVERTED";
+  recordStatus: "RECORDED" | "SOURCE_PENDING" | "NEEDS_RESOLUTION" | "CONVERTED";
 };
 
 export function validateQuickExpenseRecord(input: QuickExpenseRecordInput, settings: ExpenseComplianceSettings = defaultExpenseComplianceSettings) {

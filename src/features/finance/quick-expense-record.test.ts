@@ -31,4 +31,8 @@ describe("validateQuickExpenseRecord", () => {
       "통장 출금거래 연결이 필요합니다.",
     ]);
   });
+
+  it("allows a manual corporate-card record to wait for source matching", () => {
+    expect(validateQuickExpenseRecord({ ...validInput, bankTransactionId: undefined, paymentMethod: "CORPORATE_CARD", sourceType: "MANUAL" }).errors).toEqual([]);
+  });
 });
