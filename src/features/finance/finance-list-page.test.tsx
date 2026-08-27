@@ -39,6 +39,8 @@ describe("FinanceListPage", () => {
     expect(within(addMenu).getByText("수입전표")).toBeInTheDocument();
     expect(within(addMenu).getByText("수입-2026-0001")).toBeInTheDocument();
     expect(within(addMenu).getByText("지출결의서")).toBeInTheDocument();
+    expect(within(addMenu).getByText("예산 내 간편지출")).toBeInTheDocument();
+    expect(within(addMenu).getByText("결의서 없음")).toBeInTheDocument();
     expect(within(addMenu).getByText("지결-2026-0001")).toBeInTheDocument();
     expect(within(addMenu).getByText("지출전표")).toBeInTheDocument();
     expect(within(addMenu).getByText("지출-2026-0001")).toBeInTheDocument();

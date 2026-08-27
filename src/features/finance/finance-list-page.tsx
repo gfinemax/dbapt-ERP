@@ -54,6 +54,12 @@ const voucherWorkflows = [
 ];
 const addVoucherActions = [
   {
+    description: "승인 예산 내 일상·정기 지출의 사용내용을 정식 지출결의서 없이 실제 거래에 기록합니다.",
+    documentNo: "결의서 없음",
+    href: "/finance/quick-expenses",
+    label: "예산 내 간편지출",
+  },
+  {
     description: "조합원 분담금, 이자수입 등 입금 전표를 작성합니다.",
     documentNo: createDocumentNo("INCOME_VOUCHER", 1, 2026),
     label: "수입전표",
@@ -125,6 +131,7 @@ export function FinanceListPage() {
                   <button
                     className="rounded-xl border border-[var(--color-soft-border)] bg-white px-4 py-3 text-left transition hover:bg-[var(--color-cloud-veil)]"
                     key={action.label}
+                    onClick={() => { if ("href" in action) window.location.assign(action.href); }}
                     type="button"
                   >
                     <span className="flex items-center justify-between gap-3">
