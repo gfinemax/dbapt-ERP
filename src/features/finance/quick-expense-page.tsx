@@ -11,7 +11,22 @@ import { parseCorporateCardTransactionText } from "./corporate-card-transaction-
 import { readBankTransactionFile } from "./bank-transaction-file";
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
-const budgetSuggestions = ["운영비 > 통신비", "운영비 > 여비교통비", "운영비 > 사무용품비", "운영비 > 지급수수료", "운영비 > 기타"];
+const budgetSuggestions = [
+  "복리후생비",
+  "업무추진비",
+  "회의비>이사회비",
+  "회의비>감사비",
+  "일반운영비>지급임차료",
+  "일반운영비>도서인쇄비",
+  "일반운영비>소모품비",
+  "일반운영비>수선비",
+  "제세공과금>통신비",
+  "제세공과금>여비교통비",
+  "제세공과금>수도광열비",
+  "제세공과금>지급수수료",
+  "기타운영비",
+  "예비비",
+];
 
 export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialCardTransactions, initialRecords, persistRecord }: {
   importCardTransactions?: (rows: CorporateCardTransactionImportRow[]) => Promise<unknown>;
