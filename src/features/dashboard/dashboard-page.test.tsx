@@ -46,7 +46,7 @@ describe("DashboardPage", () => {
     render(<DashboardPage />);
 
     expect(screen.getByRole("heading", { name: "자금 입출금 및 전표처리 현황" })).toBeInTheDocument();
-    expect(screen.getByText("조회기준일시 : 2026/06/07 11:13:03")).toBeInTheDocument();
+    expect(screen.getByText(/^조회기준일시 : \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "월별" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("조합원 분담금")).toBeInTheDocument();
     expect(screen.getByText("증빙누락 2건")).toBeInTheDocument();
@@ -86,9 +86,9 @@ describe("DashboardPage", () => {
   it("uses compact typography in the cash flow widget", () => {
     render(<DashboardPage />);
 
-    expect(screen.getByText("2026.06.07", { exact: false })).toHaveClass("text-xl");
+    expect(screen.getByText(/^\d{4}\.\d{2}\.\d{2}/)).toHaveClass("text-xl");
     expect(screen.getByRole("heading", { name: "자금 입출금 및 전표처리 현황" })).toHaveClass("text-lg");
-    expect(screen.getByText("조회기준일시 : 2026/06/07 11:13:03").parentElement).toHaveClass("text-xs");
+    expect(screen.getByText(/^조회기준일시 : \d{4}\/\d{2}\/\d{2} \d{2}:\d{2}:\d{2}$/).parentElement).toHaveClass("text-xs");
     expect(screen.getByRole("heading", { name: "수입" })).toHaveClass("text-sm");
     expect(screen.getByText("증빙누락 2건").parentElement).toHaveClass("text-xs");
   });

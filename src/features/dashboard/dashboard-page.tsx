@@ -13,7 +13,7 @@ import {
   TriangleAlert,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 
 import { ErpShell } from "@/components/erp-shell";
@@ -70,6 +70,33 @@ const ringClasses: Record<Tone, string> = {
   green: "text-[var(--color-green-ink)]",
   neutral: "text-[var(--color-stone)]",
 };
+
+const dashboardClockFormatter = new Intl.DateTimeFormat("ko-KR", {
+  day: "2-digit",
+  hour: "2-digit",
+  hour12: false,
+  minute: "2-digit",
+  month: "2-digit",
+  second: "2-digit",
+  timeZone: "Asia/Seoul",
+  weekday: "short",
+  year: "numeric",
+});
+
+function formatDashboardClock(date: Date) {
+  const parts = Object.fromEntries(
+    dashboardClockFormatter
+      .formatToParts(date)
+      .filter((part) => part.type !== "literal")
+      .map((part) => [part.type, part.value]),
+  );
+
+  return {
+    date: `${parts.year}.${parts.month}.${parts.day}`,
+    dateTime: `${parts.year}/${parts.month}/${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`,
+    weekday: parts.weekday,
+  };
+}
 
 function isPercentStat(
   stat: DashboardStat,
@@ -617,6 +644,14 @@ function CashFlowProcessingWidget({
 }) {
   const [selectedViewMode, setSelectedViewMode] =
     useState<CashFlowViewMode>("월별");
+  const [currentDateTime, setCurrentDateTime] = useState(() => new Date());
+  const clock = formatDashboardClock(currentDateTime);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setCurrentDateTime(new Date()), 1000);
+
+    return () => window.clearInterval(timer);
+  }, []);
   const selectedPoints =
     cashFlowWidget.chart[cashFlowChartKeys[selectedViewMode]];
   const maxAmount = Math.max(
@@ -629,12 +664,12 @@ function CashFlowProcessingWidget({
       <div className="flex flex-col gap-3 border-b border-[var(--color-soft-border)] px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
           <p className="text-xl font-bold">
-            2026.06.07 <span className="text-sm">(일)</span>
+            {clock.date} <span className="text-sm">({clock.weekday})</span>
           </p>
           <h2 className="mt-3 text-lg font-bold">{cashFlowWidget.title}</h2>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-xs text-[var(--color-stone)]">
-          <span>조회기준일시 : {cashFlowWidget.generatedAt}</span>
+          <span>조회기준일시 : {clock.dateTime}</span>
           <Button className="rounded-full" size="sm" variant="outline">
             위젯설정
           </Button>

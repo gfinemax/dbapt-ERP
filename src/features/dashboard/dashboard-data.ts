@@ -76,7 +76,6 @@ export type CashFlowWidget = {
     monthly: CashFlowPoint[];
     quarterly: CashFlowPoint[];
   };
-  generatedAt: string;
   periodLabel: string;
   periodRange: string;
   statusGroups: CashFlowStatusGroup[];
@@ -95,7 +94,6 @@ export type DepositBalanceWidget = {
 
 export const cashFlowWidget: CashFlowWidget = {
   title: "자금 입출금 및 전표처리 현황",
-  generatedAt: "2026/06/07 11:13:03",
   periodLabel: "2026-06",
   periodRange: "2026년 01월 01일 ~ 2026년 12월 31일",
   viewModes: ["일별", "월별", "분기별"],
