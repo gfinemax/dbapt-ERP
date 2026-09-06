@@ -1,4 +1,5 @@
 import { ErpShell } from "@/components/erp-shell";
+import Link from "next/link";
 import {
   addMeetingRuleAction,
   saveApprovalBudgetAction,
@@ -26,6 +27,7 @@ export default async function Page() {
       <main className="mx-auto max-w-6xl space-y-5">
         <header className="rounded-[28px] border border-[var(--color-soft-border)] bg-white p-6">
           <h1 className="text-3xl font-bold">기안 설정</h1>
+          <Link href="/finance/reimbursements" className="mt-3 inline-block text-sm font-semibold text-blue-700 underline">개인 지출 정산·월 마감 관리</Link>
           <div className="mt-4 flex flex-wrap gap-2">
             {[
               "기안 유형",
@@ -154,7 +156,7 @@ export default async function Page() {
               className={input}
               min="0"
               name="executedAmount"
-              placeholder="실제 집행액"
+              placeholder="기존 집행액 (개인 정산 자동 합산분 제외)"
               type="number"
               required
             />

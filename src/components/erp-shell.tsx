@@ -88,6 +88,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
         { label: "결재함", href: "/finance/approval-inbox" },
         { label: "지급대기", href: "/finance/payment-waiting" },
         { label: "지급완료 내역", href: "/finance/payment-completed" },
+        { label: "개인 지출 정산·월 마감", href: "/finance/reimbursements" },
         { label: "분담금 수납관리" },
         { label: "환불금 지급관리" },
         { label: "증빙자료 관리" },
@@ -218,10 +219,12 @@ type ErpShellProps = {
   activeLabel?: string;
   activeWorkspaceLabel?: string;
   children: ReactNode;
+  userLabel?: string;
+  logoutAction?: () => Promise<void>;
   onQuickMenuSelect?: (label: string) => void;
 };
 
-export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "관리자", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
   const sidebarToggleText = isSidebarOpen ? "닫기" : "메뉴";
@@ -399,11 +402,11 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
                 <Bell className="size-4" />
               </button>
               <div className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white">
-                관리자
+                {userLabel}
               </div>
-              <a aria-label="로그아웃" className="hidden size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] text-[var(--color-stone)] lg:flex" href="#">
+              {logoutAction ? <form action={logoutAction}><button aria-label="로그아웃" type="submit" className="flex size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)]"><LogOut className="size-4"/></button></form> : <a aria-label="로그아웃" className="hidden size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] text-[var(--color-stone)] lg:flex" href="#">
                 <LogOut className="size-4" />
-              </a>
+              </a>}
             </div>
           </div>
 

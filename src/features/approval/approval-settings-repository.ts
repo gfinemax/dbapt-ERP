@@ -15,6 +15,7 @@ export type ApprovalBudgetOption = {
   fiscalYear: number;
   id: string;
   monthlyBudgetAmount?: number;
+  monthlyUsedAmount?: number;
   reservedAmount: number;
 };
 export type ApprovalLineRule = {
@@ -126,11 +127,14 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
   const { data, error } = await api
     .schema("approval")
     .from("budgets")
-    .select("id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount,calculation_basis")
+    .select("id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount,calculation_basis")
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
   const ids = (data ?? []).map((row) => row.id);
+  const totals=await api.schema("finance").rpc("reimbursement_budget_totals",{p_month:currentMonthStart.slice(0,10)});
+  if(totals.error) throw new Error(`예산 사용액 집계 실패: ${totals.error.message}`);
+  const budgetTotals=(totals.data??[]) as Array<{budget_id:string;annual_personal:number;monthly_personal:number;monthly_quick:number}>;
   let reservations: Array<{
     amount: number | string;
     budget_id: string;
@@ -157,17 +161,20 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
         0,
       );
     const approvedAmount = Number(row.approved_amount);
-    const executedAmount = Number(row.executed_amount);
+    const total=budgetTotals.find(t=>t.budget_id===row.id);
+    const executedAmount = Number(row.executed_amount)+Number(total?.annual_personal??0);
+    const monthlyUsedAmount=row.fiscal_year===currentYear ? Number(total?.monthly_personal??0)+Number(total?.monthly_quick??0) : 0;
     const monthlyBudgetAmount = Number(row.monthly_amount) || Math.round(approvedAmount / 12);
     return {
       approvedAmount,
-      availableAmount: monthlyBudgetAmount - reservedAmount,
+      availableAmount: monthlyBudgetAmount - reservedAmount - monthlyUsedAmount,
       budgetItem: row.budget_item,
       calculationBasis: row.calculation_basis || undefined,
       executedAmount,
       fiscalYear: row.fiscal_year,
       id: row.id,
       monthlyBudgetAmount,
+      monthlyUsedAmount,
       reservedAmount,
     };
   });

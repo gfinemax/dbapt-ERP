@@ -14,6 +14,6 @@ export async function listExpenseBudgetProfiles(): Promise<Record<string, Budget
     paymentWaitingAmount: 0,
     pendingApprovalAmount: budget.reservedAmount,
     previousAnnualBudgetAmount: 0,
-    usedAmount: 0,
+    usedAmount: budget.monthlyUsedAmount ?? 0,
   }]));
 }
