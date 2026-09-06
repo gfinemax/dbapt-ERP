@@ -232,9 +232,10 @@ export function ApprovalNewPage({
               </label>
               {selectedBudget ? (
                 <div className="grid gap-2 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm md:col-span-2 sm:grid-cols-3">
-                  <Summary label="사용 가능액" value={selectedBudget.availableAmount} />
+                  <Summary label={selectedBudget.unresolvedCount?"귀속 확인분 잔액":"사용 가능액"} value={selectedBudget.availableAmount} />
                   <Summary label="이번 기안금액" value={amount} />
                   <Summary label="승인 후 예상잔액" value={selectedBudget.availableAmount - amount} />
+                  {!!selectedBudget.unresolvedCount&&<p className="text-amber-800 sm:col-span-3">귀속 확인 필요 {selectedBudget.unresolvedCount}건 · 집행 전 월 예산·마감에서 배정을 확인해줘.</p>}
                 </div>
               ) : null}
               <button
@@ -486,7 +487,7 @@ function ApprovalReviewPanel({
       {budgetEnabled ? (
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
           <h2 className="text-lg font-bold">예산 요약</h2>
-          {selectedBudget ? <div className="mt-3 grid gap-2"><Summary label="사용 가능액" value={selectedBudget.availableAmount} /><Summary label="이번 기안금액" value={amount} /><Summary label="승인 후 예상잔액" value={balance} /></div> : <p className="mt-3 text-sm text-[var(--color-stone)]">예산 항목을 선택하면 잔액을 확인할 수 있어요.</p>}
+          {selectedBudget ? <div className="mt-3 grid gap-2"><Summary label={selectedBudget.unresolvedCount?"귀속 확인분 잔액":"사용 가능액"} value={selectedBudget.availableAmount} /><Summary label="이번 기안금액" value={amount} /><Summary label="승인 후 예상잔액" value={balance} />{!!selectedBudget.unresolvedCount&&<p className="text-sm text-amber-800">귀속 확인 필요 {selectedBudget.unresolvedCount}건 · 집행 전 예산 배정을 확인해줘.</p>}</div> : <p className="mt-3 text-sm text-[var(--color-stone)]">예산 항목을 선택하면 잔액을 확인할 수 있어요.</p>}
         </section>
       ) : null}
 

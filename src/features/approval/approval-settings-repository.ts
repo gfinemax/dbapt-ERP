@@ -1,3 +1,4 @@
+import { budgetUsed, type ReimbursementBudget } from "@/features/finance/reimbursement-domain";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 
 export type ApprovalSettings = {
@@ -17,6 +18,11 @@ export type ApprovalBudgetOption = {
   monthlyBudgetAmount?: number;
   monthlyUsedAmount?: number;
   reservedAmount: number;
+  annualReservedAmount?: number;
+  pendingAmount?: number;
+  unpaidAmount?: number;
+  unresolvedCount?: number;
+  recordedAmount?: number;
 };
 export type ApprovalLineRule = {
   documentType: "GENERAL" | "EXPENSE" | "CONTRACT" | null;
@@ -121,9 +127,7 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
   const api = client();
   const now = new Date();
   const currentMonthStart = `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(now)}-01T00:00:00+09:00`;
-  const currentMonth = Number(currentMonthStart.slice(5, 7));
   const currentYear = Number(currentMonthStart.slice(0, 4));
-  const nextMonthStart = currentMonth === 12 ? `${currentYear + 1}-01-01T00:00:00+09:00` : `${currentYear}-${String(currentMonth + 1).padStart(2, "0")}-01T00:00:00+09:00`;
   const { data, error } = await api
     .schema("approval")
     .from("budgets")
@@ -131,51 +135,26 @@ export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
-  const ids = (data ?? []).map((row) => row.id);
-  const totals=await api.schema("finance").rpc("reimbursement_budget_totals",{p_month:currentMonthStart.slice(0,10)});
+  const totals=await api.schema("finance").rpc("unified_budget_totals",{p_month:currentMonthStart.slice(0,10)});
   if(totals.error) throw new Error(`예산 사용액 집계 실패: ${totals.error.message}`);
-  const budgetTotals=(totals.data??[]) as Array<{budget_id:string;annual_personal:number;monthly_personal:number;monthly_quick:number}>;
-  let reservations: Array<{
-    amount: number | string;
-    budget_id: string;
-    released_amount: number | string;
-  }> = [];
-  if (ids.length) {
-    const result = await api
-      .schema("approval")
-      .from("budget_reservations")
-      .select("budget_id,amount,released_amount")
-      .in("budget_id", ids)
-      .eq("status", "ACTIVE")
-      .gte("created_at", currentMonthStart)
-      .lt("created_at", nextMonthStart);
-    if (result.error)
-      throw new Error(`집행예정액을 불러오지 못했어: ${result.error.message}`);
-    reservations = result.data ?? [];
-  }
+  const budgetTotals=(totals.data??[]) as ReimbursementBudget[];
   return (data ?? []).map((row) => {
-    const reservedAmount = reservations
-      .filter((item) => item.budget_id === row.id)
-      .reduce(
-        (sum, item) => sum + Number(item.amount) - Number(item.released_amount),
-        0,
-      );
-    const approvedAmount = Number(row.approved_amount);
-    const total=budgetTotals.find(t=>t.budget_id===row.id);
-    const executedAmount = Number(row.executed_amount)+Number(total?.annual_personal??0);
-    const monthlyUsedAmount=row.fiscal_year===currentYear ? Number(total?.monthly_personal??0)+Number(total?.monthly_quick??0) : 0;
-    const monthlyBudgetAmount = Number(row.monthly_amount) || Math.round(approvedAmount / 12);
+    const total=budgetTotals.find(t=>t.id===row.id);
+    if(!total) throw new Error("예산 집계 결과가 누락됐습니다. 다시 조회해주세요.");
+    const current=row.fiscal_year===currentYear;
+    const reservedAmount=current?Number(total.reserved_amount):0;
+    const monthlyUsedAmount=current?budgetUsed(total):0;
+    const monthlyBudgetAmount=Number(row.monthly_amount);
     return {
-      approvedAmount,
-      availableAmount: monthlyBudgetAmount - reservedAmount - monthlyUsedAmount,
-      budgetItem: row.budget_item,
-      calculationBasis: row.calculation_basis || undefined,
-      executedAmount,
-      fiscalYear: row.fiscal_year,
-      id: row.id,
-      monthlyBudgetAmount,
-      monthlyUsedAmount,
-      reservedAmount,
+      approvedAmount:Number(row.approved_amount),
+      availableAmount:monthlyBudgetAmount-reservedAmount-monthlyUsedAmount,
+      budgetItem:row.budget_item, calculationBasis:row.calculation_basis||undefined,
+      executedAmount:Number(total.annual_used_amount??0), recordedAmount:Number(row.executed_amount),
+      fiscalYear:row.fiscal_year, id:row.id, monthlyBudgetAmount, monthlyUsedAmount, reservedAmount,
+      annualReservedAmount:Number(total.annual_reserved_amount??0),
+      pendingAmount:current?Number(total.pending_amount??0):0,
+      unpaidAmount:current?Number(total.unpaid_amount):0,
+      unresolvedCount:Number(total.unresolved_count??0),
     };
   });
 }

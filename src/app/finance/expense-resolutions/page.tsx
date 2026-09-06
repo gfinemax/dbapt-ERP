@@ -10,6 +10,7 @@ import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corp
 import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
+export const dynamic = "force-dynamic";
 export default async function ExpenseResolutionsRoute() {
   let dataLoadError: string | undefined;
   let initialResolutions: ManagedExpenseResolution[] = [];

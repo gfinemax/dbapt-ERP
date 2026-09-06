@@ -1,3 +1,4 @@
+import { listApprovalBudgets } from "./approval-settings-repository";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import {
   meetingStatusForAmount,
@@ -707,44 +708,18 @@ export async function closeApprovalDocument(
 }
 
 export type ApprovalBudgetSummary = {
+  unresolvedCount?: number;
   approved: number;
   available: number;
   executed: number;
   reserved: number;
 };
 export async function getApprovalBudgetSummary(): Promise<ApprovalBudgetSummary> {
-  const client = requireClient();
-  const [budgets, reservations] = await Promise.all([
-    client
-      .schema("approval")
-      .from("budgets")
-      .select("approved_amount,executed_amount"),
-    client
-      .schema("approval")
-      .from("budget_reservations")
-      .select("amount,released_amount")
-      .eq("status", "ACTIVE"),
-  ]);
-  if (budgets.error || reservations.error)
-    throw new Error(
-      `예산 현황을 불러오지 못했어: ${budgets.error?.message ?? reservations.error?.message}`,
-    );
-  const approved = (budgets.data ?? []).reduce(
-    (sum, row) => sum + Number(row.approved_amount),
-    0,
-  );
-  const executed = (budgets.data ?? []).reduce(
-    (sum, row) => sum + Number(row.executed_amount),
-    0,
-  );
-  const reserved = (reservations.data ?? []).reduce(
-    (sum, row) => sum + Number(row.amount) - Number(row.released_amount),
-    0,
-  );
-  return {
-    approved,
-    executed,
-    reserved,
-    available: approved - executed - reserved,
-  };
+  const rows=await listApprovalBudgets();
+  const year=Number(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul",year:"numeric"}).format(new Date()));
+  const budgets=rows.filter(b=>b.fiscalYear===year);
+  const approved=budgets.reduce((s,b)=>s+b.approvedAmount,0);
+  const executed=budgets.reduce((s,b)=>s+b.executedAmount,0);
+  const reserved=budgets.reduce((s,b)=>s+(b.annualReservedAmount??0),0);
+  return {approved,executed,reserved,available:approved-executed-reserved,unresolvedCount:Math.max(0,...budgets.map(b=>b.unresolvedCount??0))};
 }

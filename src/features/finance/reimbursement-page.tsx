@@ -1,10 +1,12 @@
 "use client";
 
+import { BudgetAllocationPanel } from "./budget-allocation-panel";
+import { UnifiedBudgetTable } from "./unified-budget-table";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, submitReimbursement } from "@/app/finance/reimbursements/actions";
-import { budgetRemaining, budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementBudget, type ReimbursementReport } from "./reimbursement-domain";
+import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementReport } from "./reimbursement-domain";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
 
 const card="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5";
@@ -34,22 +36,17 @@ export function ReimbursementLogin({error}:{error?:string}) {
     <p className="mt-3 text-sm text-slate-600">계정이 없으면 정산 관리자에게 계정과 권한 등록을 요청해줘.</p>
   </section>;
 }
-function BudgetTable({budgets}:{budgets:ReimbursementBudget[]}) {
-  return <div className="overflow-x-auto"><table className="w-full min-w-[760px] text-right text-sm"><thead><tr className="border-b bg-slate-50"><th className="p-3 text-left">예산항목</th><th>월 예산</th><th>간편지출</th><th>개인 정산 승인액</th><th>사용액 합계</th><th>집행 예약액</th><th>가용액</th></tr></thead><tbody>
-    {budgets.map(b=><tr className="border-b" key={b.id}><th className="p-3 text-left font-medium">{b.budget_item}</th><td>{money(b.monthly_amount)}</td><td>{money(b.quick_amount)}</td><td>{money(b.personal_amount)}</td><td>{money(budgetUsed(b))}</td><td>{money(b.reserved_amount)}</td><td className={budgetRemaining(b)<0?"font-bold text-red-700":""}>{money(budgetRemaining(b))}</td></tr>)}
-  </tbody></table>{!budgets.length&&<p className="p-4">이 연도에 등록된 예산이 없어.</p>}</div>;
-}
 function Report({report,previous}:{report:ReimbursementReport;previous?:ReimbursementReport}) {
   return <details className="rounded-lg border p-4"><summary className="cursor-pointer font-semibold">{report.month.slice(0,7)} · {report.revision===1?"최초 마감":`수정 ${report.revision-1}차`} · {dateTime(report.created_at)}</summary>
     <p className="my-3 text-sm">사유: {report.reason}</p>
     {previous&&<p className="mb-3 text-sm">직전 보고 대비 사용액 변경: {money(report.snapshot.budgets.reduce((s,b)=>s+budgetUsed(b),0)-previous.snapshot.budgets.reduce((s,b)=>s+budgetUsed(b),0))}</p>}
-    <BudgetTable budgets={report.snapshot.budgets} />
+    <UnifiedBudgetTable budgets={report.snapshot.budgets} entries={report.snapshot.entries} />
     <a className="mt-3 inline-block text-sm text-blue-700 underline" href={`/finance/reimbursements/report?month=${report.month}&revision=${report.revision}`} target="_blank" rel="noreferrer">보고서 열기·인쇄</a>
   </details>;
 }
-export function ReimbursementPage({workspace:w}:{workspace:ReimbursementWorkspace}) {
+export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace:ReimbursementWorkspace;initialTab?:string}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
-  const [tab,setTab]=useState("requests"); const [selected,setSelected]=useState<Reimbursement|null>(null); const [action,setAction]=useState("");
+  const [tab,setTab]=useState(initialTab); const [selected,setSelected]=useState<Reimbursement|null>(null); const [action,setAction]=useState("");
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
   const [status,setStatus]=useState("ALL");
@@ -63,9 +60,9 @@ export function ReimbursementPage({workspace:w}:{workspace:ReimbursementWorkspac
   function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");}}
   return <>
     <header className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">개인 지출 정산·월 마감</h1><p className="mt-2 text-sm text-slate-600">사용월 예산에 한 번 반영하고, 지급일은 실제 출금일로 기록해.</p></div><div className="text-sm">{w.member.display_name}<button className={`${secondary} ml-3`} onClick={()=>op.run(reimbursementLogout)} disabled={op.pending}>로그아웃</button></div></div>
-      <div className="mt-5 flex flex-wrap items-center gap-3"><label>조회 월 <input aria-label="조회 월" className="rounded-lg border p-2" type="month" value={w.month.slice(0,7)} onChange={e=>{if(e.target.value)router.push(`/finance/reimbursements?month=${e.target.value}`);}} /></label><span className="rounded-full bg-blue-50 px-3 py-2 text-sm">{period?periodLabel(period,today):"접수월 미개설"}</span>{period&&<span className="text-sm text-slate-600">제출 {period.submission_deadline} · 보완 {period.completion_deadline}</span>}</div>
+      <div className="mt-5 flex flex-wrap items-center gap-3"><label>조회 월 <input aria-label="조회 월" className="rounded-lg border p-2" type="month" value={w.month.slice(0,7)} onChange={e=>{if(e.target.value)router.push(`/finance/reimbursements?month=${e.target.value}&tab=${tab}`);}} /></label><span className="rounded-full bg-blue-50 px-3 py-2 text-sm">{period?periodLabel(period,today):"접수월 미개설"}</span>{period&&<span className="text-sm text-slate-600">제출 {period.submission_deadline} · 보완 {period.completion_deadline}</span>}</div>
     </header>
-    <nav aria-label="정산 업무" className="flex flex-wrap gap-2">{[["requests","정산 신청·처리"],["budgets","예산·마감 보고서"],["settings","운영 기준·권한"]].map(([id,label])=><button key={id} aria-pressed={tab===id} className={tab===id?button:secondary} onClick={()=>setTab(id)}>{label}</button>)}</nav>
+    <nav aria-label="정산 업무" className="flex flex-wrap gap-2">{[["requests","정산 신청·처리"],["budgets","예산·마감 보고서"],["settings","운영 기준·권한"]].map(([id,label])=><button key={id} aria-pressed={tab===id} className={tab===id?button:secondary} onClick={()=>{setTab(id);router.push(`/finance/reimbursements?month=${w.month.slice(0,7)}&tab=${id}`,{scroll:false});}}>{label}</button>)}</nav>
     {op.message&&<p role="status" className="rounded-lg border bg-blue-50 p-4">{op.message}</p>}
     {tab==="requests"&&<>
       <details className={card}><summary className="cursor-pointer text-lg font-bold">개인 지출 정산 신청</summary>
@@ -97,7 +94,8 @@ export function ReimbursementPage({workspace:w}:{workspace:ReimbursementWorkspac
       </section>
     </>}
     {tab==="budgets"&&<>
-      <section className={card}><h2 className="mb-3 text-lg font-bold">월 예산 사용 현황</h2><p className="mb-4 text-sm text-slate-600">간편지출과 개인 정산 승인액, 기안의 집행 예약액을 표시해. 회계장부의 전체 지출 실적과는 별도야. 지급 완료는 사용액을 다시 차감하지 않아.</p><BudgetTable budgets={w.budgets}/></section>
+      <section className={card}><h2 className="mb-3 text-lg font-bold">월 예산 사용 현황</h2><p className="mb-4 text-sm text-slate-600">귀속이 확인된 간편지출·개인 정산·지출결의·수기 집행액을 함께 표시해. 가용액은 월 예산에서 사용액과 집행 예약을 뺀 금액이야. 심사 중 금액과 지급대기는 중복 차감하지 않아.</p><UnifiedBudgetTable budgets={w.budgets} entries={w.budgetEntries}/></section>
+      {w.member.permissions.length>0&&<BudgetAllocationPanel workspace={w}/>}
       {canClose&&<section className={card}><h2 className="text-lg font-bold">월 마감 관리</h2><form className="mt-3 flex flex-wrap gap-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);command(String(data.get("command")),{month:w.month,reason:String(data.get("reason"))});}}><select className="rounded-lg border p-2" name="command">{!period?<option value="OPEN">접수월 개설</option>:period.status!=="CLOSED"?<><option value="SUPPLEMENT">보완 접수 전환</option><option value="CLOSE">월 마감·보고서 확정</option></>:<option value="">이미 마감된 월</option>}</select><input className={`${input} max-w-md`} aria-label="마감 처리 사유" name="reason" placeholder="처리 사유" required/><button className={button} disabled={op.pending||period?.status==="CLOSED"}>처리</button></form><p className="mt-3 text-sm text-slate-600">마감 후 신청은 예산 반영 승인 시 수정 보고서가 자동으로 추가돼. 기존 보고서는 보존돼.</p></section>}
       <section className={`${card} space-y-3`}><h2 className="text-lg font-bold">마감 보고서 원본·수정본</h2>{w.reports.map((report,i)=><Report key={report.revision} report={report} previous={w.reports[i+1]}/>)}{!w.reports.length&&<p className="text-sm text-slate-600">확정된 마감 보고서가 없어.</p>}</section>
       <section className={card}><h2 className="mb-3 text-lg font-bold">최근 처리 이력</h2><ul className="space-y-3 text-sm">{w.audits.map(a=><li key={a.id} className="border-b pb-2">{dateTime(a.created_at)} · {names[a.actor_id]??"등록 사용자"} · {reimbursementCommandLabels[a.action]??a.action}<p className="text-slate-600">{a.reason}</p></li>)}</ul></section>

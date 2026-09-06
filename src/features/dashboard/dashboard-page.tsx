@@ -319,7 +319,7 @@ export function DashboardPage({
               ["편성예산", approvalBudget.approved],
               ["실제 집행액", approvalBudget.executed],
               ["승인된 집행예정액", approvalBudget.reserved],
-              ["실질 사용 가능액", approvalBudget.available],
+              [approvalBudget.unresolvedCount ? "귀속 확인분 잔액" : "실질 사용 가능액", approvalBudget.available],
             ].map(([label, amount]) => (
               <div
                 className="rounded-xl bg-[var(--color-cloud-veil)] p-4"
@@ -335,6 +335,7 @@ export function DashboardPage({
             ))}
           </div>
         </section>
+        {!!approvalBudget.unresolvedCount&&<p className="rounded-xl bg-amber-50 p-4 text-sm">예산 귀속 확인 필요 {approvalBudget.unresolvedCount}건 · 집행액과 잔액은 확인된 내역 기준이야. <Link className="underline" href="/finance/reimbursements?tab=budgets">월 예산·마감에서 확인</Link></p>}
         <DepositBalanceWidget />
 
         <section className="grid gap-6 xl:grid-cols-[1.25fr_0.75fr]">

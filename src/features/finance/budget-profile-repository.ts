@@ -11,9 +11,11 @@ export async function listExpenseBudgetProfiles(): Promise<Record<string, Budget
     calculationBasis: budget.calculationBasis ?? "",
     currentAnnualBudgetAmount: budget.approvedAmount,
     monthlyBudgetAmount: budget.monthlyBudgetAmount ?? 0,
-    paymentWaitingAmount: 0,
-    pendingApprovalAmount: budget.reservedAmount,
+    paymentWaitingAmount: budget.unpaidAmount ?? 0,
+    pendingApprovalAmount: budget.pendingAmount ?? 0,
     previousAnnualBudgetAmount: 0,
+    reservedAmount: budget.reservedAmount,
+    unresolvedCount: budget.unresolvedCount ?? 0,
     usedAmount: budget.monthlyUsedAmount ?? 0,
   }]));
 }

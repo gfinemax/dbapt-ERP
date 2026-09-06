@@ -27,7 +27,7 @@ export default async function Page() {
       <main className="mx-auto max-w-6xl space-y-5">
         <header className="rounded-[28px] border border-[var(--color-soft-border)] bg-white p-6">
           <h1 className="text-3xl font-bold">기안 설정</h1>
-          <Link href="/finance/reimbursements" className="mt-3 inline-block text-sm font-semibold text-blue-700 underline">개인 지출 정산·월 마감 관리</Link>
+          <Link href="/finance/reimbursements?tab=budgets" className="mt-3 inline-block text-sm font-semibold text-blue-700 underline">개인 지출 정산·월 마감 관리</Link>
           <div className="mt-4 flex flex-wrap gap-2">
             {[
               "기안 유형",
@@ -156,7 +156,7 @@ export default async function Page() {
               className={input}
               min="0"
               name="executedAmount"
-              placeholder="기존 집행액 (개인 정산 자동 합산분 제외)"
+              placeholder="기존 수기 집행액 (귀속 확인 후 반영)"
               type="number"
               required
             />
@@ -166,6 +166,7 @@ export default async function Page() {
           </form>
           <div className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-white">
             <h2 className="p-5 text-lg font-bold">예산 현황</h2>
+            {budgets.some(b=>b.unresolvedCount)&&<p className="px-5 pb-4 text-sm text-amber-800">귀속 미확인 내역이 있어 확인된 금액만 표시해. <Link className="underline" href="/finance/reimbursements?tab=budgets">월 예산·마감에서 귀속 확인하기</Link></p>}
             {!budgets.length ? (
               <p className="px-5 pb-5 text-sm text-[var(--color-stone)]">
                 등록된 예산이 없어. 실제 편성예산을 등록하면 기안 작성에서
@@ -214,7 +215,7 @@ export default async function Page() {
                           {budget.reservedAmount.toLocaleString("ko-KR")}원
                         </td>
                         <td className="px-3 py-3 font-bold">
-                          {budget.availableAmount.toLocaleString("ko-KR")}원
+                          {budget.unresolvedCount?"귀속 확인 필요":`${budget.availableAmount.toLocaleString("ko-KR")}원`}
                         </td>
                       </tr>
                     ))}

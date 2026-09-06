@@ -1,3 +1,4 @@
+import { budgetUsed, type ReimbursementBudget } from "./reimbursement-domain";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { getDefaultOrganizationId } from "./expense-compliance-repository";
 import type { QuickExpenseRecord, QuickExpenseRecordInput } from "./quick-expense-record";
@@ -71,14 +72,14 @@ export async function getQuickExpenseBudgetAvailability(organizationId: string, 
   const monthStart = `${fiscalYear}-${String(month).padStart(2, "0")}-01T00:00:00+09:00`;
   const {data,error}=await supabase.schema("finance").rpc("reimbursement_budget_rows",{p_org:organizationId,p_month:monthStart.slice(0,10)});
   if(error) throw new Error(`예산 집계 실패: ${error.message}`);
-  const rows=(data??[]) as Array<{budget_item:string;approved_amount:number;annual_recorded_amount:number;monthly_amount:number;quick_amount:number;personal_amount:number;reserved_amount:number}>;
+  const rows=(data??[]) as ReimbursementBudget[];
   const budget=rows.find(row=>row.budget_item===budgetItem);
   if (!budget) return null;
   const approvedAmount = Number(budget.approved_amount) || 0;
-  const executedAmount = Number(budget.annual_recorded_amount) || 0;
+  const executedAmount = Number(budget.annual_used_amount) || 0;
   const monthlyBudgetAmount = Number(budget.monthly_amount) || 0;
-  const monthlyUsedAmount = Number(budget.quick_amount)+Number(budget.personal_amount);
-  return { approvedAmount, executedAmount, monthlyBudgetAmount, monthlyUsedAmount, remainingAmount: monthlyBudgetAmount - monthlyUsedAmount - Number(budget.reserved_amount) };
+  const monthlyUsedAmount = budgetUsed(budget);
+  return { approvedAmount, executedAmount, monthlyBudgetAmount, monthlyUsedAmount, unresolvedCount:Number(budget.unresolved_count??0), annualRemainingAmount:approvedAmount-executedAmount-Number(budget.annual_reserved_amount??0), remainingAmount: monthlyBudgetAmount - monthlyUsedAmount - Number(budget.reserved_amount) };
 }
 
 export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { directExpenseDecision: QuickExpenseRecord["directExpenseDecision"]; directExpenseReasons: string[]; recordStatus: QuickExpenseRecord["recordStatus"] }) {

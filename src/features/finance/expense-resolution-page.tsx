@@ -93,6 +93,8 @@ export type ExpenseResolutionHistoryItem = {
 };
 
 export type BudgetSnapshot = {
+  reservedAmount?: number;
+  unresolvedCount?: number;
   budgetCheckStatus: BudgetCheckStatus;
   calculationBasis: string;
   budgetPeriod: string;
@@ -621,7 +623,7 @@ function createBudgetSnapshot(budgetItem: string, requestAmount: number, request
     usedAmount: 0,
   };
   const currentRequestAmount = requestAmount;
-  const expectedUsedAmount = profile.usedAmount + profile.pendingApprovalAmount + profile.paymentWaitingAmount + currentRequestAmount;
+  const expectedUsedAmount = profile.usedAmount + (profile.reservedAmount ?? (profile.pendingApprovalAmount + profile.paymentWaitingAmount)) + currentRequestAmount;
   const remainingBudgetAmount = selectedProfile ? profile.monthlyBudgetAmount - expectedUsedAmount : 0;
   const budgetUsageRate = selectedProfile && profile.monthlyBudgetAmount > 0 ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1)) : 0;
 
@@ -2485,7 +2487,7 @@ export function ExpenseResolutionPage({
                 ...item,
                 [key]: value,
                 allocatedBudget: profile?.monthlyBudgetAmount ?? item.allocatedBudget,
-                executedAmount: profile ? profile.usedAmount + profile.pendingApprovalAmount + profile.paymentWaitingAmount : item.executedAmount,
+                executedAmount: profile ? profile.usedAmount + (profile.reservedAmount ?? (profile.pendingApprovalAmount + profile.paymentWaitingAmount)) : item.executedAmount,
               });
         }),
       ),
@@ -4891,6 +4893,8 @@ function ExpenseResolutionCreateModal({
                 <BudgetRow label="예산기간" value={budgetSnapshot.budgetPeriod} />
                 <BudgetRow label="월 예산" value={formatExpenseResolutionAmount(budgetSnapshot.monthlyBudgetAmount)} />
                 <BudgetRow label="기집행액" value={formatExpenseResolutionAmount(budgetSnapshot.usedAmount)} />
+                {budgetSnapshot.reservedAmount!==undefined&&<BudgetRow label="집행 예약액" value={formatExpenseResolutionAmount(budgetSnapshot.reservedAmount)} />}
+                {!!budgetSnapshot.unresolvedCount&&<p className="text-sm text-amber-800">귀속 확인 필요 {budgetSnapshot.unresolvedCount}건 · 확인된 금액 기준이야. 월 예산·마감에서 배정을 마쳐줘.</p>}
                 <BudgetRow label="승인대기액" value={formatExpenseResolutionAmount(budgetSnapshot.pendingApprovalAmount)} />
                 <BudgetRow label="지급대기액" value={formatExpenseResolutionAmount(budgetSnapshot.paymentWaitingAmount)} />
                 <BudgetRow label="이번 결의금액" value={formatExpenseResolutionAmount(budgetSnapshot.currentRequestAmount)} />
@@ -6672,7 +6676,7 @@ function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommend
   const matches = Math.abs(allocationTotal - totalAmount) <= 0.5;
   const recommendationProfile = budgetRecommendation ? budgetProfiles[budgetRecommendation.budgetItem] : undefined;
   const recommendationRemaining = recommendationProfile
-    ? recommendationProfile.monthlyBudgetAmount - recommendationProfile.usedAmount - recommendationProfile.pendingApprovalAmount - recommendationProfile.paymentWaitingAmount - totalAmount
+    ? recommendationProfile.monthlyBudgetAmount - recommendationProfile.usedAmount - (recommendationProfile.reservedAmount ?? (recommendationProfile.pendingApprovalAmount + recommendationProfile.paymentWaitingAmount)) - totalAmount
     : 0;
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-white p-4">

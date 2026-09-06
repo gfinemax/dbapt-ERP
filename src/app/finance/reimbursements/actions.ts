@@ -10,7 +10,14 @@ import { getSupabaseServerConfig } from "@/lib/supabase/config";
 import { hasReimbursementPermission } from "@/features/finance/reimbursement-domain";
 
 function refresh() {
-  for (const path of ["/finance/reimbursements","/basic-info/approval","/finance/quick-expenses","/finance/expense-resolutions"]) revalidatePath(path);
+  for (const path of ["/finance/reimbursements","/basic-info/approval","/approval","/finance/quick-expenses","/finance/expense-resolutions"]) revalidatePath(path);
+}
+export async function assignBudgetSource(data: Record<string,unknown>) {
+  const member=await requireReimbursementIdentity();
+  if(!hasReimbursementPermission(member,"APPROVE")) throw new Error("예산 배정 승인 권한이 필요합니다.");
+  const {error}=await reimbursementDb().schema("finance").rpc("budget_assign_source",{p_org:member.organization_id,p_actor:member.user_id,p_data:data});
+  if(error) throw new Error(error.message);
+  refresh();
 }
 export async function reimbursementLogin(form: FormData) {
   const config = getSupabaseServerConfig();
