@@ -80,7 +80,7 @@ export function deriveTrustRequestStatus(items: readonly FundRequestItem[], phas
   if (items.every((item) => item.status === "WITHDRAWN")) return "WITHDRAWN";
   if (items.some((item) => item.status === "WITHDRAWAL_PENDING")) return "WITHDRAWAL_PENDING";
   if (items.some((item) => item.status === "SUPPLEMENT")) return "SUPPLEMENT";
-  if (items.every((item) => item.status === "APPROVED")) return "APPROVED";
+  if (items.every((item) => item.status === "APPROVED" || item.status === "WITHDRAWN")) return "APPROVED";
   if (items.some((item) => item.status === "APPROVED" || item.status === "PARTIAL")) return "PARTIAL";
   if (items.every((item) => item.status === "REJECTED" || item.status === "WITHDRAWN")) return "REJECTED";
   return items.some((item) => item.status === "REVIEWING") ? "REVIEWING" : phase;
@@ -136,7 +136,7 @@ export function fundAmounts(source: FundSource, workspace: FundWorkspace) {
   let approvedRemaining = 0;
   for (const item of items) {
     const amounts = trustItemAmounts(item);
-    pending = add(pending, amounts.pending);
+    pending = add(pending, amounts.pending > 0 ? Math.max(0, amounts.pending - (paidByItem.get(item.id) ?? 0)) : 0);
     approved = add(approved, amounts.approved);
     if (amounts.approved > 0) approvedRemaining = add(approvedRemaining, Math.max(0, add(amounts.approved, -(paidByItem.get(item.id) ?? 0))));
   }

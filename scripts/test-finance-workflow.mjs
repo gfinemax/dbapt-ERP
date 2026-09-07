@@ -39,6 +39,12 @@ create schema extensions; create extension pgcrypto with schema extensions;
 alter database postgres set search_path=public,extensions;
 `;
 let created = false;
+// Freeze inputs for a run; edits made while PostgreSQL starts belong to the next run.
+const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
+const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
+  .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql'];
+const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
   created = true;
@@ -50,14 +56,12 @@ try {
   }
   assert(ready, 'isolated database startup');
   await sql(bootstrap);
-  await sql(await readFile(path.join(root, 'supabase/schema.sql'), 'utf8'));
-  for (const file of (await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()) {
-    const query = await readFile(path.join(root, 'supabase/migrations', file), 'utf8');
+  await sql(schemaQuery);
+  for (const query of migrationQueries) {
     if (query.trim()) await sql(query);
   }
   console.log('PASS: clean schema and migrations in isolated PostgreSQL');
-  for (const file of ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql']) {
-    const query = await readFile(path.join(root, 'supabase/tests', file), 'utf8');
+  for (const { file, query } of testQueries) {
     // Earlier suites are DO blocks intended for an external rollback wrapper.
     await sql(/^begin;/m.test(query) ? query : `begin;\n${query}\nrollback;`);
     console.log(`PASS: ${file}`);
@@ -95,6 +99,28 @@ select jsonb_build_object('tx',(select id from finance.workflow_transactions whe
   assert.equal((await sql(`select count(*) from finance.workflow_operations where organization_id='${org}' and operation_key='race-duplicate';`)).trim(), '1');
   assert.equal((await sql(`select count(*) from finance.workflow_allocations where transaction_id='${ids.tx}';`)).trim(), '2');
   console.log('PASS: concurrent identical operation persisted once and reloaded');
+
+  const trustSource = randomUUID(), trustContract = randomUUID();
+  const trustFixture = await sql(`
+insert into finance.expense_resolutions(id,organization_id,resolution_no,author_label,approval_status,payment_status,total_payment_amount,resolution_data) values('${trustSource}','${org}','CONCURRENT-TRUST','Test','승인완료','지급대기',1000,'{}');
+insert into finance.workflow_contract_versions(id,organization_id,contract_key,version,name,trustee,reference,management_account_id,status,conditions,created_by)
+values('${trustContract}','${org}','${trustContract}',1,'Test trust','Trustee','Verified test terms','${acct}','VERIFIED','{"allowed_source_kinds":["RESOLUTION"],"required_document_types":[],"consent_roles":[],"no_limit":true,"operating_allowed":false,"operating_advance_allowed":false}','${actor}');
+select finance.workflow_command('${org}','${actor}','ENROLL','{"source_kind":"RESOLUTION","source_id":"${trustSource}"}','trust-enroll');
+select finance.trust_command('${org}','${actor}','ROUTE_ASSIGN',jsonb_build_object('id',(select id from finance.workflow_transactions where source_id='${trustSource}'),'revision',1,'route','TRUST_DIRECT','contract_version_id','${trustContract}','reason','Test contract'),'trust-route');
+select finance.trust_command('${org}','${actor}','REQUEST_SAVE',jsonb_build_object('title','Concurrent 1','request_date',current_date,'contract_version_id','${trustContract}','items',jsonb_build_array(jsonb_build_object('transaction_id',(select id from finance.workflow_transactions where source_id='${trustSource}'),'requested_amount',600))),'trust-draft1');
+select finance.trust_command('${org}','${actor}','REQUEST_SAVE',jsonb_build_object('title','Concurrent 2','request_date',current_date,'contract_version_id','${trustContract}','items',jsonb_build_array(jsonb_build_object('transaction_id',(select id from finance.workflow_transactions where source_id='${trustSource}'),'requested_amount',600))),'trust-draft2');
+select jsonb_agg(jsonb_build_object('id',q.id,'item',i.id)) from finance.workflow_trust_requests q join finance.workflow_trust_items i on i.request_id=q.id where q.organization_id='${org}';
+`);
+  const trustRows = JSON.parse(trustFixture.trim().split('\n').at(-1));
+  const trustInputs = trustRows.map(row => JSON.stringify({ id: row.id, lock_version: 1, receipt_reference: 'Test receipt', items: [{ id: row.item }], file_ids: [] }));
+  const trustCommands = trustInputs.map((input, index) => `begin; set role service_role; select finance.trust_command('${org}','${actor}','REQUEST_SUBMIT','${input}','trust-race-${index}'); select pg_sleep(0.5); commit;`);
+  const trustRaces = await Promise.all(trustCommands.map(query => run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At'], query)));
+  assert.equal(trustRaces.filter(result => result.code === 0).length, 1, JSON.stringify(trustRaces));
+  assert(trustRaces.find(result => result.code !== 0)?.stderr.includes('요청 가능액을 초과'), 'second request must see the first committed reservation');
+  const winningIndex = trustRaces.findIndex(result => result.code === 0);
+  await sql(trustCommands[winningIndex]);
+  assert.equal((await sql(`select count(*) from finance.workflow_submissions where organization_id='${org}';`)).trim(), '1');
+  console.log('PASS: concurrent trust requests cannot reserve 1200 against 1000; same-key retry retains one submission');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
   console.log('PASS: database role access denied');

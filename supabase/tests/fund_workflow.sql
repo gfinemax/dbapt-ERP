@@ -54,8 +54,8 @@ begin
  begin perform finance.workflow_command(org,payer,'PAYMENT_ALLOCATE',input,'missing-contract'); raise exception 'TEST: policy bypass'; exception when others then if sqlerrm like 'TEST:%' then raise; end if; end;
  if (select amount from finance.workflow_payments where id=pay)<>700 then raise exception 'TEST: policy erased bank fact'; end if;
  -- Explicit test-only contract/approval fixtures; production uses the next-stage validated commands.
- insert into finance.workflow_contract_versions(id,organization_id,contract_key,version,name,trustee,reference,management_account_id,status,created_by,verified_by,verified_at)
- values(contract,org,gen_random_uuid(),1,'Contract','Trustee','Fixture reviewed',acct,'VERIFIED',admin_id,admin_id,now());
+ insert into finance.workflow_contract_versions(id,organization_id,contract_key,version,name,trustee,reference,management_account_id,status,created_by,verified_by,verified_at,conditions)
+ values(contract,org,gen_random_uuid(),1,'Contract','Trustee','Fixture reviewed',acct,'VERIFIED',admin_id,admin_id,now(),jsonb_build_object('operating_allowed',true,'operating_basis','Contract clause fixture','operating_account_ids',jsonb_build_array(acct)));
  update finance.workflow_transactions set route='TRUST_DIRECT',contract_version_id=contract where id=tx1;
  update finance.workflow_transactions set route='OPERATING',contract_version_id=contract where id=tx2;
  insert into finance.workflow_trust_requests(id,organization_id,request_no,title,contract_version_id,status,created_by) values(req,org,'TRUST-TEST-1','Partial approval',contract,'PARTIAL',admin_id);
@@ -76,7 +76,6 @@ begin
  insert into finance.workflow_trust_requests(id,organization_id,request_no,title,contract_version_id,created_by) values(gen_random_uuid(),org,'TRUST-TEST-2','Pending',contract,admin_id) returning id into req;
  insert into finance.workflow_trust_items(organization_id,request_id,transaction_id,requested_amount,status) values(org,req,tx1,200,'SUPPLEMENT');
  if (finance.workflow_transaction_amounts(org,tx1)->>'requestable')::numeric<>400 then raise exception 'TEST: supplement reservation'; end if;
- update finance.workflow_contract_versions set conditions=jsonb_build_object('operating_allowed',true,'operating_basis','Contract clause fixture','operating_account_ids',jsonb_build_array(acct)) where id=contract;
  input:=jsonb_build_object('payment_id',pay,'reason','Second allocation','items',jsonb_build_array(jsonb_build_object('transaction_id',tx2,'purpose','DISBURSEMENT','amount',150)));
  perform finance.workflow_command(org,payer,'PAYMENT_ALLOCATE',input,'pay-second');
  if (select sum(amount) from finance.workflow_allocations where payment_id=pay)<>400 then raise exception 'TEST: shared payment'; end if;

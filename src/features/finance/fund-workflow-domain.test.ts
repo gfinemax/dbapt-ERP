@@ -53,6 +53,16 @@ describe("disjoint trust and payment amounts", () => {
     pay(state, 100, { trustItemId: null, purpose: "RETURN" });
     expect(fundAmounts(source, state)).toMatchObject({ paid: 1000, overpaid: 0, paymentState: "PAID" });
   });
+  it("reserves only the unpaid portion when a paid approval is reopened for review", () => {
+    const state = workspace([item({ requestedAmount: 400, status: "SUPPLEMENT" }), item({ id: "another", requestedAmount: 300, status: "REVIEWING" })]);
+    pay(state, 250);
+    expect(fundAmounts({ ...source, amount: 700 }, state)).toMatchObject({ paid: 250, pending: 450, approved: 0, requestable: 0 });
+    state.items[0] = { ...state.items[0], status: "APPROVED", approvedAmount: 400 };
+    expect(fundAmounts({ ...source, amount: 700 }, state)).toMatchObject({ paid: 250, pending: 300, approvedRemaining: 150, requestable: 0 });
+  });
+  it("summarizes approved items after sibling withdrawal consistently with SQL", () => {
+    expect(deriveTrustRequestStatus([item({ status: "APPROVED", approvedAmount: 600 }), item({ id: "withdrawn", status: "WITHDRAWN" })])).toBe("APPROVED");
+  });
 });
 
 describe("actual allocations and immutable correction events", () => {
