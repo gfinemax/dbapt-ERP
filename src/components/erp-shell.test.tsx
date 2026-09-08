@@ -21,172 +21,47 @@ describe("ErpShell", () => {
     ).not.toHaveAttribute("aria-current");
   });
 
-  it("renders module detail sidebar for finance and can return to the full menu", () => {
-    render(
-      <ErpShell activeLabel="회계/자금">
-        <p>본문</p>
-      </ErpShell>,
-    );
-
-    expect(
-      screen.getByRole("button", { name: "전체 메뉴로 돌아가기" }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("Daebang ERP")).toBeInTheDocument();
-    expect(screen.getByText("지역주택조합 통합관리")).toBeInTheDocument();
-    expect(
-      screen.queryByRole("button", { name: "전체 메뉴" }),
-    ).not.toBeInTheDocument();
-    expect(screen.getByText("회계/자금")).toBeInTheDocument();
-    expect(
-      screen.getByRole("navigation", { name: "회계/자금 업무 탭" }),
-    ).toBeInTheDocument();
-    expect(
-      within(screen.getByRole("navigation", { name: "회계/자금 업무 탭" }))
-        .getAllByRole("link")
-        .map((link) => link.textContent),
-    ).toEqual([
-      "기초정보",
-      "전표·증빙관리",
-      "입출금",
-      "채권·채무",
-      "예산·결산",
-      "은행·카드",
-      "인사·급여",
-      "세무신고",
-      "부가서비스",
-      "보고서",
+  it("renders the grouped finance workflow in order and preserves workspace categories", () => {
+    render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+    const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
+    expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "업무현황", "결재함", "지출관리", "신탁 집행관리", "지급관리", "대납·선지급 정산",
+      "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
+      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출·신탁 설정",
     ]);
-    expect(screen.getByRole("link", { name: "기초정보" })).toHaveAttribute(
-      "href",
-      "/basic-info",
-    );
-    expect(screen.getByRole("link", { name: "전표·증빙관리" })).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-    expect(screen.getByRole("link", { name: "채권·채무" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "예산·결산" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "은행·카드" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "인사·급여" })).toHaveAttribute(
-      "href",
-      "/hr-payroll",
-    );
-    expect(screen.getByRole("link", { name: "세무신고" })).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "부가서비스" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "보고서" })).toHaveAttribute(
-      "href",
-      "/finance/reports",
-    );
-    expect(
-      screen.queryByRole("link", { name: "거래처등록" }),
-    ).not.toBeInTheDocument();
-    expect(
-      within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" }))
-        .getAllByRole("link")
-        .map((link) => link.textContent),
-    ).toEqual([
-      "지출결의서 관리",
-      "수입·지출 전표관리",
-      "결재함",
-      "지급대기",
-      "지급완료 내역",
-      "개인 지출 정산·월 마감",
-      "분담금 수납관리",
-      "환불금 지급관리",
-      "증빙자료 관리",
-      "세금계산서·계산서",
-      "계좌거래 매칭",
-      "예산집행 현황",
-      "지출 관리설정",
+    expect(Array.from(detailMenu.querySelectorAll("p")).map((node) => node.textContent)).toEqual([
+      "처리할 업무", "지출·지급", "수납·환급", "회계·증빙", "예산·마감", "설정",
     ]);
-    expect(
-      screen.getByRole("link", { name: "지출결의서 관리" }),
-    ).toHaveAttribute("aria-current", "page");
-    expect(
-      screen.getByRole("link", { name: "지출결의서 관리" }),
-    ).toHaveAttribute("href", "/finance/expense-resolutions");
-    expect(screen.getByRole("link", { name: "결재함" })).toHaveAttribute(
-      "href",
-      "/finance/approval-inbox",
-    );
-    expect(screen.getByRole("link", { name: "지급대기" })).toHaveAttribute(
-      "href",
-      "/finance/payment-waiting",
-    );
-    expect(screen.getByRole("link", { name: "지급완료 내역" })).toHaveAttribute(
-      "href",
-      "/finance/payment-completed",
-    );
-    expect(
-      screen.getByRole("link", { name: "분담금 수납관리" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "환불금 지급관리" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "세금계산서·계산서" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "계좌거래 매칭" }),
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole("link", { name: "예산집행 현황" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "지출 관리설정" })).toHaveAttribute(
-      "href",
-      "/finance/expense-settings",
-    );
-    expect(screen.getByText("퀵메뉴")).toBeInTheDocument();
-    expect(screen.getByText("분담금 수납처리")).toBeInTheDocument();
-    expect(screen.getByText("은행거래 업로드")).toBeInTheDocument();
-    expect(screen.getByText("지출결의 작성")).toBeInTheDocument();
-    expect(screen.getAllByText("지급대기").length).toBeGreaterThan(0);
-    expect(
-      screen
-        .getAllByRole("button")
-        .filter((button) =>
-          button.getAttribute("aria-label")?.startsWith("퀵메뉴 "),
-        )
-        .map((button) => button.textContent),
-    ).toEqual([
-      "조합원 등록",
-      "분담금 수납처리",
-      "은행거래 업로드",
-      "카드내역",
-      "지출결의 작성",
-      "지급대기",
-      "증빙 미첨부",
-      "미납 조합원",
+    expect(within(detailMenu).getByRole("link", { name: "업무현황" })).toHaveAttribute("aria-current", "page");
+    expect(within(detailMenu).getAllByRole("link").every((link) => link.getAttribute("href")?.startsWith("/"))).toBe(true);
+    expect(within(screen.getByRole("navigation", { name: "회계/자금 업무 탭" })).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "기초정보", "전표·증빙관리", "입출금", "채권·채무", "예산·결산", "은행·카드", "인사·급여", "세무신고", "부가서비스", "보고서",
     ]);
-    expect(screen.queryByText("온라인문의")).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "매입매출거래입력" }),
-    ).not.toBeInTheDocument();
-    expect(screen.queryByText("거래전표증빙문서")).not.toBeInTheDocument();
-    expect(screen.queryByText("분담금 입금처리")).not.toBeInTheDocument();
-    expect(screen.getByText("도움말")).toBeInTheDocument();
+    expect(screen.getByLabelText("사이드바")).toHaveClass("overflow-y-auto");
+    fireEvent.click(screen.getByRole("button", { name: "전체 메뉴로 돌아가기" }));
+    expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
+  });
 
-    fireEvent.click(
-      screen.getByRole("button", { name: "전체 메뉴로 돌아가기" }),
-    );
+  it.each([
+    ["지출결의서 관리", "지출관리"], ["지급대기", "지급관리"], ["지급완료 내역", "지급관리"],
+    ["개인 지출 정산·월 마감", "대납·선지급 정산"], ["지출 관리설정", "지출·신탁 설정"],
+  ])("preserves the active location for legacy page %s", (previous, current) => {
+    render(<ErpShell activeLabel="회계/자금" activeDetailLabel={previous}><p>본문</p></ErpShell>);
+    expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getByRole("link", { name: current })).toHaveAttribute("aria-current", "page");
+  });
 
-    expect(
-      screen.getByRole("navigation", { name: "전체 메뉴" }),
-    ).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "대시보드" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "조합원" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "회계/자금" })).toHaveAttribute(
-      "href",
-      "/finance/expense-resolutions",
-    );
-    expect(
-      within(screen.getByRole("navigation", { name: "전체 메뉴" })).queryByRole(
-        "link",
-        { name: "기초정보" },
-      ),
-    ).not.toBeInTheDocument();
+  it("opens mobile navigation with current location and every workflow destination", () => {
+    render(<ErpShell activeLabel="회계/자금" activeDetailLabel="지급대기"><p>본문</p></ErpShell>);
+    const toggle = screen.getByRole("button", { name: "회계/자금 · 지급관리 메뉴 열기" });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-expanded", "true");
+    const menu = screen.getByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" });
+    expect(within(menu).getAllByRole("link")).toHaveLength(15);
+    expect(within(menu).getByRole("link", { name: "지급관리" })).toHaveAttribute("aria-current", "page");
+    expect(within(menu).getByRole("link", { name: "지출·신탁 설정" })).toHaveAttribute("href", "/finance/workflow-settings");
+    fireEvent.click(toggle);
+    expect(screen.queryByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" })).not.toBeInTheDocument();
   });
 
   it("renders basic info as a finance detail menu", () => {

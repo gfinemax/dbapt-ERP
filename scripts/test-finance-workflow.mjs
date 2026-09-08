@@ -47,7 +47,7 @@ let created = false;
 const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
 const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
   .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
-const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql'];
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql', 'finance_task_sources.sql', 'advance_settlement_drafts.sql'];
 const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
@@ -134,6 +134,28 @@ select jsonb_agg(jsonb_build_object('id',q.id,'item',i.id)) from finance.workflo
   await sql(accountingCommands[accountingRaces.findIndex(result => result.code === 0)]);
   assert.equal((await sql(`select count(*) from finance.workflow_voucher_links where organization_id='${org}' and source_id='${ids.tx}';`)).trim(), '1');
   console.log('PASS: concurrent accounting draft creation produces one source voucher; same-key retry preserves it');
+  const advanceUse = randomUUID();
+  await sql(`insert into finance.quick_expense_records(id,organization_id,source_type,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,approval_skip_reason,direct_expense_decision,record_status,recorded_by_label) values('${advanceUse}','${org}','MANUAL','CASH','2026-03-15',50,'Shop','Concurrent use','Test','Reviewed','REQUIRED','NEEDS_RESOLUTION','Test');`);
+  const advanceInputs = [];
+  for (const index of [1, 2]) {
+    const resolution = randomUUID(), bank = randomUUID(), payment = randomUUID(), allocationId = randomUUID();
+    const prepared = await sql(`
+insert into finance.expense_resolutions(id,organization_id,resolution_no,author_label,approval_status,payment_status,total_payment_amount,expense_timing,execution_method,resolution_data) values('${resolution}','${org}','ADV-RACE-${index}','Test','승인완료','지급대기',100,'ADVANCE','EMPLOYEE_ADVANCE','{}');
+select finance.workflow_command('${org}','${actor}','ENROLL','{"source_kind":"RESOLUTION","source_id":"${resolution}"}','advance-enroll-race-${index}');
+insert into finance.bank_transactions(id,organization_id,bank_account_id,transacted_at,description,withdrawal_amount,deposit_amount) values('${bank}','${org}','${acct}','2026-03-01','Advance race',100,0);
+insert into finance.workflow_payments(id,organization_id,bank_transaction_id,method,flow,amount,paid_at,counterparty,reason,created_by) values('${payment}','${org}','${bank}','BANK','OUT',100,'2026-03-01','Test','Verified fixture','${actor}');
+insert into finance.workflow_allocations(id,organization_id,payment_id,transaction_id,purpose,amount,reason,created_by) select '${allocationId}','${org}','${payment}',id,'DISBURSEMENT',100,'Verified fixture','${actor}' from finance.workflow_transactions where organization_id='${org}' and source_id='${resolution}';
+select jsonb_build_object('transaction_id',id,'source_signature',finance.advance_settlement_source('${org}',id)->>'signature','title','Concurrent settlement','funding',jsonb_build_array(jsonb_build_object('allocation_id','${allocationId}','kind','INITIAL')),'usage',jsonb_build_array(jsonb_build_object('source_kind','QUICK','source_id','${advanceUse}','signature',finance.advance_settlement_usage_source('${org}','QUICK','${advanceUse}')->>'signature','evidence_file_id',null))) from finance.workflow_transactions where organization_id='${org}' and source_id='${resolution}';`);
+    advanceInputs.push(prepared.trim().split('\n').at(-1));
+  }
+  const advanceCommands = advanceInputs.map((input, index) => `begin; set role service_role; select finance.advance_settlement_command('${org}','${actor}','DRAFT_SAVE','${input}','advance-race-${index}'); select pg_sleep(0.5); commit;`);
+  const advanceRaces = await Promise.all(advanceCommands.map(query => run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At'], query)));
+  assert.equal(advanceRaces.filter(result => result.code === 0).length, 1, JSON.stringify(advanceRaces));
+  assert(advanceRaces.find(result => result.code !== 0)?.stderr.includes('사용 원본이 정산'), 'second draft must see committed usage reservation');
+  await sql(advanceCommands[advanceRaces.findIndex(result => result.code === 0)]);
+  assert.equal((await sql(`select count(*) from finance.advance_settlement_drafts where organization_id='${org}';`)).trim(), '1');
+  assert.equal((await sql(`select count(*) from finance.advance_settlement_claims where organization_id='${org}' and source_id='${advanceUse}';`)).trim(), '1');
+  console.log('PASS: concurrent advance drafts reserve one original usage; failed draft rolls back and same-key retry reloads');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
   await sql(`insert into storage.objects(bucket_id,name) values('finance-workflow','isolated-private'),('isolated-public','legacy-visible');`);

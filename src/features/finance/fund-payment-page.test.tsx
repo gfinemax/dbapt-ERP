@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { FundPaymentPage } from "./fund-payment-page";
 import { paymentFixtures } from "./fund-payment-test-fixtures";
+import type { ExpenseWorkspaceRecord } from "./expense-workspace-repository";
 
 const mocks = vi.hoisted(() => ({ execute: vi.fn(), attach: vi.fn(), download: vi.fn(), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
@@ -18,6 +19,17 @@ function openBankForm() {
 }
 
 describe("payment UI persistence and source preservation", () => {
+  it("keeps unconnected completed originals visible without making them payable or duplicating linked ones", () => {
+    const old = { source_kind: "RESOLUTION", source_id: "old", number: "과거1", title: "이전 지급완료", amount: 1000, transaction_id: null, approval_status: "승인완료", payment_status: "지급완료" } as ExpenseWorkspaceRecord;
+    render(<FundPaymentPage {...paymentFixtures()} initialTab="PAID" legacyRecords={[old, { ...old, source_id: "linked", title: "이미 연결됨", transaction_id: "tx" }]} />);
+    const section = within(screen.getByRole("region", { name: "미연결 기존 지급 기록" }));
+    expect(section.getByText("지급완료 · 검색 결과 1건")).toBeInTheDocument();
+    expect(section.getByRole("link", { name: "과거1 · 이전 지급완료" })).toHaveAttribute("href", "/finance/expenses?source_kind=RESOLUTION&source_id=old");
+    expect(section.queryByText("이미 연결됨")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "지급가능 2" }));
+    expect(section.getByText("지급가능 · 검색 결과 0건")).toBeInTheDocument();
+    expect(section.queryByRole("link")).not.toBeInTheDocument();
+  });
   it("uses matching filtered tab counts and retains unrelated URL context", () => {
     const props = paymentFixtures();
     props.workspace.eligibility[1].available = 0;

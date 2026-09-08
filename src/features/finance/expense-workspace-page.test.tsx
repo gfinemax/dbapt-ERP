@@ -11,6 +11,11 @@ function fixture(): ExpenseWorkspace {
 }
 beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
+  it("keeps the original reimbursement budget month when opening its existing page", () => {
+    const data = fixture(); data.records[0] = { ...data.records[0], source_kind: "PERSONAL", budget_month: "2026-03-01" };
+    render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="text-id" />);
+    expect(screen.getByRole("link", { name: "기존 개인 대납 정산 화면에서 확인" })).toHaveAttribute("href", "/finance/reimbursements?month=2026-03");
+  });
   it("filters original kind, connection and search with matching counts", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} />);
     fireEvent.change(screen.getByLabelText("원본 종류"), { target: { value: "QUICK" } });
@@ -75,7 +80,7 @@ describe("common original expense workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "이미 사용하거나 지급한 거래" }));
     expect(screen.getByRole("link", { name: "결의 생략 근거가 있는 간편지출 등록" })).toHaveAttribute("href", "/finance/quick-expenses");
     fireEvent.click(screen.getByRole("button", { name: "먼저 지급한 돈의 정산" }));
-    expect(screen.getByText(/통합 정산하는 기능은 구현 중/)).toBeInTheDocument();
+    expect(screen.getByText(/정산 확정·예산 반영·추가 지급 실행은 정책 확인 전까지 제한/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /저장/ })).not.toBeInTheDocument();
   });
   it("does not offer staff drafting and accounting links to ordinary applicants", () => {
