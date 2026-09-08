@@ -92,3 +92,5 @@ node scripts/prepare-finance-release-report.mjs .tmp-repos/finance-release-inven
 기안 UUID 승인 변경으로 신규 후보는 12개가 됐다. 기안 구현·검증 범위는 `approval-authorization-design.md`와 `local-integration-verification.md`를 따른다. 운영에서는 12개 모두 미적용이며, 과거 migration repair도 하지 않았다. 다음 독립 작업은 실제 운영 정의를 기준으로 누락 컬럼·제약의 호환 변경을 설계하고 기존 값 적합성을 검사하는 것이다. 계정 연결과 정책 확정은 별도로 확인한다.
 
 호환 변경과 가짜 자료 복원 리허설은 `operational-compatibility-plan.md`에서 완료했다. 운영 읽기 검사상 대상 자료의 제약 위반은 0건이며, 누락 컬럼을 임의 업무값 없이 추가하는 migration과 앱의 미확정 표시를 구현했다. 수집한 운영 catalog 범위의 격리 구조에서 dump/restore와 신규 12개 적용도 통과했다. 실제 운영 DB/Storage 백업을 격리 대상에 복원한 검증은 PostgreSQL 직접 접속정보가 없어 미완료이며, 운영 적용과 계정 연결도 실행하지 않았다.
+
+운영 Storage 객체 34개/8,150,705바이트는 읽기 전용 백업 후 로컬 Storage 복원·재다운로드 해시 검증까지 완료했다. 따라서 남은 복원 준비 범위는 운영 PostgreSQL 전체 dump/격리 복원, DB와 Storage 참조 대조 및 복구시간 측정이다. 운영 DB 적용과 실제 계정 연결은 계속 미실행이다.

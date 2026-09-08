@@ -36,10 +36,14 @@
 
 실제 백업에서는 DB schema/data/역할과 Storage 객체 파일을 별도로 확보해야 한다. DB 백업에는 Storage 파일 자체가 들어 있지 않다. [Supabase 공식 백업 문서](https://supabase.com/docs/guides/platform/backups). 운영 원본을 복원 대상으로 지정하지 말고 격리된 대상에서 검증한다. 실제 운영 백업·복원 성공, 복구시간/복구시점 보장과 운영 적용은 아직 완료하지 않았다.
 
+운영 Storage는 `scripts/backup-finance-storage.mjs`로 읽기 전용 백업했다. 소스 경로는 private manifest에만 기록하고, 로컬 객체 파일은 내용 SHA-256 이름으로 저장해 경로 조작과 덮어쓰기를 막는다. 3개 버킷의 목록을 확인했으며 실제 객체는 expense-evidence의 34개/8,150,705바이트였다. 운영 `storage.objects`의 건수·metadata 크기 합계와 일치했고 백업 파일을 다시 읽어 개별 크기·SHA-256을 모두 확인했다.
+
+`scripts/rehearse-finance-storage-restore.mjs`는 대상 URL이 localhost/127.0.0.1이 아니면 실행을 거절한다. 실행마다 고유한 임시 버킷을 생성해 34개 객체를 올리고 다시 내려받아 전체 크기·SHA-256을 확인했다. 검증이 끝난 임시 버킷은 해당 실행의 고유 접두사를 재확인하고 비운 뒤 삭제했으며 cleanupComplete=true를 확인했다. 운영 Storage에는 쓰지 않았다. 이 결과는 실제 운영 파일의 로컬 Storage 복원 검증이지만, 운영 프로젝트 자체 복원이나 DB 행과 Storage metadata의 전체 참조 무결성 검증은 아니다.
+
 ## 격리 리허설 결과
 
 `scripts/rehearse-finance-compatibility.mjs`는 환경변수와 `.env`를 읽거나 원격 DB에 접속하지 않는다. 기존 로컬 QA DB도 수정하지 않고 실행별 source/restore DB만 사용한다. 수집한 운영 catalog 범위와 source DB를 함수 36개, 테이블 43개, 인덱스 138개, 제약 266개, 컬럼 592개, 트리거 18개 기준으로 맞춘 뒤 차이 0건을 확인했다.
 
 가짜 원본과 첨부를 넣은 source DB를 340,757바이트 custom dump로 만들고 별도 DB에 복원했다. 가짜 첨부 47바이트는 별도 파일 사본으로 복구해 SHA-256이 일치했다. 복원된 DB에서 호환 SQL 선행 적용, 신규 12개 migration 순차 적용, 호환 SQL 재실행과 금융 SQL 회귀 10개를 통과했다. preflight의 누락 컬럼은 15개에서 0개가 됐고 8개 위반 검사는 모두 0건이었다. 기존 컬럼만 투영한 원본과 첨부 메타 지문은 모든 단계에서 같았다.
 
-상세 보고서와 dump는 ignored `.tmp-repos/finance-compatibility-rehearsal-*`에만 있다. 이 결과는 수집한 finance/approval 구조와 가짜 자료에 대한 리허설이다. 실제 Auth/Storage 서비스 백업, 전체 운영 schema, 운영 자료의 논리 백업과 실제 복원, PITR 및 복구시간 검증은 포함하지 않는다.
+상세 보고서와 dump는 ignored `.tmp-repos/finance-compatibility-rehearsal-*`에만 있고, Storage 백업과 복원 보고서는 ignored `.tmp-repos/finance-storage-backup-*`에만 있다. DB 결과는 수집한 finance/approval 구조와 가짜 자료에 대한 리허설이다. 실제 Auth 서비스 백업, 전체 운영 schema, 운영 DB 자료의 논리 백업과 실제 복원, PITR 및 복구시간 검증은 포함하지 않는다.
