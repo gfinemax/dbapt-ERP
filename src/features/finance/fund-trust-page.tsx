@@ -162,7 +162,7 @@ export function FundTrustPage({ workspace, workflow, sources, initialStatus = "A
   const choose = (id: string) => { setSelectedId(id); router.replace(`/finance/trust?status=${encodeURIComponent(status)}&request=${encodeURIComponent(id)}`, { scroll: false }); };
   return <div className="space-y-5">
     <header className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">신탁 집행관리</h1><p className="mt-2 text-sm text-slate-600">기존 지출을 묶어 요청하고 항목별 회신과 실제 지급을 연결해.</p></div><Link className={secondary} href="/finance/workflow-settings">지출·신탁 설정</Link></div>
-      <div className="mt-4 flex flex-wrap gap-2">{canReview && <button className={button} onClick={() => setEditing(`new:${crypto.randomUUID()}`)}>신탁 요청 준비</button>}<Link className={secondary} href="/finance/expense-resolutions">기존 지출결의서</Link></div>
+      <div className="mt-4 flex flex-wrap gap-2">{canReview && <button className={button} onClick={() => setEditing(`new:${crypto.randomUUID()}`)}>신탁 요청 준비</button>}<Link className={secondary} href="/finance/expense-resolutions">기존 지출결의서</Link><Link className={secondary} href="/finance/payments?tab=READY">지급 가능한 거래 확인</Link></div>
     </header>
     {op.message && <p className="rounded-lg border bg-blue-50 p-3 text-sm" role="status">{op.message}</p>}
     {editing && canReview && <div><RequestEditor key={editing} existing={workspace.requests.find(row => row.id === editing)} workspace={workspace} workflow={workflow} onSaved={id => { setEditing(null); choose(id); }} /><button className={`${secondary} mt-2`} onClick={() => setEditing(null)}>편집 닫기</button></div>}
