@@ -21,6 +21,7 @@ if (!connection) throw new Error("DBAPT_BACKUP_SOURCE_URL is required in the pri
 const source = new URL(connection);
 if (!["postgres:", "postgresql:"].includes(source.protocol)) throw new Error("Source must be a PostgreSQL URL");
 if (!source.hostname || !source.username || !source.password || !source.pathname.slice(1)) throw new Error("Source URL must include host, user, password, and database");
+if (/YOUR-PASSWORD|REPLACE_WITH/i.test(decodeURIComponent(source.password))) throw new Error("Replace the database password placeholder in the private env file before backup");
 
 const projectRef = process.env.DBAPT_BACKUP_PROJECT_REF?.trim() || "takwoubezzhxtjvxecpx";
 if (!/^[a-z0-9]{20}$/.test(projectRef)) throw new Error("DBAPT_BACKUP_PROJECT_REF must be a 20-character Supabase project ref");
