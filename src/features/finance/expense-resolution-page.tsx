@@ -19,6 +19,7 @@ import { findCorporateCardMatchCandidates, isTaxiCardTransaction, type Corporate
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
 import { recommendExpenseBudget, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
+import { getEmployeeAdvanceSourceFacts, isEmployeeAdvanceSettlementSource, validateEmployeeAdvanceSelection } from "./expense-advance-source";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import {
   expenseResolutionTypeOptions,
@@ -2442,9 +2443,10 @@ export function ExpenseResolutionPage({
 
       if (key === "originalResolutionId" && typeof value === "string") {
         const original = resolutions.find((resolution) => resolution.id === value);
+        const facts = getEmployeeAdvanceSourceFacts(original);
+        nextState.advancePaidAt = facts.advancePaidAt;
+        nextState.advancePaidAmount = facts.advancePaidAmount;
         if (original) {
-          nextState.advancePaidAt = original.paidAt ?? original.advancePaidAt ?? original.createdAt;
-          nextState.advancePaidAmount = String(original.actualPaidAmount ?? original.advancePaidAmount ?? original.totalPaymentAmount);
           nextState.projectName = original.projectName;
         }
       }
@@ -2993,6 +2995,14 @@ export function ExpenseResolutionPage({
     const linkedApproval = initialApprovalDocuments.find((document) => document.id === formState.approvalDocumentId);
     const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
     if (mode === "approval-request") {
+      if (formState.expenseTiming === "SETTLEMENT") {
+        const saved = resolutions.find(resolution => resolution.id === editingResolutionId);
+        const changed = !saved || saved.originalResolutionId !== formState.originalResolutionId || saved.advancePaidAmount !== toNumber(formState.advancePaidAmount) || saved.advancePaidAt !== formState.advancePaidAt;
+        if (changed) {
+          const error = validateEmployeeAdvanceSelection(resolutions.find(resolution => resolution.id === formState.originalResolutionId), { advancePaidAmount: toNumber(formState.advancePaidAmount), advancePaidAt: formState.advancePaidAt });
+          if (error) { setSaveError(error); return; }
+        }
+      }
       if (directPolicy.decision === "REQUIRED" && (!linkedApproval || linkedApproval.approvalStatus !== "APPROVED")) { setSaveError(`승인된 기안을 연결해야 합니다. ${directPolicy.reasons.join(" ")}`); return; }
       if (formState.creationSource === "APPROVAL_LINKED" && !linkedApproval) { setSaveError("승인 완료된 기안을 선택해주세요."); return; }
       if (linkedApproval && totalPaymentAmount > linkedApproval.amount) { setSaveError(`지출금액이 기안 승인금액 ${linkedApproval.amount.toLocaleString("ko-KR")}원을 초과했습니다.`); return; }
@@ -3740,7 +3750,7 @@ export function ExpenseResolutionPage({
           cardTransactionCandidates={initialCardTransactions}
           approvalDocuments={initialApprovalDocuments}
           directExpenseSettings={directExpenseSettings}
-          settlementCandidates={resolutions.filter((resolution) => normalizeExpenseTiming(resolution) === "ADVANCE" && resolution.paymentStatus === "지급완료")}
+          settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
           isEditing={Boolean(editingResolutionId)}
           isEvidenceUploading={isEvidenceUploading}
           saveError={saveError}
@@ -4464,9 +4474,10 @@ function ExpenseResolutionCreateModal({
                   <span>원 사전결의</span>
                   <select aria-label="원 사전결의" className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm" onChange={(event) => onChange("originalResolutionId", event.target.value)} value={formState.originalResolutionId}>
                     <option value="">정산할 결의 선택</option>
-                    {settlementCandidates.map((resolution) => <option key={resolution.id} value={resolution.id}>{resolution.resolutionNo} · {getResolutionSubject(resolution)} · {formatExpenseResolutionAmount(resolution.actualPaidAmount ?? resolution.totalPaymentAmount)}</option>)}
+                    {settlementCandidates.map((resolution) => <option key={resolution.id} value={resolution.id}>{resolution.resolutionNo} · {getResolutionSubject(resolution)} · {getEmployeeAdvanceSourceFacts(resolution).blockedReason ? "실제 지급 내역 확인 필요" : formatExpenseResolutionAmount(resolution.actualPaidAmount!)}</option>)}
                   </select>
-                  {!settlementCandidates.length ? <span className="text-xs text-[var(--color-tangerine)]">지급완료된 사전 집행결의가 없습니다.</span> : null}
+                  {!settlementCandidates.length ? <span className="text-xs text-[var(--color-tangerine)]">지급완료된 담당자 선지급 결의가 없습니다.</span> : null}
+                  {formState.originalResolutionId && getEmployeeAdvanceSourceFacts(settlementCandidates.find(resolution => resolution.id === formState.originalResolutionId)).blockedReason ? <span role="status" className="text-xs text-[var(--color-tangerine)]">{getEmployeeAdvanceSourceFacts(settlementCandidates.find(resolution => resolution.id === formState.originalResolutionId)).blockedReason}</span> : null}
                 </label>
               ) : null}
               {isBatch ? (

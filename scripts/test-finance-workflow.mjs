@@ -47,7 +47,7 @@ let created = false;
 const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
 const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
   .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
-const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql'];
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql'];
 const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
@@ -125,6 +125,15 @@ select jsonb_agg(jsonb_build_object('id',q.id,'item',i.id)) from finance.workflo
   await sql(trustCommands[winningIndex]);
   assert.equal((await sql(`select count(*) from finance.workflow_submissions where organization_id='${org}';`)).trim(), '1');
   console.log('PASS: concurrent trust requests cannot reserve 1200 against 1000; same-key retry retains one submission');
+  const accountingSignature = (await sql(`select finance.accounting_source('${org}','RECOGNITION','${ids.tx}')->>'signature';`)).trim();
+  const accountingInput = JSON.stringify({ source_kind: 'RECOGNITION', source_id: ids.tx, source_signature: accountingSignature, voucher_date: '2026-09-08', memo: 'Concurrent draft', lines: [] });
+  const accountingCommands = [1, 2].map(i => `begin; set role service_role; select finance.accounting_command('${org}','${actor}','DRAFT_CREATE','${accountingInput}','accounting-race-${i}'); select pg_sleep(0.5); commit;`);
+  const accountingRaces = await Promise.all(accountingCommands.map(query => run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At'], query)));
+  assert.equal(accountingRaces.filter(result => result.code === 0).length, 1, JSON.stringify(accountingRaces));
+  assert(accountingRaces.find(result => result.code !== 0)?.stderr.includes('이미 연결된 전표'), 'second accounting editor must see the committed source link');
+  await sql(accountingCommands[accountingRaces.findIndex(result => result.code === 0)]);
+  assert.equal((await sql(`select count(*) from finance.workflow_voucher_links where organization_id='${org}' and source_id='${ids.tx}';`)).trim(), '1');
+  console.log('PASS: concurrent accounting draft creation produces one source voucher; same-key retry preserves it');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
   await sql(`insert into storage.objects(bucket_id,name) values('finance-workflow','isolated-private'),('isolated-public','legacy-visible');`);

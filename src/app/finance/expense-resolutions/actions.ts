@@ -1,5 +1,7 @@
 "use server";
 
+import { assertLegacyVoucherEditable } from "@/features/finance/accounting-workspace-repository";
+
 import { revalidatePath } from "next/cache";
 import { after } from "next/server";
 import { randomUUID } from "node:crypto";
@@ -482,6 +484,11 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
   if (!input.idempotencyKey.trim()) throw new Error("지급 처리키가 필요합니다.");
+
+  if (["VOUCHER_CREATE", "VOUCHER_CONFIRM", "VOUCHER_CANCEL"].includes(input.command)) {
+    // Check before legacy operation/source writes; managed drafts have one atomic owner.
+    await assertLegacyVoucherEditable(input.resolutionId);
+  }
 
   const operation = {
     command: input.command,
