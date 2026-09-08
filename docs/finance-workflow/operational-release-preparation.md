@@ -94,3 +94,36 @@ node scripts/prepare-finance-release-report.mjs .tmp-repos/finance-release-inven
 호환 변경과 가짜 자료 복원 리허설은 `operational-compatibility-plan.md`에서 완료했다. 운영 읽기 검사상 대상 자료의 제약 위반은 0건이며, 누락 컬럼을 임의 업무값 없이 추가하는 migration과 앱의 미확정 표시를 구현했다. 수집한 운영 catalog 범위의 격리 구조에서 dump/restore와 신규 12개 적용도 통과했다. 실제 운영 DB/Storage 백업을 격리 대상에 복원한 검증은 PostgreSQL 직접 접속정보가 없어 미완료이며, 운영 적용과 계정 연결도 실행하지 않았다.
 
 운영 Storage 객체 34개/8,150,705바이트는 읽기 전용 백업 후 로컬 Storage 복원·재다운로드 해시 검증까지 완료했다. 따라서 남은 복원 준비 범위는 운영 PostgreSQL 전체 dump/격리 복원, DB와 Storage 참조 대조 및 복구시간 측정이다. 운영 DB 적용과 실제 계정 연결은 계속 미실행이다.
+
+## 운영 PostgreSQL 논리 백업 실행 준비
+
+Supabase CLI 로그인 계정으로 운영 프로젝트 연결을 시도했지만 프로젝트 상태 조회 권한이 없어 `LegacyLinkProjectStatusError`로 중단됐다. 운영 DB에는 쓰기를 실행하지 않았다. CLI 로그인 권한과 PostgreSQL 접속 권한은 별개이므로 Session pooler 연결 문자열과 DB 비밀번호가 필요하다.
+
+연결 문자열은 채팅, Git, 명령행 인자에 넣지 않는다. ignored `.tmp-repos/finance-operational-db.env`에 다음처럼 저장한다.
+
+```dotenv
+DBAPT_BACKUP_SOURCE_URL="postgresql://postgres.takwoubezzhxtjvxecpx:URL_ENCODED_PASSWORD@SESSION_POOLER_HOST:5432/postgres"
+DBAPT_BACKUP_PROJECT_REF="takwoubezzhxtjvxecpx"
+```
+
+비밀번호에 특수문자가 있으면 URL 인코딩한 값을 사용한다. Dashboard의 **Connect → Session pooler** 문자열을 그대로 복사해 비밀번호 자리만 채우는 방식이 안전하다. 파일을 만든 뒤 아래 명령으로 읽기 전용 논리 백업을 실행한다.
+
+```powershell
+node scripts/backup-finance-operational-db.mjs .tmp-repos/finance-operational-db.env
+```
+
+도구는 예상 프로젝트 ref, Supabase 호스트, `postgres` DB를 검사하고 비밀번호를 프로세스 인자나 로그에 기록하지 않는다. PostgreSQL 17 컨테이너에서 Supabase CLI와 같은 관리 schema 제외·역할 필터를 사용해 `roles.sql`, `schema.sql`, `data.sql`을 만들고 migration 이력도 별도 보존한다. 결과와 SHA-256 manifest는 ignored `.tmp-repos/finance-operational-db-backup-*`에만 저장한다.
+
+이 백업은 roles/schema/data/history가 별도 명령으로 생성되므로 운영 적용 직전 최종 백업은 쓰기 중지 구간에서 다시 만든다. 현재 단계의 무중단 백업은 복원 호환성 조사에 사용한다. 백업 파일만 생성한 상태는 완료가 아니며, 격리 로컬 Supabase 복원·원본 건수/금액/ID·DB의 Storage 참조와 별도 파일 34개의 대조·복구시간 측정을 통과해야 한다.
+
+복원 리허설은 새 로컬 Supabase 작업 폴더의 `project_id`가 `dbapt-finance-restore-*`일 때만 실행된다. 기존 QA DB나 운영 주소를 대상으로 받을 수 없고, 대상에 `finance`·`approval`·`core` 업무 테이블이 하나라도 있으면 중단한다. 백업 SHA-256을 먼저 확인한 후 단일 transaction으로 역할·schema·data를 복원하고, 핵심 지출 건수/금액·Auth 사용자·Storage 메타데이터 건수/크기를 원본 요약과 대조한다.
+
+```powershell
+node scripts/rehearse-finance-operational-db-restore.mjs `
+  .tmp-repos/finance-operational-db-backup-YYYY-MM-DD `
+  .tmp-repos/finance-db-restore-local
+```
+
+복원된 로컬 환경은 검토를 위해 자동 삭제하지 않는다. 여기까지 통과한 다음 호환 migration과 신규 12개 migration을 적용하고 SQL 회귀검사, DB의 Storage 경로와 별도 Storage 백업 manifest 대조를 수행한다.
+
+도구 자체 검증은 기존 로컬 Supabase를 읽기 원본으로 사용해 완료했다. 6개 백업 파일 706,173바이트의 SHA-256을 확인했고, 별도 로컬 Supabase에 1.211초 동안 복원한 뒤 위 핵심 수치가 모두 일치했다. 이 결과는 도구와 격리 조건 검증이며 운영 DB 백업 성공 증거가 아니다. 운영 연결 문자열이 준비되면 같은 도구로 운영 읽기 백업을 만든 뒤 운영 자료로 복원·migration·Storage 참조 대조를 다시 수행해야 한다.
