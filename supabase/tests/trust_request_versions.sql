@@ -137,4 +137,20 @@ begin
  if (value->>'paid')::numeric<>400 or (value->>'pending')::numeric<>300 or (value->>'approved_unpaid')::numeric<>0 or (value->>'requestable')::numeric<>0 then raise exception 'TEST: reapproved split payment %',value; end if;
  raise notice 'PASS: reduced source cap, changed recipient re-review, partial payment preservation, reserve only unpaid';
 end $$;
+
+do $$ declare org uuid:=gen_random_uuid(); actor uuid:=gen_random_uuid(); contract uuid; value jsonb; payload jsonb;
+begin
+ insert into core.organizations(id,name,status) values(org,'Contract draft edit regression','active');
+ insert into auth.users(id) values(actor);
+ insert into finance.reimbursement_members values(org,actor,'Test admin',array['ADMIN'],true);
+ contract:=(finance.trust_command(org,actor,'CONTRACT_SAVE','{"name":"Initial","conditions":{"draft_required_document_types":["Original"]}}','edit-create')->>'id')::uuid;
+ payload:=jsonb_build_object('id',contract,'lock_version',1,'name','Updated','conditions',jsonb_build_object('required_document_types',jsonb_build_array('Changed'),'operating_allowed',false));
+ value:=finance.trust_command(org,actor,'CONTRACT_SAVE',payload,'edit-save');
+ if (value->>'lock_version')::integer<>2 then raise exception 'TEST: draft edit lock'; end if;
+ if not exists(select 1 from finance.workflow_contract_versions c where c.id=contract and c.name='Updated' and c.conditions=payload->'conditions' and c.lock_version=2) then raise exception 'TEST: changed conditions not persisted'; end if;
+ if finance.trust_command(org,actor,'CONTRACT_SAVE',payload,'edit-save')<>value then raise exception 'TEST: duplicate edit result'; end if;
+ begin perform finance.trust_command(org,actor,'CONTRACT_SAVE',payload,'edit-stale'); raise exception 'TEST: stale draft edit'; exception when others then if sqlerrm not like '%변경되었습니다%' then raise; end if; end;
+ if (select count(*) from finance.workflow_events where organization_id=org and action='TRUST:CONTRACT_SAVE')<>2 then raise exception 'TEST: draft edit duplicate event'; end if;
+ raise notice 'PASS: contract draft conditions edit persists, retries once, and rejects stale lock';
+end $$;
 rollback;
