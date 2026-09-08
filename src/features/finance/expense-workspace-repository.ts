@@ -2,15 +2,18 @@ import { requireReimbursementIdentity } from "./reimbursement-auth";
 import { reimbursementDb } from "./reimbursement-repository";
 import type { ReimbursementPermission } from "./reimbursement-domain";
 import type { WorkflowAmounts } from "./fund-workflow-repository";
+import type { EvidenceOcrData, EvidenceOcrJobStage } from "./expense-evidence";
 
 export type ExpenseSourceKind = "RESOLUTION" | "QUICK" | "PERSONAL";
 export type ExpenseWorkspaceRecord = {
   source_kind: ExpenseSourceKind; source_id: string; number: string | null; title: string; amount: number;
   created_at: string; used_at: string | null; accounting_date: string | null; budget_month: string | null;
+  updated_at?: string;
   approval_status: string; payment_status: string | null; author_label: string | null; counterparty: string | null;
   transaction_id: string | null; can_connect: boolean; amounts: WorkflowAmounts | null;
   trust_items: { id: string; request_id: string; request_no: string; status: string; requested_amount: number; approved_amount: number; paid_amount: number; needs_review: boolean }[];
   vouchers: { id: string; voucher_no: string; status: string; source_kind: string | null }[];
+  evidence_files?: { ocr_job_id: string; file_name: string; content_type: string; storage_path: string; evidence_type: string; status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"; stage: EvidenceOcrJobStage; progress: number; result_data: EvidenceOcrData; error_message: string | null; created_at: string }[];
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
 

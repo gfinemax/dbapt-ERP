@@ -57,6 +57,9 @@ export async function assertExpenseRelatedRow(table: string, id: string, actor: 
 export async function requireExpenseFile(storagePath: string, write = false) {
   const actor = await requireExpenseActor();
   const db = expenseDb();
+  const { data: job, error: jobError } = await db.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("id,created_by").eq("organization_id", actor.organization_id).eq("storage_bucket", "expense-evidence").eq("storage_path", storagePath).maybeSingle();
+  if (jobError) throw new Error("증빙 원본 정보를 확인하지 못했습니다.");
   const { data: links, error: linkError } = await db.schema("finance").from("expense_resolution_evidence")
     .select("resolution_id").eq("storage_bucket", "expense-evidence").eq("storage_path", storagePath);
   if (linkError) throw new Error("증빙 원본 연결을 확인하지 못했습니다.");
@@ -71,9 +74,11 @@ export async function requireExpenseFile(storagePath: string, write = false) {
     for (const link of supporting) await requireExpenseRecord(link.resolution_id, write, actor);
     return { actor, attached: true };
   }
-  const { data: job, error } = await db.schema("finance").from("expense_evidence_ocr_jobs")
-    .select("id,created_by").eq("organization_id", actor.organization_id).eq("storage_bucket", "expense-evidence").eq("storage_path", storagePath).maybeSingle();
-  if (error || !job || job.created_by !== actor.user_id) throw new Error("본인이 업로드한 미연결 증빙만 사용할 수 있습니다.");
+  const { data: quickLinks, error: quickError } = job ? await db.schema("finance").from("quick_expense_evidence")
+    .select("quick_expense_id").eq("organization_id", actor.organization_id).eq("ocr_job_id", job.id) : { data: null, error: null };
+  if (quickError && quickError.code !== "42P01" && quickError.code !== "PGRST205") throw new Error("간편지출 영수증 연결을 확인하지 못했습니다.");
+  if (quickLinks?.length) return { actor, attached: true };
+  if (!job || job.created_by !== actor.user_id) throw new Error("본인이 업로드한 미연결 증빙만 사용할 수 있습니다.");
   return { actor, attached: false };
 }
 

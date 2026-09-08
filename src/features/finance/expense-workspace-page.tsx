@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { connectExpenseOriginal } from "@/app/finance/expenses/actions";
+import { attachQuickExpenseEvidenceAction, connectExpenseOriginal, updateQuickExpenseDetailsAction } from "@/app/finance/expenses/actions";
+import { createExpenseEvidenceDownloadUrlAction, getExpenseEvidenceOcrJobAction } from "@/app/finance/expense-resolutions/actions";
+import type { EvidenceOcrData, ExpenseEvidenceUploadResult } from "./expense-evidence";
 import { expenseResolutionHref } from "./expense-entry";
 import type { ExpenseWorkspace, ExpenseWorkspaceRecord } from "./expense-workspace-repository";
 
@@ -16,6 +18,63 @@ const field = "mt-1 w-full rounded-lg border border-slate-300 bg-white px-3 py-2
 const money = (value: number | null) => value === null ? "확인 필요" : `${Number(value).toLocaleString("ko-KR")}원`;
 const day = (value: string | null) => !value ? "미지정" : /^\d{4}-\d{2}-\d{2}$/.test(value) ? value : new Date(value).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
 const keyOf = (r: ExpenseWorkspaceRecord) => `${r.source_kind}:${r.source_id}`;
+const noEvidence: NonNullable<ExpenseWorkspaceRecord["evidence_files"]> = [];
+
+async function uploadReceipt(formData: FormData): Promise<ExpenseEvidenceUploadResult> {
+  const response = await fetch("/api/finance/expense-evidence", { body: formData, method: "POST" });
+  const result = await response.json().catch(() => null) as ExpenseEvidenceUploadResult | null;
+  if (result && typeof result === "object" && "ok" in result) return result;
+  throw new Error("영수증 업로드 결과를 확인하지 못했어. 다시 시도해줘.");
+}
+
+function ocrDescription(data: EvidenceOcrData) {
+  const items = data.items?.map(item => item.itemName).filter(Boolean).join(", ");
+  return items || data.itemName || "";
+}
+
+function QuickExpenseTools({ record: r }: { record: ExpenseWorkspaceRecord }) {
+  const router = useRouter();
+  const [editing, setEditing] = useState(false); const [description, setDescription] = useState(r.title); const [counterparty, setCounterparty] = useState(r.counterparty ?? "");
+  const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false); const [liveOcr, setLiveOcr] = useState<Record<string, { status: string; progress: number; data: EvidenceOcrData; error?: string }>>({});
+  const editOperationKey = useRef<string | null>(null);
+  const evidence = r.evidence_files ?? noEvidence;
+  useEffect(() => {
+    const pendingJobs = evidence.filter(file => !["COMPLETED", "FAILED"].includes(liveOcr[file.ocr_job_id]?.status ?? file.status));
+    if (!pendingJobs.length) return;
+    const timer = window.setTimeout(async () => {
+      const updates = await Promise.all(pendingJobs.map(async file => {
+        try { const job = await getExpenseEvidenceOcrJobAction(file.ocr_job_id); return [file.ocr_job_id, { status: job.status, progress: job.progress, data: job.resultData, error: job.errorMessage }] as const; }
+        catch (error) { return [file.ocr_job_id, { status: "FAILED", progress: 100, data: {}, error: error instanceof Error ? error.message : "OCR 상태를 확인하지 못했어." }] as const; }
+      }));
+      setLiveOcr(current => ({ ...current, ...Object.fromEntries(updates) }));
+    }, 1200);
+    return () => window.clearTimeout(timer);
+  }, [evidence, liveOcr]);
+  async function save() {
+    if (!r.updated_at) return setMessage("원본 수정 시각을 확인할 수 없어. 새로고침 후 다시 시도해줘.");
+    setBusy(true); setMessage("");
+    try { editOperationKey.current ??= crypto.randomUUID(); await updateQuickExpenseDetailsAction({ id: r.source_id, usageDescription: description, counterparty, expectedUpdatedAt: r.updated_at, operationKey: editOperationKey.current }); editOperationKey.current = null; setMessage("사용내용과 거래처를 저장했어. 연결된 지급·신탁·회계 화면에서는 원본 변경 확인 후 최신 내용으로 갱신해줘."); setEditing(false); router.refresh(); }
+    catch (error) { setMessage(error instanceof Error ? error.message : "간편지출을 수정하지 못했어."); } finally { setBusy(false); }
+  }
+  async function upload(file: File | undefined) {
+    if (!file) return; setBusy(true); setMessage("");
+    try {
+      const form = new FormData(); form.set("file", file); form.set("resolutionNo", `QUICK-${r.source_id}`); form.set("evidenceType", "영수증");
+      const result = await uploadReceipt(form); if (!result.ok) throw new Error(result.message);
+      await attachQuickExpenseEvidenceAction(r.source_id, result.attachment, `quick-receipt:${r.source_id}:${result.attachment.ocrJobId}`);
+      setMessage("영수증을 저장했고 OCR 자동입력을 시작했어."); router.refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "영수증을 등록하지 못했어."); } finally { setBusy(false); }
+  }
+  async function openReceipt(path: string) { try { window.open(await createExpenseEvidenceDownloadUrlAction(path), "_blank", "noopener,noreferrer"); } catch (error) { setMessage(error instanceof Error ? error.message : "영수증을 열지 못했어."); } }
+  function apply(data: EvidenceOcrData) { const next = ocrDescription(data); if (next) setDescription(next); if (data.issuer) setCounterparty(data.issuer); setEditing(true); setMessage("OCR 결과를 편집칸에 넣었어. 확인한 뒤 저장해줘."); }
+  return <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4" aria-label="간편지출 수정 및 영수증 OCR">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">내용 수정 · 영수증 OCR</h3><p className="mt-1 text-sm text-slate-600">OCR 결과는 먼저 검토하고 저장해. 원본 금액과 실제 사용일은 지급·예산 연결을 보호하기 위해 여기서 자동 변경하지 않아.</p></div><button className={secondary} onClick={() => setEditing(value => !value)}>{editing ? "수정 닫기" : "내용 수정"}</button></div>
+    {editing && <div className="mt-4 grid gap-3 sm:grid-cols-2"><label>사용내용<input className={field} value={description} onChange={e => { editOperationKey.current = null; setDescription(e.target.value); }} /></label><label>거래처<input className={field} value={counterparty} onChange={e => { editOperationKey.current = null; setCounterparty(e.target.value); }} /></label><div className="sm:col-span-2"><button className={button} disabled={busy} onClick={save}>수정 저장</button></div></div>}
+    <div className="mt-4"><label className="text-sm font-semibold" htmlFor={`receipt-${r.source_id}`}>영수증 파일</label><input id={`receipt-${r.source_id}`} className={`${field} file:mr-3`} type="file" accept="application/pdf,image/jpeg,image/png,image/webp,text/plain,text/csv" disabled={busy} onChange={e => { void upload(e.target.files?.[0]); e.currentTarget.value = ""; }} /><p className="mt-1 text-xs text-slate-600">PDF·JPG·PNG·WEBP·TXT·CSV, 최대 10MB</p></div>
+    {evidence.length ? <ul className="mt-4 space-y-3">{evidence.map(file => { const current = liveOcr[file.ocr_job_id]; const status = current?.status ?? file.status; const progress = current?.progress ?? file.progress; const data = current?.data ?? file.result_data; const mismatch = data.totalAmount !== undefined && Number(data.totalAmount) !== Number(r.amount); return <li className="rounded-lg border bg-white p-3" key={file.ocr_job_id}><div className="flex flex-wrap items-center justify-between gap-2"><button className="font-semibold underline" onClick={() => void openReceipt(file.storage_path)}>{file.file_name}</button><span className="text-sm">{status === "COMPLETED" ? "OCR 완료" : status === "FAILED" ? "OCR 실패" : `OCR 처리 중 ${progress}%`}</span></div>{status === "FAILED" && <p className="mt-2 text-sm text-red-700">{current?.error ?? file.error_message ?? "자동인식에 실패했어."}</p>}{status === "COMPLETED" && <div className="mt-3 text-sm"><p>거래처 {data.issuer ?? "미인식"} · 영수증 금액 {data.totalAmount === undefined ? "미인식" : money(data.totalAmount)} · 거래일 {data.documentDate ?? "미인식"}</p>{mismatch && <p className="mt-2 rounded bg-amber-50 p-2 text-amber-800">원본 {money(r.amount)}과 OCR 금액 {money(data.totalAmount!)}이 달라. 금액은 자동 수정하지 않았어.</p>}<button className={`${secondary} mt-2`} onClick={() => apply(data)}>OCR 결과를 내용 수정에 반영</button></div>}</li>; })}</ul> : <p className="mt-4 text-sm text-slate-600">등록된 영수증이 없어.</p>}
+    <p role="status" className="mt-3 text-sm">{message}</p>
+  </section>;
+}
 
 export function filterExpenseRecords(records: ExpenseWorkspaceRecord[], kind: string, connection: string, search: string) {
   const query = search.trim().toLocaleLowerCase();
@@ -43,6 +102,7 @@ function ExpenseDetail({ record: r, staff }: { record: ExpenseWorkspaceRecord; s
     <dl className="my-4 grid gap-4 sm:grid-cols-3">{[["원본 금액", money(r.amount)], ["원본 승인·처리 상태", labels[r.approval_status] ?? r.approval_status], ["원본 지급 상태", r.payment_status ?? "별도 지급 확인 필요"], ["작성자", r.author_label ?? "미확인"], ["거래처", r.counterparty || "미확인"], ["작성일", day(r.created_at)], ["실제 사용일", day(r.used_at)], ["회계 귀속일", day(r.accounting_date)], ["개인 정산 예산월", r.budget_month?.slice(0, 7) ?? "해당 없음"]].map(([label, value]) => <div key={label}><dt className="text-sm text-slate-600">{label}</dt><dd className="mt-1 font-medium">{value}</dd></div>)}</dl>
     {r.transaction_id && r.amounts ? <div className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">연결된 지급 현황</h3><p className="mt-2">누적 실제 지급 {money(r.amounts.paid)} · 총 미지급 {money(r.amounts.remaining)} · 승인 중 미지급 {money(r.amounts.approved_unpaid)}</p>{r.amounts.legacy_payment_complete && <p className="mt-2 text-sm">기존 지급완료 기록을 보존했어. 금액 근거가 없으면 확인 필요로 표시돼.</p>}</div> : <div className="rounded-lg bg-slate-50 p-4"><p>통합 업무에 아직 연결되지 않은 원본이야. 연결해도 원본을 복제하거나 새 지급·비용을 만들지 않아.</p>{r.can_connect && <button className={`${button} mt-3`} disabled={pending} onClick={connect}>원본 연결</button>}</div>}
     <p role="status" className="my-3">{message}</p>
+    {staff && r.source_kind === "QUICK" && <QuickExpenseTools record={r} />}
     <h3 className="mt-4 font-semibold">신탁 요청 연결</h3>{r.trust_items.length ? <ul className="mt-2 space-y-2">{r.trust_items.map(i => <li className="rounded-lg border p-3" key={i.id}>{staff ? <Link className="underline" href={`/finance/trust?request=${encodeURIComponent(i.request_id)}`}>{i.request_no}</Link> : <span>{i.request_no}</span>} · {labels[i.status] ?? i.status} · 요청 {money(i.requested_amount)} · 승인 {money(i.approved_amount)} · 지급 {money(i.paid_amount)}{i.needs_review && <span className="ml-2 text-amber-700">재검토 필요</span>}</li>)}</ul> : <p className="mt-2 text-sm">연결된 신탁 요청이 없어.</p>}
     <h3 className="mt-4 font-semibold">회계전표 연결</h3>{r.vouchers.length ? <ul className="mt-2 space-y-2">{r.vouchers.map(v => <li key={v.id}>{staff ? <Link className="underline" href={`/finance?voucherId=${encodeURIComponent(v.id)}`}>{v.voucher_no}</Link> : <span>{v.voucher_no}</span>} · {v.status} · {v.source_kind === "RECOGNITION" ? "발생 인식" : v.source_kind === "PAYMENT" ? "실제 지급" : "기존 전표"}</li>)}</ul> : <p className="mt-2 text-sm">연결된 전표가 없어.</p>}
     <div className="mt-5 flex flex-wrap gap-3">{staff && <Link className={secondary} href={`/finance/payments?tab=ALL&q=${encodeURIComponent(r.title)}`}>제목으로 지급 목록 확인</Link>}{(staff || r.source_kind === "PERSONAL") && <Link className={secondary} href={r.source_kind === "RESOLUTION" ? expenseResolutionHref({ resolutionId: r.source_id }) : r.source_kind === "QUICK" ? "/finance/quick-expenses" : `/finance/reimbursements${r.budget_month ? `?month=${r.budget_month.slice(0, 7)}` : ""}`}>기존 {kinds[r.source_kind]} 화면에서 확인</Link>}</div><p className="mt-3 text-xs text-slate-600">기존 작성·승인·출력 기능은 각 원본 화면에 있어. 지출결의는 선택한 원본 상세로 바로 열려. 간편지출·개인 정산은 해당 목록에서 확인해줘.</p>
