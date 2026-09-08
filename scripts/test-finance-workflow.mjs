@@ -35,6 +35,10 @@ create function auth.uid() returns uuid language sql stable as $$ select nullif(
 create schema storage;
 create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
 create table storage.objects(id uuid primary key default gen_random_uuid(),bucket_id text,name text,metadata jsonb,owner uuid,created_at timestamptz default now(),unique(bucket_id,name));
+alter table storage.objects enable row level security;
+grant usage on schema storage to anon,authenticated,service_role;
+grant select,insert,update,delete on storage.objects to anon,authenticated,service_role;
+create policy isolated_legacy_open on storage.objects for all to authenticated using(true) with check(true);
 create schema extensions; create extension pgcrypto with schema extensions;
 alter database postgres set search_path=public,extensions;
 `;
@@ -123,6 +127,9 @@ select jsonb_agg(jsonb_build_object('id',q.id,'item',i.id)) from finance.workflo
   console.log('PASS: concurrent trust requests cannot reserve 1200 against 1000; same-key retry retains one submission');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
+  await sql(`insert into storage.objects(bucket_id,name) values('finance-workflow','isolated-private'),('isolated-public','legacy-visible');`);
+  const storageRows = await sql(`set role authenticated; select count(*) from storage.objects where bucket_id='finance-workflow'; select count(*) from storage.objects where bucket_id='isolated-public';`);
+  assert.deepEqual(storageRows.trim().split('\n').slice(-2), ['0', '1'], 'private workflow objects stay hidden even with a legacy broad Storage policy');
   console.log('PASS: database role access denied');
 } finally {
   if (created) {

@@ -8,7 +8,7 @@ declare org uuid:=gen_random_uuid(); other_org uuid:=gen_random_uuid(); admin_id
  result jsonb; input jsonb; totals jsonb; alloc uuid; returnalloc uuid; source_fingerprint text;
  cash_file uuid:=gen_random_uuid(); foreign_account uuid:=gen_random_uuid(); forged_bank uuid:=gen_random_uuid();
  future_bank uuid:=gen_random_uuid(); early_return uuid:=gen_random_uuid(); early_payment uuid; personal_id uuid:=gen_random_uuid(); personal_tx uuid; budget uuid:=gen_random_uuid(); current_month date:=date_trunc('month',now() at time zone 'Asia/Seoul')::date;
- alternate_contract uuid:=gen_random_uuid();
+ alternate_contract uuid:=gen_random_uuid(); previous_revision integer;
 begin
  insert into core.organizations(id,name,status) values(org,'Workflow test','active'),(other_org,'Other test','active');
  insert into auth.users(id) values(admin_id),(payer),(employee);
@@ -59,15 +59,18 @@ begin
  update finance.workflow_transactions set route='TRUST_DIRECT',contract_version_id=contract where id=tx1;
  update finance.workflow_transactions set route='OPERATING',contract_version_id=contract where id=tx2;
  insert into finance.workflow_trust_requests(id,organization_id,request_no,title,contract_version_id,status,created_by) values(req,org,'TRUST-TEST-1','Partial approval',contract,'PARTIAL',admin_id);
- insert into finance.workflow_trust_items(id,organization_id,request_id,transaction_id,requested_amount,approved_amount,status,source_revision) values(item1,org,req,tx1,600,400,'PARTIAL',1);
+ insert into finance.workflow_trust_items(id,organization_id,request_id,transaction_id,requested_amount,approved_amount,status,source_revision) values(item1,org,req,tx1,600,400,'PARTIAL',(select revision from finance.workflow_transactions where id=tx1));
  input:=jsonb_build_object('payment_id',pay,'reason','Approved allocation','items',jsonb_build_array(jsonb_build_object('transaction_id',tx1,'trust_item_id',item1,'purpose','DISBURSEMENT','amount',250)));
  perform finance.workflow_command(org,payer,'PAYMENT_ALLOCATE',input,'pay250');
  perform finance.workflow_command(org,payer,'PAYMENT_ALLOCATE',input,'pay250');
  if (select count(*) from finance.workflow_allocations where transaction_id=tx1)<>1 then raise exception 'TEST: duplicate allocation'; end if;
  insert into finance.workflow_contract_versions(id,organization_id,contract_key,version,name,trustee,reference,management_account_id,status,created_by) values(alternate_contract,org,gen_random_uuid(),1,'Other contract','Trustee','Different terms',acct,'VERIFIED',admin_id);
  update finance.workflow_transactions set contract_version_id=alternate_contract where id=tx1;
+ -- Test a reply explicitly associated with the wrong contract; isolate that check from stale-source checks.
+ update finance.workflow_trust_items set source_revision=(select revision from finance.workflow_transactions where id=tx1),needs_review=false where id=item1;
  begin perform finance.workflow_command(org,payer,'PAYMENT_ALLOCATE',jsonb_build_object('payment_id',pay,'reason','Wrong contract','items',jsonb_build_array(jsonb_build_object('transaction_id',tx1,'trust_item_id',item1,'purpose','DISBURSEMENT','amount',10))),'wrong-contract'); raise exception 'TEST: old contract approval reused'; exception when others then if sqlerrm not like '%계약 버전이 다릅니다%' then raise; end if; end;
  update finance.workflow_transactions set contract_version_id=contract where id=tx1;
+ update finance.workflow_trust_items set source_revision=(select revision from finance.workflow_transactions where id=tx1),needs_review=false where id=item1;
  totals:=finance.workflow_transaction_amounts(org,tx1);
  if (totals->>'paid')::numeric<>250 or (totals->>'remaining')::numeric<>750 or (totals->>'approved_unpaid')::numeric<>150 or (totals->>'requestable')::numeric<>600 then raise exception 'TEST: partial arithmetic %',totals; end if;
  input:=jsonb_build_object('payment_id',pay,'reason','Too much approval','items',jsonb_build_array(jsonb_build_object('transaction_id',tx1,'trust_item_id',item1,'purpose','DISBURSEMENT','amount',151)));
@@ -98,11 +101,12 @@ begin
  begin update finance.expense_resolutions set actual_paid_amount=1000 where id=source1; raise exception 'TEST: old payment bypass'; exception when others then if sqlerrm like 'TEST:%' then raise; end if; end;
  begin update finance.bank_transactions set withdrawal_amount=1 where id=bank; raise exception 'TEST: bank overwritten'; exception when others then if sqlerrm like 'TEST:%' then raise; end if; end;
  begin update finance.expense_resolutions set organization_id=other_org where id=source1; raise exception 'TEST: org move'; exception when others then if sqlerrm like 'TEST:%' then raise; end if; end;
+ select revision into previous_revision from finance.workflow_transactions where id=tx1;
  update finance.expense_resolutions set resolution_data=resolution_data||'{"accountHolder":"Changed recipient"}' where id=source1;
  if not (select needs_review from finance.workflow_trust_items where id=item1) then raise exception 'TEST: stale approval'; end if;
  perform finance.workflow_command(org,admin_id,'REFRESH',jsonb_build_object('id',tx1,'reason','Recipient updated'),'refresh');
- if (select revision from finance.workflow_transactions where id=tx1)<>2 then raise exception 'TEST: source version'; end if;
- if not exists(select 1 from finance.workflow_events where entity_id=tx1 and action='REFRESH' and before_data->>'revision'='1' and after_data->>'revision'='2') then raise exception 'TEST: source change history lost'; end if;
+ if (select revision from finance.workflow_transactions where id=tx1)<>previous_revision+1 then raise exception 'TEST: source version'; end if;
+ if not exists(select 1 from finance.workflow_events where entity_id=tx1 and action='REFRESH' and (before_data->>'revision')::integer=previous_revision and (after_data->>'revision')::integer=previous_revision+1) then raise exception 'TEST: source change history lost'; end if;
  if jsonb_array_length(finance.workflow_read(org,admin_id)->'allocations')<>3 then raise exception 'TEST: requery lost allocation'; end if;
  update finance.bank_transactions set transacted_at=now()+interval '1 day' where id=inbank;
  begin perform finance.workflow_command(org,payer,'TRANSFER',jsonb_build_object('withdrawal_id',outbank,'deposit_id',inbank,'reason','Future transfer'),'future-transfer'); raise exception 'TEST: future transfer accepted'; exception when others then if sqlerrm not like '%미래 거래%' then raise; end if; end;

@@ -24,10 +24,10 @@ function useOperation() {
   }
   return {run,message,pending};
 }
-export function ReimbursementLogin({error}:{error?:string}) {
+export function ReimbursementLogin({error,title="개인 지출 정산·월 마감",description="사용월의 예산과 실제 지급일을 구분해서 관리해. 마감과 승인 이력을 남기기 위해 본인 계정으로 로그인해줘."}:{error?:string;title?:string;description?:string}) {
   const op=useOperation();
-  return <section className={`${card} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">개인 지출 정산·월 마감</h1>
-    <p className="my-4 text-sm text-slate-600">사용월의 예산과 실제 지급일을 구분해서 관리해. 마감과 승인 이력을 남기기 위해 본인 계정으로 로그인해줘.</p>
+  return <section className={`${card} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">{title}</h1>
+    <p className="my-4 text-sm text-slate-600">{description}</p>
     <form className="space-y-4" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);op.run(()=>reimbursementLogin(form),"로그인했어.");}}>
       <label className="block">이메일<input className={input} name="email" type="email" autoComplete="username" required /></label>
       <label className="block">비밀번호<input className={input} name="password" type="password" autoComplete="current-password" required /></label>
