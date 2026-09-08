@@ -47,7 +47,7 @@ let created = false;
 const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
 const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
   .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
-const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql'];
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql'];
 const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
