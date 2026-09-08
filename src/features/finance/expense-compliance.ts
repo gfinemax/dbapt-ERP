@@ -12,6 +12,7 @@ export type ExpenseComplianceSettings = {
   directExpenseLimit?: number;
   directExpenseRequiredKeywords?: string[];
   directExpenseRecommendedKeywords?: string[];
+  quickExpenseAllowedBudgetItems?: string[];
   allowOtherApprovalSkipReason?: boolean;
   pettyCashLimit: number;
   monthlyPersonWarningLimit: number;
@@ -30,6 +31,13 @@ export const defaultExpenseComplianceSettings: ExpenseComplianceSettings = {
   directExpenseLimit: 5_000_000,
   directExpenseRequiredKeywords: ["신규 계약", "조합원 환불", "추가부담", "차입", "상환", "소송", "토지매입", "예산 외"],
   directExpenseRecommendedKeywords: ["신규 사업", "신규 거래처", "비정기", "자산 취득"],
+  quickExpenseAllowedBudgetItems: [
+    "일반운영비>소모품비",
+    "일반운영비>도서인쇄비",
+    "일반운영비>수선비",
+    "제세공과금>여비교통비",
+    "제세공과금>통신비",
+  ],
   allowOtherApprovalSkipReason: true,
   pettyCashLimit: 30_000,
   monthlyPersonWarningLimit: 100_000,

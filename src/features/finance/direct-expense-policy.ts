@@ -14,6 +14,7 @@ export type DirectExpensePolicyInput = {
   reason?: string;
   memo?: string;
   source: ExpenseCreationSource;
+  quickExpense?: boolean;
 };
 
 export type DirectExpensePolicyResult = { decision: DirectExpenseDecision; reasons: string[] };
@@ -24,6 +25,9 @@ export function evaluateDirectExpensePolicy(input: DirectExpensePolicyInput, set
   const searchable = `${input.subject ?? ""} ${input.reason ?? ""} ${input.memo ?? ""} ${input.relatedContract ?? ""}`.replace(/\s+/g, " ");
   const matchedKeywords = (settings.directExpenseRequiredKeywords ?? []).filter((keyword) => keyword && searchable.includes(keyword));
   const required: string[] = [];
+  if (input.quickExpense && settings.quickExpenseAllowedBudgetItems?.length && !settings.quickExpenseAllowedBudgetItems.includes(input.budgetItem?.trim() ?? "")) {
+    required.push("예산 내 간편처리가 허용된 예산항목이 아닙니다.");
+  }
   if (input.amount > (settings.directExpenseLimit ?? 0)) required.push(`직접 지출 한도 ${(settings.directExpenseLimit ?? 0).toLocaleString("ko-KR")}원을 초과했습니다.`);
   if (input.budgetOverReason?.trim()) required.push("예산 외 또는 예산 초과 지출입니다.");
   if (input.relatedContract?.trim() || /계약|용역/.test(searchable)) required.push("계약 관련 지출입니다.");

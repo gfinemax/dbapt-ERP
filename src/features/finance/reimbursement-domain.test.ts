@@ -8,6 +8,12 @@ describe("personal reimbursement controls",()=>{
    expect(requestActions(request,member,period)).not.toContain("APPROVE");
    expect(requestActions({...request,exception_approved_at:"now",senior_approved_at:"now"},member,period)).toContain("APPROVE");
  });
+ it("requires a second person to approve alternative evidence before budget approval",()=>{
+   const alternative={...request,needs_exception:false,needs_senior:false,evidence_review_status:"REVIEW_REQUIRED" as const};
+   expect(requestActions(alternative,member,{...period,status:"OPEN"})).toContain("EVIDENCE_APPROVE");
+   expect(requestActions(alternative,member,{...period,status:"OPEN"})).not.toContain("APPROVE");
+   expect(requestActions({...alternative,evidence_review_status:"APPROVED"},member,{...period,status:"OPEN"})).toContain("APPROVE");
+ });
  it("prevents self approval even for administrators",()=>{
    expect(requestActions({...request,applicant_id:member.user_id},member,period)).toEqual(["CANCEL"]);
  });

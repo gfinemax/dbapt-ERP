@@ -14,6 +14,11 @@ type QuickExpenseRecordRow = {
   direct_expense_decision: QuickExpenseRecord["directExpenseDecision"];
   direct_expense_reasons: string[];
   evidence_status: QuickExpenseRecordInput["evidenceStatus"];
+  evidence_kind: QuickExpenseRecordInput["evidenceKind"] | null;
+  evidence_review_status: QuickExpenseRecord["evidenceReviewStatus"] | null;
+  evidence_reviewed_at: string | null;
+  evidence_review_note: string | null;
+  missing_evidence_reason: string | null;
   id: string;
   occurred_at: string;
   payment_method: QuickExpenseRecordInput["paymentMethod"];
@@ -23,7 +28,7 @@ type QuickExpenseRecordRow = {
   usage_description: string;
 };
 
-const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,evidence_status,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at";
+const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,evidence_status,evidence_kind,evidence_review_status,evidence_reviewed_at,evidence_review_note,missing_evidence_reason,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at";
 
 function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
   return {
@@ -37,6 +42,11 @@ function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
     directExpenseDecision: row.direct_expense_decision,
     directExpenseReasons: row.direct_expense_reasons,
     evidenceStatus: row.evidence_status,
+    evidenceKind: row.evidence_kind ?? undefined,
+    evidenceReviewStatus: row.evidence_review_status ?? undefined,
+    evidenceReviewedAt: row.evidence_reviewed_at ?? undefined,
+    evidenceReviewNote: row.evidence_review_note ?? undefined,
+    missingEvidenceReason: row.missing_evidence_reason ?? undefined,
     id: row.id,
     occurredAt: row.occurred_at,
     paymentMethod: row.payment_method,
@@ -97,6 +107,9 @@ export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { 
     direct_expense_decision: input.directExpenseDecision,
     direct_expense_reasons: input.directExpenseReasons,
     evidence_status: input.evidenceStatus,
+    evidence_kind: input.evidenceKind ?? "NONE",
+    evidence_review_status: input.evidenceStatus === "QUALIFIED" ? "READY" : input.evidenceStatus === "ALTERNATIVE" ? "REVIEW_REQUIRED" : "MISSING",
+    missing_evidence_reason: input.missingEvidenceReason ?? "",
     occurred_at: input.occurredAt,
     organization_id: organizationId,
     payment_method: input.paymentMethod,

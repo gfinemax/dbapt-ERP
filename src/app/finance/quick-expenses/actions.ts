@@ -13,11 +13,12 @@ export async function saveQuickExpenseRecordAction(input: QuickExpenseRecordInpu
   const validation = validateQuickExpenseRecord(input, settings ?? undefined);
   if (validation.errors.length) throw new Error(validation.errors.join(" "));
   const sourcePending = input.paymentMethod === "CORPORATE_CARD" && input.sourceType === "MANUAL";
+  const evidencePending = input.evidenceStatus !== "QUALIFIED";
   const budget = organizationId ? await getQuickExpenseBudgetAvailability(organizationId, input.budgetItem, input.occurredAt) : null;
   const withinApprovedBudget = budget && !budget.unresolvedCount && budget.remainingAmount >= input.amount && budget.annualRemainingAmount >= input.amount;
-  const recordStatus = sourcePending ? "SOURCE_PENDING" : validation.recordStatus === "RECORDED" && withinApprovedBudget ? "RECORDED" : "NEEDS_RESOLUTION";
-  const budgetReason = !budget ? "승인된 예산항목을 찾을 수 없습니다." : budget.unresolvedCount ? "월 예산·마감에서 귀속 확인이 필요한 원본을 먼저 배정해주세요." : budget.annualRemainingAmount < input.amount ? "연간 승인예산 잔액을 초과했습니다." : budget.remainingAmount < input.amount ? `이번 달 승인예산 잔액 ${budget.remainingAmount.toLocaleString("ko-KR")}원을 초과했습니다.` : null;
-  const directExpenseReasons = sourcePending ? ["법인카드 승인내역 동기화 후 실제 거래 연결이 필요합니다."] : budgetReason ? [...validation.policy.reasons, budgetReason] : validation.policy.reasons;
+  const recordStatus = sourcePending ? "SOURCE_PENDING" : validation.recordStatus === "NEEDS_RESOLUTION" || !withinApprovedBudget ? "NEEDS_RESOLUTION" : evidencePending ? "EVIDENCE_PENDING" : "RECORDED";
+  const budgetReason = !budget ? "승인된 예산항목을 찾을 수 없습니다." : budget.unresolvedCount ? "이 예산항목·귀속월의 미정리 원본을 먼저 확인해주세요." : budget.annualRemainingAmount < input.amount ? "연간 승인예산 잔액을 초과했습니다." : budget.remainingAmount < input.amount ? `이번 달 승인예산 잔액 ${budget.remainingAmount.toLocaleString("ko-KR")}원을 초과했습니다.` : null;
+  const directExpenseReasons = sourcePending ? ["법인카드 승인내역 동기화 후 실제 거래 연결이 필요합니다."] : budgetReason ? [...validation.policy.reasons, budgetReason] : evidencePending ? [...validation.policy.reasons, "영수증 또는 대체증빙 검토가 필요합니다."] : validation.policy.reasons;
   return saveQuickExpenseRecord({ ...input, directExpenseDecision: recordStatus === "NEEDS_RESOLUTION" ? "REQUIRED" : validation.policy.decision, directExpenseReasons, recordStatus });
 }
 
@@ -31,7 +32,9 @@ export async function linkQuickExpenseCardAction(input: { recordId: string; card
   const [organizationId, record] = await Promise.all([getDefaultOrganizationId(), getQuickExpenseRecord(input.recordId)]);
   if (!organizationId || !record) throw new Error("연결할 간편지출 기록을 찾을 수 없어.");
   const budget = await getQuickExpenseBudgetAvailability(organizationId, record.budgetItem, record.occurredAt);
-  const recordStatus = budget && !budget.unresolvedCount && budget.remainingAmount >= record.amount && budget.annualRemainingAmount >= record.amount ? "RECORDED" as const : "NEEDS_RESOLUTION" as const;
+  const recordStatus = budget && !budget.unresolvedCount && budget.remainingAmount >= record.amount && budget.annualRemainingAmount >= record.amount
+    ? record.evidenceReviewStatus === "APPROVED" || record.evidenceReviewStatus === "READY" ? "RECORDED" as const : "EVIDENCE_PENDING" as const
+    : "NEEDS_RESOLUTION" as const;
   await linkQuickExpenseCard(input.recordId, input.cardTransactionId, recordStatus);
   revalidatePath("/finance/quick-expenses");
   return { recordStatus };

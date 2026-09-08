@@ -35,8 +35,11 @@ export async function reimbursementLogout() {
 }
 export async function runReimbursementCommand(command: string, data: Record<string,unknown>) {
   const member = await requireReimbursementIdentity();
-  if (!["POLICY","OPEN","SUPPLEMENT","CLOSE","EXCEPTION","SENIOR","OVER_BUDGET","APPROVE","REJECT","CANCEL","PAY","REVERSE_PAYMENT"].includes(command)) throw new Error("지원하지 않는 처리입니다.");
-  await reimbursementCommand(member,command,data);
+  if (!["POLICY","OPEN","SUPPLEMENT","CLOSE","EVIDENCE_APPROVE","EVIDENCE_SUPPLEMENT","EXCEPTION","SENIOR","OVER_BUDGET","APPROVE","REJECT","CANCEL","PAY","REVERSE_PAYMENT"].includes(command)) throw new Error("지원하지 않는 처리입니다.");
+  if (command.startsWith("EVIDENCE_")) {
+    const { error } = await reimbursementDb().schema("finance").rpc("reimbursement_evidence_command", { p_org: member.organization_id, p_actor: member.user_id, p_id: String(data.id), p_decision: command === "EVIDENCE_APPROVE" ? "APPROVE" : "SUPPLEMENT", p_reason: String(data.reason ?? "") });
+    if (error) throw new Error(error.message);
+  } else await reimbursementCommand(member,command,data);
   refresh();
 }
 export async function submitReimbursement(form: FormData) {
@@ -58,11 +61,12 @@ export async function submitReimbursement(form: FormData) {
   const upload = await db.storage.from("personal-reimbursements").upload(path,bytes,{contentType:type,upsert:false});
   if (upload.error && !["409","Duplicate"].includes(String(upload.error.statusCode)) && !upload.error.message.includes("already exists")) throw new Error("증빙을 저장하지 못했습니다. 입력 내용은 유지됩니다.");
   const data: Record<string,unknown> = {id,evidence_path:path,evidence_hash:hash};
-  for (const key of ["used_on","budget_id","merchant","purpose","delay_reason","source_quick_id"]) data[key]=String(form.get(key) ?? "").trim();
+  for (const key of ["used_on","budget_id","merchant","purpose","delay_reason","source_quick_id","payment_method","evidence_kind","missing_receipt_reason"]) data[key]=String(form.get(key) ?? "").trim();
   data.amount=Number(form.get("amount"));
   if (!Number.isSafeInteger(data.amount) || Number(data.amount)<=0) throw new Error("금액은 1원 이상의 정수로 입력해주세요.");
   // Keep uploaded evidence on retry/failure; never delete evidence after an ambiguous commit.
-  await reimbursementCommand(member,"SUBMIT",data);
+  const { error } = await reimbursementDb().schema("finance").rpc("reimbursement_submit_with_evidence", { p_org: member.organization_id, p_actor: member.user_id, p_data: data });
+  if (error) throw new Error(error.message);
   refresh();
 }
 export async function reimbursementEvidence(id: string) {

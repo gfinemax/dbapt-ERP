@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { evaluateDirectExpensePolicy } from "./direct-expense-policy";
+import { defaultExpenseComplianceSettings } from "./expense-compliance";
 
 describe("direct expense governance", () => {
   it("allows routine expenses within the configured limit", () => {
@@ -19,5 +20,11 @@ describe("direct expense governance", () => {
 
   it("recommends linking a draft for configured advisory work", () => {
     expect(evaluateDirectExpensePolicy({ amount: 300_000, budgetItem: "운영비", reason: "신규 거래처 등록비", source: "DIRECT" }).decision).toBe("RECOMMENDED");
+  });
+
+  it("limits quick expenses to explicitly configured budget items", () => {
+    const settings = { ...defaultExpenseComplianceSettings, quickExpenseAllowedBudgetItems: ["일반운영비>소모품비"] };
+    expect(evaluateDirectExpensePolicy({ amount: 14_000, budgetItem: "일반운영비>소모품비", quickExpense: true, source: "DIRECT" }, settings).decision).toBe("ALLOWED");
+    expect(evaluateDirectExpensePolicy({ amount: 14_000, budgetItem: "사업비>용역비", quickExpense: true, source: "DIRECT" }, settings).decision).toBe("REQUIRED");
   });
 });

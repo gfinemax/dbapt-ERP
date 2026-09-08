@@ -23,6 +23,7 @@ export function ExpenseComplianceSettingsPage({ initialSettings = defaultExpense
         <SettingNumber label="직접 지출 가능 한도" value={settings.directExpenseLimit ?? 5_000_000} onChange={(value) => setSettings((current) => ({ ...current, directExpenseLimit: value }))} />
         <SettingList label="기안 필수 업무 키워드" value={settings.directExpenseRequiredKeywords ?? []} onChange={(value) => setSettings((current) => ({ ...current, directExpenseRequiredKeywords: value }))} />
         <SettingList label="기안 연결 권장 업무 키워드" value={settings.directExpenseRecommendedKeywords ?? []} onChange={(value) => setSettings((current) => ({ ...current, directExpenseRecommendedKeywords: value }))} />
+        <SettingList label="예산 내 간편지출 허용 예산항목" value={settings.quickExpenseAllowedBudgetItems ?? []} onChange={(value) => setSettings((current) => ({ ...current, quickExpenseAllowedBudgetItems: value }))} />
         <label className="flex items-center gap-3 rounded-xl border p-4 font-bold"><input checked={settings.allowOtherApprovalSkipReason ?? true} onChange={(event) => setSettings((current) => ({ ...current, allowOtherApprovalSkipReason: event.target.checked }))} type="checkbox" />기타 기안 생략 사유 직접 입력 허용</label>
         <SettingNumber label="소액경비 기준금액" value={settings.pettyCashLimit} onChange={(value) => setSettings((current) => ({ ...current, pettyCashLimit: value }))} />
         <SettingNumber label="지출자별 월 누계 경고금액" value={settings.monthlyPersonWarningLimit} onChange={(value) => setSettings((current) => ({ ...current, monthlyPersonWarningLimit: value }))} />

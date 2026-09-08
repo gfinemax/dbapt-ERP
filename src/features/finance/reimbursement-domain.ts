@@ -10,6 +10,12 @@ export type Reimbursement = {
   needs_exception: boolean; needs_senior: boolean; exception_approved_at: string | null;
   senior_approved_at: string | null; over_budget_approved_at: string | null;
   submitted_at: string; approved_at: string | null; paid_at: string | null; bank_transaction_id: string | null;
+  payment_method?: "PERSONAL_CARD" | "PERSONAL_TRANSFER" | "CASH";
+  evidence_kind?: "RECEIPT" | "CARD_STATEMENT" | "BANK_TRANSFER" | "ORDER_DETAILS" | "TRANSACTION_STATEMENT" | "ITEM_PHOTO" | "OTHER_ALTERNATIVE";
+  missing_receipt_reason?: string;
+  evidence_review_status?: "READY" | "REVIEW_REQUIRED" | "SUPPLEMENT_REQUIRED" | "APPROVED";
+  evidence_reviewed_at?: string | null;
+  evidence_review_note?: string;
 };
 export type BudgetEntry = { source_kind: string; source_id: string; title: string; budget_id: string; month: string; amount: number; state: string; paid_at: string | null };
 export type BudgetAllocationLine = { budget_id: string; month: string; amount: number; used_on?: string };
@@ -20,7 +26,7 @@ export type ReimbursementAudit = { id: string; request_id: string | null; actor_
 export type ReimbursementBank = { id: string; transacted_at: string; withdrawal_amount: number; counterparty: string; description: string };
 export type ReimbursementSource = { id: string; occurred_at: string; amount: number; counterparty: string; budget_item: string; usage_description: string };
 export const reimbursementStatusLabels = { SUBMITTED: "심사 중", APPROVED: "지급 대기", PAID: "정산 완료", REJECTED: "반려", CANCELLED: "취소" };
-export const reimbursementCommandLabels: Record<string,string> = { BUDGET_ASSIGNMENT: "예산 귀속 확인·수정", SUBMIT: "정산 신청", EXCEPTION: "지연 정산 승인", SENIOR: "장기 지연 승인", OVER_BUDGET: "예산 초과 승인", APPROVE: "예산 반영 승인", REJECT: "반려", CANCEL: "신청 취소", PAY: "지급 연결", REVERSE_PAYMENT: "지급 연결 취소", OPEN: "접수월 개설", SUPPLEMENT: "보완 접수", CLOSE: "월 마감", POLICY: "운영 기준 변경", MEMBER: "담당자 권한 변경" };
+export const reimbursementCommandLabels: Record<string,string> = { BUDGET_ASSIGNMENT: "예산 귀속 확인·수정", SUBMIT: "정산 신청", EVIDENCE_APPROVE: "대체증빙 승인", EVIDENCE_SUPPLEMENT: "증빙 보완요청", EXCEPTION: "지연 정산 승인", SENIOR: "장기 지연 승인", OVER_BUDGET: "예산 초과 승인", APPROVE: "예산 반영 승인", REJECT: "반려", CANCEL: "신청 취소", PAY: "지급 연결", REVERSE_PAYMENT: "지급 연결 취소", OPEN: "접수월 개설", SUPPLEMENT: "보완 접수", CLOSE: "월 마감", POLICY: "운영 기준 변경", MEMBER: "담당자 권한 변경" };
 export function koreaDate(value = new Date()) { return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit", day: "2-digit" }).format(value); }
 export function hasReimbursementPermission(member: ReimbursementMember, permission: ReimbursementPermission) { return member.active && (member.permissions.includes("ADMIN") || member.permissions.includes(permission)); }
 export function budgetUsed(b: ReimbursementBudget) { return Number(b.quick_amount) + Number(b.personal_amount) + Number(b.resolution_amount ?? 0) + Number(b.manual_amount ?? 0); }
@@ -34,8 +40,11 @@ export function periodLabel(period: ReimbursementPeriod, today: string) {
 export function requestActions(r: Reimbursement, member: ReimbursementMember, period?: ReimbursementPeriod) {
   const actions: string[] = [];
   const other = r.applicant_id !== member.user_id;
+  const evidenceReviewStatus = r.evidence_review_status ?? "READY";
   if (r.status === "SUBMITTED") {
     if (other && hasReimbursementPermission(member,"APPROVE")) {
+      if (evidenceReviewStatus === "REVIEW_REQUIRED") actions.push("EVIDENCE_APPROVE");
+      if (["REVIEW_REQUIRED","SUPPLEMENT_REQUIRED"].includes(evidenceReviewStatus)) actions.push("EVIDENCE_SUPPLEMENT");
       if (r.needs_exception && !r.exception_approved_at) actions.push("EXCEPTION");
       actions.push("REJECT");
     }
@@ -44,7 +53,7 @@ export function requestActions(r: Reimbursement, member: ReimbursementMember, pe
       if (!r.over_budget_approved_at) actions.push("OVER_BUDGET");
     }
     if (other && hasReimbursementPermission(member,period?.status === "CLOSED" ? "CLOSE" : "APPROVE")
-      && (!r.needs_exception || r.exception_approved_at) && (!r.needs_senior || r.senior_approved_at)) actions.push("APPROVE");
+      && ["READY","APPROVED"].includes(evidenceReviewStatus) && (!r.needs_exception || r.exception_approved_at) && (!r.needs_senior || r.senior_approved_at)) actions.push("APPROVE");
     if (!other || hasReimbursementPermission(member,"APPROVE")) actions.push("CANCEL");
   }
   if (r.status === "APPROVED") {

@@ -42,7 +42,7 @@ export async function importCorporateCardTransactions(rows: CorporateCardTransac
   return data ?? [];
 }
 
-export async function linkQuickExpenseCard(recordId: string, cardTransactionId: string, recordStatus: "RECORDED" | "NEEDS_RESOLUTION") {
+export async function linkQuickExpenseCard(recordId: string, cardTransactionId: string, recordStatus: "RECORDED" | "EVIDENCE_PENDING" | "NEEDS_RESOLUTION") {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
   const { error } = await supabase.schema("finance").rpc("link_quick_expense_card", { p_record_id: recordId, p_card_transaction_id: cardTransactionId, p_record_status: recordStatus });

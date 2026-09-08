@@ -49,6 +49,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
   const [tab,setTab]=useState(initialTab); const [selected,setSelected]=useState<Reimbursement|null>(null); const [action,setAction]=useState("");
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
+  const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
   const [status,setStatus]=useState("ALL");
   const period=w.periods.find(p=>p.month===w.month);
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
@@ -76,7 +77,10 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
           <label>개인 결제 금액<input className={input} type="number" name="amount" min="1" step="1" required value={amount} onChange={e=>setAmount(e.target.value)}/></label>
           <label>사용처<input className={input} name="merchant" required value={merchant} onChange={e=>setMerchant(e.target.value)}/></label>
           <label>업무 목적<input className={input} name="purpose" required value={purpose} onChange={e=>setPurpose(e.target.value)}/></label>
-          <label className="sm:col-span-2">영수증·개인 결제 증빙<input className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required/><span className="text-xs text-slate-600">관련 증빙을 하나의 PDF 또는 이미지로 첨부해줘. 최대 3MB.</span></label>
+          <label>개인 결제수단<select className={input} name="payment_method" required defaultValue="PERSONAL_CARD"><option value="PERSONAL_CARD">개인카드</option><option value="PERSONAL_TRANSFER">개인계좌 이체</option><option value="CASH">현금 직접 지급</option></select></label>
+          <label>제출 증빙 종류<select className={input} name="evidence_kind" required value={evidenceKind} onChange={e=>setEvidenceKind(e.target.value)}><option value="RECEIPT">영수증</option><option value="CARD_STATEMENT">개인카드 승인내역</option><option value="BANK_TRANSFER">계좌이체 확인증</option><option value="ORDER_DETAILS">주문내역</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="ITEM_PHOTO">물품·사용 사진</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option></select></label>
+          {evidenceKind!=="RECEIPT"&&<label className="sm:col-span-2">영수증 미첨부 사유<textarea className={input} name="missing_receipt_reason" rows={3} required placeholder="예: 구매 후 영수증을 분실하여 카드 승인내역과 주문내역을 제출합니다."/></label>}
+          <label className="sm:col-span-2">{evidenceKind==="RECEIPT"?"영수증 파일":"대체증빙 파일"}<input className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required/><span className="text-xs text-slate-600">결제 사실과 업무 사용내용을 확인할 수 있는 자료를 하나의 PDF 또는 이미지로 첨부해줘. 최대 3MB.</span></label>
           <label className="sm:col-span-2">지연 사유{late?" (필수)":" (지연 신청 시)"}<textarea className={input} name="delay_reason" rows={3} required={late}/></label>
           <p className="text-sm text-slate-600 sm:col-span-2">{!usedPeriod?"해당 사용월이 아직 개설되지 않았어. 마감 담당자가 접수월을 먼저 개설해야 해.":late?"지연 신청이므로 예외 승인이나 장기 지연 검토가 필요해.":"신청일과 승인일은 실제 처리한 시점으로 남겨."}</p>
           <button className={button} disabled={op.pending||!usedPeriod}>정산 신청</button>
@@ -87,6 +91,8 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
           <p className="mt-2 text-sm">{r.purpose}</p><p className="mt-2 text-sm text-slate-600">신청자 {names[r.applicant_id]??"등록 사용자"} · 사용일 {r.used_on} · 예산 귀속 {r.budget_month.slice(0,7)}</p>
           <p className="mt-1 text-xs text-slate-600">신청 {dateTime(r.submitted_at)} · 예산 승인 {dateTime(r.approved_at)} · 실제 지급 {dateTime(r.paid_at)}</p>
           {r.delay_reason&&<p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">지연 사유: {r.delay_reason}</p>}
+          <p className="mt-2 text-xs text-slate-600">결제수단 {r.payment_method==="PERSONAL_CARD"?"개인카드":r.payment_method==="PERSONAL_TRANSFER"?"개인계좌 이체":"현금"} · 증빙 {r.evidence_kind==="RECEIPT"?"영수증":r.evidence_kind} · {r.evidence_review_status==="READY"?"증빙 확인 가능":r.evidence_review_status==="APPROVED"?"대체증빙 승인 완료":r.evidence_review_status==="SUPPLEMENT_REQUIRED"?"증빙 보완 필요":"대체증빙 승인대기"}</p>
+          {r.missing_receipt_reason&&<p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm">영수증 미첨부 사유: {r.missing_receipt_reason}</p>}
           <div className="my-2 flex flex-wrap gap-3 text-xs">{r.needs_exception&&<span>지연 승인: {r.exception_approved_at?"완료":"대기"}</span>}{r.needs_senior&&<span>장기 지연 승인: {r.senior_approved_at?"완료":"대기"}</span>}{r.over_budget_approved_at&&<span>예산 초과 승인 완료</span>}</div>
           <div className="flex flex-wrap gap-2"><a className={secondary} href={`/finance/reimbursements/evidence?id=${r.id}`} target="_blank" rel="noreferrer">증빙 보기</a>
             {requestActions(r,w.member,period).map(a=><button key={a} className={secondary} disabled={op.pending} onClick={()=>{setSelected(r);setAction(a);}}>{reimbursementCommandLabels[a]}</button>)}

@@ -5,7 +5,7 @@ const validInput: QuickExpenseRecordInput = {
   amount: 55000,
   approvalSkipReason: "승인 예산 내 정기 지출",
   bankTransactionId: "bank-1",
-  budgetItem: "운영비 > 통신비",
+  budgetItem: "제세공과금>통신비",
   counterparty: "KT",
   evidenceStatus: "GENERAL",
   occurredAt: "2026-08-27T09:00:00+09:00",
@@ -34,5 +34,10 @@ describe("validateQuickExpenseRecord", () => {
 
   it("allows a manual corporate-card record to wait for source matching", () => {
     expect(validateQuickExpenseRecord({ ...validInput, bankTransactionId: undefined, paymentMethod: "CORPORATE_CARD", sourceType: "MANUAL" }).errors).toEqual([]);
+  });
+
+  it("requires a reason when a receipt is replaced with alternative evidence", () => {
+    expect(validateQuickExpenseRecord({ ...validInput, evidenceStatus: "ALTERNATIVE", missingEvidenceReason: "" }).errors).toContain("영수증 미첨부 사유가 필요합니다.");
+    expect(validateQuickExpenseRecord({ ...validInput, evidenceStatus: "ALTERNATIVE", missingEvidenceReason: "영수증 분실" }).errors).toEqual([]);
   });
 });

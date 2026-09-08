@@ -2,15 +2,15 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExpenseWorkspacePage } from "./expense-workspace-page";
 import type { ExpenseWorkspace, ExpenseWorkspaceRecord } from "./expense-workspace-repository";
-const mocks = vi.hoisted(() => ({ attach: vi.fn(), connect: vi.fn(), download: vi.fn(), ocr: vi.fn(), refresh: vi.fn(), replace: vi.fn(), update: vi.fn() }));
+const mocks = vi.hoisted(() => ({ attach: vi.fn(), connect: vi.fn(), download: vi.fn(), ocr: vi.fn(), refresh: vi.fn(), replace: vi.fn(), review: vi.fn(), update: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }));
-vi.mock("@/app/finance/expenses/actions", () => ({ attachQuickExpenseEvidenceAction: mocks.attach, connectExpenseOriginal: mocks.connect, updateQuickExpenseDetailsAction: mocks.update }));
+vi.mock("@/app/finance/expenses/actions", () => ({ attachQuickExpenseEvidenceAction: mocks.attach, connectExpenseOriginal: mocks.connect, reviewQuickExpenseEvidenceAction: mocks.review, updateQuickExpenseDetailsAction: mocks.update }));
 vi.mock("@/app/finance/expense-resolutions/actions", () => ({ createExpenseEvidenceDownloadUrlAction: mocks.download, getExpenseEvidenceOcrJobAction: mocks.ocr }));
 function fixture(): ExpenseWorkspace {
   const base: ExpenseWorkspaceRecord = { source_kind: "RESOLUTION", source_id: "text-id", number: "지결-2026-1", title: "사무용품", amount: 1000, created_at: "2026-09-01", used_at: "2026-03-01", accounting_date: "2026-03-01", budget_month: null, approval_status: "승인완료", payment_status: "지급완료", author_label: "담당자", counterparty: "거래처", transaction_id: null, can_connect: true, amounts: null, trust_items: [], vouchers: [] };
   return { viewer: { staff: true, permissions: ["ADMIN"] }, records: [base, { ...base, source_kind: "QUICK", source_id: "same-text-id", number: null, title: "개인 사용", approval_status: "CONVERTED", payment_status: null, transaction_id: "connected", can_connect: false }] };
 }
-beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
+beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
   it("keeps the original reimbursement budget month when opening its existing page", () => {
     const data = fixture(); data.records[0] = { ...data.records[0], source_kind: "PERSONAL", budget_month: "2026-03-01" };
@@ -104,5 +104,12 @@ describe("common original expense workspace", () => {
     await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ id: "same-text-id", usageDescription: "서류꽂이, 건전지", counterparty: "(주)아성다이소봉천본점", expectedUpdatedAt: "2026-09-08T08:00:00Z", operationKey: expect.any(String) }));
     expect(mocks.update.mock.calls[0][0]).not.toHaveProperty("amount");
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+  });
+  it("records an explicit decision for alternative evidence", async () => {
+    const workspace=fixture(); workspace.records[1]={...workspace.records[1],evidence_review_status:"REVIEW_REQUIRED",missing_evidence_reason:"영수증 분실",evidence_files:[{ocr_job_id:"job-1",file_name:"주문내역.jpg",content_type:"image/jpeg",storage_path:"org/user/order.jpg",evidence_type:"주문내역",status:"COMPLETED",stage:"COMPLETED",progress:100,result_data:{},error_message:null,created_at:"2026-09-08"}]};
+    render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="QUICK" initialSourceId="same-text-id"/>);
+    fireEvent.change(screen.getByLabelText("증빙 처리 사유"),{target:{value:"카드 승인내역과 주문내역 확인"}});
+    fireEvent.click(screen.getByRole("button",{name:"증빙 확인·완료"}));
+    await waitFor(()=>expect(mocks.review).toHaveBeenCalledWith({id:"same-text-id",decision:"APPROVE_EVIDENCE",reason:"카드 승인내역과 주문내역 확인",operationKey:expect.any(String)}));
   });
 });

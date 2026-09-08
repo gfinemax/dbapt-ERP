@@ -33,3 +33,12 @@ export async function attachQuickExpenseEvidenceAction(recordId: string, attachm
   if (!recordId || !attachment.ocrJobId || !operationKey) throw new Error("연결할 영수증 정보를 확인해줘.");
   return quickExpenseCommand("ATTACH_EVIDENCE", recordId, { ocr_job_id: attachment.ocrJobId }, operationKey);
 }
+
+export async function reviewQuickExpenseEvidenceAction(input: { id: string; decision: "APPROVE_EVIDENCE" | "REQUEST_EVIDENCE_SUPPLEMENT"; reason: string; operationKey: string }) {
+  if (!input.id || !input.reason.trim() || !input.operationKey) throw new Error("증빙 처리 사유를 입력해줘.");
+  const actor = await requireExpenseActor();
+  const { data, error } = await reimbursementDb().schema("finance").rpc("quick_expense_evidence_command", { p_org: actor.organization_id, p_actor: actor.user_id, p_id: input.id, p_decision: input.decision === "APPROVE_EVIDENCE" ? "APPROVE" : "SUPPLEMENT", p_reason: input.reason.trim(), p_key: input.operationKey });
+  if (error) throw new Error(error.message);
+  revalidatePath("/finance/expenses"); revalidatePath("/finance/quick-expenses");
+  return data;
+}

@@ -21,7 +21,7 @@ export async function reimbursementCommand(member: ReimbursementMember, command:
 export async function loadReimbursementWorkspace(member: ReimbursementMember, month: string): Promise<ReimbursementWorkspace> {
   const db = reimbursementDb(); const finance = db.schema("finance"); const org = member.organization_id;
   const staff=member.permissions.length>0;
-  let requests=finance.from("personal_reimbursements").select("id,applicant_id,budget_id,used_on,budget_month,amount,merchant,purpose,delay_reason,source_quick_id,status,needs_exception,needs_senior,exception_approved_at,senior_approved_at,over_budget_approved_at,submitted_at,approved_at,paid_at,bank_transaction_id").eq("organization_id",org).eq("budget_month",month);
+  let requests=finance.from("personal_reimbursements").select("id,applicant_id,budget_id,used_on,budget_month,amount,merchant,purpose,delay_reason,source_quick_id,status,needs_exception,needs_senior,exception_approved_at,senior_approved_at,over_budget_approved_at,submitted_at,approved_at,paid_at,bank_transaction_id,payment_method,evidence_kind,missing_receipt_reason,evidence_review_status,evidence_reviewed_at,evidence_review_note").eq("organization_id",org).eq("budget_month",month);
   if(!staff) requests=requests.eq("applicant_id",member.user_id);
   const results = await Promise.all([
     finance.from("reimbursement_policies").select("submission_day,completion_day,long_delay_days").eq("organization_id",org).maybeSingle(),

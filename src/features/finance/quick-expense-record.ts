@@ -3,6 +3,8 @@ import { defaultExpenseComplianceSettings, type ExpenseComplianceSettings } from
 
 export type QuickExpensePaymentMethod = "CORPORATE_CARD" | "BANK_TRANSFER" | "AUTO_DEBIT" | "CASH" | "PERSONAL_PREPAID";
 export type QuickExpenseSourceType = "BANK_TRANSACTION" | "CORPORATE_CARD" | "MANUAL";
+export type QuickExpenseEvidenceKind = "CARD_TRANSACTION" | "BANK_TRANSFER" | "RECEIPT" | "ALTERNATIVE" | "NONE";
+export type QuickExpenseEvidenceReviewStatus = "MISSING" | "READY" | "REVIEW_REQUIRED" | "SUPPLEMENT_REQUIRED" | "APPROVED";
 
 export type QuickExpenseRecordInput = {
   amount: number;
@@ -12,6 +14,8 @@ export type QuickExpenseRecordInput = {
   corporateCardTransactionId?: string;
   counterparty: string;
   evidenceStatus: "QUALIFIED" | "GENERAL" | "ALTERNATIVE" | "NONE";
+  evidenceKind?: QuickExpenseEvidenceKind;
+  missingEvidenceReason?: string;
   occurredAt: string;
   paymentMethod: QuickExpensePaymentMethod;
   recordedByLabel: string;
@@ -24,7 +28,10 @@ export type QuickExpenseRecord = QuickExpenseRecordInput & {
   directExpenseDecision: DirectExpenseDecision;
   directExpenseReasons: string[];
   id: string;
-  recordStatus: "RECORDED" | "SOURCE_PENDING" | "NEEDS_RESOLUTION" | "CONVERTED";
+  evidenceReviewStatus?: QuickExpenseEvidenceReviewStatus;
+  evidenceReviewedAt?: string;
+  evidenceReviewNote?: string;
+  recordStatus: "RECORDED" | "SOURCE_PENDING" | "EVIDENCE_PENDING" | "NEEDS_RESOLUTION" | "CONVERTED";
 };
 
 export function validateQuickExpenseRecord(input: QuickExpenseRecordInput, settings: ExpenseComplianceSettings = defaultExpenseComplianceSettings) {
@@ -35,6 +42,7 @@ export function validateQuickExpenseRecord(input: QuickExpenseRecordInput, setti
   if (!input.approvalSkipReason.trim()) errors.push("기안 생략 사유가 필요합니다.");
   if (input.sourceType === "BANK_TRANSACTION" && !input.bankTransactionId) errors.push("통장 출금거래 연결이 필요합니다.");
   if (input.sourceType === "CORPORATE_CARD" && !input.corporateCardTransactionId) errors.push("법인카드 승인내역 연결이 필요합니다.");
-  const policy = evaluateDirectExpensePolicy({ amount: input.amount, budgetItem: input.budgetItem, memo: input.usageDescription, source: "DIRECT" }, settings);
+  if (["ALTERNATIVE", "NONE"].includes(input.evidenceStatus) && !input.missingEvidenceReason?.trim()) errors.push("영수증 미첨부 사유가 필요합니다.");
+  const policy = evaluateDirectExpensePolicy({ amount: input.amount, budgetItem: input.budgetItem, memo: input.usageDescription, quickExpense: true, source: "DIRECT" }, settings);
   return { errors, policy, recordStatus: policy.decision === "ALLOWED" ? "RECORDED" as const : "NEEDS_RESOLUTION" as const };
 }
