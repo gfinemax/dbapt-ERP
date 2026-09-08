@@ -22,7 +22,7 @@ import { validateExpenseCompliance, type EvidenceKind, type EvidenceStatus, type
 import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import { findCorporateCardMatchCandidates, isTaxiCardTransaction, type CorporateCardReconciliationStatus, type CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
-import { recommendExpenseBudget, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
+import { recommendExpenseBudget, recommendOperatingExpenseDetail, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
 import { getEmployeeAdvanceSourceFacts, isEmployeeAdvanceSettlementSource, validateEmployeeAdvanceSelection } from "./expense-advance-source";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
@@ -2202,6 +2202,7 @@ export function ExpenseResolutionPage({
     const form = createFormState(getNextResolutionNo(resolutions), undefined, currentUserName);
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
+  const expenseDetailSelectionRef = useRef<"AUTO" | "MANUAL">("AUTO");
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
     actualPaidAmount: "",
     accountHolder: "",
@@ -2287,6 +2288,41 @@ export function ExpenseResolutionPage({
     }
   }, [isLocalStorageHydrated, resolutions, initialResolutions, persistResolution, dataLoadError]);
 
+  const applyAutomaticExpenseDetail = useEffectEvent(() => {
+    if (!isCreateModalOpen || formState.resolutionType === "BATCH" || expenseDetailSelectionRef.current === "MANUAL") return;
+    const evidenceText = formState.evidenceFiles.map((file) => [
+      file.ocrData.itemName,
+      file.ocrData.recognizedText,
+      file.ocrData.items?.map((item) => item.itemName).join(" "),
+    ].filter(Boolean).join(" ")).join(" ");
+    const result = recommendOperatingExpenseDetail(initialExpenseDetails, {
+      evidenceText,
+      itemName: formState.singleItems.map((item) => item.itemName).join(" "),
+      memo: formState.memo,
+      reason: formState.reason,
+      subject: formState.subject,
+      vendorBusinessCategory: formState.vendorBusinessCategory,
+      vendorBusinessType: formState.vendorBusinessType,
+      vendorName: formState.vendorName,
+    });
+    if (!result || result.detail.id === formState.expenseDetailId) return;
+    setFormState((current) => ({
+      ...current,
+      budgetItem: result.detail.budgetItem,
+      budgetRecommendation: result.recommendation,
+      expenseDetailId: result.detail.id,
+      operationExpenseDetail: result.detail.name,
+      accountAllocations: current.accountAllocations.length === 1
+        ? current.accountAllocations.map((allocation) => ({ ...allocation, accountTitle: result.recommendation.accountTitle, budgetItem: result.detail.budgetItem }))
+        : current.accountAllocations,
+    }));
+  });
+
+  useEffect(() => {
+    const timer = window.setTimeout(applyAutomaticExpenseDetail, 0);
+    return () => window.clearTimeout(timer);
+  }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, initialExpenseDetails, isCreateModalOpen]);
+
   function openCreateModal() {
     setBatchImportResult(null);
     setBatchImportFileName("");
@@ -2294,12 +2330,14 @@ export function ExpenseResolutionPage({
     setEvidenceUploadError("");
     setVendorRegistrationNotice("");
     setEditingResolutionId(null);
+    expenseDetailSelectionRef.current = "AUTO";
     setFormState(createFormState(getNextResolutionNo(resolutions), undefined, currentUserName));
     setIsCreateModalOpen(true);
   }
 
   function openExcelImportModal() {
     setEditingResolutionId(null);
+    expenseDetailSelectionRef.current = "AUTO";
     setBatchImportResult(null);
     setBatchImportFileName("");
     setBatchImportError("");
@@ -2324,6 +2362,7 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
     setSelectedDetailId(null);
     setEditingResolutionId(resolution.id);
+    expenseDetailSelectionRef.current = resolution.expenseDetailId ? "MANUAL" : "AUTO";
     setFormState(createEditFormState(resolution));
     setIsCreateModalOpen(true);
   }
@@ -2347,6 +2386,7 @@ export function ExpenseResolutionPage({
   }
 
   function updateFormValue<K extends keyof ResolutionFormState>(key: K, value: ResolutionFormState[K]) {
+    if (key === "expenseDetailId") expenseDetailSelectionRef.current = value ? "MANUAL" : "AUTO";
     setFormState((current) => {
       const normalizedValue = key === "vendorName" && typeof value === "string" ? normalizeVendorName(value) : value;
       const nextState = { ...current, [key]: normalizedValue };
@@ -2848,10 +2888,19 @@ export function ExpenseResolutionPage({
       vendorBusinessType: ocr.issuerBusinessType,
       vendorName: ocr.issuer,
     });
+    const expenseDetailRecommendation = recommendOperatingExpenseDetail(initialExpenseDetails, {
+      evidenceText: ocr.recognizedText,
+      itemName: ocrItemNames.join(" ") || ocr.itemName,
+      reason: current.reason,
+      subject: current.subject,
+      vendorBusinessCategory: ocr.issuerBusinessCategory,
+      vendorBusinessType: ocr.issuerBusinessType,
+      vendorName: ocr.issuer,
+    });
     const next = {
       ...current,
-      budgetItem: budgetRecommendation?.budgetItem ?? current.budgetItem,
-      budgetRecommendation,
+      budgetItem: expenseDetailSelectionRef.current === "AUTO" ? expenseDetailRecommendation?.detail.budgetItem ?? budgetRecommendation?.budgetItem ?? current.budgetItem : current.budgetItem,
+      budgetRecommendation: expenseDetailSelectionRef.current === "AUTO" ? budgetRecommendation : current.budgetRecommendation,
       budgetPeriod: ocr.documentDate?.slice(0, 7) ?? current.budgetPeriod,
       plannedPaymentDate: ocr.documentDate ?? current.plannedPaymentDate,
       evidenceKind,
@@ -2868,8 +2917,9 @@ export function ExpenseResolutionPage({
       vendorBusinessType: ocr.issuerBusinessType ?? current.vendorBusinessType,
       vendorContact: ocr.issuerContact ?? current.vendorContact,
       vendorRepresentative: ocr.issuerRepresentative ?? current.vendorRepresentative,
-      operationExpenseDetail: budgetRecommendation?.budgetItem.split(" > ").at(-1) ?? current.operationExpenseDetail,
-      accountAllocations: budgetRecommendation && current.accountAllocations.length === 1
+      expenseDetailId: expenseDetailSelectionRef.current === "AUTO" ? expenseDetailRecommendation?.detail.id ?? current.expenseDetailId : current.expenseDetailId,
+      operationExpenseDetail: expenseDetailSelectionRef.current === "AUTO" ? expenseDetailRecommendation?.detail.name ?? current.operationExpenseDetail : current.operationExpenseDetail,
+      accountAllocations: expenseDetailSelectionRef.current === "AUTO" && budgetRecommendation && current.accountAllocations.length === 1
         ? current.accountAllocations.map((allocation) => ({
             ...allocation,
             accountTitle: budgetRecommendation.accountTitle,
@@ -2980,6 +3030,8 @@ export function ExpenseResolutionPage({
       cancelled = true;
       window.clearInterval(timer);
     };
+  // applyEvidenceOcrToFormState reads the current automatic/manual selection ref and must not restart OCR polling on every render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [formState.evidenceFiles, getEvidenceOcrJob, isCreateModalOpen, pendingEvidenceJobIds]);
 
   async function openEvidenceOriginal(storagePath: string) {

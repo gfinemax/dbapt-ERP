@@ -24,9 +24,9 @@ async function quickExpenseCommand(command: "UPDATE_DETAILS" | "ATTACH_EVIDENCE"
   return result;
 }
 
-export async function updateQuickExpenseDetailsAction(input: { id: string; usageDescription: string; counterparty: string; expectedUpdatedAt: string; operationKey: string }) {
+export async function updateQuickExpenseDetailsAction(input: { id: string; usageDescription: string; counterparty: string; budgetItem: string; expenseDetailId: string; expectedUpdatedAt: string; operationKey: string }) {
   if (!input.id || !input.expectedUpdatedAt || !input.operationKey) throw new Error("수정할 간편지출 정보를 확인해줘.");
-  return quickExpenseCommand("UPDATE_DETAILS", input.id, { usage_description: input.usageDescription, counterparty: input.counterparty, expected_updated_at: input.expectedUpdatedAt }, input.operationKey);
+  return quickExpenseCommand("UPDATE_DETAILS", input.id, { usage_description: input.usageDescription, counterparty: input.counterparty, budget_item: input.budgetItem, expense_detail_id: input.expenseDetailId, expected_updated_at: input.expectedUpdatedAt }, input.operationKey);
 }
 
 export async function attachQuickExpenseEvidenceAction(recordId: string, attachment: ExpenseEvidenceAttachment, operationKey: string) {

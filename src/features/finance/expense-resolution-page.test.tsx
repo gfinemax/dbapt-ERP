@@ -66,6 +66,19 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
   });
 
+  it("automatically saves the shared expense detail from the resolution contents", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const expenseDetails = [{ id: "detail-communications", code: "PUBLIC-COMM", groupName: "공공요금·수수료", name: "통신비", budgetItem: "제세공과금>통신비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
+    render(<ExpenseResolutionPage initialExpenseDetails={expenseDetails} initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.change(within(dialog).getByLabelText("건명 (필수)"), { target: { value: "조합 사무실 인터넷 요금" } });
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 10)); });
+    fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledWith(expect.objectContaining({ budgetItem: "제세공과금>통신비", expenseDetailId: "detail-communications", operationExpenseDetail: "통신비" })));
+  });
+
   it("lets the author reopen a pending resolution to correct its subject", async () => {
     vi.useRealTimers();
     const persistResolution = vi.fn(async (resolution) => resolution);

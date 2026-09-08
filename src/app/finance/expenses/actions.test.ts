@@ -24,8 +24,8 @@ describe("common expense source connection action", () => {
     expect(mocks.run).not.toHaveBeenCalled();
   });
   it("updates only reviewed descriptive fields through the scoped idempotent command", async () => {
-    await updateQuickExpenseDetailsAction({ id: "quick", usageDescription: "서류꽂이", counterparty: "다이소", expectedUpdatedAt: "2026-09-08T00:00:00Z", operationKey: "edit-key" });
-    expect(mocks.rpc).toHaveBeenCalledWith("quick_expense_command", { p_org: "org", p_actor: "actor", p_command: "UPDATE_DETAILS", p_id: "quick", p_data: { usage_description: "서류꽂이", counterparty: "다이소", expected_updated_at: "2026-09-08T00:00:00Z" }, p_key: "edit-key" });
+    await updateQuickExpenseDetailsAction({ id: "quick", usageDescription: "서류꽂이", counterparty: "다이소", budgetItem: "일반운영비>사무용품비", expenseDetailId: "detail", expectedUpdatedAt: "2026-09-08T00:00:00Z", operationKey: "edit-key" });
+    expect(mocks.rpc).toHaveBeenCalledWith("quick_expense_command", { p_org: "org", p_actor: "actor", p_command: "UPDATE_DETAILS", p_id: "quick", p_data: { usage_description: "서류꽂이", counterparty: "다이소", budget_item: "일반운영비>사무용품비", expense_detail_id: "detail", expected_updated_at: "2026-09-08T00:00:00Z" }, p_key: "edit-key" });
     expect(mocks.revalidate.mock.calls.map(call => call[0])).toEqual(["/finance/expenses", "/finance/quick-expenses"]);
   });
   it("attaches only the server-issued OCR job identifier", async () => {

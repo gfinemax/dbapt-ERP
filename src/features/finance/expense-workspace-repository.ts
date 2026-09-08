@@ -15,6 +15,7 @@ export type ExpenseWorkspaceRecord = {
   vouchers: { id: string; voucher_no: string; status: string; source_kind: string | null }[];
   evidence_files?: { ocr_job_id: string; file_name: string; content_type: string; storage_path: string; evidence_type: string; status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"; stage: EvidenceOcrJobStage; progress: number; result_data: EvidenceOcrData; error_message: string | null; created_at: string }[];
   evidence_kind?: string; evidence_review_status?: string; missing_evidence_reason?: string; evidence_review_note?: string;
+  budget_item?: string; expense_detail_id?: string;
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
 
@@ -25,7 +26,7 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   if (error) throw new Error(`지출 자료 조회 실패: ${error.message}`);
   if (!data || !Array.isArray(data.records)) throw new Error("지출 자료 조회 결과를 확인해주세요.");
   const quickIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK").map((record: ExpenseWorkspaceRecord) => record.source_id);
-  const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
+  const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
   if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
   const byId = new Map((quickMeta.data ?? []).map(row => [row.id, row]));
   const records = data.records.map((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK" ? { ...record, ...(byId.get(record.source_id) ?? {}) } : record);

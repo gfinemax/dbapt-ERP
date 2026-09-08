@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { recommendExpenseBudget } from "./expense-budget-recommendation";
+import { recommendExpenseBudget, recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
 
 describe("expense budget recommendation", () => {
   it("recommends book and printing expense for custom envelope printing", () => {
@@ -41,5 +41,19 @@ describe("expense budget recommendation", () => {
       confidence: "보통",
       matchedKeyword: "우체국",
     });
+  });
+
+  it("resolves the stable detail from usage, receipt text and vendor data", () => {
+    const details = [{ id: "supplies", code: "GENERAL-SUPPLIES", groupName: "일반운영비", name: "사무용품비", budgetItem: "일반운영비>사무용품비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
+    expect(recommendOperatingExpenseDetail(details, { evidenceText: "클리어파일 건전지", vendorName: "다이소" })?.detail.id).toBe("supplies");
+  });
+
+  it("does not guess a catch-all detail from an ambiguous 기타 label", () => {
+    expect(recommendExpenseBudget({ itemName: "기타 비용" })).toBeNull();
+  });
+
+  it("prefers a specific purpose over a broader word in the same text", () => {
+    expect(recommendExpenseBudget({ itemName: "신문광고 게재비" })?.detailCode).toBe("OTHER-OPERATING");
+    expect(recommendExpenseBudget({ itemName: "통신비 AI 구독료" })?.detailCode).toBe("PUBLIC-AI");
   });
 });

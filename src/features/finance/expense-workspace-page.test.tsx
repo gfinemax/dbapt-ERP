@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExpenseWorkspacePage } from "./expense-workspace-page";
 import type { ExpenseWorkspace, ExpenseWorkspaceRecord } from "./expense-workspace-repository";
+import type { OperatingExpenseDetail } from "./operating-budget-classification";
 const mocks = vi.hoisted(() => ({ attach: vi.fn(), connect: vi.fn(), download: vi.fn(), ocr: vi.fn(), refresh: vi.fn(), replace: vi.fn(), review: vi.fn(), update: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }));
 vi.mock("@/app/finance/expenses/actions", () => ({ attachQuickExpenseEvidenceAction: mocks.attach, connectExpenseOriginal: mocks.connect, reviewQuickExpenseEvidenceAction: mocks.review, updateQuickExpenseDetailsAction: mocks.update }));
@@ -10,6 +11,7 @@ function fixture(): ExpenseWorkspace {
   const base: ExpenseWorkspaceRecord = { source_kind: "RESOLUTION", source_id: "text-id", number: "지결-2026-1", title: "사무용품", amount: 1000, created_at: "2026-09-01", used_at: "2026-03-01", accounting_date: "2026-03-01", budget_month: null, approval_status: "승인완료", payment_status: "지급완료", author_label: "담당자", counterparty: "거래처", transaction_id: null, can_connect: true, amounts: null, trust_items: [], vouchers: [] };
   return { viewer: { staff: true, permissions: ["ADMIN"] }, records: [base, { ...base, source_kind: "QUICK", source_id: "same-text-id", number: null, title: "개인 사용", approval_status: "CONVERTED", payment_status: null, transaction_id: "connected", can_connect: false }] };
 }
+const expenseDetails: OperatingExpenseDetail[] = [{ id: "detail-supplies", code: "GENERAL-SUPPLIES", groupName: "일반운영비", name: "사무용품비", budgetItem: "일반운영비>사무용품비", status: "CONFIRMED", quickExpenseEligible: true }];
 beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
   it("keeps the original reimbursement budget month when opening its existing page", () => {
@@ -95,13 +97,13 @@ describe("common original expense workspace", () => {
   });
   it("reviews saved receipt OCR before updating quick-expense text and preserves the original amount", async () => {
     const workspace = fixture(); workspace.records[1] = { ...workspace.records[1], title: "사무용품", amount: 14000, counterparty: "다이소", updated_at: "2026-09-08T08:00:00Z", evidence_files: [{ ocr_job_id: "job-1", file_name: "영수증.jpg", content_type: "image/jpeg", storage_path: "org/user/receipt.jpg", evidence_type: "영수증", status: "COMPLETED", stage: "COMPLETED", progress: 100, result_data: { issuer: "(주)아성다이소봉천본점", totalAmount: 15000, items: [{ itemName: "서류꽂이" }, { itemName: "건전지" }] }, error_message: null, created_at: "2026-09-08" }] };
-    render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="QUICK" initialSourceId="same-text-id" />);
+    render(<ExpenseWorkspacePage workspace={workspace} expenseDetails={expenseDetails} initialSourceKind="QUICK" initialSourceId="same-text-id" />);
     expect(screen.getByText(/원본 14,000원과 OCR 금액 15,000원이 달라/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "OCR 결과를 내용 수정에 반영" }));
     expect(screen.getByLabelText("사용내용")).toHaveValue("서류꽂이, 건전지");
     expect(screen.getByLabelText("거래처")).toHaveValue("(주)아성다이소봉천본점");
     fireEvent.click(screen.getByRole("button", { name: "수정 저장" }));
-    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ id: "same-text-id", usageDescription: "서류꽂이, 건전지", counterparty: "(주)아성다이소봉천본점", expectedUpdatedAt: "2026-09-08T08:00:00Z", operationKey: expect.any(String) }));
+    await waitFor(() => expect(mocks.update).toHaveBeenCalledWith({ id: "same-text-id", usageDescription: "서류꽂이, 건전지", counterparty: "(주)아성다이소봉천본점", budgetItem: "일반운영비>사무용품비", expenseDetailId: "detail-supplies", expectedUpdatedAt: "2026-09-08T08:00:00Z", operationKey: expect.any(String) }));
     expect(mocks.update.mock.calls[0][0]).not.toHaveProperty("amount");
     await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
   });
