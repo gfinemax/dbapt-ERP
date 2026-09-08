@@ -190,14 +190,16 @@ function hydrate(
   };
 }
 
-export async function listApprovalDocuments(): Promise<ApprovalDocument[]> {
+export async function listApprovalDocuments(organizationId?: string): Promise<ApprovalDocument[]> {
   const client = requireClient();
-  const { data, error } = await client
+  let query = client
     .schema("approval")
     .from("documents")
     .select("*")
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query;
   if (error) throw new Error(`기안 목록을 불러오지 못했어: ${error.message}`);
   const rows = (data ?? []) as DocumentRow[];
   if (!rows.length) return [];

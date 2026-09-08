@@ -6,6 +6,7 @@ import { getOrganizationExpenseApprovalLine } from "@/features/approval/organiza
 export type ApprovalWorkflowCommand = "REQUEST" | "APPROVE" | "REJECT" | "CANCEL";
 
 export type ApprovalTransitionRequest = {
+  expectedAuthorizationVersion?: number;
   actorLabel: string;
   command: ApprovalWorkflowCommand;
   expectedCurrentApprover?: string;
@@ -46,6 +47,7 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
   if (resolution.author !== actorLabel) throw new ApprovalWorkflowError("작성자만 승인요청 또는 재상신할 수 있습니다.");
   if (resolution.expenseKind) {
     const compliance = validateExpenseCompliance({
+      beforeExpense: normalizeExpenseTiming(resolution) === "ADVANCE",
       actualExpenseDate: resolution.actualExpenseDate,
       bankTransactionId: resolution.bankTransactionId,
       evidenceKind: resolution.evidenceKind ?? "NONE",

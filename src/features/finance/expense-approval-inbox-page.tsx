@@ -1,5 +1,7 @@
 "use client";
 
+import { canApproveExpense } from "./expense-access-model";
+import type { ReimbursementMember } from "./reimbursement-domain";
 import { Search, X } from "lucide-react";
 import { useMemo, useState } from "react";
 
@@ -17,7 +19,6 @@ const currentApprover = {
   name: "오학동",
   role: "사무국장",
 };
-const currentApproverLabel = `${currentApprover.name} ${currentApprover.role}`;
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -34,7 +35,8 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, transitionApproval }: { dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, dataLoadError, initialResolutions, transitionApproval }: { viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+  const currentApproverLabel = viewer?.display_name ?? `${currentApprover.name} ${currentApprover.role}`;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? []);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
@@ -44,7 +46,7 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
   const rejectTarget = rejectTargetId ? resolutions.find((resolution) => resolution.id === rejectTargetId) : undefined;
 
   const summary = useMemo(() => {
-    const myPending = resolutions.filter((resolution) => resolution.currentApprover === currentApproverLabel && resolution.approvalStatus === "승인대기");
+    const myPending = resolutions.filter((resolution) => viewer ? canApproveExpense(resolution, viewer) : resolution.currentApprover === currentApproverLabel && resolution.approvalStatus === "승인대기");
     const finalApprovalWaiting = resolutions.filter((resolution) => resolution.currentApprover === "안동연 조합장" && resolution.approvalStatus === "승인대기");
 
     return {
@@ -53,13 +55,13 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
       rejectedCount: resolutions.filter((resolution) => resolution.approvalStatus === "반려").length,
       finalWaitingAmount: finalApprovalWaiting.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0),
     };
-  }, [resolutions]);
+  }, [resolutions, viewer, currentApproverLabel]);
 
   async function runTransition(resolution: ManagedExpenseResolution, command: "APPROVE" | "REJECT", reason?: string) {
     setWorkflowError("");
     try {
       const transitioned = transitionApproval
-        ? await transitionApproval({ actorLabel: currentApproverLabel, command, expectedCurrentApprover: resolution.currentApprover, expectedStatus: resolution.approvalStatus, reason, resolutionId: resolution.id })
+        ? await transitionApproval({ actorLabel: currentApproverLabel, command, expectedCurrentApprover: resolution.currentApprover, expectedStatus: resolution.approvalStatus, expectedAuthorizationVersion: resolution.authorization?.version, reason, resolutionId: resolution.id })
         : transitionExpenseApproval({ actorLabel: currentApproverLabel, command, reason, resolution, transitionedAt: `${today} 14:20` });
       setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
       return true;
@@ -95,7 +97,7 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
   }
 
   return (
-    <ErpShell activeDetailLabel="결재함" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
+    <ErpShell userLabel={currentApproverLabel} activeDetailLabel="결재함" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
       {dataLoadError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{dataLoadError}</div> : null}
       {workflowError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{workflowError}</div> : null}
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
@@ -165,7 +167,7 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
               </thead>
               <tbody className="divide-y divide-[var(--color-soft-border)]">
                 {resolutions.map((resolution) => {
-                  const canApprove = resolution.approvalStatus === "승인대기" && resolution.currentApprover === currentApproverLabel;
+                  const canApprove = viewer ? canApproveExpense(resolution, viewer) : resolution.approvalStatus === "승인대기" && resolution.currentApprover === currentApproverLabel;
 
                   return (
                     <tr className="bg-white/70" key={resolution.id}>
@@ -222,7 +224,7 @@ export function ExpenseApprovalInboxPage({ dataLoadError, initialResolutions, tr
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
-          canApprove={selectedDetail.currentApprover === currentApproverLabel}
+          canApprove={viewer ? canApproveExpense(selectedDetail, viewer) : selectedDetail.currentApprover === currentApproverLabel}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={() => setSelectedDetailId(null)}
           onConfirmVoucher={() => undefined}

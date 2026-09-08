@@ -87,21 +87,25 @@ export async function listBusinessPartnersFromSupabase(): Promise<BusinessPartne
   return (data as SupabaseBusinessPartnerRow[]).map(mapBusinessPartnerFromRow);
 }
 
-export async function ensureBusinessPartnerFromOcrInSupabase(input: BusinessPartnerOcrInput): Promise<BusinessPartnerRegistrationResult> {
+export async function ensureBusinessPartnerFromOcrInSupabase(input: BusinessPartnerOcrInput, organizationId?: string): Promise<BusinessPartnerRegistrationResult> {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
   const registrationNo = normalizeBusinessRegistrationNo(input.registrationNo);
   if (!input.name.trim()) throw new Error("거래처명이 없어 자동등록할 수 없습니다.");
   if (registrationNo.replace(/\D/g, "").length !== 10) throw new Error("사업자등록번호 10자리를 확인한 후 거래처를 등록해 주세요.");
 
-  const existingQuery = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).eq("registration_no", registrationNo).is("deleted_at", null).maybeSingle();
+  let query = supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).eq("registration_no", registrationNo).is("deleted_at", null).limit(1);
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const existingQuery = await query.maybeSingle();
   if (existingQuery.error) throw new Error(`거래처 중복조회 실패: ${existingQuery.error.message}`);
   if (existingQuery.data) return { partner: mapBusinessPartnerFromRow(existingQuery.data as SupabaseBusinessPartnerRow), status: "EXISTING" };
 
-  const { data, error } = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").insert(mapOcrPartnerToInsert(input)).select(partnerSelect).single();
+  const { data, error } = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").insert({ ...mapOcrPartnerToInsert(input), ...(organizationId ? { organization_id: organizationId } : {}) }).select(partnerSelect).single();
   if (error) {
     if (error.message.toLowerCase().includes("duplicate")) {
-      const retry = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).eq("registration_no", registrationNo).is("deleted_at", null).single();
+      let retryQuery = supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).eq("registration_no", registrationNo).is("deleted_at", null).limit(1);
+      if (organizationId) retryQuery = retryQuery.eq("organization_id", organizationId);
+      const retry = await retryQuery.single();
       if (!retry.error && retry.data) return { partner: mapBusinessPartnerFromRow(retry.data as SupabaseBusinessPartnerRow), status: "EXISTING" };
     }
     throw new Error(`거래처 자동등록 실패: ${error.message}`);

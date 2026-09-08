@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { normalizeEvidenceStatus, validateExpenseCompliance } from "./expense-compliance";
 
 describe("expense compliance", () => {
+  it("allows an actual date to remain empty only for a general expense requested before purchase", () => {
+    const input = { beforeExpense: true, evidenceKind: "SIMPLE_RECEIPT" as const, evidenceStatus: "GENERAL" as const, expenseKind: "GENERAL" as const };
+    expect(validateExpenseCompliance(input).errors).not.toContain("실제 지출일을 입력해주세요.");
+    expect(validateExpenseCompliance({ ...input, beforeExpense: false }).errors).toContain("실제 지출일을 입력해주세요.");
+    expect(validateExpenseCompliance({ ...input, expenseKind: "PERSONAL_REIMBURSEMENT" }).errors).toContain("실제 지출일을 입력해주세요.");
+    expect(validateExpenseCompliance({ ...input, expenseKind: "BANK_POST_APPROVAL" }).errors).toContain("실제 지출일을 입력해주세요.");
+  });
   it("keeps an expense fact confirmation as alternative evidence", () => {
     expect(normalizeEvidenceStatus("EXPENSE_FACT_CONFIRMATION", "QUALIFIED")).toBe("ALTERNATIVE");
   });

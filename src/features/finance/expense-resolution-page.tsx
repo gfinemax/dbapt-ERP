@@ -2,8 +2,11 @@
 
 import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
 import type { ChangeEvent, ReactNode } from "react";
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, useEffectEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
+import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 
 import { ErpShell } from "@/components/erp-shell";
@@ -191,6 +194,7 @@ export type PrintRecordItem = {
 };
 
 export type ManagedExpenseResolution = {
+  authorization?: import("./expense-authorization").ExpenseAuthorization | null;
   creationSource?: ExpenseCreationSource;
   approvalDocumentId?: string;
   approvalDocumentNo?: string;
@@ -1523,7 +1527,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
   };
 }
 
-export function createFormState(nextNo: string, currentDate = getCurrentDateIso()): ResolutionFormState {
+export function createFormState(nextNo: string, currentDate = getCurrentDateIso(), authorLabel = currentUserName): ResolutionFormState {
   return applyPaymentTarget({
     creationSource: "DIRECT",
     approvalDocumentId: "",
@@ -1548,7 +1552,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     resolutionType: "SINGLE",
     projectName: "",
     createdAt: currentDate,
-    author: currentUserName,
+    author: authorLabel,
     plannedPaymentDate: "",
     paymentFlowType: "사전결의",
     expenseTiming: "ADVANCE",
@@ -1592,7 +1596,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     postApprovalReason: "",
     originalResolutionId: "",
     settlementDueDate: "",
-    settlementManager: currentUserName,
+    settlementManager: authorLabel,
     reason: "",
     relatedContract: "",
     relatedMeeting: "",
@@ -2038,11 +2042,11 @@ function getHistoryTone(actionType: ExpenseResolutionHistoryActionType) {
   return tones[actionType];
 }
 
-function isCurrentUserApprover(resolution: ManagedExpenseResolution) {
-  return resolution.currentApprover === currentUserName;
+function isCurrentUserApprover(resolution: ManagedExpenseResolution, viewer?: ReimbursementMember) {
+  return viewer ? canApproveExpense(resolution, viewer) : resolution.currentApprover === currentUserName;
 }
 
-function getResolutionTabItems(resolutions: ManagedExpenseResolution[]) {
+function getResolutionTabItems(resolutions: ManagedExpenseResolution[], viewer?: ReimbursementMember) {
   return [
     {
       key: "all" as const,
@@ -2052,12 +2056,12 @@ function getResolutionTabItems(resolutions: ManagedExpenseResolution[]) {
     {
       key: "mine" as const,
       label: "내가 작성한 결의서",
-      resolutions: resolutions.filter((resolution) => resolution.author === currentUserName),
+      resolutions: resolutions.filter((resolution) => viewer ? resolution.authorization?.author_user_id === viewer.user_id : resolution.author === currentUserName),
     },
     {
       key: "approvalInbox" as const,
       label: "결재함",
-      resolutions: resolutions.filter((resolution) => resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution)),
+      resolutions: resolutions.filter((resolution) => resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution, viewer)),
     },
     {
       key: "rejected" as const,
@@ -2093,6 +2097,7 @@ function getResolutionTabItems(resolutions: ManagedExpenseResolution[]) {
 }
 
 export function ExpenseResolutionPage({
+  viewer,
   createEvidenceDownloadUrl,
   dataLoadError,
   deleteEvidence,
@@ -2118,6 +2123,7 @@ export function ExpenseResolutionPage({
   transitionDisbursement,
   uploadEvidence,
 }: {
+  viewer?: ReimbursementMember;
   createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>;
   dataLoadError?: string;
   deleteEvidence?: (storagePath: string) => Promise<void>;
@@ -2143,6 +2149,7 @@ export function ExpenseResolutionPage({
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
   uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult>;
 } = {}) {
+  const currentUserName = viewer?.display_name ?? `${currentUser.name} ${currentUser.title}`;
   const uploadEvidenceRequest = uploadEvidence ?? uploadExpenseEvidenceViaRoute;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? [],
@@ -2184,8 +2191,8 @@ export function ExpenseResolutionPage({
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
-    if (initialBankDraft) return createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions));
-    const form = createFormState(getNextResolutionNo(resolutions));
+    if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions)), author: currentUserName, settlementManager: currentUserName };
+    const form = createFormState(getNextResolutionNo(resolutions), undefined, currentUserName);
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
@@ -2218,7 +2225,7 @@ export function ExpenseResolutionPage({
   const effectiveFormTotalAmount = formState.resolutionType === "BATCH" ? formBatchSummary.totalAmount : formTotalAmount;
   const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod, initialBudgetProfiles);
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
-  const tabItems = getResolutionTabItems(resolutions);
+  const tabItems = getResolutionTabItems(resolutions, viewer);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
   const visibleResolutions = filterExpenseResolutions(activeTabItem.resolutions, {
     approvalStatus: approvalFilter,
@@ -2280,7 +2287,7 @@ export function ExpenseResolutionPage({
     setEvidenceUploadError("");
     setVendorRegistrationNotice("");
     setEditingResolutionId(null);
-    setFormState(createFormState(getNextResolutionNo(resolutions)));
+    setFormState(createFormState(getNextResolutionNo(resolutions), undefined, currentUserName));
     setIsCreateModalOpen(true);
   }
 
@@ -2291,7 +2298,7 @@ export function ExpenseResolutionPage({
     setBatchImportError("");
     setEvidenceUploadError("");
     setFormState({
-      ...createFormState(getNextResolutionNo(resolutions)),
+      ...createFormState(getNextResolutionNo(resolutions), undefined, currentUserName),
       inputMethod: "EXCEL",
       resolutionMode: "PROJECT_BULK",
       resolutionType: "BATCH",
@@ -2770,7 +2777,7 @@ export function ExpenseResolutionPage({
     if (evidence) await registerOcrBusinessPartner(evidence);
   }
 
-  const registerOcrBusinessPartner = useCallback(async (evidence: ExpenseEvidenceAttachment) => {
+  async function registerOcrBusinessPartner(evidence: ExpenseEvidenceAttachment) {
     const ocr = evidence.ocrData;
     if (!ensureBusinessPartnerFromOcr || !ocr.issuer || !ocr.issuerBusinessNumber) {
       if (ocr.issuer && !ocr.issuerBusinessNumber) setVendorRegistrationNotice("사업자등록번호를 확인하면 거래처를 자동등록할 수 있습니다.");
@@ -2796,7 +2803,8 @@ export function ExpenseResolutionPage({
     } catch (error) {
       setVendorRegistrationNotice(error instanceof Error ? error.message : "거래처 자동등록에 실패했습니다.");
     }
-  }, [ensureBusinessPartnerFromOcr, formState.resolutionNo]);
+  }
+  const registerCompletedOcrPartner = useEffectEvent(registerOcrBusinessPartner);
 
   async function retryEvidenceFile(id: string) {
     const attachment = formState.evidenceFiles.find((file) => file.id === id);
@@ -2946,7 +2954,7 @@ export function ExpenseResolutionPage({
             });
             const completedEvidence = formState.evidenceFiles.find((file) => file.ocrJobId === id);
             if (completedEvidence && hasExtractedEvidenceData(progress.resultData)) {
-              void registerOcrBusinessPartner({ ...completedEvidence, ocrData: progress.resultData });
+              void registerCompletedOcrPartner({ ...completedEvidence, ocrData: progress.resultData });
             }
           } else if (progress.status === "FAILED") {
             setFormState((current) => ({
@@ -2965,7 +2973,7 @@ export function ExpenseResolutionPage({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [formState.evidenceFiles, getEvidenceOcrJob, isCreateModalOpen, pendingEvidenceJobIds, registerOcrBusinessPartner]);
+  }, [formState.evidenceFiles, getEvidenceOcrJob, isCreateModalOpen, pendingEvidenceJobIds]);
 
   async function openEvidenceOriginal(storagePath: string) {
     if (!createEvidenceDownloadUrl) {
@@ -3001,6 +3009,10 @@ export function ExpenseResolutionPage({
 
   async function saveResolution(mode: "draft" | "approval-request") {
     if (savingResolution.current) return;
+    if (viewer && mode === "approval-request") {
+      const binding = resolutions.find(r => r.id === editingResolutionId)?.authorization;
+      if (!binding?.author_user_id || !binding.steps.length) { setSaveError("먼저 초안을 저장하고 작성자·결재선 계정 연결을 확인한 뒤 승인요청해주세요."); return; }
+    }
     const batchSummary = summarizeBatchItems(formState.batchItems);
     const isBatch = formState.resolutionType === "BATCH";
     const totalPaymentAmount = isBatch ? batchSummary.totalAmount : formTotalAmount;
@@ -3044,15 +3056,15 @@ export function ExpenseResolutionPage({
         return;
       }
     }
-    const approvalStatus: ApprovalStatus = mode === "draft" ? "작성중" : "승인대기";
+    const approvalStatus: ApprovalStatus = mode === "draft" || viewer ? "작성중" : "승인대기";
     const firstApprover = buildApprovalLine()[0];
     const isAlreadyPaid = formState.expenseTiming === "REIMBURSEMENT" && (formState.expenseBurdenType === "CORPORATE_CARD" || formState.expenseBurdenType === "ORGANIZATION_PAID");
     const usesAdvanceFields = formState.expenseTiming === "SETTLEMENT" || (formState.expenseTiming === "ADVANCE" && formState.executionMethod === "EMPLOYEE_ADVANCE");
     const approvalLine = buildApprovalLine().map((step, index) =>
-      mode === "approval-request" && index === 0 ? { ...step, status: "결재대기" as const } : step,
+      mode === "approval-request" && !viewer && index === 0 ? { ...step, status: "결재대기" as const } : step,
     );
     const pettyCashTransactions = formState.expenseKind === "PETTY_CASH_BATCH" || formState.expenseKind === "RECURRING_BATCH" ? formState.batchItems.map((item) => ({ accountTitle: item.accountTitle, amount: item.totalAmount, businessPurpose: item.businessPurpose || formState.reason || item.description, evidenceKind: item.evidenceKind, evidenceStatus: item.evidenceStatus, factConfirmationId: item.factConfirmationId, id: item.id, item: item.itemTitle, overrideReason: item.overBudgetReason, spender: item.actualSpender || formState.advancePayer || formState.author, transactionDate: item.expenseDate, vendor: item.vendorName })) : undefined;
-    const compliance = validateExpenseCompliance({ actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason });
+    const compliance = validateExpenseCompliance({ beforeExpense: formState.expenseTiming === "ADVANCE", actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason });
     if (mode === "approval-request" && compliance.errors.length) { setSaveError(compliance.errors.join(" ")); return; }
     const nextResolution: ManagedExpenseResolution = {
       creationSource: formState.creationSource,
@@ -3130,8 +3142,8 @@ export function ExpenseResolutionPage({
       evidenceType: formState.evidenceType,
       approvalLine,
       approvalStatus,
-      currentApprover: mode === "approval-request" ? getApproverLabel(firstApprover) : undefined,
-      paymentStatus: isAlreadyPaid ? "지급완료" : "지급전",
+      currentApprover: mode === "approval-request" && !viewer ? getApproverLabel(firstApprover) : undefined,
+      paymentStatus: isAlreadyPaid && !viewer ? "지급완료" : "지급전",
       settlementStatus: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? (formState.settlementCompletedAt ? "정산완료" : "정산대기") : formState.expenseTiming === "SETTLEMENT" ? "정산대기" : "정산없음",
       advancePaidAt: usesAdvanceFields ? formState.advancePaidAt : undefined,
       advancePayer: usesAdvanceFields || formState.expenseTiming === "REIMBURSEMENT" ? formState.advancePayer : undefined,
@@ -3170,7 +3182,7 @@ export function ExpenseResolutionPage({
                 ...nextResolution,
                 id: editingResolution.id,
                 approvalStatus,
-                currentApprover: mode === "approval-request" ? getApproverLabel(firstApprover) : undefined,
+                currentApprover: mode === "approval-request" && !viewer ? getApproverLabel(firstApprover) : undefined,
                 evidenceAttached: formState.evidenceFiles.length > 0,
                 evidenceFiles: formState.evidenceFiles,
                 evidenceMaterials: formState.evidenceFiles.map((file) => file.fileName),
@@ -3191,7 +3203,17 @@ export function ExpenseResolutionPage({
       savingResolution.current = true;
       setIsSavingResolution(true);
       setSaveError("");
-      const savedResolution = persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
+      const savedDraft = persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
+      if (viewer && mode === "approval-request") {
+        setResolutions(current => [savedDraft, ...current.filter(r => r.id !== savedDraft.id)]);
+        setEditingResolutionId(savedDraft.id);
+        if (!transitionApproval) throw new Error("승인요청 처리가 연결되지 않았습니다. 초안은 저장됐습니다.");
+      }
+      const savedResolution = viewer && mode === "approval-request" && transitionApproval
+        ? await transitionApproval({ command: "REQUEST", resolutionId: savedDraft.id,
+          actorLabel: viewer.display_name, expectedStatus: savedDraft.approvalStatus,
+          expectedCurrentApprover: savedDraft.currentApprover, expectedAuthorizationVersion: savedDraft.authorization?.version })
+        : savedDraft;
       setResolutions((current) =>
         editingResolutionId
           ? current.map((resolution) => (resolution.id === editingResolutionId ? savedResolution : resolution))
@@ -3201,7 +3223,7 @@ export function ExpenseResolutionPage({
       closeCreateModal();
       return true;
     } catch (error) {
-      setSaveError(`저장하지 못했습니다. 입력 내용을 유지했으니 확인 후 다시 저장해주세요. ${error instanceof Error ? error.message : "저장소 연결을 확인해주세요."}`);
+      setSaveError(`${viewer && mode === "approval-request" ? "승인요청을 완료하지 못했습니다. 저장된 초안과 입력을 유지했습니다." : "저장하지 못했습니다. 입력 내용을 유지했으니 확인 후 다시 저장해주세요."} ${error instanceof Error ? error.message : "저장소 연결을 확인해주세요."}`);
     } finally {
       savingResolution.current = false;
       setIsSavingResolution(false);
@@ -3217,6 +3239,7 @@ export function ExpenseResolutionPage({
             command,
             expectedCurrentApprover: resolution.currentApprover,
             expectedStatus: resolution.approvalStatus,
+            expectedAuthorizationVersion: resolution.authorization?.version,
             reason,
             resolutionId: resolution.id,
           })
@@ -3432,6 +3455,7 @@ export function ExpenseResolutionPage({
   return (
     <BudgetProfilesContext.Provider value={initialBudgetProfiles}>
     <ErpShell
+      userLabel={currentUserName}
       activeDetailLabel="지출결의서 관리"
       activeLabel="회계/자금"
       activeWorkspaceLabel="전표·증빙관리"
@@ -3442,6 +3466,8 @@ export function ExpenseResolutionPage({
       }}
     >
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
+        {saveError && !isCreateModalOpen ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
+        {viewer?.permissions.includes("ADMIN") && <Link className="self-start rounded-lg border bg-white px-4 py-2 font-semibold" href="/finance/expense-authorizations">작성자·결재선 계정 연결</Link>}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {dataLoadError ? (
           <div className="rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
@@ -3598,7 +3624,7 @@ export function ExpenseResolutionPage({
                     </tr>
                   ) : null}
                   {visibleResolutions.map((resolution) => {
-                    const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution);
+                    const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution, viewer);
                     const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
                     const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
                     const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
@@ -3800,7 +3826,7 @@ export function ExpenseResolutionPage({
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
-          canApprove={isCurrentUserApprover(selectedDetail)}
+          canApprove={isCurrentUserApprover(selectedDetail, viewer)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
           onCancelApproval={() => cancelApproval(selectedDetail.id)}
@@ -3809,7 +3835,7 @@ export function ExpenseResolutionPage({
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={(detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
           onDelete={() => removeResolution(selectedDetail.id)}
-          onEdit={selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
+          onEdit={(viewer ? canEditExpense(selectedDetail, viewer) : selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus)) ? () => openEditModal(selectedDetail) : undefined}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
           onProcessPayment={() => openPaymentModal(selectedDetail)}
@@ -3819,7 +3845,7 @@ export function ExpenseResolutionPage({
         />
       ) : null}
 
-      {factConfirmationTarget ? <ExpenseFactConfirmationModal deleteConfirmation={deleteFactConfirmation} detailItem={factConfirmationTarget.detailItem} listConfirmations={listFactConfirmations} onClose={() => setFactConfirmationTarget(null)} onSave={saveFactConfirmation} onUploadSupportingFile={uploadFactSupportingFile} resolution={factConfirmationTarget.resolution} /> : null}
+      {factConfirmationTarget ? <ExpenseFactConfirmationModal actorLabel={currentUserName} deleteConfirmation={deleteFactConfirmation} detailItem={factConfirmationTarget.detailItem} listConfirmations={listFactConfirmations} onClose={() => setFactConfirmationTarget(null)} onSave={saveFactConfirmation} onUploadSupportingFile={uploadFactSupportingFile} resolution={factConfirmationTarget.resolution} /> : null}
 
       {paymentTarget ? (
         <PaymentProcessModal
@@ -5198,12 +5224,12 @@ function ComplianceBadge({ label, tone = "default" }: { label: string; tone?: "d
   return <span className={`rounded-full px-2 py-1 text-[11px] font-bold ${tones[tone]}`}>{label}</span>;
 }
 
-function ExpenseFactConfirmationModal({ deleteConfirmation, detailItem, listConfirmations, onClose, onSave, onUploadSupportingFile, resolution }: { deleteConfirmation?: (id: string, resolutionId: string, actorLabel: string) => Promise<void>; detailItem?: BatchExpenseItem; listConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>; onClose: () => void; onSave?: (input: ExpenseFactConfirmationInput) => Promise<string>; onUploadSupportingFile?: (formData: FormData) => Promise<{ fileName: string; id: string }>; resolution: ManagedExpenseResolution }) {
+function ExpenseFactConfirmationModal({ actorLabel, deleteConfirmation, detailItem, listConfirmations, onClose, onSave, onUploadSupportingFile, resolution }: { actorLabel: string; deleteConfirmation?: (id: string, resolutionId: string, actorLabel: string) => Promise<void>; detailItem?: BatchExpenseItem; listConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>; onClose: () => void; onSave?: (input: ExpenseFactConfirmationInput) => Promise<string>; onUploadSupportingFile?: (formData: FormData) => Promise<{ fileName: string; id: string }>; resolution: ManagedExpenseResolution }) {
   const [form, setForm] = useState<ExpenseFactConfirmationInput>({
     actualExpenseDate: detailItem?.expenseDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
     actualSpender: detailItem?.actualSpender || resolution.advancePayer || resolution.author,
     amount: detailItem?.totalAmount ?? resolution.totalPaymentAmount,
-    authorLabel: resolution.author,
+    authorLabel: actorLabel,
     businessPurpose: detailItem?.businessPurpose || resolution.reason,
     detailTransactionId: detailItem?.id,
     itemDescription: detailItem?.itemTitle || resolution.subject || resolution.operationExpenseDetail,
@@ -5214,21 +5240,25 @@ function ExpenseFactConfirmationModal({ deleteConfirmation, detailItem, listConf
   });
   const [error, setError] = useState("");
   const [savedId, setSavedId] = useState("");
+  const factSaving = useRef(false);
+  const [isFactSaving, setIsFactSaving] = useState(false);
   const [supportingFiles, setSupportingFiles] = useState<string[]>([]);
   const [confirmations, setConfirmations] = useState<ExpenseFactConfirmation[]>([]);
   useEffect(() => { if (listConfirmations) void listConfirmations(resolution.id).then(setConfirmations).catch(() => setConfirmations([])); }, [listConfirmations, resolution.id]);
   const update = <K extends keyof ExpenseFactConfirmationInput>(key: K, value: ExpenseFactConfirmationInput[K]) => setForm((current) => ({ ...current, [key]: value }));
   async function save() {
     if (!onSave) { setError("지출사실확인서 저장소가 연결되지 않았습니다."); return; }
-    try { setError(""); setSavedId(await onSave(form)); if (listConfirmations) setConfirmations(await listConfirmations(resolution.id)); } catch (caught) { setError(caught instanceof Error ? caught.message : "저장하지 못했습니다."); }
+    if (factSaving.current) return;
+    factSaving.current = true; setIsFactSaving(true);
+    try { setError(""); const id = await onSave(form); setSavedId(id); setForm((current) => ({ ...current, id })); if (listConfirmations) setConfirmations(await listConfirmations(resolution.id)); } catch (caught) { setError(caught instanceof Error ? caught.message : "저장하지 못했습니다."); } finally { factSaving.current = false; setIsFactSaving(false); }
   }
   async function uploadSupportingFile(file?: File) {
     if (!file || !savedId || !onUploadSupportingFile) { setError("확인서를 먼저 저장한 후 보완자료를 첨부해주세요."); return; }
     const data = new FormData(); data.set("file", file); data.set("factConfirmationId", savedId); data.set("resolutionId", resolution.id);
     try { const result = await onUploadSupportingFile(data); setSupportingFiles((current) => [...current, result.fileName]); setError(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "보완자료를 저장하지 못했습니다."); }
   }
-  function editConfirmation(item: ExpenseFactConfirmation) { setForm({ ...item }); setSavedId(item.id); setSupportingFiles([]); }
-  async function removeConfirmation(item: ExpenseFactConfirmation) { if (!deleteConfirmation || !window.confirm("지출사실확인서를 삭제할까요? 이전 이력은 감사로그에 보존됩니다.")) return; try { await deleteConfirmation(item.id, resolution.id, currentUserName); setConfirmations((current) => current.filter((entry) => entry.id !== item.id)); if (savedId === item.id) setSavedId(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "삭제하지 못했습니다."); } }
+  function editConfirmation(item: ExpenseFactConfirmation) { setForm({ ...item, authorLabel: actorLabel }); setSavedId(item.id); setSupportingFiles([]); }
+  async function removeConfirmation(item: ExpenseFactConfirmation) { if (!deleteConfirmation || !window.confirm("지출사실확인서를 삭제할까요? 이전 이력은 감사로그에 보존됩니다.")) return; try { await deleteConfirmation(item.id, resolution.id, actorLabel); setConfirmations((current) => current.filter((entry) => entry.id !== item.id)); if (savedId === item.id) setSavedId(""); } catch (caught) { setError(caught instanceof Error ? caught.message : "삭제하지 못했습니다."); } }
   return <div className="fixed inset-0 z-[70] flex items-start justify-center overflow-y-auto bg-black/45 p-6 print:static print:bg-white print:p-0" onClick={onClose}>
     <section aria-label="지출사실확인서" className="w-full max-w-4xl rounded-2xl bg-white shadow-2xl print:max-w-none print:rounded-none print:shadow-none" onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between border-b px-6 py-4 print:hidden"><div><h2 className="text-xl font-bold">지출사실확인서 작성</h2><p className="mt-1 text-sm text-[var(--color-stone)]">지출결의서 {resolution.resolutionNo}{detailItem ? ` · 상세거래 ${detailItem.itemNo}` : ""}의 보완자료이며 독립 지급·전표 문서가 아닙니다.</p></div><Button onClick={onClose} variant="outline">닫기</Button></div>
@@ -5245,15 +5275,15 @@ function ExpenseFactConfirmationModal({ deleteConfirmation, detailItem, listConf
           <FactField className="col-span-2" label="지출 목적 및 조합 업무 관련성" value={form.businessPurpose} onChange={(value) => update("businessPurpose", value)} />
           <FactField className="col-span-2" label="영수증 미첨부 사유" value={form.missingReceiptReason} onChange={(value) => update("missingReceiptReason", value)} />
           <FactField label="결제수단" value={form.paymentMethod} onChange={(value) => update("paymentMethod", value)} />
-          <FactField label="작성자" value={form.authorLabel} onChange={(value) => update("authorLabel", value)} />
-          <FactField label="사실 확인자" value={form.confirmerLabel ?? ""} onChange={(value) => update("confirmerLabel", value)} />
+          <div className="rounded-lg border p-3 text-sm"><span className="block text-xs font-bold text-gray-500">작성자 · 로그인 계정</span>{form.authorLabel}</div>
+          <div className="rounded-lg border p-3 text-sm"><span className="block text-xs font-bold text-gray-500">사실 확인자</span>{form.confirmerLabel || "확인 권한 정책 설정 후 서명 가능"}</div>
           <div className="rounded-lg border p-3 text-sm"><span className="block text-xs font-bold text-gray-500">전자 확인기록</span>{savedId ? `저장 ID ${savedId}` : "저장 후 생성"}</div>
           <label className="col-span-2 grid gap-2 rounded-lg border p-3 text-sm font-bold print:hidden"><span>보완자료</span><input disabled={!savedId} onChange={(event) => void uploadSupportingFile(event.target.files?.[0])} type="file" />{supportingFiles.length ? <span className="text-xs text-green-700">{supportingFiles.join(", ")}</span> : <span className="text-xs text-gray-500">확인서를 저장한 뒤 사진·이체내역 등 보완자료를 첨부할 수 있습니다.</span>}</label>
         </div>
         <p className="mt-10 text-sm leading-7">위 지출은 조합 업무 수행 과정에서 실제 발생하였으며, 영수증을 첨부하지 못한 사유와 기재 내용이 사실임을 확인합니다.</p>
         <div className="mt-16 flex justify-end gap-12 text-sm"><p>작성자: {form.authorLabel} (서명)</p><p>확인자: {form.confirmerLabel || "____________"} (서명)</p></div>
       </div>
-      <div className="flex justify-between border-t px-6 py-4 print:hidden"><p className="text-sm font-bold text-amber-800">저장 후에도 증빙상태는 대체증빙 또는 증빙불비로 유지됩니다.</p><div className="flex gap-2"><Button onClick={() => window.print()} variant="outline">A4 인쇄·PDF</Button><Button onClick={() => void save()}>{savedId ? "저장완료" : "확인서 저장"}</Button></div></div>
+      <div className="flex justify-between border-t px-6 py-4 print:hidden"><p className="text-sm font-bold text-amber-800">저장 후에도 증빙상태는 대체증빙 또는 증빙불비로 유지됩니다.</p><div className="flex gap-2"><Button onClick={() => window.print()} variant="outline">A4 인쇄·PDF</Button><Button disabled={isFactSaving} onClick={() => void save()}>{isFactSaving ? "저장 중" : savedId ? "수정 저장" : "확인서 초안 저장"}</Button></div></div>
       {error ? <p className="mx-6 mb-4 rounded-lg bg-red-50 p-3 text-sm font-bold text-red-700 print:hidden">{error}</p> : null}
     </section>
   </div>;

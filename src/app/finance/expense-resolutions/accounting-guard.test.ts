@@ -5,6 +5,10 @@ vi.mock("@/features/finance/accounting-workspace-repository", () => ({ assertLeg
 vi.mock("@/lib/supabase/server", () => ({ getSupabaseServerClient: () => ({ schema: mocks.schema }) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
+vi.mock("@/features/finance/expense-authorization", () => ({
+  requireExpenseActor: async () => ({ user_id: "user", organization_id: "org", display_name: "지급 담당자", permissions: ["PAY"] }),
+  requireExpenseRecord: async () => ({}),
+}));
 vi.mock("@/features/finance/expense-evidence-ocr.server", () => ({ extractExpenseEvidenceFile: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-openai.server", () => ({ extractExpenseEvidenceWithOpenAI: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compressExpenseEvidenceFile: vi.fn() }));

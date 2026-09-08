@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseActor: async () => ({ user_id: "user", organization_id: "org", display_name: "담당자", active: true, permissions: ["ADMIN"] }) }));
 import ExpenseResolutionsRoute from "./page";
 
 describe("expense resolutions route", () => {

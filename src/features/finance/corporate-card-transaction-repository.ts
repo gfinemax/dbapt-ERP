@@ -49,15 +49,17 @@ export async function linkQuickExpenseCard(recordId: string, cardTransactionId: 
   if (error) throw new Error(`카드 이용내역 연결 실패: ${error.message}`);
 }
 
-export async function listUnresolvedCorporateCardTransactions(): Promise<CorporateCardTransactionCandidate[]> {
+export async function listUnresolvedCorporateCardTransactions(organizationId?: string): Promise<CorporateCardTransactionCandidate[]> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return [];
-  const { data, error } = await supabase.schema("finance").from("corporate_card_transactions")
+  let query = supabase.schema("finance").from("corporate_card_transactions")
     .select("id,approved_at,amount,merchant_name,category,card_name,card_last_four,approval_no,memo,linked_resolution_id")
     .is("linked_resolution_id", null)
     .eq("resolution_status", "UNRESOLVED")
     .order("approved_at", { ascending: false })
     .limit(200);
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query;
   if (error) throw new Error(`법인카드 승인내역 조회 실패: ${error.message}`);
   return ((data ?? []) as CorporateCardTransactionRow[]).map(mapCorporateCardTransaction);
 }

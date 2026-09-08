@@ -47,7 +47,7 @@ let created = false;
 const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
 const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
   .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
-const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql', 'finance_task_sources.sql', 'advance_settlement_drafts.sql'];
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql', 'finance_task_sources.sql', 'advance_settlement_drafts.sql', 'legacy_expense_authorization.sql'];
 const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
@@ -156,6 +156,18 @@ select jsonb_build_object('transaction_id',id,'source_signature',finance.advance
   assert.equal((await sql(`select count(*) from finance.advance_settlement_drafts where organization_id='${org}';`)).trim(), '1');
   assert.equal((await sql(`select count(*) from finance.advance_settlement_claims where organization_id='${org}' and source_id='${advanceUse}';`)).trim(), '1');
   console.log('PASS: concurrent advance drafts reserve one original usage; failed draft rolls back and same-key retry reloads');
+  const approvalId = randomUUID();
+  const approvalBefore = { id: approvalId, author: 'Test', approvalStatus: '승인대기', paymentStatus: '지급전', settlementStatus: '정산없음', totalPaymentAmount: 100, expenseTiming: 'ADVANCE', approvalLine: [{ approver: 'Test', role: 'actor', status: '결재대기' }], currentApprover: 'Test actor', history: [], expenseItems: [] };
+  const approvalAfter = { ...approvalBefore, approvalStatus: '승인완료', paymentStatus: '지급대기', approvalLine: [{ approver: 'Test', role: 'actor', status: '승인완료', processedAt: '2026-09-08T10:00:00+09:00' }], currentApprover: undefined, approvedAt: '2026-09-08T10:00:00+09:00', history: [{ action: 'approved' }] };
+  await sql(`insert into finance.expense_resolutions(id,organization_id,resolution_no,author_label,approval_status,payment_status,total_payment_amount,resolution_data) values('${approvalId}','${org}','AUTH-RACE','Test','승인대기','지급전',100,'${JSON.stringify(approvalBefore)}');
+insert into finance.expense_authorization_bindings(resolution_id,organization_id,author_user_id,steps) values('${approvalId}','${org}','${actor}','${JSON.stringify([{ order: 1, approver_user_id: actor, legacy_step: { approver: 'Test', role: 'actor' } }])}');`);
+  const approvalCommands = [1, 2].map(index => `begin; set role service_role; select finance.legacy_expense_command('${org}','${actor}','APPROVAL','${approvalId}','${JSON.stringify(approvalBefore)}','${JSON.stringify({ command: 'APPROVE', after: approvalAfter })}','approval-race-${index}'); select pg_sleep(0.5); commit;`);
+  const approvalRaces = await Promise.all(approvalCommands.map(query => run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At'], query)));
+  assert.equal(approvalRaces.filter(result => result.code === 0).length, 1, JSON.stringify(approvalRaces));
+  assert(approvalRaces.find(result => result.code !== 0)?.stderr.includes('원본이 변경'), 'second approval must see committed original');
+  await sql(approvalCommands[approvalRaces.findIndex(result => result.code === 0)]);
+  assert.equal((await sql(`select count(*) from finance.expense_workflow_audit_logs where resolution_id='${approvalId}' and action='AUTH:APPROVAL';`)).trim(), '1');
+  console.log('PASS: concurrent UUID approvals commit one transition and audit; same-key retry preserves it');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
   await sql(`insert into storage.objects(bucket_id,name) values('finance-workflow','isolated-private'),('isolated-public','legacy-visible');`);

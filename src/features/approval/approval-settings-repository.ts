@@ -123,17 +123,19 @@ export async function addMeetingRule(input: {
   if (error) throw new Error(`의결규칙을 저장하지 못했어: ${error.message}`);
 }
 
-export async function listApprovalBudgets(): Promise<ApprovalBudgetOption[]> {
+export async function listApprovalBudgets(organizationId?: string): Promise<ApprovalBudgetOption[]> {
   const api = client();
   const now = new Date();
   const currentMonthStart = `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(now)}-01T00:00:00+09:00`;
   const currentYear = Number(currentMonthStart.slice(0, 4));
-  const { data, error } = await api
+  let query = api
     .schema("approval")
     .from("budgets")
     .select("id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount,calculation_basis")
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query;
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
   const totals=await api.schema("finance").rpc("unified_budget_totals",{p_month:currentMonthStart.slice(0,10)});
   if(totals.error) throw new Error(`예산 사용액 집계 실패: ${totals.error.message}`);

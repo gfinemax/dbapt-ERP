@@ -1,4 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { expenseBinding, isMissingExpenseBinding, requireExpenseActor, requireExpenseRecord } from "./expense-authorization";
+import type { ExpenseAuthorization } from "./expense-authorization";
 import type { AccountAllocation, BatchExpenseItem, ManagedExpenseResolution, SingleExpenseItem } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
@@ -48,7 +50,7 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     direct_expense_decision: resolution.directExpenseDecision ?? "ALLOWED",
     direct_expense_reasons: resolution.directExpenseReasons ?? [],
     approval_skip_reason: resolution.approvalSkipReason ?? null,
-    approval_document_id: resolution.approvalDocumentId ?? null,
+    approval_document_id: resolution.approvalDocumentId || null,
     resolution_no: resolution.resolutionNo,
     author_label: resolution.author,
     current_approver_label: resolution.currentApprover ?? null,
@@ -59,8 +61,8 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     input_method: normalizeInputMethod(resolution),
     execution_method: resolution.executionMethod ?? null,
     expense_burden_type: resolution.expenseBurdenType ?? null,
-    original_resolution_id: resolution.originalResolutionId ?? null,
-    settlement_due_date: resolution.settlementDueDate ?? null,
+    original_resolution_id: resolution.originalResolutionId || null,
+    settlement_due_date: resolution.settlementDueDate || null,
     settlement_manager_label: resolution.settlementManager ?? null,
     project_name: resolution.projectName || null,
     subject: resolution.subject || null,
@@ -70,11 +72,11 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     voucher_no: resolution.voucherNo ?? null,
     voucher_status: resolution.voucherStatus ?? null,
     expense_kind: resolution.expenseKind ?? "GENERAL",
-    accounting_date: resolution.accountingDate ?? null,
-    actual_expense_date: resolution.actualExpenseDate ?? null,
-    drafted_at: resolution.draftedAt ?? resolution.createdAt,
-    approved_at: resolution.approvedAt ?? null,
-    disbursed_at: resolution.disbursedAt ?? resolution.paidAt ?? null,
+    accounting_date: resolution.accountingDate || null,
+    actual_expense_date: resolution.actualExpenseDate || null,
+    drafted_at: resolution.draftedAt || resolution.createdAt,
+    approved_at: resolution.approvedAt || null,
+    disbursed_at: resolution.disbursedAt || resolution.paidAt || null,
     is_post_approval: resolution.isPostApproval ?? resolution.expenseKind === "BANK_POST_APPROVAL",
     post_approval_reason: resolution.postApprovalReason ?? null,
     evidence_kind: resolution.evidenceKind ?? "NONE",
@@ -83,8 +85,8 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     actual_spender_label: resolution.advancePayer ?? null,
     settlement_recipient_label: resolution.settlementRecipient ?? null,
     settlement_amount: resolution.settlementAmount ?? (resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? resolution.totalPaymentAmount : null),
-    settlement_completed_at: resolution.settlementCompletedAt ?? null,
-    bank_transaction_id: resolution.bankTransactionId ?? null,
+    settlement_completed_at: resolution.settlementCompletedAt || null,
+    bank_transaction_id: resolution.bankTransactionId || null,
     resolution_data: resolution,
     updated_at: new Date().toISOString(),
   };
@@ -194,6 +196,7 @@ export function hydrateExpenseResolutionChildren(
 }
 
 export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpenseResolution[] | null> {
+  const actor = await requireExpenseActor();
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
 
@@ -201,11 +204,18 @@ export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpen
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolutions")
     .select(expenseResolutionSelect)
+    .eq("organization_id", actor.organization_id)
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
 
   if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
-  const resolutions = (data as ExpenseResolutionRow[]).map((row) => row.resolution_data);
+  const sourceRows = (data ?? []) as ExpenseResolutionRow[];
+  if (!sourceRows.length) return [];
+  const { data: bindingRows, error: bindingError } = await supabase.schema("finance").from("expense_authorization_bindings")
+    .select("resolution_id,author_user_id,steps,version").eq("organization_id", actor.organization_id).in("resolution_id", sourceRows.map(row => row.resolution_data.id));
+  if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
+  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
+  const resolutions = sourceRows.map(row => ({ ...row.resolution_data, authorization: bindingMap.get(row.resolution_data.id) ?? null }));
   if (!resolutions.length) return [];
 
   const resolutionIds = resolutions.map((resolution) => resolution.id);
@@ -241,51 +251,42 @@ export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpen
 }
 
 export async function getExpenseResolutionSnapshotFromSupabase(id: string) {
-  const supabase = getSupabaseServerClient();
-  if (!supabase) throw new Error("Supabase is not configured.");
-  const { data, error } = await supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_resolutions")
-    .select(expenseResolutionSelect)
-    .eq("id", id)
-    .is("deleted_at", null)
-    .single();
-  if (error) throw new Error(`Failed to load expense resolution: ${error.message}`);
-  return (data as ExpenseResolutionRow).resolution_data;
+  const { resolution, binding } = await requireExpenseRecord(id);
+  return { ...resolution, authorization: binding };
 }
 
-export async function updateExpenseResolutionWorkflowInSupabase(
-  resolution: ManagedExpenseResolution,
-  expected: { approvalStatus: ManagedExpenseResolution["approvalStatus"]; currentApprover?: string },
-) {
+export async function commitExpenseCommand(command: string, id: string, expected: ManagedExpenseResolution | null, payload: Record<string, unknown>, key: string) {
+  const actor = await requireExpenseActor();
   const supabase = getSupabaseServerClient();
-  if (!supabase) throw new Error("Supabase is not configured.");
-  let query = supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_resolutions")
-    .update(mapExpenseResolutionToUpsert(resolution))
-    .eq("id", resolution.id)
-    .eq("approval_status", expected.approvalStatus);
-  query = expected.currentApprover
-    ? query.eq("current_approver_label", expected.currentApprover)
-    : query.is("current_approver_label", null);
-  const { data, error } = await query.select(expenseResolutionSelect).maybeSingle();
-  if (error) throw new Error(`Failed to transition expense resolution: ${error.message}`);
-  if (!data) throw new Error("다른 사용자가 먼저 결재 상태를 변경했습니다. 목록을 새로고침해주세요.");
-  return (data as ExpenseResolutionRow).resolution_data;
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았습니다.");
+  const { data, error } = await supabase.schema("finance").rpc("legacy_expense_command", {
+    p_org: actor.organization_id, p_actor: actor.user_id, p_command: command, p_id: id,
+    p_expected: expected ? stripExpenseAuthorization(expected) : null, p_payload: payload, p_key: key,
+  });
+  if (error) throw new Error(error.message);
+  if (command === "BIND" || command.startsWith("FACT_")) return data;
+  return { ...data, authorization: await expenseBinding(id, actor) } as ManagedExpenseResolution;
+}
+
+export function stripExpenseAuthorization(resolution: ManagedExpenseResolution) {
+  const result = { ...resolution };
+  delete result.authorization;
+  return result;
 }
 
 export async function updateExpenseDisbursementInSupabase(
   resolution: ManagedExpenseResolution,
   expected: { paymentStatus: ManagedExpenseResolution["paymentStatus"]; voucherStatus?: ManagedExpenseResolution["voucherStatus"] },
 ) {
+  const { actor } = await requireExpenseRecord(resolution.id);
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
   let query = supabase
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolutions")
-    .update(mapExpenseResolutionToUpsert(resolution))
+    .update(mapExpenseResolutionToUpsert(stripExpenseAuthorization(resolution)))
     .eq("id", resolution.id)
+    .eq("organization_id", actor.organization_id)
     .eq("payment_status", expected.paymentStatus);
   query = expected.voucherStatus ? query.eq("voucher_status", expected.voucherStatus) : query.is("voucher_status", null);
   const { data, error } = await query.select(expenseResolutionSelect).maybeSingle();
@@ -294,22 +295,10 @@ export async function updateExpenseDisbursementInSupabase(
   return (data as ExpenseResolutionRow).resolution_data;
 }
 
-export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpenseResolution) {
-  const supabase = getSupabaseServerClient();
-  if (!supabase) throw new Error("Supabase is not configured.");
-
-  const { data: organization, error: organizationError } = await supabase.schema("finance").from("expense_compliance_settings").select("organization_id").limit(1).maybeSingle();
-  if (organizationError) throw new Error(`Failed to resolve expense organization: ${organizationError.message}`);
-  if (!organization?.organization_id) throw new Error("지출결의서를 귀속할 활성 조합이 없습니다.");
-  const { data, error } = await supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_resolutions")
-    .upsert(mapExpenseResolutionToUpsert(resolution, organization.organization_id), { onConflict: "id" })
-    .select(expenseResolutionSelect)
-    .single();
-
-  if (error) throw new Error(error.code === "23505" && resolution.bankTransactionId ? "이미 다른 결의서에 연결된 통장거래입니다." : `Failed to save expense resolution: ${error.message}`);
-
+export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpenseResolution, expected: ManagedExpenseResolution | null, key: string) {
+  const actor = await requireExpenseActor();
+  const version = resolution.authorization?.version ?? 0;
+  resolution = stripExpenseAuthorization(resolution);
   const itemRows = mapExpenseResolutionItemsToRows(resolution);
   const allocationRows = mapExpenseAccountAllocationsToRows(resolution);
   const evidenceRows = mapExpenseEvidenceToRows(resolution);
@@ -317,61 +306,10 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
     const source = resolution.expenseItems.find((expenseItem) => expenseItem.id === item.id) ?? resolution.expenseItems[index];
     return { account_title: item.accountTitle, actual_spender_label: item.spender, amount: item.amount, business_purpose: item.businessPurpose, deleted_at: null, evidence_kind: item.evidenceKind ?? mapDetailEvidenceKind(source?.evidenceType), evidence_status: item.evidenceStatus ?? (source?.evidenceFileName ? "GENERAL" : "NONE"), fact_confirmation_id: item.factConfirmationId ?? null, id: item.id, item_name: item.item, line_no: index + 1, memo: source?.memo || null, payment_method: source?.paymentMethod ?? resolution.advancePaymentMethod ?? resolution.paymentMethod ?? "기타", resolution_id: resolution.id, transaction_date: item.transactionDate, updated_at: new Date().toISOString(), vendor_name: item.vendor };
   });
-  const { error: deleteEvidenceError } = await supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_resolution_evidence")
-    .delete()
-    .eq("resolution_id", resolution.id);
-  if (deleteEvidenceError) throw new Error(`Failed to replace expense evidence: ${deleteEvidenceError.message}`);
-  const { error: deleteAllocationError } = await supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_account_allocations")
-    .delete()
-    .eq("resolution_id", resolution.id);
-  if (deleteAllocationError) throw new Error(`Failed to replace expense account allocations: ${deleteAllocationError.message}`);
-
-  const { error: deleteItemError } = await supabase
-    .schema(expenseResolutionRepositorySchema)
-    .from("expense_resolution_items")
-    .delete()
-    .eq("resolution_id", resolution.id);
-  if (deleteItemError) throw new Error(`Failed to replace expense resolution items: ${deleteItemError.message}`);
-  const { data: existingDetails, error: existingDetailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").select("id").eq("resolution_id", resolution.id).is("deleted_at", null);
-  if (existingDetailError) throw new Error(`소액경비 상세거래 조회 실패: ${existingDetailError.message}`);
-  for (const [index, detail] of (existingDetails ?? []).entries()) {
-    const { error: parkError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").update({ line_no: 100_000 + index, updated_at: new Date().toISOString() }).eq("id", detail.id);
-    if (parkError) throw new Error(`소액경비 상세거래 순번 준비 실패: ${parkError.message}`);
-  }
-  const currentDetailIds = new Set(detailRows.map((row) => row.id));
-  const removedDetailIds = (existingDetails ?? []).map((row) => row.id).filter((id) => !currentDetailIds.has(id));
-  if (removedDetailIds.length) {
-    const { error: deleteDetailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").update({ deleted_at: new Date().toISOString(), updated_at: new Date().toISOString() }).in("id", removedDetailIds);
-    if (deleteDetailError) throw new Error(`소액경비 상세거래 삭제 실패: ${deleteDetailError.message}`);
-  }
-
-  if (itemRows.length) {
-    const { error: itemError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_resolution_items").insert(itemRows);
-    if (itemError) throw new Error(`Failed to save expense resolution items: ${itemError.message}`);
-  }
-  if (allocationRows.length) {
-    const { error: allocationError } = await supabase
-      .schema(expenseResolutionRepositorySchema)
-      .from("expense_account_allocations")
-      .insert(allocationRows);
-    if (allocationError) throw new Error(`Failed to save expense account allocations: ${allocationError.message}`);
-  }
-  if (evidenceRows.length) {
-    const { error: evidenceError } = await supabase
-      .schema(expenseResolutionRepositorySchema)
-      .from("expense_resolution_evidence")
-      .insert(evidenceRows);
-    if (evidenceError) throw new Error(`Failed to save expense evidence: ${evidenceError.message}`);
-  }
-  if (detailRows.length) {
-    const { error: detailError } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_detail_transactions").upsert(detailRows, { onConflict: "id" });
-    if (detailError) throw new Error(`소액경비 상세거래 저장 실패: ${detailError.message}`);
-  }
-  return (data as ExpenseResolutionRow).resolution_data;
+  return commitExpenseCommand("SAVE", resolution.id, expected, {
+    row: mapExpenseResolutionToUpsert(resolution, actor.organization_id), items: itemRows,
+    allocations: allocationRows, evidence: evidenceRows, details: detailRows, expected_binding_version: version,
+  }, key);
 }
 
 function mapDetailEvidenceKind(value?: string) {

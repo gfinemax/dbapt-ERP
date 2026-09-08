@@ -4,7 +4,8 @@ import type { ManagedExpenseResolution } from "@/features/finance/expense-resolu
 import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
 import { listUnresolvedWithdrawalTransactions } from "@/features/finance/expense-compliance-repository";
 import { getExpenseComplianceSettings } from "@/features/finance/expense-compliance-repository";
-import { getDefaultOrganizationId } from "@/features/finance/expense-compliance-repository";
+import { requireExpenseActor } from "@/features/finance/expense-authorization";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
@@ -14,6 +15,8 @@ import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, de
 export const dynamic = "force-dynamic";
 export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
   const entry = parseExpenseEntry(await searchParams ?? {});
+  let viewer;
+  try { viewer = await requireExpenseActor(); } catch (error) { return <ReimbursementLogin title="지출결의" description="본인 계정으로 로그인해서 지출결의 권한을 확인해줘." error={error instanceof Error ? error.message : "로그인이 필요합니다."} />; }
   let dataLoadError: string | undefined;
   let initialResolutions: ManagedExpenseResolution[] = [];
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
@@ -28,17 +31,17 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     dataLoadError = "지출결의 저장소에 연결하지 못했습니다. 목록이 최신 상태가 아닐 수 있습니다. 잠시 후 새로고침해주세요.";
   }
   try {
-    initialApprovalDocuments = (await listApprovalDocuments()).filter((document) => document.approvalStatus === "APPROVED");
-    const organizationId = await getDefaultOrganizationId();
+    initialApprovalDocuments = (await listApprovalDocuments(viewer.organization_id)).filter((document) => document.approvalStatus === "APPROVED");
+    const organizationId = viewer.organization_id;
     if (organizationId) directExpenseSettings = (await getExpenseComplianceSettings(organizationId)) ?? directExpenseSettings;
   } catch (error) {
     console.warn(`[expense-resolutions] Approval policy data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
     const [bankResult, cardResult, budgetResult] = await Promise.allSettled([
-      listUnresolvedWithdrawalTransactions(),
-      listUnresolvedCorporateCardTransactions(),
-      listExpenseBudgetProfiles(),
+      listUnresolvedWithdrawalTransactions(viewer.organization_id),
+      listUnresolvedCorporateCardTransactions(viewer.organization_id),
+      listExpenseBudgetProfiles(viewer.organization_id),
     ]);
     if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
     else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
@@ -51,7 +54,8 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   }
   return (
     <ExpenseResolutionPage
-      key={JSON.stringify(entry)}
+      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}`}
+      viewer={viewer}
       initialEntryStart={entry.start}
       initialResolutionId={entry.resolutionId}
       createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction}
