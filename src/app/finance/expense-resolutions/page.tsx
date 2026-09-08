@@ -1,4 +1,5 @@
 import { ExpenseResolutionPage } from "@/features/finance/expense-resolution-page";
+import { parseExpenseEntry } from "@/features/finance/expense-entry";
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
 import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
 import { listUnresolvedWithdrawalTransactions } from "@/features/finance/expense-compliance-repository";
@@ -11,7 +12,8 @@ import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-rep
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export const dynamic = "force-dynamic";
-export default async function ExpenseResolutionsRoute() {
+export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
+  const entry = parseExpenseEntry(await searchParams ?? {});
   let dataLoadError: string | undefined;
   let initialResolutions: ManagedExpenseResolution[] = [];
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
@@ -49,6 +51,9 @@ export default async function ExpenseResolutionsRoute() {
   }
   return (
     <ExpenseResolutionPage
+      key={JSON.stringify(entry)}
+      initialEntryStart={entry.start}
+      initialResolutionId={entry.resolutionId}
       createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction}
       dataLoadError={dataLoadError}
       deleteEvidence={deleteExpenseEvidenceAction}

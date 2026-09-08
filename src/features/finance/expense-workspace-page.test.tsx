@@ -34,8 +34,8 @@ describe("common original expense workspace", () => {
     expect(detail.getByText("지급완료")).toBeInTheDocument();
     expect(detail.queryByText("미지정")).not.toBeInTheDocument();
     expect(detail.queryByText(/누적 실제 지급 0원/)).not.toBeInTheDocument();
-    expect(detail.getByRole("link", { name: "기존 지출결의 화면에서 확인" })).toHaveAttribute("href", "/finance/expense-resolutions");
-    expect(detail.getByText(/해당 화면의 목록에서 문서번호나 제목/)).toBeInTheDocument();
+    expect(detail.getByRole("link", { name: "기존 지출결의 화면에서 확인" })).toHaveAttribute("href", "/finance/expense-resolutions?resolutionId=text-id");
+    expect(detail.getByText(/선택한 원본 상세로 바로/)).toBeInTheDocument();
   });
   it("connects the existing source once and reads back the saved transaction without duplicate original rows", async () => {
     const workspace = fixture(); const rendered = render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
@@ -76,7 +76,7 @@ describe("common original expense workspace", () => {
   it("starts from real existing forms and explicitly leaves unified advance settlement unfinished", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} />);
     fireEvent.click(screen.getByRole("button", { name: "앞으로 지급할 거래" }));
-    expect(screen.getByRole("link", { name: "기존 지출결의 작성·관리로 이동" })).toHaveAttribute("href", "/finance/expense-resolutions");
+    expect(screen.getByRole("link", { name: "사전 지출결의 작성" })).toHaveAttribute("href", "/finance/expense-resolutions?start=advance");
     fireEvent.click(screen.getByRole("button", { name: "이미 사용하거나 지급한 거래" }));
     expect(screen.getByRole("link", { name: "결의 생략 근거가 있는 간편지출 등록" })).toHaveAttribute("href", "/finance/quick-expenses");
     fireEvent.click(screen.getByRole("button", { name: "먼저 지급한 돈의 정산" }));

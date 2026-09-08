@@ -170,15 +170,15 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
   });
 
-  it("restores locally saved resolutions when the remote store is unavailable", () => {
-    const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} />);
+  it("restores local drafts only in the standalone form without a server source", () => {
+    const firstRender = render(<ExpenseResolutionPage />);
     act(() => vi.runOnlyPendingTimers());
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 작성" })).getByRole("button", { name: "임시저장" }));
     expect(localStorage.getItem("dbapt-erp:finance:expense-resolutions")).toContain("지결-2026-0001");
     firstRender.unmount();
 
-    render(<ExpenseResolutionPage initialResolutions={[]} />);
+    render(<ExpenseResolutionPage />);
     act(() => vi.runOnlyPendingTimers());
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();

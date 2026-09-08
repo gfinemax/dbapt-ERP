@@ -4,6 +4,7 @@ import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from
 import type { ChangeEvent, ReactNode } from "react";
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import type { ExpenseEntryStart } from "./expense-entry";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -2105,6 +2106,8 @@ export function ExpenseResolutionPage({
   initialBudgetProfiles = {},
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
+  initialEntryStart,
+  initialResolutionId,
   persistResolution,
   saveFactConfirmation,
   listFactConfirmations,
@@ -2128,6 +2131,8 @@ export function ExpenseResolutionPage({
   initialBudgetProfiles?: Record<string, BudgetProfile>;
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
+  initialEntryStart?: ExpenseEntryStart;
+  initialResolutionId?: string;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
   saveFactConfirmation?: (input: ExpenseFactConfirmationInput) => Promise<string>;
   listFactConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>;
@@ -2145,6 +2150,8 @@ export function ExpenseResolutionPage({
   const initialBankDraft = initialBankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
   const [isLocalStorageHydrated, setIsLocalStorageHydrated] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const savingResolution = useRef(false);
+  const [isSavingResolution, setIsSavingResolution] = useState(false);
   const [batchImportResult, setBatchImportResult] = useState<ExpenseResolutionImportResult | null>(null);
   const [batchImportFileName, setBatchImportFileName] = useState("");
   const [batchImportError, setBatchImportError] = useState("");
@@ -2167,16 +2174,20 @@ export function ExpenseResolutionPage({
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(Boolean(initialBankDraft));
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialResolutionId && Boolean(initialBankDraft || initialEntryStart));
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
   const [factConfirmationTarget, setFactConfirmationTarget] = useState<{ detailItem?: BatchExpenseItem; resolution: ManagedExpenseResolution } | null>(null);
   const [printWarning, setPrintWarning] = useState<{ mode: PrintRecordItem["printPurpose"]; resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
-  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(null);
+  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
-  const [formState, setFormState] = useState<ResolutionFormState>(() => initialBankDraft ? createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions)) : createFormState(getNextResolutionNo(resolutions)));
+  const [formState, setFormState] = useState<ResolutionFormState>(() => {
+    if (initialBankDraft) return createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions));
+    const form = createFormState(getNextResolutionNo(resolutions));
+    return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
+  });
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
     actualPaidAmount: "",
     accountHolder: "",
@@ -2235,9 +2246,7 @@ export function ExpenseResolutionPage({
 
   useEffect(() => {
     let storedResolutions: ManagedExpenseResolution[] | undefined;
-    if (initialResolutions?.length) {
-      localStorage.setItem(expenseResolutionLocalStorageKey, JSON.stringify(initialResolutions));
-    } else {
+    if (initialResolutions === undefined && !persistResolution && !dataLoadError) {
       const stored = localStorage.getItem(expenseResolutionLocalStorageKey);
       if (stored) {
         try {
@@ -2249,19 +2258,20 @@ export function ExpenseResolutionPage({
       }
     }
     const restoreTimer = window.setTimeout(() => {
-      if (storedResolutions) setResolutions(storedResolutions);
+      if (initialResolutions !== undefined) setResolutions(initialResolutions);
+      else if (storedResolutions) setResolutions(storedResolutions);
       setIsLocalStorageHydrated(true);
     }, 0);
     return () => {
       window.clearTimeout(restoreTimer);
     };
-  }, [initialResolutions]);
+  }, [initialResolutions, persistResolution, dataLoadError]);
 
   useEffect(() => {
-    if (isLocalStorageHydrated) {
+    if (isLocalStorageHydrated && initialResolutions === undefined && !persistResolution && !dataLoadError) {
       localStorage.setItem(expenseResolutionLocalStorageKey, JSON.stringify(resolutions));
     }
-  }, [isLocalStorageHydrated, resolutions]);
+  }, [isLocalStorageHydrated, resolutions, initialResolutions, persistResolution, dataLoadError]);
 
   function openCreateModal() {
     setBatchImportResult(null);
@@ -2290,6 +2300,7 @@ export function ExpenseResolutionPage({
   }
 
   function closeCreateModal() {
+    if (savingResolution.current) return;
     setIsCreateModalOpen(false);
     setEditingResolutionId(null);
   }
@@ -2989,6 +3000,7 @@ export function ExpenseResolutionPage({
   }
 
   async function saveResolution(mode: "draft" | "approval-request") {
+    if (savingResolution.current) return;
     const batchSummary = summarizeBatchItems(formState.batchItems);
     const isBatch = formState.resolutionType === "BATCH";
     const totalPaymentAmount = isBatch ? batchSummary.totalAmount : formTotalAmount;
@@ -3176,6 +3188,8 @@ export function ExpenseResolutionPage({
       : nextResolution;
 
     try {
+      savingResolution.current = true;
+      setIsSavingResolution(true);
       setSaveError("");
       const savedResolution = persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
       setResolutions((current) =>
@@ -3183,15 +3197,14 @@ export function ExpenseResolutionPage({
           ? current.map((resolution) => (resolution.id === editingResolutionId ? savedResolution : resolution))
           : [savedResolution, ...current],
       );
+      savingResolution.current = false;
       closeCreateModal();
+      return true;
     } catch (error) {
-      setResolutions((current) =>
-        editingResolutionId
-          ? current.map((resolution) => (resolution.id === editingResolutionId ? resolutionToSave : resolution))
-          : [resolutionToSave, ...current],
-      );
-      console.warn(`[expense-resolutions] remote save unavailable; saved locally: ${error instanceof Error ? error.message : String(error)}`);
-      closeCreateModal();
+      setSaveError(`저장하지 못했습니다. 입력 내용을 유지했으니 확인 후 다시 저장해주세요. ${error instanceof Error ? error.message : "저장소 연결을 확인해주세요."}`);
+    } finally {
+      savingResolution.current = false;
+      setIsSavingResolution(false);
     }
   }
 
@@ -3429,6 +3442,7 @@ export function ExpenseResolutionPage({
       }}
     >
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
+        {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {dataLoadError ? (
           <div className="rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
             {dataLoadError}
@@ -3754,6 +3768,7 @@ export function ExpenseResolutionPage({
           isEditing={Boolean(editingResolutionId)}
           isEvidenceUploading={isEvidenceUploading}
           saveError={saveError}
+          isSaving={isSavingResolution}
           onAddBatchItem={addBatchItem}
           onAddSingleItem={addSingleItem}
           onAddAccountAllocation={addAccountAllocation}
@@ -3774,7 +3789,7 @@ export function ExpenseResolutionPage({
           onBatchItemChange={updateBatchItem}
           onSingleItemChange={updateSingleItem}
           onAccountAllocationChange={updateAccountAllocation}
-          onRequestApproval={() => saveResolution("approval-request")}
+          onRequestApproval={async () => { await saveResolution("approval-request"); }}
           onSaveDraft={() => saveResolution("draft")}
           onUploadEvidenceFiles={uploadEvidenceFiles}
           settlementDifference={settlementDifference}
@@ -3888,6 +3903,7 @@ function ExpenseResolutionCreateModal({
   onSaveDraft,
   onUploadEvidenceFiles,
   saveError,
+  isSaving,
   settlementDifference,
   totalAmount,
   accountAllocationTotal,
@@ -3929,9 +3945,10 @@ function ExpenseResolutionCreateModal({
   onRetryEvidenceFile: (id: string) => void | Promise<void>;
   onReviewBatchBudget: (itemNo: number) => void;
   onRequestApproval: () => void | Promise<void>;
-  onSaveDraft: () => void | Promise<void>;
+  onSaveDraft: () => boolean | undefined | Promise<boolean | undefined>;
   onUploadEvidenceFiles: (files: File[]) => number | Promise<number>;
   saveError: string;
+  isSaving: boolean;
   settlementDifference: number;
   totalAmount: number;
   accountAllocationTotal: number;
@@ -4128,7 +4145,8 @@ function ExpenseResolutionCreateModal({
   }
 
   async function handleSaveDraft() {
-    await onSaveDraft();
+    const saved = await onSaveDraft();
+    if (!saved) return;
     setLastSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
   }
 
@@ -5001,16 +5019,16 @@ function ExpenseResolutionCreateModal({
               <p className="mt-1 text-xs font-medium">항목을 누르면 해당 입력창으로 이동해.</p>
             </div>
           ) : null}
-          <Button className="rounded-full" onClick={onCancel} variant="outline">
+          <Button disabled={isSaving} className="rounded-full" onClick={onCancel} variant="outline">
             취소
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
+            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId)} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>
