@@ -1,0 +1,86 @@
+# 운영 적용 준비 조사 — 2026-09-08
+
+## 완료 범위
+
+운영 배포 기록·DB migration 이력·계정 연결 대상의 읽기 전용 조사와 적용/복구 계획을 준비했다. 운영 schema 변경, migration history repair, 계정 생성/초대/연결, 승인·송금·전표 실행은 하지 않았다. 이번 문서는 운영 적용 완료 보고가 아니다.
+
+## 확인된 상태
+
+| 항목 | 확인 결과 | 판단 범위 |
+|---|---|---|
+| 제품 코드 | `2f1616850afd2d1cdc36b2ddb68e912f34d1676a` | 조사 기준 제품 커밋 |
+| 배포 | GitHub deployment `6320825874`, Production, success, 2026-09-08 13:47:27 KST | GitHub에 기록된 Vercel 성공 상태 |
+| 운영 주소 | `https://dbapt-erp.vercel.app/finance/expense-resolutions`, `/finance/expense-authorizations` 모두 HTTP 200 로그인 화면 | 비로그인 GET만 확인. 로그인 후 업무 성공으로 해석하지 않음 |
+| Vercel 직접 조회 | 연결 도구에서 팀 권한 403 | 현재 alias의 정확한 deployment 연결과 런타임 로그는 미확인. 배포 고유 URL은 Vercel 로그인으로 이동 |
+| DB 최신 이력 | `20260906135650_unified_budget_changed_months` | 운영 이력 33건 |
+| 신규 기반 | `workflow_transactions`, `workflow_contract_versions`, `expense_authorization_bindings` 없음 | 코드 배포와 DB 준비 상태 불일치. 새 업무 실행 준비 미완료 |
+| 지출결의 | 6건, 32,120,120원, 작성중 3 / 승인대기 3 | 모두 지급전, 조직 누락 0 |
+| 기타 원본 | 간편지출 5건, 전표 0건, 승인완료 기안 2건 | 기존 자료 보존 대상 |
+| 계정 | Auth 사용자 1명, 활성 업무 멤버 ADMIN 1명, 해당 조직 core 프로필 0명 | 파인맥스 업무 계정과 기존 이름의 관계는 자동 추정하지 않음 |
+| 기존 증빙 | 4개, 899,566바이트, 기존 기준과 ID 집합·크기·SHA-256 일치 | 읽기 검증이며 복원 가능한 전체 백업이 아님 |
+
+배포 근거: [Vercel 성공 상태가 기록된 커밋](https://github.com/gfinemax/dbapt-ERP/commit/2f1616850afd2d1cdc36b2ddb68e912f34d1676a). 조회 시점 이후 변경될 수 있으므로 적용 직전 다시 확인한다.
+
+## Migration 대응과 적용 후보 순서
+
+로컬 44개와 운영 이력 33개를 비교했다. 버전·이름 일치 10개, 같은 이름/다른 버전 22개, 과거 별도 확인 1개, 신규 후보 11개다. 이름이나 버전의 일치는 SQL 내용 동등성 검증을 대신하지 않는다.
+
+- 과거 별도 확인: 로컬 `20260712084046_expense_disbursement_workflow.sql`의 같은 이름 이력은 없지만 운영의 `expense_workflow_operations`, `expense_workflow_audit_logs`, `expense_resolutions_voucher_no_unique_idx`는 존재한다. 전체 정의·제약·권한이 동등한지는 추가 비교가 필요하다.
+- 운영에만 이름이 있는 이력: `20260715140513_basic_info_organization_indexes`. 다른 로컬 파일에 흡수됐는지 실제 정의를 확인한다.
+- `db push --include-all`, 과거 파일 일괄 재실행, 증거 없이 `migration repair` 하는 절차는 이 계획에 포함하지 않는다. 기존 이력 대응을 검토한 뒤 신규 후보만 명시한다.
+
+| 순서 | 파일 | 작업 단위 |
+|---|---|---|
+| 1 | `20260907125249_fund_workflow.sql` | 원본·신탁·지급 공통 기반 |
+| 2 | `20260907220007_trust_request_versions.sql` | 신탁 요청 버전 |
+| 3 | `20260907222753_trust_route_revisions.sql` | 신탁 경로 변경 |
+| 4 | `20260908025229_payment_workspace.sql` | 지급 관리 |
+| 5 | `20260908030038_accounting_drafts.sql` | 회계 초안 |
+| 6 | `20260908030647_trust_contract_condition_update.sql` | 신탁 조건 변경 |
+| 7 | `20260908031029_legacy_settlement_source_guard.sql` | 기존 정산 원본 보호 |
+| 8 | `20260908031305_expense_workspace.sql` | 공통 지출 원본 목록 |
+| 9 | `20260908032253_advance_settlement_drafts.sql` | 선지급 정산 초안 |
+| 10 | `20260908032705_finance_task_sources.sql` | 업무현황 집계 |
+| 11 | `20260908041709_legacy_expense_authorization.sql` | 기존 결의 계정 연결·원자 명령 |
+
+이 순서는 검토 대상이며 실행 승인이나 운영 적합성 검증 결과가 아니다. 로컬 전체 schema에서 통과한 이전 12개 SQL suite를 운영 schema 차이 검증으로 대체 해석하지 않는다.
+
+## 관리자 계정 연결 확인표
+
+실제 이름·UUID가 있는 파일은 Git에 넣지 않고 ignored `.tmp-repos/finance-release-review/`에 생성했다.
+
+- `expense-account-review.csv`: 결의 6건의 작성자 6칸 + 결재자 18칸 = 24행. 원본 ID·문서번호·조직·순서·기존 표시·확인할 UUID·근거·검토자·검토일 포함. 확인할 UUID는 전부 빈칸이다.
+- `approval-history-review.csv`: 승인 완료 기안 2건의 작성자/결재 단계 8행. 이미 승인된 이력은 소급 서명하거나 다시 승인하지 않는다. 기안 모듈은 별도 후속 정비 대상이다.
+- `available-accounts.csv`: 현재 업무 계정과 Auth/프로필 존재 여부. 후보를 문서에 자동 배정하지 않는다.
+- `migration-comparison.csv`, `release-manifest.json`: 전체 대응 분류와 신규 후보 파일 SHA-256. manifest의 `executionAuthorized=false`는 보고서 상태이며 보안 통제 자체는 아니다.
+
+작성자 표시는 같은 사람처럼 보여도 서로 다른 값을 그대로 유지한다. 역할 표기도 부장/담당자, 사무장/사무국장 등을 합치지 않는다. 실제 당사자·로그인 계정·업무 역할을 관리자가 확인해야 한다. 현재 관리자 한 명을 모든 결재 단계에 임의 지정하지 않는다.
+
+재생성은 읽기 전용 조사 결과 JSON을 입력으로 아래 명령을 실행한다. 스크립트에는 네트워크·DB 쓰기·계정 매칭 코드가 없다. 입력/출력은 ignored `.tmp-repos` 아래로 제한한다.
+
+```powershell
+node scripts/prepare-finance-release-report.mjs .tmp-repos/finance-release-inventory.json .tmp-repos/finance-release-review
+```
+
+## 운영 적용 및 복구 절차
+
+1. **적용 전 상태 고정**: 적용 시각·담당자·쓰기 중지 범위를 정하고 신규 실행을 제한한다. 현 운영 alias의 deployment ID/제품 SHA, DB 이력, 원본/자식/감사/Storage 목록과 지문을 다시 수집한다. 현재 Vercel 팀 접근 오류를 해소해 정확한 alias와 런타임을 확인한다.
+2. **복구 수단 확인**: 실제 백업 시각·보존 기간·PITR 제공 여부·복원 권한과 복구 시간을 확인한다. DB schema/data/역할 및 별도 Storage 파일 사본을 준비한다. 격리 환경에서 복원하고 원본·파일 해시를 대조한다. 현재는 백업 존재·전체 복원 성공 모두 미확인이다. DB 백업은 Storage 객체 파일을 포함하지 않으므로 파일을 별도로 보존한다. [Supabase 공식 백업 문서](https://supabase.com/docs/guides/platform/backups)
+3. **운영 schema 기준 리허설**: 필요한 범위의 보호된 백업/복제본에서 과거 이력 차이를 비교한 후 신규 11개를 순서대로 적용한다. 매 단계 SQL 실패 시 다음 단계로 진행하지 않는다. 부분 적용 여부를 migration 이력과 객체 정의로 확인한다. 기존 자료의 ID·건수·금액·상태·증빙 지문이 그대로여야 한다.
+4. **권한·저장 리허설**: 테스트 계정/가짜 자료로 초안 저장·재조회·동명이인/타 조직 차단·동시 승인·중복 처리·기존 URL을 확인한다. 승인과 실제 지급은 별도로 검증하며 자동 지급을 기대하지 않는다. 사실확인 초안의 브라우저 저장·수정·삭제도 이 단계에 포함한다.
+5. **운영 적용**: 검토된 manifest 파일과 해시가 일치하는 DB 변경만 적용하고 검증한다. 호환되는 앱 deployment를 연결해 로그인·읽기·오류 로그를 확인한다. 실제 기존 문서 BIND는 관리자 확인표의 계정/근거가 확정된 건에만 수행하고, 연결 후 과거 승인·금액·지급·증빙 불변을 확인한다.
+6. **문제 발생 시**: 쓰기를 제한하고 적용 단계·오류·직전 성공 이력을 보존한다. 상태 변경 없는 실패는 확인 후 재시도하며 무조건 전체 재실행하지 않는다. 앱만 되돌릴 때는 실제 DB와 호환성을 검증한 deployment만 사용한다. 바로 이전 커밋도 신규 DB에 의존할 수 있어 안전한 복구 버전으로 간주하지 않는다. DB 복원이 필요하면 중지 시각 이후 새 업무 자료의 보존/재반영 계획과 파일 사본을 확인한 뒤 실행한다. 새 테이블을 임의 DROP해서 되돌리지 않는다.
+
+## 단계 완료 기준과 다음 작업
+
+| 단계 | 상태 | 다음 완료 기준 |
+|---|---|---|
+| 운영 읽기 조사·연결 확인표 | 완료 | 적용 직전 최신 자료로 재생성 |
+| Vercel 직접 상세·런타임 확인 | 접근 제한 | 해당 팀 접근이 가능한 연결로 alias/배포/로그 확인 |
+| 기존 SQL 정의/이력 차이 분석 | 분류 완료, 동등성 미확인 | 22개 버전 차이와 과거 별도 항목의 실제 정의 비교 |
+| 기존 기안 승인 경로 정비 | 미완료 | 표시 이름 기반 decide_document를 Auth UUID·조직·동시성 검사로 정비; 기안/결의 상태 독립 유지 |
+| 담당자 계정 확정 | 사용자 확인 필요 | 3명의 계정과 관리자 계정의 관계 확인; 임의 생성/연결 금지 |
+| 백업·복원·운영 schema 리허설 | 미완료 | 실제 복원 성공과 자료 불변 증거 |
+| 운영 DB 적용·실제 계정 연결 | 미실행 | 위 검증 완료 후 검토된 대상만 적용 |
+
+계정 확인을 기다리는 동안 기안 승인 경로 조사·정비와 migration 정의 비교를 진행할 수 있다. 회계 확정/정정, 선지급 정산 확정, 사실확인 서명, 수납 원장 선택은 각각 정책에 의존하는 실행만 제한한다.
