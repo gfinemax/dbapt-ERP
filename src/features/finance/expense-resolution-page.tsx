@@ -675,7 +675,7 @@ function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseI
 }
 
 function getPaymentTarget(id: string) {
-  return paymentTargets.find((target) => target.id === id) ?? paymentTargets[0];
+  return paymentTargets.find((target) => target.id === id) ?? paymentTargets.find((target) => target.id === "manual")!;
 }
 
 function getResolutionPaymentTargetId(resolution: Pick<ManagedExpenseResolution, "accountHolder" | "paymentAccountNo" | "paymentBank" | "paymentTargetId">) {
@@ -1427,11 +1427,11 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     creationSource: resolution.creationSource ?? (resolution.approvalDocumentId ? "APPROVAL_LINKED" : "DIRECT"),
     approvalDocumentId: resolution.approvalDocumentId ?? "",
     approvalDocumentNo: resolution.approvalDocumentNo ?? "",
-    approvalSkipReason: resolution.approvalSkipReason ?? "승인 예산 내 일상 지출",
+    approvalSkipReason: resolution.approvalSkipReason ?? "",
     approvalSkipReasonDetail: resolution.approvalSkipReason && !["승인 예산 내 일상 지출", "정기·반복 지출", "기존 계약에 따른 지급", "소액경비 일괄결의"].includes(resolution.approvalSkipReason) ? resolution.approvalSkipReason : "",
     expenseKind: resolution.expenseKind ?? "GENERAL",
     accountingDate: resolution.accountingDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
-    actualExpenseDate: resolution.actualExpenseDate ?? resolution.advancePaidAt ?? resolution.createdAt,
+    actualExpenseDate: resolution.actualExpenseDate ?? "",
     evidenceKind: resolution.evidenceKind ?? "NONE",
     evidenceStatus: resolution.evidenceStatus ?? "NONE",
     missingEvidenceReason: resolution.missingEvidenceReason ?? "",
@@ -1522,16 +1522,16 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
   };
 }
 
-function createFormState(nextNo: string, currentDate = getCurrentDateIso()): ResolutionFormState {
+export function createFormState(nextNo: string, currentDate = getCurrentDateIso()): ResolutionFormState {
   return applyPaymentTarget({
     creationSource: "DIRECT",
     approvalDocumentId: "",
     approvalDocumentNo: "",
-    approvalSkipReason: "승인 예산 내 일상 지출",
+    approvalSkipReason: "",
     approvalSkipReasonDetail: "",
     expenseKind: "GENERAL",
     accountingDate: currentDate,
-    actualExpenseDate: currentDate,
+    actualExpenseDate: "",
     evidenceKind: "NONE",
     evidenceStatus: "NONE",
     missingEvidenceReason: "",
@@ -1548,7 +1548,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     projectName: "",
     createdAt: currentDate,
     author: currentUserName,
-    plannedPaymentDate: currentDate,
+    plannedPaymentDate: "",
     paymentFlowType: "사전결의",
     expenseTiming: "ADVANCE",
     executionMethod: "VENDOR_DIRECT",
@@ -1576,14 +1576,14 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     vendorBusinessType: "",
     vendorContact: "",
     vendorRepresentative: "",
-    paymentTargetId: "staff-oh",
+    paymentTargetId: "manual",
     paymentBank: "",
     paymentAccountNo: "",
     accountHolder: "",
     supplyAmount: "0",
     vat: "0",
-    advancePaidAt: currentDate,
-    advancePayer: currentUserName,
+    advancePaidAt: "",
+    advancePayer: "",
     advancePaymentMethod: "계좌이체",
     advancePaidAmount: "0",
     actualUsedAmount: "0",
@@ -1598,7 +1598,7 @@ function createFormState(nextNo: string, currentDate = getCurrentDateIso()): Res
     evidenceFiles: [],
     evidenceType: "영수증",
     memo: "",
-  }, "staff-oh");
+  }, "manual");
 }
 
 function toNumber(value: string) {
@@ -4404,7 +4404,7 @@ function ExpenseResolutionCreateModal({
               </div>
               <div aria-live="polite" className={`rounded-xl border p-4 text-sm ${directPolicy.decision === "REQUIRED" ? "border-red-300 bg-red-50 text-red-800" : directPolicy.decision === "RECOMMENDED" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-green-300 bg-green-50 text-green-800"}`}><b>{directPolicy.decision === "REQUIRED" ? "기안 연결 필수" : directPolicy.decision === "RECOMMENDED" ? "기안 연결 권장" : "기안 없이 처리 가능"}</b><p className="mt-1">{directPolicy.reasons.join(" ")}</p></div>
               {formState.creationSource === "APPROVAL_LINKED" || directPolicy.decision === "REQUIRED" ? <label className="grid gap-2 text-sm font-bold"><span>승인된 기안 연결</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => { const selected = approvalDocuments.find((document) => document.id === event.target.value); onChange("approvalDocumentId", event.target.value); onChange("approvalDocumentNo", selected?.documentNo ?? ""); if (selected) { onChange("creationSource", "APPROVAL_LINKED"); onChange("subject", selected.title); onChange("projectName", selected.projectName ?? ""); onChange("vendorName", selected.counterpartyName ?? ""); onChange("budgetItem", selected.budgetItem ?? ""); if (selected.amount > 0) { onChange("singleItems", [createSingleExpenseItem({ itemName: selected.title, quantity: "1", taxCategory: "NO_VAT", unitPrice: String(selected.amount), vatAmount: 0 })]); onChange("accountAllocations", [createAccountAllocation({ accountTitle: selected.budgetItem || "미지정", amount: String(selected.amount), budgetItem: selected.budgetItem || "" })]); } } }} value={formState.approvalDocumentId}><option value="">문서번호·제목·거래처로 선택</option>{approvalDocuments.map((document) => <option key={document.id} value={document.id}>{document.documentNo} · {document.title} · {document.counterpartyName ?? "거래처 미지정"} · {document.amount.toLocaleString("ko-KR")}원</option>)}</select>{selectedApprovalDocument ? <span className="text-xs text-[var(--color-green-ink)]">승인완료 · 승인금액 {selectedApprovalDocument.amount.toLocaleString("ko-KR")}원</span> : null}</label> : null}
-              {formState.creationSource === "DIRECT" ? <div className="grid gap-3"><label className="grid gap-2 text-sm font-bold"><span>기안 생략 사유</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => onChange("approvalSkipReason", event.target.value)} value={formState.approvalSkipReason}><option>승인 예산 내 일상 지출</option><option>정기·반복 지출</option><option>기존 계약에 따른 지급</option><option>소액경비 일괄결의</option>{directExpenseSettings.allowOtherApprovalSkipReason ?? true ? <option>기타</option> : null}</select></label>{formState.approvalSkipReason === "기타" ? <label className="grid gap-2 text-sm font-bold"><span>기타 생략 사유</span><input className="h-11 rounded-lg border px-3" onChange={(event) => onChange("approvalSkipReasonDetail", event.target.value)} placeholder="기안을 생략할 수 있는 구체적인 사유" value={formState.approvalSkipReasonDetail} /></label> : null}</div> : null}
+              {formState.creationSource === "DIRECT" ? <div className="grid gap-3"><label className="grid gap-2 text-sm font-bold"><span>기안 생략 사유</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => onChange("approvalSkipReason", event.target.value)} value={formState.approvalSkipReason}><option value="">근거 선택</option><option>승인 예산 내 일상 지출</option><option>정기·반복 지출</option><option>기존 계약에 따른 지급</option><option>소액경비 일괄결의</option>{directExpenseSettings.allowOtherApprovalSkipReason ?? true ? <option>기타</option> : null}</select></label>{formState.approvalSkipReason === "기타" ? <label className="grid gap-2 text-sm font-bold"><span>기타 생략 사유</span><input className="h-11 rounded-lg border px-3" onChange={(event) => onChange("approvalSkipReasonDetail", event.target.value)} placeholder="기안을 생략할 수 있는 구체적인 사유" value={formState.approvalSkipReasonDetail} /></label> : null}</div> : null}
             </section> : null}
             <FormSection layout="compact" title={currentStep === 1 ? "기본정보" : "지출내역·금액"}>
               {currentStep === 1 ? <>

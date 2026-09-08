@@ -105,6 +105,7 @@ describe("ExpenseResolutionPage", () => {
     const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
     fireEvent.change(within(createDialog).getByLabelText("지급은행"), { target: { value: "기업은행" } });
     fireEvent.change(within(createDialog).getByLabelText("지급계좌번호"), { target: { value: "222-028736-02-019" } });
+    fireEvent.change(within(createDialog).getByLabelText("예금주"), { target: { value: "오학동" } });
 
     expect(within(createDialog).getByLabelText("지급대상")).toHaveValue("manual");
     expect(within(createDialog).getByText("기업은행 ****2019 · 예금주 오학동")).toBeInTheDocument();
@@ -699,6 +700,7 @@ describe("ExpenseResolutionPage", () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    fireEvent.change(within(dialog).getByLabelText("기안 생략 사유"), { target: { value: "승인 예산 내 일상 지출" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "승인요청" }));
