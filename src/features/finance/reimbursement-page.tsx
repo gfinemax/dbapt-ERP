@@ -5,7 +5,7 @@ import { UnifiedBudgetTable } from "./unified-budget-table";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, submitReimbursement } from "@/app/finance/reimbursements/actions";
+import { changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
 import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementReport } from "./reimbursement-domain";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
 
@@ -118,7 +118,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
     </>}
     {tab==="settings"&&<>
       <section className={card}><h2 className="text-lg font-bold">제출·보완 마감 기준</h2><p className="my-3 text-sm text-slate-600">설정은 새로 개설하는 월부터 적용돼. 이미 개설한 월의 기한은 유지돼.</p>
-        <form className="grid gap-4 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);command("POLICY",{submission_day:Number(data.get("submission_day")),completion_day:Number(data.get("completion_day")),long_delay_days:Number(data.get("long_delay_days"))});}}>
+        <form className="grid gap-4 sm:grid-cols-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);op.run(async()=>{const result=await saveReimbursementPolicy({submission_day:Number(data.get("submission_day")),completion_day:Number(data.get("completion_day")),long_delay_days:Number(data.get("long_delay_days"))});if(!result.ok)throw new Error(result.message);},"운영 기준을 저장했어. 이제 첫 정산 신청 때 접수월이 자동 개설돼.");}}>
           <label>다음 달 제출 마감일<input className={input} name="submission_day" type="number" min="1" max="28" required defaultValue={w.policy?.submission_day} disabled={!isAdmin}/></label>
           <label>다음 달 보완 마감일<input className={input} name="completion_day" type="number" min="1" max="28" required defaultValue={w.policy?.completion_day} disabled={!isAdmin}/></label>
           <label>장기 지연 기준 (사용 후 일수)<input className={input} name="long_delay_days" type="number" min="1" required defaultValue={w.policy?.long_delay_days} disabled={!isAdmin}/></label>

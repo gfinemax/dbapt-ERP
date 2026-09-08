@@ -42,6 +42,26 @@ export async function runReimbursementCommand(command: string, data: Record<stri
   } else await reimbursementCommand(member,command,data);
   refresh();
 }
+export async function saveReimbursementPolicy(data: Record<string,unknown>) {
+  const submissionDay=Number(data.submission_day);
+  const completionDay=Number(data.completion_day);
+  const longDelayDays=Number(data.long_delay_days);
+  if(!Number.isInteger(submissionDay)||submissionDay<1||submissionDay>28) return {ok:false as const,message:"제출 마감일은 1일부터 28일 사이로 입력해줘."};
+  if(!Number.isInteger(completionDay)||completionDay<submissionDay||completionDay>28) return {ok:false as const,message:"보완 마감일은 제출 마감일과 같거나 늦은 1일부터 28일 사이여야 해."};
+  if(!Number.isInteger(longDelayDays)||longDelayDays<1) return {ok:false as const,message:"장기 지연 기준은 1일 이상의 정수로 입력해줘."};
+  try {
+    const member=await requireReimbursementIdentity();
+    if(!hasReimbursementPermission(member,"ADMIN")) return {ok:false as const,message:"운영 기준 저장에는 관리자 권한이 필요해."};
+    await reimbursementCommand(member,"POLICY",{submission_day:submissionDay,completion_day:completionDay,long_delay_days:longDelayDays});
+    refresh();
+    return {ok:true as const,message:"운영 기준을 저장했어. 이제 첫 정산 신청 때 접수월이 자동 개설돼."};
+  } catch(error) {
+    const message=error instanceof Error?error.message:"";
+    if(message.includes("로그인")||message.includes("접근 권한")) return {ok:false as const,message:"로그인이 만료됐거나 정산 업무 접근 권한이 없어. 다시 로그인해줘."};
+    if(message.includes("관리자 권한")) return {ok:false as const,message:"운영 기준 저장에는 관리자 권한이 필요해."};
+    return {ok:false as const,message:"운영 기준을 저장하지 못했어. 입력값을 확인하고 다시 시도해줘."};
+  }
+}
 export async function submitReimbursement(form: FormData) {
   const member = await requireReimbursementIdentity();
   const file = form.get("evidence");
