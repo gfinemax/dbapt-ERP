@@ -19,7 +19,11 @@ for (const candidate of [backup, workdir]) {
 const config = await readFile(path.join(workdir, "supabase", "config.toml"), "utf8");
 const projectId = config.match(/^project_id\s*=\s*"([^"]+)"/m)?.[1];
 if (!projectId || !/^dbapt-finance-restore-[a-z0-9-]+$/.test(projectId)) throw new Error("Target must use a dedicated dbapt-finance-restore-* local project ID");
-const container = `supabase_db_${projectId}`;
+const listed = spawnSync("docker", ["ps", "--filter", `label=com.supabase.cli.workdir=${workdir}`, "--format", "{{.Names}}"], { encoding: "utf8", windowsHide: true });
+if (listed.status !== 0) throw new Error("Could not inspect the dedicated local Supabase stack");
+const databaseContainers = listed.stdout.split(/\r?\n/).map(name => name.trim()).filter(name => name.startsWith("supabase_db_"));
+if (databaseContainers.length !== 1) throw new Error("Expected exactly one database container for the dedicated local Supabase workdir");
+const container = databaseContainers[0];
 const inspect = spawnSync("docker", ["inspect", "--format", "{{.State.Running}}", container], { encoding: "utf8", windowsHide: true });
 if (inspect.status !== 0 || inspect.stdout.trim() !== "true") throw new Error("Dedicated local Supabase database container is not running");
 

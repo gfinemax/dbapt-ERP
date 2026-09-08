@@ -135,3 +135,24 @@ node scripts/rehearse-finance-operational-db-restore.mjs `
 ```powershell
 .\scripts\set-finance-operational-db-password.ps1
 ```
+
+## 운영 백업·격리 복원 완료 결과 — 2026-09-08
+
+실제 운영 PostgreSQL에 Session pooler로 읽기 접속해 논리 백업을 생성했다. 최종 유효 백업은 ignored `.tmp-repos/finance-operational-db-backup-2026-09-08T06-57-36-887Z-4a2447c5/`에 있으며 roles/schema/data/migration-history/원본 요약 6개 파일, 총 633,279바이트다. 각 파일 SHA-256은 private manifest에서 검증했다. 비밀번호와 연결 문자열은 백업 파일·보고서·Git·명령 인자에 기록하지 않았다.
+
+별도 로컬 Supabase `dbapt-finance-restore-operational-20260908`에 운영 백업을 단일 transaction으로 복원했다. Supabase CLI가 긴 project ID를 컨테이너 이름에서 줄이는 동작을 확인해, 복원 도구는 이름 조합 대신 해당 workdir Docker label로 DB 컨테이너를 정확히 하나만 선택하도록 보완했다. 예약 역할 `supabase_admin` 변경문은 관리 환경 복원에서 거절되므로 Supabase 역할 필터 뒤에 명시적으로 제외했다. 최종 복원은 1.013초에 완료됐고 다음 원본 수치가 일치했다.
+
+| 검증 항목 | 운영 백업 | 격리 복원 |
+|---|---:|---:|
+| 지출결의 | 6건 / 32,120,120원 | 동일 |
+| 간편지출 | 5건 | 동일 |
+| 전표 | 0건 | 동일 |
+| 승인 기안 | 2건 | 동일 |
+| Auth 사용자 | 1명 | 동일 |
+| Storage 메타데이터 | 34건 / 8,150,705바이트 | 동일 |
+
+격리 복원본에 호환 prerequisite, 신규 workflow migration 12개, 호환 migration 재실행까지 총 14단계를 적용했다. 적용 전 누락 15개 컬럼과 제약 위반 0건을 확인했고, 적용 후 누락·위반 모두 0건이었다. SQL 회귀 suite 10개가 통과했으며 기존 핵심 수치와 지출결의 원본 지문이 보존됐다. 이 실행은 격리 로컬 DB에만 수행했고 운영 migration history와 운영 DB schema는 변경하지 않았다.
+
+운영 DB `storage.objects`의 bucket/path/size 전체와 별도 Storage 백업을 일대일 대조했다. 34개 객체 8,150,705바이트가 모두 일치했고 로컬 사본 SHA-256도 전부 유효했다. 운영 Storage 업로드·삭제는 실행하지 않았다.
+
+이제 기술적 리허설은 완료됐다. 실제 운영 적용 전에는 짧은 쓰기 중지 구간을 정하고 같은 도구로 최종 백업을 다시 만든 뒤, 검토된 13개 파일(호환 migration 1개 + 신규 workflow migration 12개)만 적용한다. 적용 직후 원본 수치·권한·저장·재조회·중복 처리와 운영 화면을 확인한다. 실제 담당자 UUID 연결은 이 검증 다음 단계에서 관리자 확인표에 확정된 대상만 처리한다.
