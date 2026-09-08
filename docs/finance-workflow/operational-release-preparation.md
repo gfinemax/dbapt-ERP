@@ -1,8 +1,10 @@
 # 운영 적용 준비 조사 — 2026-09-08
 
+> **현재 상태:** 2026-09-08 16:08 KST에 운영 DB 호환 변경과 workflow migration 12개를 하나의 transaction으로 적용했다. 16:11 KST에 rollback 전용 SQL 회귀검사 10개와 원본 수치 재대조를 통과했다. 실제 담당자 Auth UUID 연결과 로그인 계정별 운영 화면 검증은 아직 남아 있다.
+
 ## 완료 범위
 
-운영 배포 기록·DB migration 이력·계정 연결 대상의 읽기 전용 조사와 적용/복구 계획을 준비했다. 운영 schema 변경, migration history repair, 계정 생성/초대/연결, 승인·송금·전표 실행은 하지 않았다. 이번 문서는 운영 적용 완료 보고가 아니다.
+이 절은 적용 전 조사 당시의 기록이다. 운영 배포 기록·DB migration 이력·계정 연결 대상의 읽기 전용 조사와 적용/복구 계획을 준비했으며, 당시에는 운영 schema 변경, migration history repair, 계정 생성·초대·연결, 승인·송금·전표 실행을 하지 않았다. 실제 적용 결과는 문서 마지막 절에 기록한다.
 
 ## 확인된 상태
 
@@ -155,4 +157,29 @@ node scripts/rehearse-finance-operational-db-restore.mjs `
 
 운영 DB `storage.objects`의 bucket/path/size 전체와 별도 Storage 백업을 일대일 대조했다. 34개 객체 8,150,705바이트가 모두 일치했고 로컬 사본 SHA-256도 전부 유효했다. 운영 Storage 업로드·삭제는 실행하지 않았다.
 
-이제 기술적 리허설은 완료됐다. 실제 운영 적용 전에는 짧은 쓰기 중지 구간을 정하고 같은 도구로 최종 백업을 다시 만든 뒤, 검토된 13개 파일(호환 migration 1개 + 신규 workflow migration 12개)만 적용한다. 적용 직후 원본 수치·권한·저장·재조회·중복 처리와 운영 화면을 확인한다. 실제 담당자 UUID 연결은 이 검증 다음 단계에서 관리자 확인표에 확정된 대상만 처리한다.
+이 기술적 리허설을 근거로 아래 운영 적용을 진행했다. 실제 담당자 UUID 연결은 관리자 확인표에 확정된 대상만 처리한다.
+
+## 운영 DB 적용 및 사후 검증 완료 — 2026-09-08
+
+운영 적용 직전 신규 논리 백업을 ignored `.tmp-repos/finance-operational-db-backup-2026-09-08T07-06-16-593Z-5b8b3ce0/`에 생성했다. 6개 파일, 총 633,279바이트이며 원본 요약과 manifest 해시를 확인했다. 이 백업은 앞서 격리 복원과 migration 리허설을 통과한 운영 백업과 핵심 수치가 같았다.
+
+16:08 KST에 프로젝트 ref `takwoubezzhxtjvxecpx`를 명시적으로 고정한 적용 도구로 호환 prerequisite, 신규 workflow migration 12개, 호환 migration 최종 실행을 하나의 PostgreSQL transaction에서 적용했다. migration history에는 신규 12개와 최종 호환 migration을 합한 13개 이력을 기록했고 최신 버전은 `20260908053346`이다. 실패 시 schema와 history가 함께 rollback되도록 실행했으며 완료 결과는 `atomic=true`다. 과거 migration history를 repair하거나 다시 실행하지 않았다.
+
+16:11 KST에 운영 DB에서 SQL 회귀 suite 10개를 실행했다. 모든 suite는 `BEGIN`/`ROLLBACK`과 `COMMIT` 금지를 실행 전에 검사했고, 각 suite 뒤에 원본 수치를 다시 비교했다. 10개 모두 통과했으며 migration head, 호환 컬럼, 제약 적합성도 유지됐다.
+
+| 검증 항목 | 적용 직전 | 적용·회귀검사 후 |
+|---|---:|---:|
+| 지출결의 | 6건 / 32,120,120원 | 동일 |
+| 간편지출 | 5건 | 동일 |
+| 전표 | 0건 | 동일 |
+| 승인 기안 | 2건 | 동일 |
+| Auth 사용자 | 1명 | 동일 |
+| Storage 메타데이터 | 34건 / 8,150,705바이트 | 동일 |
+| 호환 컬럼 누락 / 제약 위반 | 15개 / 0건 | 0개 / 0건 |
+| SQL 회귀검사 | 격리 환경 10개 통과 | 운영 rollback형 10개 통과 |
+
+운영 URL `/finance/expense-resolutions`와 `/finance/expense-authorizations`는 적용 후 HTTP 200 로그인 화면을 반환했다. 이는 비로그인 접근면 확인이며, 실제 계정으로 저장·재조회·승인·중복 처리까지 완료했다는 뜻은 아니다.
+
+Supabase Advisor 사후 조회에는 ERROR가 없었다. 새 authorization/정산 표 일부의 `RLS enabled, no policy` INFO는 클라이언트 직접 접근을 닫고 service-role RPC만 허용하는 현재 설계와 일치한다. 새 workflow 표의 미사용 index는 자료가 없는 적용 직후라 삭제 근거로 사용하지 않는다. 일부 foreign key의 covering index 권고는 실제 사용량을 측정한 뒤 별도 성능 migration으로 판단한다. 기존 함수 `approval.prevent_audit_mutation`, `approval.guard_contract_payment`의 search path 경고와 Auth 유출 비밀번호 보호 설정 경고는 이번 migration에서 새로 만든 항목이 아니며 별도 보안 정비 대상으로 남긴다. [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter), [Supabase password security](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
+
+운영 DB schema 적용은 완료됐다. 남은 운영 마무리는 확인된 실제 사용자별 Auth UUID를 기존 작성자·결재 단계에 연결하고, 그 계정으로 로그인해 목록·상세·저장·재조회·권한 차단·동시 승인·중복 처리와 감사 로그를 확인하는 것이다. 이름만 같은 사용자를 자동 연결하거나 이미 승인된 과거 이력을 재승인하지 않는다.
