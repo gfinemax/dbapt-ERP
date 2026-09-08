@@ -129,3 +129,9 @@ node scripts/rehearse-finance-operational-db-restore.mjs `
 도구 자체 검증은 기존 로컬 Supabase를 읽기 원본으로 사용해 완료했다. 6개 백업 파일 706,173바이트의 SHA-256을 확인했고, 별도 로컬 Supabase에 1.211초 동안 복원한 뒤 위 핵심 수치가 모두 일치했다. 이 결과는 도구와 격리 조건 검증이며 운영 DB 백업 성공 증거가 아니다. 운영 연결 문자열이 준비되면 같은 도구로 운영 읽기 백업을 만든 뒤 운영 자료로 복원·migration·Storage 참조 대조를 다시 수행해야 한다.
 
 2026-09-08 Dashboard 확인 결과 이 프로젝트는 Free Plan이라 예약 백업이 제공되지 않는다. Session pooler는 `aws-1-ap-northeast-2.pooler.supabase.com:5432`, 사용자는 `postgres.takwoubezzhxtjvxecpx`로 확인했다. DB 비밀번호는 Dashboard에서 조회할 수 없고 재설정 시 기존 연결이 끊길 수 있다는 경고가 표시된다. 실제 비밀번호를 확인하기 전에는 재설정하거나 추정값으로 접속하지 않는다. ignored `.tmp-repos/finance-operational-db.env`에는 확인된 주소와 비밀번호 자리표시자만 준비했으며, 도구는 자리표시자가 남아 있으면 네트워크 접속 전에 중단한다.
+
+비밀번호를 직접 파일에 편집하지 않으려면 저장소 루트의 PowerShell에서 아래 명령을 실행한다. 입력값은 화면에 표시되지 않고 URL 인코딩된 연결 파일만 ignored `.tmp-repos`에 기록된다. 비밀번호를 명령 인자나 채팅으로 전달하지 않는다.
+
+```powershell
+.\scripts\set-finance-operational-db-password.ps1
+```
