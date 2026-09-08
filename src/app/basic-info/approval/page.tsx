@@ -165,7 +165,7 @@ export default async function Page() {
             </button>
           </form>
           <div className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-white">
-            <h2 className="p-5 text-lg font-bold">예산 현황</h2>
+            <div className="p-5"><h2 className="text-lg font-bold">승인 예산안과 지출 세부항목</h2><p className="mt-1 text-sm text-[var(--color-stone)]">예산안 금액은 승인 예산으로 관리하고, 실제 지출은 아래 연결된 세부항목으로 분류해.</p></div>
             {budgets.some(b=>b.unresolvedCount)&&<p className="px-5 pb-4 text-sm text-amber-800">귀속 미확인 내역이 있어 확인된 금액만 표시해. <Link className="underline" href="/finance/reimbursements?tab=budgets">월 예산·마감에서 귀속 확인하기</Link></p>}
             {!budgets.length ? (
               <p className="px-5 pb-5 text-sm text-[var(--color-stone)]">
@@ -179,7 +179,7 @@ export default async function Page() {
                     <tr>
                       {[
                         "연도",
-                        "예산항목",
+                        "승인 예산",
                         "연간 편성",
                         "월 예산",
                         "연간 실집행",
@@ -199,9 +199,7 @@ export default async function Page() {
                         key={budget.id}
                       >
                         <td className="px-3 py-3">{budget.fiscalYear}</td>
-                        <td className="px-3 py-3 font-bold">
-                          {budget.budgetItem}
-                        </td>
+                        <td className="px-3 py-3"><p className="font-bold">{budget.planSection ? `${budget.planSection} · ${budget.planItemLabel}` : budget.budgetItem}</p><p className="mt-1 text-xs text-[var(--color-stone)]">{budget.budgetItem}</p>{budget.mappingStatus==="POLICY_REVIEW"?<p className="mt-1 text-xs font-bold text-amber-700">정책 확인 필요 · {budget.mappingNote}</p>:null}<div className="mt-2 flex max-w-sm flex-wrap gap-1">{budget.details?.map((detail)=><span className={`rounded-full px-2 py-1 text-[11px] ${detail.status==="POLICY_REVIEW"?"bg-amber-100 text-amber-800":"bg-slate-100 text-slate-700"}`} key={detail.id}>{detail.groupName} · {detail.name}{detail.quickExpenseEligible?" · 간편지출":""}</span>)}</div></td>
                         <td className="px-3 py-3">
                           {budget.approvedAmount.toLocaleString("ko-KR")}원
                         </td>

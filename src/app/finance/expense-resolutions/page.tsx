@@ -10,6 +10,7 @@ import { defaultExpenseComplianceSettings } from "@/features/finance/expense-com
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
 import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
+import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export const dynamic = "force-dynamic";
@@ -24,6 +25,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovalDocuments>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
   let initialBudgetProfiles = {};
+  let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   try {
     initialResolutions = (await listExpenseResolutionsFromSupabase()) ?? [];
   } catch (error) {
@@ -38,10 +40,11 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     console.warn(`[expense-resolutions] Approval policy data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
   try {
-    const [bankResult, cardResult, budgetResult] = await Promise.allSettled([
+    const [bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
       listUnresolvedWithdrawalTransactions(viewer.organization_id),
       listUnresolvedCorporateCardTransactions(viewer.organization_id),
       listExpenseBudgetProfiles(viewer.organization_id),
+      listOperatingExpenseDetails(viewer.organization_id),
     ]);
     if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
     else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
@@ -49,6 +52,8 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
     if (budgetResult.status === "fulfilled") initialBudgetProfiles = budgetResult.value;
     else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
+    if (detailResult.status === "fulfilled") initialExpenseDetails = detailResult.value;
+    else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
   } catch (error) {
     console.warn(`[expense-resolutions] Bank/card transaction data unavailable: ${error instanceof Error ? error.message : String(error)}`);
   }
@@ -69,6 +74,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}
       initialBudgetProfiles={initialBudgetProfiles}
+      initialExpenseDetails={initialExpenseDetails}
       directExpenseSettings={directExpenseSettings}
       persistResolution={saveExpenseResolutionAction}
       saveFactConfirmation={saveExpenseFactConfirmationAction}

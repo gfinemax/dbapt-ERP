@@ -1,5 +1,6 @@
 import { budgetUsed, type ReimbursementBudget } from "@/features/finance/reimbursement-domain";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import type { BudgetMappingStatus, OperatingExpenseDetail } from "@/features/finance/operating-budget-classification";
 
 export type ApprovalSettings = {
   meetingThresholdAmount: number;
@@ -11,10 +12,14 @@ export type ApprovalBudgetOption = {
   approvedAmount: number;
   availableAmount: number;
   budgetItem: string;
+  budgetCode?: string;
   calculationBasis?: string;
+  details?: OperatingExpenseDetail[];
   executedAmount: number;
   fiscalYear: number;
   id: string;
+  mappingNote?: string;
+  mappingStatus?: BudgetMappingStatus;
   monthlyBudgetAmount?: number;
   monthlyUsedAmount?: number;
   reservedAmount: number;
@@ -23,6 +28,8 @@ export type ApprovalBudgetOption = {
   unpaidAmount?: number;
   unresolvedCount?: number;
   recordedAmount?: number;
+  planItemLabel?: string;
+  planSection?: string;
 };
 export type ApprovalLineRule = {
   documentType: "GENERAL" | "EXPENSE" | "CONTRACT" | null;
@@ -133,12 +140,18 @@ export async function listApprovalBudgets(organizationId?: string): Promise<Appr
   let query = api
     .schema("approval")
     .from("budgets")
-    .select("id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount,calculation_basis")
+    .select("id,organization_id,fiscal_year,budget_item,budget_code,plan_section,plan_item_label,mapping_status,mapping_note,approved_amount,executed_amount,monthly_amount,calculation_basis")
     .order("fiscal_year", { ascending: false })
     .order("budget_item");
   if (organizationId) query = query.eq("organization_id", organizationId);
   const { data, error } = await query;
   if (error) throw new Error(`예산을 불러오지 못했어: ${error.message}`);
+  const budgetIds=(data??[]).map((row)=>row.id);
+  const detailResult=budgetIds.length?await api.schema("finance").from("expense_detail_items").select("id,budget_id,code,group_name,name,status,policy_note,quick_expense_eligible").in("budget_id",budgetIds).eq("is_active",true).order("sort_order"):{data:[],error:null};
+  if(detailResult.error) throw new Error(`예산 세부항목을 불러오지 못했어: ${detailResult.error.message}`);
+  const detailsByBudget=new Map<string,OperatingExpenseDetail[]>();
+  const budgetItemById=new Map((data??[]).map((row)=>[row.id,row.budget_item]));
+  for(const detail of detailResult.data??[]){const budgetItem=budgetItemById.get(detail.budget_id);if(!budgetItem)continue;const mapped={id:detail.id,code:detail.code,groupName:detail.group_name,name:detail.name,status:detail.status as BudgetMappingStatus,policyNote:detail.policy_note||undefined,quickExpenseEligible:detail.quick_expense_eligible,budgetItem};detailsByBudget.set(detail.budget_id,[...(detailsByBudget.get(detail.budget_id)??[]),mapped]);}
   const totals=await api.schema("finance").rpc("unified_budget_totals",{p_month:currentMonthStart.slice(0,10)});
   if(totals.error) throw new Error(`예산 사용액 집계 실패: ${totals.error.message}`);
   const budgetTotals=(totals.data??[]) as ReimbursementBudget[];
@@ -153,6 +166,8 @@ export async function listApprovalBudgets(organizationId?: string): Promise<Appr
       approvedAmount:Number(row.approved_amount),
       availableAmount:monthlyBudgetAmount-reservedAmount-monthlyUsedAmount,
       budgetItem:row.budget_item, calculationBasis:row.calculation_basis||undefined,
+      budgetCode:row.budget_code||undefined,planSection:row.plan_section||undefined,planItemLabel:row.plan_item_label||undefined,
+      mappingStatus:row.mapping_status as BudgetMappingStatus,mappingNote:row.mapping_note||undefined,details:detailsByBudget.get(row.id)??[],
       executedAmount:Number(total.annual_used_amount??0), recordedAmount:Number(row.executed_amount),
       fiscalYear:row.fiscal_year, id:row.id, monthlyBudgetAmount, monthlyUsedAmount, reservedAmount,
       annualReservedAmount:Number(total.annual_reserved_amount??0),

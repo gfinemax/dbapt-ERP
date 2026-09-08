@@ -7,6 +7,7 @@ describe("expense budget recommendation", () => {
       accountTitle: "운영비",
       budgetItem: "일반운영비>도서인쇄비",
       confidence: "높음",
+      detailCode: "GENERAL-PRINT",
       matchedKeyword: "봉투제작",
       reason: "품목명·지출사유에서 '봉투제작'을 인식했습니다.",
     });
@@ -28,10 +29,15 @@ describe("expense budget recommendation", () => {
     expect(recommendExpenseBudget({ itemName: "블랙 위생백 대형" })?.budgetItem).toBe("일반운영비>소모품비");
   });
 
+  it("separates office supplies from consumables", () => {
+    expect(recommendExpenseBudget({ itemName: "클리어파일과 건전지" })).toMatchObject({ budgetItem: "일반운영비>사무용품비", detailCode: "GENERAL-SUPPLIES" });
+  });
+
   it("recommends communications expense for postal receipts", () => {
     expect(recommendExpenseBudget({ itemName: "보통", vendorName: "서울신길동우체국" })).toMatchObject({
       accountTitle: "운영비",
-      budgetItem: "제세공과금>통신비",
+      budgetItem: "일반운영비>도서인쇄비",
+      detailCode: "GENERAL-PRINT",
       confidence: "보통",
       matchedKeyword: "우체국",
     });

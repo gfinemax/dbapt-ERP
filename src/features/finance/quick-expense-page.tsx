@@ -10,13 +10,15 @@ import type { QuickExpenseRecord, QuickExpenseRecordInput, QuickExpensePaymentMe
 import type { CorporateCardTransactionImportRow } from "./corporate-card-transaction-import";
 import { parseCorporateCardTransactionText } from "./corporate-card-transaction-import";
 import { readBankTransactionFile } from "./bank-transaction-file";
+import type { OperatingExpenseDetail } from "./operating-budget-classification";
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
-export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialCardTransactions, initialRecords, persistRecord }: {
+export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, persistRecord }: {
   importCardTransactions?: (rows: CorporateCardTransactionImportRow[]) => Promise<unknown>;
   linkCardTransaction?: (input: { recordId: string; cardTransactionId: string }) => Promise<{ recordStatus: "RECORDED" | "EVIDENCE_PENDING" | "NEEDS_RESOLUTION" }>;
   initialBankTransactions: BankTransactionResolutionCandidate[];
   initialBudgetItems?: string[];
+  initialExpenseDetails?: OperatingExpenseDetail[];
   initialCardTransactions: CorporateCardTransactionCandidate[];
   initialRecords: QuickExpenseRecord[];
   persistRecord?: (input: QuickExpenseRecordInput) => Promise<QuickExpenseRecord>;
@@ -25,6 +27,7 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
   const [sourceId, setSourceId] = useState("");
   const [usageDescription, setUsageDescription] = useState("");
   const [budgetItem, setBudgetItem] = useState("");
+  const [expenseDetailId, setExpenseDetailId] = useState("");
   const [manualAmount, setManualAmount] = useState("");
   const [manualCounterparty, setManualCounterparty] = useState("");
   const [manualOccurredAt, setManualOccurredAt] = useState(new Date().toISOString().slice(0, 10));
@@ -49,7 +52,7 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
     !(amount > 0) ? "금액" : "",
     !counterparty.trim() ? "거래처·사용처" : "",
     !usageDescription.trim() ? "사용내용" : "",
-    !budgetItem.trim() ? "예산항목" : "",
+    !expenseDetailId.trim() ? "지출 세부항목" : "",
     !receiptAvailable && !missingEvidenceReason.trim() ? "영수증 미첨부 사유" : "",
   ].filter(Boolean);
 
@@ -60,9 +63,9 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
     const sourceType = isBank ? "BANK_TRANSACTION" as const : isCard && !isManualCard ? "CORPORATE_CARD" as const : "MANUAL" as const;
     startTransition(async () => {
       try {
-        const saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBank ? sourceId : undefined, budgetItem, corporateCardTransactionId: isCard && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCard ? "CARD_TRANSACTION" : isBank ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무장", sourceType, usageDescription });
+        const saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBank ? sourceId : undefined, budgetItem, corporateCardTransactionId: isCard && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCard ? "CARD_TRANSACTION" : isBank ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", expenseDetailId, missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무장", sourceType, usageDescription });
         setRecords((current) => [saved, ...current]);
-        setUsageDescription(""); setBudgetItem(""); setSourceId(""); setManualAmount(""); setManualCounterparty(""); setMissingEvidenceReason("");
+        setUsageDescription(""); setBudgetItem(""); setExpenseDetailId(""); setSourceId(""); setManualAmount(""); setManualCounterparty(""); setMissingEvidenceReason("");
         setMessage(saved.recordStatus === "RECORDED" ? "지출결의 없이 사용내용을 등록했어." : saved.recordStatus === "SOURCE_PENDING" ? "사용내용을 임시등록했어. 카드 승인내역이 들어오면 실제 거래를 연결해줘." : saved.recordStatus === "EVIDENCE_PENDING" ? "사용내용을 등록했어. 영수증 또는 대체증빙을 확인하면 간편처리가 완료돼." : "정식 지출결의가 필요한 거래로 분류했어.");
       } catch (error) { setMessage(error instanceof Error ? error.message : "사용내용을 저장하지 못했습니다."); }
     });
@@ -112,7 +115,8 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
       {isManualCard ? <div className="grid gap-4 md:grid-cols-3"><label className="grid gap-2 text-sm font-bold"><span>카드 사용일</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualOccurredAt(event.target.value)} type="date" value={manualOccurredAt} /></label><label className="grid gap-2 text-sm font-bold"><span>카드 사용금액</span><input className="h-11 rounded-lg border px-3" inputMode="numeric" onChange={(event) => setManualAmount(event.target.value.replace(/\D/g, ""))} value={manualAmount} /></label><label className="grid gap-2 text-sm font-bold"><span>가맹점·사용처</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualCounterparty(event.target.value)} value={manualCounterparty} /></label></div> : null}
       {!isBank && !isCard ? <div className="grid gap-4 md:grid-cols-2"><label className="grid gap-2 text-sm font-bold"><span>금액</span><input className="h-11 rounded-lg border px-3" inputMode="numeric" onChange={(event) => setManualAmount(event.target.value.replace(/\D/g, ""))} value={manualAmount} /></label><label className="grid gap-2 text-sm font-bold"><span>거래처·지급대상</span><input className="h-11 rounded-lg border px-3" onChange={(event) => setManualCounterparty(event.target.value)} value={manualCounterparty} /></label></div> : null}
       <label className="grid gap-2 text-sm font-bold"><span>사용내용</span><textarea className="min-h-24 rounded-lg border p-3" onChange={(event) => setUsageDescription(event.target.value)} placeholder="예: 조합 사무실 인터넷 요금" value={usageDescription} /></label>
-      <label className="grid gap-2 text-sm font-bold"><span>예산항목</span><input className="h-11 rounded-lg border px-3" list="quick-expense-budget-items" onChange={(event) => setBudgetItem(event.target.value)} placeholder="예산항목 선택 또는 입력" value={budgetItem} /><datalist id="quick-expense-budget-items">{initialBudgetItems.map((item) => <option key={item} value={item} />)}</datalist></label>
+      <label className="grid gap-2 text-sm font-bold"><span>지출 세부항목</span><select aria-label="지출 세부항목" className="h-11 rounded-lg border px-3" onChange={(event) => { const detail=initialExpenseDetails.find((item)=>item.id===event.target.value); setExpenseDetailId(event.target.value); setBudgetItem(detail?.budgetItem ?? ""); }} value={expenseDetailId}><option value="">세부항목 선택</option>{initialExpenseDetails.map((detail)=><option disabled={!detail.quickExpenseEligible || detail.status!=="CONFIRMED"} key={detail.id} value={detail.id}>{detail.groupName} · {detail.name}{detail.status==="POLICY_REVIEW"?" (정책 확인 필요)":!detail.quickExpenseEligible?" (정식결의)":""}</option>)}</select><span className="text-xs font-normal text-[var(--color-stone)]">세부항목을 고르면 연결된 승인 예산이 자동 적용돼.</span></label>
+      <label className="grid gap-2 text-sm font-bold"><span>연결 승인 예산</span><input className="h-11 rounded-lg border bg-slate-50 px-3" readOnly value={budgetItem} placeholder={initialExpenseDetails.length ? "세부항목을 먼저 선택해줘" : "세부항목 기준을 불러오지 못했어"}/><datalist id="quick-expense-budget-items">{initialBudgetItems.map((item) => <option key={item} value={item} />)}</datalist></label>
       <fieldset className="grid gap-3 rounded-xl border p-4"><legend className="px-1 text-sm font-bold">영수증 상태</legend><div className="flex flex-wrap gap-2"><button aria-pressed={receiptAvailable} className={receiptAvailable ? "rounded-full border border-blue-600 bg-blue-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>setReceiptAvailable(true)} type="button">영수증 있음 · 등록 후 첨부</button><button aria-pressed={!receiptAvailable} className={!receiptAvailable ? "rounded-full border border-amber-600 bg-amber-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>setReceiptAvailable(false)} type="button">영수증 없음 · 대체증빙 사용</button></div>{!receiptAvailable?<label className="grid gap-2 text-sm font-bold"><span>영수증 미첨부 사유</span><textarea className="min-h-20 rounded-lg border p-3" value={missingEvidenceReason} onChange={event=>setMissingEvidenceReason(event.target.value)} placeholder="예: 구매 후 영수증 분실. 카드 승인내역과 주문내역을 제출합니다." /></label>:<p className="text-xs text-slate-600">저장 후 지출 상세에서 영수증 OCR을 연결하고 담당자가 확인해.</p>}</fieldset>
       <div className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold">{amount > 0 ? `${counterparty || "거래처 미입력"} · ${amount.toLocaleString("ko-KR")}원` : "거래와 사용내용을 입력해줘."}</p><p className={`mt-1 text-xs font-semibold ${missingFields.length ? "text-[var(--color-tangerine)]" : "text-[var(--color-green-ink)]"}`}>{missingFields.length ? `입력 필요: ${missingFields.join(", ")}` : isManualCard ? "등록 후 카드내역 연결대기로 보관됩니다." : "등록 후 증빙 확인대기로 보관됩니다."}</p></div><Button className="min-w-36 bg-[var(--color-pressed-charcoal)] text-white" disabled={isPending} onClick={submit}>{isPending ? "저장 중" : isManualCard ? "사용내용 임시등록" : "사용내용 등록"}</Button></div>
       {message ? <p aria-live="polite" className="rounded-lg bg-[var(--color-morning-tint)] px-4 py-3 text-sm font-bold text-[var(--color-deep-cobalt)]">{message}</p> : null}

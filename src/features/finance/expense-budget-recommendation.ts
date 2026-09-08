@@ -2,6 +2,7 @@ export type ExpenseBudgetRecommendation = {
   accountTitle: "인건비" | "사업추진비" | "운영비";
   budgetItem: string;
   confidence: "높음" | "보통";
+  detailCode?: string;
   matchedKeyword: string;
   reason: string;
 };
@@ -9,18 +10,20 @@ export type ExpenseBudgetRecommendation = {
 type RecommendationRule = {
   accountTitle: ExpenseBudgetRecommendation["accountTitle"];
   budgetItem: string;
+  detailCode?: string;
   keywords: string[];
 };
 
 const recommendationRules: RecommendationRule[] = [
-  { accountTitle: "운영비", budgetItem: "일반운영비>도서인쇄비", keywords: ["봉투제작", "봉투인쇄", "인쇄", "인쇄물", "출력", "소식지", "신문", "명함", "책자", "제본"] },
+  { accountTitle: "운영비", budgetItem: "일반운영비>도서인쇄비", detailCode: "GENERAL-PRINT", keywords: ["봉투제작", "봉투인쇄", "인쇄", "인쇄물", "출력", "소식지", "신문", "명함", "책자", "제본", "우편요금", "우편발송", "우편료", "등기우편", "일반우편", "우체국"] },
   { accountTitle: "운영비", budgetItem: "일반운영비>지급임차료", keywords: ["사무실임대", "사무실임차", "임대료", "임차료", "월세"] },
-  { accountTitle: "운영비", budgetItem: "일반운영비>소모품비", keywords: ["복사기", "회선등록", "등록비", "사무용품", "문구", "생수", "커피", "음료", "물티슈", "타포린백", "복사용지", "토너", "잉크", "소모품", "위생백"] },
+  { accountTitle: "운영비", budgetItem: "일반운영비>사무용품비", detailCode: "GENERAL-SUPPLIES", keywords: ["사무용품", "문구", "스테이플러", "건전지", "클리어파일", "파일철"] },
+  { accountTitle: "운영비", budgetItem: "일반운영비>소모품비", detailCode: "GENERAL-CONSUMABLE", keywords: ["생수", "커피", "음료", "물티슈", "타포린백", "복사용지", "토너", "잉크", "소모품", "위생백"] },
   { accountTitle: "운영비", budgetItem: "복리후생비", keywords: ["식비", "식대", "회식", "간식"] },
   { accountTitle: "운영비", budgetItem: "일반운영비>수선비", keywords: ["수리", "수선", "보수공사"] },
   { accountTitle: "운영비", budgetItem: "기타운영비", keywords: ["광고", "현수막", "홍보"] },
   { accountTitle: "운영비", budgetItem: "제세공과금>수도광열비", keywords: ["수도요금", "전기요금", "가스요금", "광열비"] },
-  { accountTitle: "운영비", budgetItem: "제세공과금>통신비", keywords: ["우편요금", "우편발송", "우편료", "등기우편", "일반우편", "우체국", "전화요금", "인터넷", "팩스", "통신비"] },
+  { accountTitle: "운영비", budgetItem: "제세공과금>통신비", detailCode: "PUBLIC-COMM", keywords: ["전화요금", "인터넷", "팩스", "통신비"] },
   { accountTitle: "운영비", budgetItem: "제세공과금>여비교통비", keywords: ["교통비", "주유", "주차", "출장"] },
   { accountTitle: "운영비", budgetItem: "제세공과금>지급수수료", keywords: ["송금수수료", "발급수수료", "열람수수료", "수수료"] },
   { accountTitle: "사업추진비", budgetItem: "사업추진비 > 회의비", keywords: ["대의원회의", "임원회의", "회의비", "회의수당"] },
@@ -55,6 +58,7 @@ function buildRecommendation(rule: RecommendationRule, keyword: string, confiden
   return {
     accountTitle: rule.accountTitle,
     budgetItem: rule.budgetItem,
+    detailCode: rule.detailCode,
     confidence,
     matchedKeyword: keyword,
     reason: `${source}에서 '${keyword}'을 인식했습니다.`,

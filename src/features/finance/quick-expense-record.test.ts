@@ -8,6 +8,7 @@ const validInput: QuickExpenseRecordInput = {
   budgetItem: "제세공과금>통신비",
   counterparty: "KT",
   evidenceStatus: "GENERAL",
+  expenseDetailId: "detail-communications",
   occurredAt: "2026-08-27T09:00:00+09:00",
   paymentMethod: "AUTO_DEBIT",
   recordedByLabel: "오학동 사무장",

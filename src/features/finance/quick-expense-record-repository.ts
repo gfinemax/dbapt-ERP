@@ -18,6 +18,7 @@ type QuickExpenseRecordRow = {
   evidence_review_status: QuickExpenseRecord["evidenceReviewStatus"] | null;
   evidence_reviewed_at: string | null;
   evidence_review_note: string | null;
+  expense_detail_id: string | null;
   missing_evidence_reason: string | null;
   id: string;
   occurred_at: string;
@@ -28,7 +29,7 @@ type QuickExpenseRecordRow = {
   usage_description: string;
 };
 
-const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,evidence_status,evidence_kind,evidence_review_status,evidence_reviewed_at,evidence_review_note,missing_evidence_reason,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at";
+const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,expense_detail_id,evidence_status,evidence_kind,evidence_review_status,evidence_reviewed_at,evidence_review_note,missing_evidence_reason,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at";
 
 function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
   return {
@@ -42,6 +43,7 @@ function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
     directExpenseDecision: row.direct_expense_decision,
     directExpenseReasons: row.direct_expense_reasons,
     evidenceStatus: row.evidence_status,
+    expenseDetailId: row.expense_detail_id ?? undefined,
     evidenceKind: row.evidence_kind ?? undefined,
     evidenceReviewStatus: row.evidence_review_status ?? undefined,
     evidenceReviewedAt: row.evidence_reviewed_at ?? undefined,
@@ -107,6 +109,7 @@ export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { 
     direct_expense_decision: input.directExpenseDecision,
     direct_expense_reasons: input.directExpenseReasons,
     evidence_status: input.evidenceStatus,
+    expense_detail_id: input.expenseDetailId ?? null,
     evidence_kind: input.evidenceKind ?? "NONE",
     evidence_review_status: input.evidenceStatus === "QUALIFIED" ? "READY" : input.evidenceStatus === "ALTERNATIVE" ? "REVIEW_REQUIRED" : "MISSING",
     missing_evidence_reason: input.missingEvidenceReason ?? "",

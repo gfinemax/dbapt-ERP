@@ -72,6 +72,7 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     voucher_no: resolution.voucherNo ?? null,
     voucher_status: resolution.voucherStatus ?? null,
     expense_kind: resolution.expenseKind ?? "GENERAL",
+    expense_detail_id: resolution.expenseDetailId || null,
     accounting_date: resolution.accountingDate || null,
     actual_expense_date: resolution.actualExpenseDate || null,
     drafted_at: resolution.draftedAt || resolution.createdAt,

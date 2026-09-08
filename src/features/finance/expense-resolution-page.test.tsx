@@ -542,8 +542,8 @@ describe("ExpenseResolutionPage", () => {
       target: { files: [new File(["postal receipt"], "납입금 확인 2차 안내문 우편발송(260821).png", { type: "image/png" })] },
     });
 
-    expect(await within(dialog).findByText(/추천 예산항목: 제세공과금>통신비/)).toBeInTheDocument();
-    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("제세공과금>통신비");
+    expect(await within(dialog).findByText(/추천 예산항목: 일반운영비>도서인쇄비/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("분할 예산항목 1")).toHaveValue("일반운영비>도서인쇄비");
     expect(within(dialog).getByText("2026-08")).toBeInTheDocument();
     expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
     expect(within(dialog).getByLabelText("증빙 유형")).toHaveValue("SIMPLE_RECEIPT");

@@ -8,6 +8,7 @@ import Link from "next/link";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
+import type { OperatingExpenseDetail } from "./operating-budget-classification";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -225,6 +226,7 @@ export type ManagedExpenseResolution = {
   memo: string;
   inputMethod?: ExpenseInputMethod;
   operationExpenseDetail: string;
+  expenseDetailId?: string;
   paymentMemo?: string;
   paymentMethod?: string;
   paymentFlowType: PaymentFlowType;
@@ -376,6 +378,7 @@ type ResolutionFormState = {
   quickExpenseCategory: "택시" | "주차" | "통행료" | "식대" | "소모품" | "기타";
   memo: string;
   operationExpenseDetail: string;
+  expenseDetailId: string;
   paymentTargetId: string;
   paymentAccountNo: string;
   paymentBank: string;
@@ -494,7 +497,7 @@ const accountTitleOptions = [
   "기타",
 ];
 const batchEvidenceTypeOptions = ["세금계산서", "계산서", "카드영수증", "현금영수증", "계좌이체확인증", "견적서", "계약서", "의결서", "기타"];
-const operatingExpenseDetailOptions = [
+const legacyOperatingExpenseDetailOptions = [
   "조합장 급여",
   "사무장 급여",
   "사무직원 급여",
@@ -1495,6 +1498,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     quickExpenseCategory: resolution.subject.includes("택시") ? "택시" : resolution.subject.includes("주차") ? "주차" : resolution.subject.includes("통행료") ? "통행료" : resolution.subject.includes("식대") ? "식대" : resolution.subject.includes("소모품") ? "소모품" : "기타",
     memo: resolution.memo,
     operationExpenseDetail: resolution.operationExpenseDetail,
+    expenseDetailId: resolution.expenseDetailId ?? "",
     paymentTargetId: getResolutionPaymentTargetId(resolution),
     paymentAccountNo: resolution.paymentAccountNo,
     paymentBank: resolution.paymentBank,
@@ -1564,6 +1568,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     quickExpenseCategory: "택시",
     expenseType: "운영비",
     operationExpenseDetail: "기타",
+    expenseDetailId: "",
     budgetPeriod: currentDate.slice(0, 7),
     budgetItem: "",
     budgetRecommendation: null,
@@ -2109,6 +2114,7 @@ export function ExpenseResolutionPage({
   initialCardTransactions = [],
   initialApprovalDocuments = [],
   initialBudgetProfiles = {},
+  initialExpenseDetails = [],
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
   initialEntryStart,
@@ -2135,6 +2141,7 @@ export function ExpenseResolutionPage({
   initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocument[];
   initialBudgetProfiles?: Record<string, BudgetProfile>;
+  initialExpenseDetails?: OperatingExpenseDetail[];
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
   initialEntryStart?: ExpenseEntryStart;
@@ -3106,6 +3113,7 @@ export function ExpenseResolutionPage({
       inputMethod: formState.inputMethod,
       expenseType: isBatch ? batchSummary.representativeExpenseType : formState.expenseType,
       operationExpenseDetail: formState.operationExpenseDetail,
+      expenseDetailId: formState.expenseDetailId || undefined,
       budgetItem: isBatch ? "프로젝트 일괄 예산" : formState.budgetItem,
       budgetOverReason: formState.budgetOverReason,
       vendorName: isBatch ? batchSummary.representativeVendorName : formState.vendorName || "거래처 미입력",
@@ -3790,6 +3798,7 @@ export function ExpenseResolutionPage({
           cardTransactionCandidates={initialCardTransactions}
           approvalDocuments={initialApprovalDocuments}
           directExpenseSettings={directExpenseSettings}
+          expenseDetails={initialExpenseDetails}
           settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
           isEditing={Boolean(editingResolutionId)}
           isEvidenceUploading={isEvidenceUploading}
@@ -3895,6 +3904,7 @@ function ExpenseResolutionCreateModal({
   cardTransactionCandidates,
   approvalDocuments,
   directExpenseSettings,
+  expenseDetails,
   batchImportError,
   batchImportFileName,
   batchImportResult,
@@ -3940,6 +3950,7 @@ function ExpenseResolutionCreateModal({
   cardTransactionCandidates: CorporateCardTransactionCandidate[];
   approvalDocuments: ApprovalDocument[];
   directExpenseSettings: ExpenseComplianceSettings;
+  expenseDetails: OperatingExpenseDetail[];
   batchImportError: string;
   batchImportFileName: string;
   batchImportResult: ExpenseResolutionImportResult | null;
@@ -3982,12 +3993,12 @@ function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
+  const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles),
     formState.budgetItem,
     ...formState.accountAllocations.map((allocation) => allocation.budgetItem),
   ].filter(Boolean)));
-  const batchBudgetItemOptions = budgetItemOptions;
   const isBatch = formState.resolutionType === "BATCH";
   const cardMatchCandidates = useMemo(() => findCorporateCardMatchCandidates({ amount: totalAmount, cardLastFour: formState.cardLastFour, expenseDate: formState.actualExpenseDate, transactions: cardTransactionCandidates }), [cardTransactionCandidates, formState.actualExpenseDate, formState.cardLastFour, totalAmount]);
   const displayedCardTransactions = useMemo(() => {
@@ -4623,12 +4634,12 @@ function ExpenseResolutionCreateModal({
                       <span>운영비 세부구분</span>
                       <select
                         className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
-                        onChange={(event) => onChange("operationExpenseDetail", event.target.value)}
+                        onChange={(event) => { const detail=expenseDetails.find((item)=>item.name===event.target.value); onChange("operationExpenseDetail", event.target.value); onChange("expenseDetailId",detail?.id??""); if(detail)onChange("budgetItem",detail.budgetItem); }}
                         value={formState.operationExpenseDetail}
                       >
                         {operatingExpenseDetailOptions.map((option) => (
                           <option key={option} value={option}>
-                            {option}
+                            {option}{expenseDetails.find((detail)=>detail.name===option)?.status==="POLICY_REVIEW"?" · 정책 확인 필요":""}
                           </option>
                         ))}
                       </select>
