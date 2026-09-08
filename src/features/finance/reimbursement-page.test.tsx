@@ -29,4 +29,14 @@ describe("reimbursement workspace",()=>{
   render(<ReimbursementPage workspace={w}/>);fireEvent.click(screen.getByRole("button",{name:"운영 기준·권한"}));
   expect(screen.getByRole("spinbutton",{name:"다음 달 제출 마감일"})).toHaveValue(null);
  });
+ it("allows the first request to auto-open its usage month when policy exists",()=>{
+  render(<ReimbursementPage workspace={{...w,periods:[],policy:{submission_day:5,completion_day:10,long_delay_days:60}}}/>);
+  expect(screen.getByText(/접수월은 신청과 함께 자동 개설돼/)).toBeInTheDocument();
+  expect(screen.getByRole("button",{name:"정산 신청"})).toBeEnabled();
+ });
+ it("blocks automatic period creation only when the operating policy is missing",()=>{
+  render(<ReimbursementPage workspace={{...w,periods:[],policy:null}}/>);
+  expect(screen.getByText("접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.")).toBeInTheDocument();
+  expect(screen.getByRole("button",{name:"정산 신청"})).toBeDisabled();
+ });
 });

@@ -16,6 +16,12 @@ const secondary="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm d
 const money=(n:number)=>Number(n).toLocaleString("ko-KR")+"원";
 const dateTime=(s:string|null)=>s ? new Date(s).toLocaleString("ko-KR",{timeZone:"Asia/Seoul"}) : "—";
 const permissionLabels={ADMIN:"관리자",APPROVE:"정산·지연 승인",SENIOR:"장기 지연·예산 초과 승인",CLOSE:"월 마감·과거 월 수정",PAY:"지급 연결"};
+function autoSubmissionDeadline(usedOn:string,submissionDay:number) {
+  const [year,month]=usedOn.split("-").map(Number);
+  const deadlineYear=month===12?year+1:year;
+  const deadlineMonth=month===12?1:month+1;
+  return `${deadlineYear}-${String(deadlineMonth).padStart(2,"0")}-${String(submissionDay).padStart(2,"0")}`;
+}
 
 function useOperation() {
   const router=useRouter(); const [message,setMessage]=useState(""); const [pending,start]=useTransition();
@@ -53,7 +59,10 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
   const [status,setStatus]=useState("ALL");
   const period=w.periods.find(p=>p.month===w.month);
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
-  const late=Boolean(usedPeriod&&(today>usedPeriod.submission_deadline||usedPeriod.status==="CLOSED"||Math.floor((Date.parse(today)-Date.parse(usedOn))/86400000)>usedPeriod.long_delay_days));
+  const submissionDeadline=usedPeriod?.submission_deadline ?? (w.policy?autoSubmissionDeadline(usedOn,w.policy.submission_day):null);
+  const longDelayDays=usedPeriod?.long_delay_days ?? w.policy?.long_delay_days;
+  const late=Boolean((submissionDeadline&&today>submissionDeadline)||usedPeriod?.status==="CLOSED"||(longDelayDays!==undefined&&Math.floor((Date.parse(today)-Date.parse(usedOn))/86400000)>longDelayDays));
+  const canAutoOpen=Boolean(usedPeriod||w.policy);
   const isAdmin=hasReimbursementPermission(w.member,"ADMIN"); const canClose=hasReimbursementPermission(w.member,"CLOSE");
   const names=Object.fromEntries(w.members.map(m=>[m.user_id,m.display_name]));
   const visible=w.requests.filter(r=>status==="ALL"||r.status===status);
@@ -82,8 +91,8 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
           {evidenceKind!=="RECEIPT"&&<label className="sm:col-span-2">영수증 미첨부 사유<textarea className={input} name="missing_receipt_reason" rows={3} required placeholder="예: 구매 후 영수증을 분실하여 카드 승인내역과 주문내역을 제출합니다."/></label>}
           <label className="sm:col-span-2">{evidenceKind==="RECEIPT"?"영수증 파일":"대체증빙 파일"}<input className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required/><span className="text-xs text-slate-600">결제 사실과 업무 사용내용을 확인할 수 있는 자료를 하나의 PDF 또는 이미지로 첨부해줘. 최대 3MB.</span></label>
           <label className="sm:col-span-2">지연 사유{late?" (필수)":" (지연 신청 시)"}<textarea className={input} name="delay_reason" rows={3} required={late}/></label>
-          <p className="text-sm text-slate-600 sm:col-span-2">{!usedPeriod?"해당 사용월이 아직 개설되지 않았어. 마감 담당자가 접수월을 먼저 개설해야 해.":late?"지연 신청이므로 예외 승인이나 장기 지연 검토가 필요해.":"신청일과 승인일은 실제 처리한 시점으로 남겨."}</p>
-          <button className={button} disabled={op.pending||!usedPeriod}>정산 신청</button>
+          <p className="text-sm text-slate-600 sm:col-span-2">{!usedPeriod&&!w.policy?"접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.":!usedPeriod&&late?`${usedOn.slice(0,7)} 접수월은 신청과 함께 자동 개설돼. 지연 사유를 입력하면 예외 승인 대상으로 접수해.`:!usedPeriod?`${usedOn.slice(0,7)} 접수월은 신청과 함께 자동 개설돼. 적용된 제출·보완 기한과 자동 개설 이력도 보존해.`:late?"지연 신청이므로 예외 승인이나 장기 지연 검토가 필요해.":"신청일과 승인일은 실제 처리한 시점으로 남겨."}</p>
+          <button className={button} disabled={op.pending||!canAutoOpen}>정산 신청</button>
         </form>
       </details>
       <section className={card}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">{w.month.slice(0,7)} 사용분 · {visible.length}건</h2><select aria-label="정산 상태" className="rounded-lg border p-2" value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">전체 상태</option>{Object.entries(reimbursementStatusLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
@@ -103,7 +112,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
     {tab==="budgets"&&<>
       <section className={card}><h2 className="mb-3 text-lg font-bold">월 예산 사용 현황</h2><p className="mb-4 text-sm text-slate-600">귀속이 확인된 간편지출·개인 정산·지출결의·수기 집행액을 함께 표시해. 가용액은 월 예산에서 사용액과 집행 예약을 뺀 금액이야. 심사 중 금액과 지급대기는 중복 차감하지 않아.</p><UnifiedBudgetTable budgets={w.budgets} entries={w.budgetEntries}/></section>
       {w.member.permissions.length>0&&<BudgetAllocationPanel workspace={w}/>}
-      {canClose&&<section className={card}><h2 className="text-lg font-bold">개인 경비 월별 정산 마감</h2><form className="mt-3 flex flex-wrap gap-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);command(String(data.get("command")),{month:w.month,reason:String(data.get("reason"))});}}><select className="rounded-lg border p-2" name="command">{!period?<option value="OPEN">접수월 개설</option>:period.status!=="CLOSED"?<><option value="SUPPLEMENT">보완 접수 전환</option><option value="CLOSE">월 마감·보고서 확정</option></>:<option value="">이미 마감된 월</option>}</select><input className={`${input} max-w-md`} aria-label="마감 처리 사유" name="reason" placeholder="처리 사유" required/><button className={button} disabled={op.pending||period?.status==="CLOSED"}>처리</button></form><p className="mt-3 text-sm text-slate-600">마감 후 신청은 예산 반영 승인 시 수정 보고서가 자동으로 추가돼. 기존 보고서는 보존돼.</p></section>}
+      {canClose&&<section className={card}><h2 className="text-lg font-bold">개인 경비 월별 정산 마감</h2><form className="mt-3 flex flex-wrap gap-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);command(String(data.get("command")),{month:w.month,reason:String(data.get("reason"))});}}><select className="rounded-lg border p-2" name="command">{!period?<option value="OPEN">접수월 수동 개설 (복구용)</option>:period.status!=="CLOSED"?<><option value="SUPPLEMENT">보완 접수 전환</option><option value="CLOSE">월 마감·보고서 확정</option></>:<option value="">이미 마감된 월</option>}</select><input className={`${input} max-w-md`} aria-label="마감 처리 사유" name="reason" placeholder="처리 사유" required/><button className={button} disabled={op.pending||period?.status==="CLOSED"}>처리</button></form><p className="mt-3 text-sm text-slate-600">첫 정산 신청 시 접수월이 자동 개설돼. 수동 개설은 신청 전에 월을 준비하거나 자동 처리를 복구할 때만 사용해. 마감 후 신청은 예산 반영 승인 시 수정 보고서가 자동으로 추가되고 기존 보고서는 보존돼.</p></section>}
       <section className={`${card} space-y-3`}><h2 className="text-lg font-bold">마감 보고서 원본·수정본</h2>{w.reports.map((report,i)=><Report key={report.revision} report={report} previous={w.reports[i+1]}/>)}{!w.reports.length&&<p className="text-sm text-slate-600">확정된 마감 보고서가 없어.</p>}</section>
       <section className={card}><h2 className="mb-3 text-lg font-bold">최근 처리 이력</h2><ul className="space-y-3 text-sm">{w.audits.map(a=><li key={a.id} className="border-b pb-2">{dateTime(a.created_at)} · {names[a.actor_id]??"등록 사용자"} · {reimbursementCommandLabels[a.action]??a.action}<p className="text-slate-600">{a.reason}</p></li>)}</ul></section>
     </>}
