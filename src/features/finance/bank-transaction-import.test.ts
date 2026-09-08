@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
 import {
+  inferTransactionKind,
   detectBankTransactionColumns,
   parseBankTransactionRows,
   recommendAccountSubjectForTransaction,
@@ -71,4 +72,12 @@ describe("bank transaction import", () => {
       recommendedAccountSubjectName: "통신비",
     });
   });
+});
+
+describe("unknown historical bank direction", () => {
+ it.each([[null,100,0,"입금"],[null,0,100,"출금"],[null,0,0,null],[null,100,100,null],["입금",0,100,null],["출금",0,0,null],[null,-100,0,null],[null,NaN,0,null]])("resolves %s and %s/%s only from unambiguous amounts", (kind,deposit,withdrawal,expected) => {expect(inferTransactionKind(kind as string|null,deposit as number,withdrawal as number)).toBe(expected);});
+ it("keeps ambiguous uploaded facts and avoids automatic classification", () => {
+  const [row] = parseBankTransactionRows({accountSubjects:registeredAccountSubjects,headers:["거래일자","거래종류","입금","출금","목"],rows:[["2026/09/08","출금","100","100","세무비"]],selectedBankAccountId:"bank",selectedBankAccountName:"계좌"});
+  expect(row).toMatchObject({transactionKind:null,depositAmount:100,withdrawalAmount:100,uploadedAccountTitle:"세무비",matchStatus:"미분류",recommendedAccountSubjectId:null});expect(row.raw["거래종류"]).toBe("출금");
+ });
 });

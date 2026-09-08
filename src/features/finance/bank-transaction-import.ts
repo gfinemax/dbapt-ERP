@@ -27,7 +27,7 @@ export type ParsedBankTransactionRow = {
   recommendedAccountSubjectId: string | null;
   recommendedAccountSubjectName: string | null;
   transactedAt: string;
-  transactionKind: "입금" | "출금";
+  transactionKind: "입금" | "출금" | null;
   uploadedAccountTitle: string;
   uploadedMajorCategory: string;
   withdrawalAmount: number;
@@ -45,7 +45,7 @@ type RecommendationInput = {
   accountSubjects: RegisteredAccountSubject[];
   branchName: string;
   description: string;
-  transactionKind: "입금" | "출금";
+  transactionKind: "입금" | "출금" | null;
   uploadedAccountTitle?: string;
   uploadedMajorCategory?: string;
 };
@@ -142,6 +142,7 @@ export function parseBankTransactionRows(input: ParseBankTransactionRowsInput): 
 }
 
 export function recommendAccountSubjectForTransaction(input: RecommendationInput): RecommendationResult {
+  if (!input.transactionKind) return { matchStatus: "미분류", recommendedAccountSubjectId: null, recommendedAccountSubjectName: null };
   if (input.uploadedAccountTitle?.trim()) {
     const uploadedMatch = findSubject(input.accountSubjects, input.uploadedAccountTitle);
 
@@ -203,19 +204,15 @@ function parseAmount(value: string) {
   const cleaned = value.replace(/[^\d.-]/g, "");
   const parsed = Number(cleaned);
 
-  return Number.isFinite(parsed) ? Math.abs(parsed) : 0;
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
-function inferTransactionKind(value: string, depositAmount: number, withdrawalAmount: number): "입금" | "출금" {
-  if (depositAmount > 0 && withdrawalAmount === 0) {
-    return "입금";
-  }
-
-  if (withdrawalAmount > 0) {
-    return "출금";
-  }
-
-  return value.includes("입") ? "입금" : "출금";
+export function inferTransactionKind(value: string | null, depositAmount: number, withdrawalAmount: number): "입금" | "출금" | null {
+  if (!Number.isFinite(depositAmount) || !Number.isFinite(withdrawalAmount)) return null;
+  const inferred = depositAmount > 0 && withdrawalAmount === 0 ? "입금" : withdrawalAmount > 0 && depositAmount === 0 ? "출금" : null;
+  const explicit = value?.trim();
+  if ((explicit === "입금" || explicit === "출금") && explicit !== inferred) return null;
+  return inferred;
 }
 
 function combineDateTime(dateValue: string, timeValue: string, fallbackIndex: number) {

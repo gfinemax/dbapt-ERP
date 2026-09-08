@@ -262,3 +262,9 @@ describe("BusinessPartnerPage", () => {
     expect(screen.getByText("사무실 임차료 등")).toBeInTheDocument();
   });
 });
+
+it("shows unresolved account metadata without assigning historical classifications", () => {
+ render(<BusinessPartnerPage initialSection="account-subjects" initialAccountSubjects={[{id:"old",code:"OLD-1",name:"기존 미분류 계정",normalBalance:null,source:null,subjectType:null,aliases:[],businessCategory:"미분류",description:"",isActive:true,parentId:null,sortOrder:0}]} />);
+ expect(screen.getAllByText("미확정")).toHaveLength(3);
+ expect(screen.getByText("기존 미분류 계정")).toBeInTheDocument();
+});

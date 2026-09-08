@@ -21,7 +21,7 @@ const statusClasses: Record<string, string> = {
 };
 
 type BankTransactionUploadPageProps = {
-  createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<Array<{ id: string }>>;
+  createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<Array<{ id: string; isWithdrawal?: boolean }>>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
 };
@@ -122,7 +122,7 @@ export function BankTransactionUploadPage({
     try {
       if (createBankTransactions) {
         const saved = await createBankTransactions(previewRows);
-        setSavedTransactionIds(saved.map((transaction) => transaction.id));
+        setSavedTransactionIds(saved.filter((transaction) => transaction.isWithdrawal === true).map((transaction) => transaction.id));
       }
 
       setSaveMessage(`${previewRows.length}건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.`);
@@ -251,7 +251,7 @@ export function BankTransactionUploadPage({
                     <tr className="bg-white/70" key={`${row.transactedAt}-${index}`}>
                       <td className="px-4 py-4 text-[var(--color-stone)]">{formatDisplayDate(row.transactedAt)}</td>
                       <td className="px-4 py-4 font-semibold">{row.bankAccountName}</td>
-                      <td className="px-4 py-4">{row.transactionKind}</td>
+                      <td className="px-4 py-4">{row.transactionKind ?? "미확정"}</td>
                       <td className="px-4 py-4 text-[var(--color-stone)]">{row.description}</td>
                       <td className="px-4 py-4 text-right">{row.depositAmount ? formatKrw(row.depositAmount) : "-"}</td>
                       <td className="px-4 py-4 text-right">{row.withdrawalAmount ? formatKrw(row.withdrawalAmount) : "-"}</td>

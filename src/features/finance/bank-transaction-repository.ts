@@ -1,4 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { inferTransactionKind } from "./bank-transaction-import";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 export const bankTransactionRepositorySchema = "finance";
@@ -44,7 +45,7 @@ export function mapBankTransactionToInsert(row: ParsedBankTransactionRow): Supab
     recommended_account_subject_id: row.recommendedAccountSubjectId,
     recommended_account_subject_name: row.recommendedAccountSubjectName,
     transacted_at: row.transactedAt,
-    transaction_kind: row.transactionKind,
+    transaction_kind: row.transactionKind === null ? null : inferTransactionKind(row.transactionKind, row.depositAmount, row.withdrawalAmount),
     uploaded_account_title: row.uploadedAccountTitle || null,
     uploaded_major_category: row.uploadedMajorCategory || null,
     withdrawal_amount: row.withdrawalAmount,

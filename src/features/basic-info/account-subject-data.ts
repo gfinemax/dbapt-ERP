@@ -24,14 +24,14 @@ export type RegisteredAccountSubject = {
   id: string;
   isActive: boolean;
   name: string;
-  normalBalance: AccountSubjectNormalBalance;
+  normalBalance: AccountSubjectNormalBalance | null;
   parentId: string | null;
   sortOrder: number;
-  source: AccountSubjectSource;
-  subjectType: AccountSubjectType;
+  source: AccountSubjectSource | null;
+  subjectType: AccountSubjectType | null;
 };
 
-export type AccountSubjectRecommendation = Omit<RegisteredAccountSubject, "id" | "isActive" | "parentId">;
+export type AccountSubjectRecommendation = Omit<RegisteredAccountSubject, "id" | "isActive" | "parentId" | "normalBalance" | "source" | "subjectType"> & { normalBalance: AccountSubjectNormalBalance; source: AccountSubjectSource; subjectType: AccountSubjectType };
 
 export const registeredAccountSubjects: RegisteredAccountSubject[] = [
   {

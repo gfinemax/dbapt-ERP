@@ -1,5 +1,7 @@
 "use server";
 
+import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
+
 import { assertExpenseRelatedRow, requireExpenseActor, requireExpenseRecord, requireExpenseFile, requireExpenseOcrJob, requireExpenseFact } from "@/features/finance/expense-authorization";
 import { assertLegacyVoucherEditable } from "@/features/finance/accounting-workspace-repository";
 
@@ -382,8 +384,8 @@ export async function uploadExpenseFactSupportingFileAction(formData: FormData) 
 export async function linkBankTransactionAction(input: { bankTransactionId: string; resolutionId: string; actorLabel: string }) {
   const { actor, resolution, binding } = await requireExpenseRecord(input.resolutionId, true);
   await assertExpenseRelatedRow("bank_transactions", input.bankTransactionId, actor);
-  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
-  if (error || !transaction || Number(transaction.withdrawal_amount) <= 0) throw new Error("연결할 통장 출금거래를 찾을 수 없습니다.");
+  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,deposit_amount,transaction_kind").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
+  if (error || !transaction || inferTransactionKind(transaction.transaction_kind, Number(transaction.deposit_amount), Number(transaction.withdrawal_amount)) !== "출금") throw new Error("연결할 통장 출금거래를 찾을 수 없습니다. 입출금 구분과 금액을 확인해줘.");
   const actualExpenseDate = new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
   await upsertExpenseResolutionInSupabase({ ...resolution, authorization: binding, actualExpenseDate, bankTransactionId: input.bankTransactionId, expenseKind: "BANK_POST_APPROVAL", isPostApproval: true, approvalStatus: "작성중", currentApprover: undefined, approvedAt: undefined, approvalLine: resolution.approvalLine.map((step) => ({ ...step, status: "대기", processedAt: undefined })) }, resolution, randomUUID());
   revalidatePath("/finance/expense-resolutions");

@@ -105,3 +105,9 @@ describe("account subject repository mappers", () => {
     expect(consoleError).not.toHaveBeenCalled();
   });
 });
+
+it("preserves unknown historical classifications without inventing defaults", () => {
+ const row = mapAccountSubjectFromRow({id:"legacy",name:"기존 항목",code:"LEG-1",is_active:true,created_at:"2026-01-01",aliases:null,business_category:null,description:null,normal_balance:null,parent_id:null,sort_order:null,source:null,subject_type:null});
+ expect(row).toMatchObject({normalBalance:null,source:null,subjectType:null});
+ expect(() => mapAccountSubjectToInsert(row)).toThrow("유형, 차대변과 출처");
+});

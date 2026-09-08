@@ -37,15 +37,20 @@ export function mapAccountSubjectFromRow(row: SupabaseAccountSubjectRow): Regist
     id: row.id,
     isActive: row.is_active,
     name: row.name,
-    normalBalance: row.normal_balance ?? "차변",
+    normalBalance: row.normal_balance,
     parentId: row.parent_id,
     sortOrder: row.sort_order ?? 0,
-    source: row.source ?? "직접등록",
-    subjectType: row.subject_type ?? "지출",
+    source: row.source,
+    subjectType: row.subject_type,
   };
 }
 
 export function mapAccountSubjectToInsert(subject: RegisteredAccountSubject): SupabaseAccountSubjectInsert {
+  if (!subject.subjectType || !["수입", "지출", "자산", "부채", "정산"].includes(subject.subjectType)
+    || !subject.normalBalance || !["차변", "대변"].includes(subject.normalBalance)
+    || !subject.source || !["운영비 예산안", "수지분석표", "직접등록"].includes(subject.source)) {
+    throw new Error("계정과목의 유형, 차대변과 출처를 확인한 뒤 등록해줘.");
+  }
   return {
     aliases: subject.aliases,
     business_category: subject.businessCategory,

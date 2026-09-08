@@ -65,7 +65,7 @@ describe("BankTransactionUploadPage", () => {
   });
 
   it("sends preview rows to the save action without creating vouchers", async () => {
-    const createBankTransactions = vi.fn().mockResolvedValue([{ id: "bank-transaction-1" }]);
+    const createBankTransactions = vi.fn().mockResolvedValue([{ id: "bank-transaction-1", isWithdrawal: true }]);
     render(<BankTransactionUploadPage createBankTransactions={createBankTransactions} initialBankAccounts={testBankAccounts} />);
 
     fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
@@ -88,4 +88,15 @@ describe("BankTransactionUploadPage", () => {
     expect(await screen.findByText("1건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "1번 출금거래 사후결의 초안 작성" })).toHaveAttribute("href", "/finance/exp?bankTransactionId=bank-transaction-1");
   });
+});
+
+it("shows ambiguous bank amounts as unresolved and never offers an expense link", async () => {
+ const save = vi.fn().mockResolvedValue([{id:"ambiguous",isWithdrawal:false}]);
+ render(<BankTransactionUploadPage initialBankAccounts={testBankAccounts} createBankTransactions={save} />);
+ fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"),{target:{value:"거래일자\t입금\t출금\t적요\n2026/09/08\t100\t100\t모호거래"}});
+ fireEvent.click(screen.getByRole("button",{name:"미리보기 생성"}));
+ expect(await screen.findByText("미확정")).toBeInTheDocument();
+ fireEvent.click(screen.getByRole("button",{name:"거래내역 저장"}));
+ expect(await screen.findByText(/1건 저장 준비가 완료/)).toBeInTheDocument();
+ expect(screen.queryByRole("link",{name:/사후결의 초안 작성/})).not.toBeInTheDocument();
 });

@@ -468,6 +468,7 @@ function AccountSubjectSection({
                 <th className="px-4 py-3 text-center">코드</th>
                 <th className="px-4 py-3 text-center">계정과목</th>
                 <th className="px-4 py-3 text-center">수입/지출</th>
+                <th className="px-4 py-3 text-center">차대변</th>
                 <th className="px-4 py-3 text-center">업무분류</th>
                 <th className="px-4 py-3 text-center">출처</th>
                 <th className="px-4 py-3 text-center">별칭</th>
@@ -481,11 +482,12 @@ function AccountSubjectSection({
                   <td className="px-4 py-4 font-semibold">{subject.code}</td>
                   <td className="px-4 py-4 font-semibold">{subject.name}</td>
                   <td className="px-4 py-4">
-                    <Badge value={subject.subjectType} />
+                    <Badge value={subject.subjectType ?? "미확정"} />
                   </td>
+                  <td className="px-4 py-4">{subject.normalBalance ?? "미확정"}</td>
                   <td className="px-4 py-4">{subject.businessCategory}</td>
                   <td className="px-4 py-4">
-                    <Badge value={subject.source} />
+                    <Badge value={subject.source ?? "미확정"} />
                   </td>
                   <td className="px-4 py-4 text-[var(--color-stone)]">{subject.aliases.join(", ") || "-"}</td>
                   <td className="px-4 py-4 text-[var(--color-stone)]">{subject.description}</td>
