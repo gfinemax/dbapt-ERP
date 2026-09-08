@@ -55,8 +55,10 @@ describe("ApprovalResubmitForm", () => {
     resubmitApprovalAction.mockResolvedValueOnce({ error: "기안자만 수정 후 재상신할 수 있어." });
     render(<ApprovalResubmitForm document={rejectedDocument} rejectionReason="품목 보완" />);
 
+    fireEvent.change(screen.getByLabelText("기안 내용"), {target:{value:"오류 후에도 유지할 내용"}});
     fireEvent.click(screen.getByRole("button", { name: "수정 내용으로 재상신" }));
 
+    expect(screen.getByLabelText("기안 내용")).toHaveValue("오류 후에도 유지할 내용");
     expect(await screen.findByRole("alert")).toHaveTextContent("기안자만 수정 후 재상신할 수 있어.");
   });
 });

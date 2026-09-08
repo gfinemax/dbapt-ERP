@@ -42,6 +42,7 @@ export type ApprovalStep = {
 };
 
 export type ApprovalDocument = {
+  authorization?: import("./approval-authorization").ApprovalAuthorization | null;
   amount: number;
   approvalStatus: ApprovalStatus;
   approvalSteps: ApprovalStep[];

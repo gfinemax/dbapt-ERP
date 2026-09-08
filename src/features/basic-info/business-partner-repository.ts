@@ -79,10 +79,12 @@ export function mapOcrPartnerToInsert(input: BusinessPartnerOcrInput) {
   };
 }
 
-export async function listBusinessPartnersFromSupabase(): Promise<BusinessPartner[] | null> {
+export async function listBusinessPartnersFromSupabase(organizationId?: string): Promise<BusinessPartner[] | null> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
-  const { data, error } = await supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).is("deleted_at", null).order("created_at", { ascending: true });
+  let query = supabase.schema(businessPartnerRepositorySchema).from("business_partners").select(partnerSelect).is("deleted_at", null).order("created_at", { ascending: true });
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query;
   if (error) return null;
   return (data as SupabaseBusinessPartnerRow[]).map(mapBusinessPartnerFromRow);
 }

@@ -98,3 +98,20 @@
 재현 보조 파일은 `.tmp-repos/finance-e2e-local/managed-fixture.test.tsx`, `enrich-managed-local.mjs`, `seed-auth-qa.mjs`, `check-auth-draft.mjs`, `check-auth-bind.mjs`, `auth-preservation.mjs`, `check-auth-final.mjs`에 있다. 모두 격리 fixture 전용이며 일부는 순서와 보관된 이전 값을 전제로 한다. 인증값은 출력하거나 커밋하지 않는다.
 
 최종 승인 후 새로고침 캡처: `C:/Users/finemax/.agent-browser/tmp/screenshots/screenshot-1788842709120.png`.
+
+## 기안 Auth UUID 승인 후속 브라우저 검증
+
+`20260908050604_approval_document_authorization.sql`과 SQL 담당의 최종 document_command / finance_task_sources 정의를 기존 격리 DB에 적용했다. 운영 DB에는 적용하지 않았다.
+
+- migration 적용 전에 가짜 과거 승인완료 일반기안 1건·승인 단계 1건·실제 PDF 첨부 1건을 생성하고 전체 레코드와 파일 원본을 보관했다. migration 후 및 전체 QA 종료 후 문서·단계·첨부 레코드가 모두 동일하고 다운로드 PDF 바이트도 일치했다. 과거 기안에는 작성자/결재 UUID가 비어 있는 버전 stub만 생겼고, 과거 이름이나 승인 이력은 바뀌지 않았다.
+- 가짜 작성자·결재자·동명이인 계정은 Auth 사용자와 업무 멤버만 있고 core.user_profiles는 없다. 실제 작성자 로그인으로 일반기안 제목·내용·부서를 입력하고 초안 저장→상세 이동→새로고침했다. drafter_id는 null이고 새 binding의 drafter_user_id는 실제 Auth UUID였다.
+- 관리자 화면 `/approval/authorizations`에서 새 기안 선택→3개 단계의 결재 계정 UUID 직접 선택→연결 내용 확인→저장을 진행했다. BIND 전후 문서와 기존 결재 단계 행 전체가 같았다. 작성자는 PAY를 포함해 선택 가능하지만 결재자 목록은 ADMIN/APPROVE 계정만 제공했다.
+- 실제 작성자가 상세에서 결재 요청을 실행했다. 같은 표시 이름 ‘LOCAL 동명이인’을 쓰는 미연결 Auth 계정은 승인/반려 버튼 0개, 연결된 Auth 계정은 현재 단계 결재 버튼이 표시됐다.
+- 지정 결재자가 의견을 입력하고 반려했다. 작성자는 반려 상태에서 본문을 실제로 보완하고 재상신했다. 같은 지정 계정으로 1→2→3차 승인을 실행한 뒤 새로고침했고 APPROVED와 단계 3건의 APPROVED 상태가 유지됐다.
+- DB 감사 auth_actor_id: CREATE 작성자 1, BIND 관리자 1, SUBMIT 작성자 1, REJECT 지정 결재자 1, RESUBMIT 작성자 1, APPROVE 지정 결재자 3, 동명이인 0건. BIND/반려/승인 감사의 before/after에 binding과 steps snapshot이 있었다. 작성자가 변경한 본문은 재상신 이후에도 유지됐다.
+- 금액 없는 일반기안으로 검증했다. 금액·예약액 0원, 신규 지급/전표 연결 없음, BUDGET_RESERVED로 오표시하지 않음을 확인했다. 계약·예산 있는 기안의 모든 브라우저 경로를 통과한 결과로 확대하지 않는다.
+- 최초 CREATE 시 필수 부서가 고급 설정에 숨겨져 서버 오류가 발생했으나 제목/내용은 유지됐다. UI 담당이 부서를 기본 화면에 표시하고 공유 submit 처리를 최종 수정한 후, 새 일반기안 1건을 추가 생성해 기본 부서 입력→저장→상세 redirect→새로고침→동일 초안 1건을 확인했다. 최종 구현에서 고급 설정의 모든 오류 후 입력 보존 조합은 별도 자동화 테스트 범위이며 이번 브라우저에서 전부 재검증하지 않았다.
+
+재현 보조 파일: `.tmp-repos/finance-e2e-local/seed-approval-history.mjs`, `check-approval-history.mjs`, `check-approval-draft.mjs`, `check-approval-bind.mjs`, `check-approval-final.mjs`, `check-approval-audit-snapshots.mjs`. 생성 스크립트는 일회성 격리 fixture 전용이고, 인증정보는 ignored private 파일에서만 읽는다.
+
+최종 승인 후 재조회 캡처: `C:/Users/finemax/.agent-browser/tmp/screenshots/screenshot-1788845352127.png`.

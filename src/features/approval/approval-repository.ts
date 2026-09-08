@@ -1,3 +1,4 @@
+import { requireApprovalActor, requireApprovalRecord, commitApprovalCommand, missingApprovalBinding, type ApprovalAuthorization, type ApprovalCommandContext } from "./approval-authorization";
 import { listApprovalBudgets } from "./approval-settings-repository";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import {
@@ -190,7 +191,9 @@ function hydrate(
   };
 }
 
-export async function listApprovalDocuments(organizationId?: string): Promise<ApprovalDocument[]> {
+export async function listApprovalDocuments(organizationId?: string, documentId?: string): Promise<ApprovalDocument[]> {
+  const actor = await requireApprovalActor();
+  if (organizationId && organizationId !== actor.organization_id) throw new Error("다른 조합의 기안을 조회할 수 없습니다.");
   const client = requireClient();
   let query = client
     .schema("approval")
@@ -198,11 +201,16 @@ export async function listApprovalDocuments(organizationId?: string): Promise<Ap
     .select("*")
     .is("deleted_at", null)
     .order("updated_at", { ascending: false });
-  if (organizationId) query = query.eq("organization_id", organizationId);
+  query = query.eq("organization_id", actor.organization_id);
+  if (documentId) query = query.eq("id", documentId);
   const { data, error } = await query;
   if (error) throw new Error(`기안 목록을 불러오지 못했어: ${error.message}`);
   const rows = (data ?? []) as DocumentRow[];
   if (!rows.length) return [];
+  const { data: bindingRows, error: bindingError } = await client.schema("approval").from("document_authorization_bindings")
+    .select("document_id,drafter_user_id,steps,version").eq("organization_id", actor.organization_id).in("document_id", rows.map(row => row.id));
+  if (bindingError && !missingApprovalBinding(bindingError)) throw new Error("기안 계정 연결을 불러오지 못했습니다.");
+  const bindings = new Map(((bindingRows ?? []) as (ApprovalAuthorization & { document_id: string })[]).map(b => [b.document_id, b]));
   const { data: stepData, error: stepError } = await client
     .schema("approval")
     .from("approval_steps")
@@ -260,27 +268,32 @@ export async function listApprovalDocuments(organizationId?: string): Promise<Ap
       );
     payments = (paymentResult.data ?? []) as ContractPaymentRow[];
   }
-  return rows.map((row) =>
-    hydrate(
+  return rows.map((row) => ({
+    ...hydrate(
       row,
       (stepData ?? []) as StepRow[],
       (auditResult.data ?? []) as AuditRow[],
       (attachmentResult.data ?? []) as AttachmentRow[],
       contracts,
       payments,
-    ),
-  );
+    ), authorization: bindings.get(row.id) ?? null,
+  }));
 }
 
 export async function getApprovalDocument(id: string) {
-  const documents = await listApprovalDocuments();
+  const documents = await listApprovalDocuments(undefined, id);
   return documents.find((document) => document.id === id) ?? null;
 }
 
 export async function createApprovalDocument(
   input: ApprovalDraftInput,
   submit = false,
+  operation?: { id: string; key: string },
 ) {
+  const actor = await requireApprovalActor();
+  if (submit) throw new Error("초안을 저장한 뒤 실제 결재 계정을 연결하고 상신해주세요.");
+  if (!operation?.id || !operation.key) throw new Error("기안 생성 처리키가 필요합니다.");
+  input = { ...input, drafterLabel: actor.display_name };
   const client = requireClient();
   let effectiveInput = input;
   if (input.approvalLineRuleId) {
@@ -289,6 +302,7 @@ export async function createApprovalDocument(
       .from("approval_line_rules")
       .select("document_type,min_amount,max_amount,steps")
       .eq("id", input.approvalLineRuleId)
+      .or(`organization_id.eq.${actor.organization_id},organization_id.is.null`)
       .eq("is_active", true)
       .maybeSingle();
     if (ruleError || !rule)
@@ -314,8 +328,8 @@ export async function createApprovalDocument(
   )
     throw new Error("분할지급 일정 합계와 계약금액이 일치해야 해.");
   const [settings, rules] = await Promise.all([
-    getApprovalSettings(),
-    listMeetingRules(),
+    getApprovalSettings(actor.organization_id),
+    listMeetingRules(actor.organization_id),
   ]);
   const searchable = `${effectiveInput.title} ${effectiveInput.purpose} ${effectiveInput.body}`;
   const matchedRule = rules.find(
@@ -336,47 +350,13 @@ export async function createApprovalDocument(
             settings.meetingThresholdAmount,
           ),
   };
-  const { data, error } = await client
-    .schema("approval")
-    .rpc("create_document", {
-      p_document: document,
-      p_lines: effectiveInput.lines ?? [],
-      p_steps: effectiveInput.approvalSteps,
-      p_submit: submit,
-    });
-  if (error) throw new Error(`기안을 저장하지 못했어: ${error.message}`);
-  if (recommendedBody) {
-    const { error: recommendationError } = await client
-      .schema("approval")
-      .from("documents")
-      .update({
-        recommended_meeting_body: recommendedBody,
-        recommendation_reason:
-          matchedRule?.reason ??
-          `${settings.meetingThresholdAmount.toLocaleString("ko-KR")}원 이상 금액 기준`,
-        regulation_reference: matchedRule?.regulation_reference || null,
-      })
-      .eq("id", data);
-    if (recommendationError)
-      throw new Error(
-        `의결기관 추천을 저장하지 못했어: ${recommendationError.message}`,
-      );
-  }
-  if (effectiveInput.documentType === "CONTRACT") {
-    const { error: contractError } = await client
-      .schema("approval")
-      .from("documents")
-      .update({
-        contract_end_date: effectiveInput.contractEndDate || null,
-        contract_payment_terms: effectiveInput.contractPaymentTerms || null,
-        contract_start_date: effectiveInput.contractStartDate || null,
-        payment_schedule: effectiveInput.paymentSchedule ?? [],
-      })
-      .eq("id", data);
-    if (contractError)
-      throw new Error(`계약조건을 저장하지 못했어: ${contractError.message}`);
-  }
-  return data as string;
+  const saved = await commitApprovalCommand("CREATE", operation.id, {
+    document: { ...document, recommendedMeetingBody: recommendedBody,
+      recommendationReason: recommendedBody ? matchedRule?.reason ?? `${settings.meetingThresholdAmount.toLocaleString("ko-KR")}원 이상 금액 기준` : undefined,
+      regulationReference: matchedRule?.regulation_reference || undefined },
+    lines: effectiveInput.lines ?? [], steps: effectiveInput.approvalSteps,
+  }, { expectedVersion: 0, key: operation.key });
+  return saved.id;
 }
 
 export async function uploadApprovalAttachment(
@@ -384,6 +364,8 @@ export async function uploadApprovalAttachment(
   file: File,
   actorLabel: string,
 ) {
+  const { actor } = await requireApprovalRecord(documentId, true);
+  actorLabel = actor.display_name;
   if (!file.size) return;
   if (file.size > 10 * 1024 * 1024)
     throw new Error("첨부파일은 10MB 이하여야 해.");
@@ -417,6 +399,7 @@ export async function uploadApprovalAttachment(
     .insert({
       action_type: "ATTACHMENT_ADDED",
       actor_label: actorLabel,
+      auth_actor_id: actor.user_id,
       after_data: { fileName: file.name, fileSize: file.size },
       document_id: documentId,
     });
@@ -425,14 +408,17 @@ export async function uploadApprovalAttachment(
 export async function createApprovalAttachmentDownloadUrl(
   attachmentId: string,
 ) {
+  await requireApprovalActor();
   const client = requireClient();
   const { data: attachment, error } = await client
     .schema("approval")
     .from("attachments")
-    .select("storage_bucket,storage_path")
+    .select("document_id,storage_bucket,storage_path")
     .eq("id", attachmentId)
     .maybeSingle();
   if (error || !attachment) throw new Error("첨부파일을 찾지 못했어.");
+  await requireApprovalRecord(attachment.document_id);
+  if (attachment.storage_bucket !== "approval-attachments") throw new Error("기안 첨부 저장소를 확인해주세요.");
   const { data, error: signedUrlError } = await client.storage
     .from(attachment.storage_bucket)
     .createSignedUrl(attachment.storage_path, 60);
@@ -441,41 +427,23 @@ export async function createApprovalAttachmentDownloadUrl(
   return data.signedUrl;
 }
 
-export async function decideApprovalDocument(
-  id: string,
-  actorLabel: string,
-  decision: "APPROVE" | "REJECT",
-  comment?: string,
-) {
-  const document = await getApprovalDocument(id);
-  if (
-    !document ||
-    !["SUBMITTED", "IN_REVIEW"].includes(document.approvalStatus)
-  )
-    throw new Error("결재 가능한 문서가 아니야.");
-  const current = document.approvalSteps.find(
-    (step) => step.status === "PENDING",
-  );
-  if (!current || current.approverLabel !== actorLabel)
-    throw new Error("현재 결재자만 처리할 수 있어.");
-  if (decision === "REJECT" && !comment?.trim())
-    throw new Error("반려 사유를 입력해줘.");
-  const client = requireClient();
-  const { error } = await client
-    .schema("approval")
-    .rpc("decide_document", {
-      p_actor_label: actorLabel,
-      p_comment: comment || null,
-      p_decision: decision,
-      p_document_id: id,
-    });
-  if (error) throw new Error(`결재 상태를 저장하지 못했어: ${error.message}`);
+export async function decideApprovalDocument(id: string, actorLabel: string, decision: "APPROVE" | "REJECT", comment: string | undefined, context: ApprovalCommandContext) {
+  void actorLabel;
+  if (!["APPROVE", "REJECT"].includes(decision)) throw new Error("지원하지 않는 결재 명령입니다.");
+  if (decision === "REJECT" && !comment?.trim()) throw new Error("반려 사유를 입력해주세요.");
+  await commitApprovalCommand(decision, id, { comment: comment || null }, context);
+}
+export async function submitApprovalDocument(id: string, context: ApprovalCommandContext) {
+  await commitApprovalCommand("SUBMIT", id, {}, context);
 }
 
 export async function createExpenseDraftFromApproval(
   id: string,
   actorLabel: string,
 ) {
+  const actor = await requireApprovalActor("ADMIN");
+  await requireApprovalRecord(id);
+  actorLabel = actor.display_name;
   const document = await getApprovalDocument(id);
   if (!document) throw new Error("기안 문서를 찾지 못했어.");
   const today = new Date().toLocaleDateString("en-CA", {
@@ -534,6 +502,9 @@ export async function createMeetingAgenda(
   actorLabel: string,
   meetingBody: "BOARD" | "DELEGATES" | "GENERAL_ASSEMBLY",
 ) {
+  const actor = await requireApprovalActor("ADMIN");
+  await requireApprovalRecord(id);
+  actorLabel = actor.display_name;
   const { error } = await requireClient()
     .schema("approval")
     .rpc("create_meeting_agenda", {
@@ -553,6 +524,9 @@ export async function decideMeetingAgenda(input: {
   result: "APPROVED" | "REJECTED" | "DEFERRED";
   round: string;
 }) {
+  const actor = await requireApprovalActor("ADMIN");
+  await requireApprovalRecord(input.documentId);
+  input = { ...input, actorLabel: actor.display_name };
   const { error } = await requireClient()
     .schema("approval")
     .rpc("decide_meeting_agenda", {
@@ -572,6 +546,9 @@ export async function createContractFromApproval(
   actorLabel: string,
   paymentTerms: string,
 ) {
+  const actor = await requireApprovalActor("ADMIN");
+  await requireApprovalRecord(id);
+  actorLabel = actor.display_name;
   const { error } = await requireClient()
     .schema("approval")
     .rpc("create_contract", {
@@ -587,6 +564,9 @@ export async function createContractPaymentExpense(
   paymentId: string,
   actorLabel: string,
 ) {
+  const actor = await requireApprovalActor("ADMIN");
+  await requireApprovalRecord(documentId);
+  actorLabel = actor.display_name;
   const document = await getApprovalDocument(documentId);
   const payment = document?.contractPayments?.find(
     (item) => item.id === paymentId,
@@ -634,79 +614,23 @@ export async function createContractPaymentExpense(
   return data as string;
 }
 
-export async function updateApprovalDocument(
-  id: string,
-  actorLabel: string,
-  changes: {
-    amount?: number;
-    budgetItem?: string;
-    counterpartyName?: string;
-    projectName?: string;
-    title?: string;
-  },
-) {
-  const { error } = await requireClient()
-    .schema("approval")
-    .rpc("update_document", {
-      p_actor_label: actorLabel,
-      p_changes: changes,
-      p_document_id: id,
-    });
-  if (error) throw new Error(`기안을 수정하지 못했어: ${error.message}`);
+export async function updateApprovalDocument(id: string, actorLabel: string, changes: {
+  amount?: number; budgetItem?: string; counterpartyName?: string; projectName?: string; title?: string;
+}, context: ApprovalCommandContext) {
+  void actorLabel;
+  await commitApprovalCommand("UPDATE", id, { changes }, context);
 }
-
-export async function resubmitApprovalDocument(
-  id: string,
-  actorLabel: string,
-  changes: {
-    amount: number;
-    body: string;
-    budgetItem: string;
-    counterpartyName: string;
-    projectName: string;
-    purpose: string;
-    title: string;
-  },
-) {
-  const document = await getApprovalDocument(id);
-  if (!document || !["REJECTED", "REVISION_REQUESTED"].includes(document.approvalStatus))
-    throw new Error("반려 또는 보완요청 문서만 재상신할 수 있어.");
-  if (document.drafterLabel.trim() !== actorLabel.trim())
-    throw new Error("기안자만 수정 후 재상신할 수 있어.");
-  if (!changes.title.trim() || !changes.body.trim() || !changes.purpose.trim())
-    throw new Error("제목, 기안 내용, 목적을 입력해주세요.");
-  if (changes.amount < 0 || (document.documentType !== "GENERAL" && changes.amount <= 0))
-    throw new Error("지출·계약 기안은 올바른 금액이 필요해.");
-
-  const { error } = await requireClient()
-    .schema("approval")
-    .rpc("resubmit_document", {
-      p_actor_label: actorLabel,
-      p_changes: changes,
-      p_document_id: id,
-    });
-  if (error) throw new Error(`기안을 재상신하지 못했어: ${error.message}`);
+export async function resubmitApprovalDocument(id: string, actorLabel: string, changes: {
+  amount: number; body: string; budgetItem: string; counterpartyName: string; projectName: string; purpose: string; title: string;
+}, context: ApprovalCommandContext) {
+  void actorLabel;
+  if (!changes.title.trim() || !changes.body.trim() || !changes.purpose.trim()) throw new Error("제목, 기안 내용, 목적을 입력해주세요.");
+  await commitApprovalCommand("RESUBMIT", id, { changes }, context);
 }
-
-export async function closeApprovalDocument(
-  id: string,
-  actorLabel: string,
-  action: "WITHDRAWN" | "CANCELLED",
-  reason: string,
-) {
-  if (!reason.trim()) throw new Error("회수·취소 사유를 입력해줘.");
-  const { error } = await requireClient()
-    .schema("approval")
-    .rpc("release_reservation", {
-      p_action: action,
-      p_actor_label: actorLabel,
-      p_document_id: id,
-      p_reason: reason,
-    });
-  if (error)
-    throw new Error(
-      `문서를 ${action === "WITHDRAWN" ? "회수" : "취소"}하지 못했어: ${error.message}`,
-    );
+export async function closeApprovalDocument(id: string, actorLabel: string, action: "WITHDRAWN" | "CANCELLED", reason: string, context: ApprovalCommandContext) {
+  void actorLabel;
+  if (!["WITHDRAWN", "CANCELLED"].includes(action) || !reason.trim()) throw new Error("회수·취소 명령과 사유를 확인해주세요.");
+  await commitApprovalCommand("CLOSE", id, { action, reason }, context);
 }
 
 export type ApprovalBudgetSummary = {
@@ -717,7 +641,8 @@ export type ApprovalBudgetSummary = {
   reserved: number;
 };
 export async function getApprovalBudgetSummary(): Promise<ApprovalBudgetSummary> {
-  const rows=await listApprovalBudgets();
+  const actor=await requireApprovalActor();
+  const rows=await listApprovalBudgets(actor.organization_id);
   const year=Number(new Intl.DateTimeFormat("en-CA",{timeZone:"Asia/Seoul",year:"numeric"}).format(new Date()));
   const budgets=rows.filter(b=>b.fiscalYear===year);
   const approved=budgets.reduce((s,b)=>s+b.approvedAmount,0);

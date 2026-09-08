@@ -6,14 +6,17 @@ import {
   type ApprovalDecisionActionState,
 } from "@/app/approval/actions";
 
+import { ApprovalMutationFields } from "./approval-mutation-fields";
 const initialState: ApprovalDecisionActionState = {};
 
 export function ApprovalDecisionForm({
   approverLabel,
   documentId,
+  expectedVersion = 0,
 }: {
   approverLabel: string;
   documentId: string;
+  expectedVersion?: number;
 }) {
   const [state, formAction, pending] = useActionState(
     decideApprovalAction,
@@ -38,12 +41,14 @@ export function ApprovalDecisionForm({
         setClientError("");
       }}
     >
+      <ApprovalMutationFields version={expectedVersion} />
       <input name="id" type="hidden" value={documentId} />
       <label className="text-sm font-semibold">
         처리자
         <input
           className="mt-1 w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2"
-          defaultValue={approverLabel}
+          value={approverLabel}
+          readOnly
           name="actorLabel"
           required
         />

@@ -84,3 +84,9 @@ node scripts/prepare-finance-release-report.mjs .tmp-repos/finance-release-inven
 | 운영 DB 적용·실제 계정 연결 | 미실행 | 위 검증 완료 후 검토된 대상만 적용 |
 
 계정 확인을 기다리는 동안 기안 승인 경로 조사·정비와 migration 정의 비교를 진행할 수 있다. 회계 확정/정정, 선지급 정산 확정, 사실확인 서명, 수납 원장 선택은 각각 정책에 의존하는 실행만 제한한다.
+
+## 2026-09-08 후속 조사 반영
+
+위 표는 최초 조사 시점의 기록이다. 22개 이력의 실제 SQL 비교는 `migration-definition-comparison.md`에서 완료했다. 19개는 토큰 동일, 3개는 이력 구성이 다르지만 후속 최종 객체 대응을 확인했다. 다만 현재 운영에 계정과목/은행거래 컬럼 15개 등이 없으며, 신규 업무현황 함수가 사용하는 `bank_transactions.match_status`도 없다. 과거 버전 대응이 확인됐다는 이유로 신규 SQL을 곧바로 일괄 적용하면 안 된다.
+
+기안 UUID 승인 변경으로 신규 후보는 12개가 됐다. 기안 구현·검증 범위는 `approval-authorization-design.md`와 `local-integration-verification.md`를 따른다. 운영에서는 12개 모두 미적용이며, 과거 migration repair도 하지 않았다. 다음 독립 작업은 실제 운영 정의를 기준으로 누락 컬럼·제약의 호환 변경을 설계하고 기존 값 적합성을 검사하는 것이다. 계정 연결과 정책 확정은 별도로 확인한다.

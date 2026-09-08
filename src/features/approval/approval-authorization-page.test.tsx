@@ -1,0 +1,26 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ bind: vi.fn(), refresh: vi.fn() }));
+vi.mock("@/app/approval/authorizations/actions", () => ({ bindApprovalAuthorization: mocks.bind }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+import { ApprovalAuthorizationPage } from "./approval-authorization-page";
+import type { ApprovalDocument } from "./approval-domain";
+it("requires explicit accounts and review before binding without changing historical approvals", async () => {
+  mocks.bind.mockResolvedValue(undefined);
+  const record: ApprovalDocument = { id: "doc", documentNo: "APR-1", documentType: "GENERAL", title: "기존 기안", amount: 100, approvalStatus: "APPROVED", approvalSteps: [{ order: 3, approverLabel: "같은 이름", approverRole: "담당자", status: "APPROVED" }], body: "본문", purpose: "목적", departmentLabel: "부서", drafterLabel: "같은 이름", createdAt: "2026-01-01", updatedAt: "2026-01-01", executionStatus: "NOT_LINKED", meetingStatus: "NOT_REQUIRED", reservedAmount: 0, authorization: { drafter_user_id: null, steps: [], version: 1 } };
+  const before = structuredClone(record);
+  render(<ApprovalAuthorizationPage records={[record]} members={[{ user_id: "user-a", display_name: "같은 이름", permissions: ["ADMIN"] }, { user_id: "user-b", display_name: "같은 이름", permissions: ["APPROVE"] }, { user_id: "pay-only", display_name: "지급 담당", permissions: ["PAY"] }]} />);
+  fireEvent.change(screen.getByLabelText("기안 원본"), { target: { value: "doc" } });
+  expect(screen.getByLabelText(/기안자 계정/)).toHaveValue("");
+  expect(screen.getByLabelText(/1차 결재 계정/)).toHaveValue("");
+  expect(screen.getByLabelText(/기안자 계정/).querySelector('option[value="pay-only"]')).not.toBeNull();
+  expect(screen.getByLabelText(/1차 결재 계정/).querySelector('option[value="pay-only"]')).toBeNull();
+  fireEvent.change(screen.getByLabelText(/기안자 계정/), { target: { value: "user-a" } });
+  fireEvent.change(screen.getByLabelText(/1차 결재 계정/), { target: { value: "user-b" } });
+  fireEvent.change(screen.getByLabelText("연결 확인 근거"), { target: { value: "관리자 확인" } });
+  fireEvent.click(screen.getByRole("button", { name: "연결 내용 확인" }));
+  expect(mocks.bind).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "확인한 계정 연결 저장" }));
+  await waitFor(() => expect(mocks.bind).toHaveBeenCalledWith({ id: "doc", version: 1, author: "user-a", steps: [{ order: 3, user_id: "user-b" }], reason: "관리자 확인", key: expect.any(String) }));
+  expect(record).toEqual(before);
+});

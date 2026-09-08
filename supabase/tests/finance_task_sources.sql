@@ -7,9 +7,13 @@ begin
  insert into core.organizations(id,name,status) values(org,'Tasks local','active'),(other_org,'Tasks other','active');
  insert into auth.users(id) values(actor),(staff_id);
  insert into core.user_profiles(id,organization_id,display_name) values(actor,org,'Same label'),(staff_id,org,'Staff');
- insert into finance.reimbursement_members values(org,actor,'Same label','{}',true),(org,staff_id,'Staff',array['ADMIN'],true);
+ insert into finance.reimbursement_members values(org,actor,'Same label',array['APPROVE'],true),(org,staff_id,'Staff',array['ADMIN'],true);
  insert into approval.documents(id,organization_id,document_no,document_type,title,drafter_label,approval_status) values(doc,org,'TASK-A','GENERAL','Assigned UUID','Staff','SUBMITTED'),(other_doc,other_org,'TASK-B','GENERAL','Other org','Staff','SUBMITTED'),(label_doc,org,'TASK-C','GENERAL','Label only','Staff','SUBMITTED'),(waiting_doc,org,'TASK-D','GENERAL','Later order','Staff','SUBMITTED');
- insert into approval.approval_steps(document_id,step_order,approver_id,approver_label,status) values(doc,1,actor,'Same label','PENDING'),(other_doc,1,actor,'Same label','PENDING'),(label_doc,1,null,'Same label','PENDING'),(waiting_doc,1,staff_id,'Staff','WAITING'),(waiting_doc,2,actor,'Same label','PENDING');
+ insert into approval.approval_steps(document_id,step_order,approver_id,approver_label,status) values(doc,1,actor,'Same label','PENDING'),(other_doc,1,actor,'Same label','PENDING'),(label_doc,1,actor,'Same label','PENDING'),(waiting_doc,1,staff_id,'Staff','WAITING'),(waiting_doc,2,actor,'Same label','PENDING');
+ -- Explicit current binding replaces the historical profile FK as the task authority.
+ insert into approval.document_authorization_bindings(document_id,organization_id,steps)
+ select d.id,d.organization_id,jsonb_agg(jsonb_build_object('order',s.step_order,'user_id',s.approver_id,'legacy_step',jsonb_build_object('step_id',s.id,'approver_label',s.approver_label,'approver_role',s.approver_role)) order by s.step_order)
+ from approval.documents d join approval.approval_steps s on s.document_id=d.id where d.id in(doc,other_doc,waiting_doc) group by d.id,d.organization_id;
  result:=finance.finance_task_sources(org,actor);
  if jsonb_array_length(result)<>1 or result#>>'{0,title}'<>'TASK-A · Assigned UUID' then raise exception 'TEST: UUID/current-order/org approval scope'; end if;
  insert into finance.expense_resolutions(id,organization_id,resolution_no,author_label,approval_status,payment_status,expense_timing,execution_method,total_payment_amount,actual_paid_amount,settlement_due_date,settlement_status,evidence_status,resolution_data)
@@ -24,7 +28,8 @@ begin
  if (select count(*) from jsonb_array_elements(result) x where x->>'kind'='SETTLEMENT_OVERDUE')<>1 then raise exception 'TEST: employee advance only'; end if;
  if (select count(*) from jsonb_array_elements(result) x where x->>'kind'='EVIDENCE_REVIEW')<>1 then raise exception 'TEST: missing evidence'; end if;
  if result::text like '%Sensitive account%' or result::text like '%Private name%' or result::text like '%TASKS-LOCAL%' then raise exception 'TEST: minimal masked DTO'; end if;
- if jsonb_array_length(finance.finance_task_sources(org,actor))<>1 then raise exception 'TEST: ordinary user sees organization finance'; end if;
+ update finance.reimbursement_members set permissions='{}' where organization_id=org and user_id=actor;
+ if jsonb_array_length(finance.finance_task_sources(org,actor))<>0 then raise exception 'TEST: ordinary or revoked approver sees organization finance'; end if;
  update finance.expense_resolutions set settlement_status='정산완료' where id=overdue;
  result:=finance.finance_task_sources(org,staff_id);
  if exists(select 1 from jsonb_array_elements(result) x where x->>'kind'='SETTLEMENT_OVERDUE') then raise exception 'TEST: completed still overdue'; end if;

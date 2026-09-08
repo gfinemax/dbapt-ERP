@@ -1,12 +1,13 @@
 "use client";
 
-import { useActionState } from "react";
+import { startTransition, useActionState, useRef } from "react";
 import {
   resubmitApprovalAction,
   type ApprovalResubmitActionState,
 } from "@/app/approval/actions";
 import type { ApprovalDocument } from "./approval-domain";
 
+import { ApprovalMutationFields } from "./approval-mutation-fields";
 const initialState: ApprovalResubmitActionState = {};
 const inputClass =
   "mt-1 w-full rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm outline-none focus:border-[var(--color-deep-cobalt)]";
@@ -14,12 +15,17 @@ const inputClass =
 export function ApprovalResubmitForm({
   document,
   rejectionReason,
+  actorLabel,
 }: {
   document: ApprovalDocument;
   rejectionReason?: string;
+  actorLabel?: string;
 }) {
+  const busy = useRef(false);
   const [state, formAction, pending] = useActionState(
-    resubmitApprovalAction,
+    async (previous: ApprovalResubmitActionState, data: FormData) => {
+      try { return await resubmitApprovalAction(previous, data); } finally { busy.current = false; }
+    },
     initialState,
   );
 
@@ -33,9 +39,16 @@ export function ApprovalResubmitForm({
       <p className="mt-1 text-xs text-[var(--color-stone)]">
         내용을 수정해 재상신하면 기존 반려 이력은 보존되고 결재선이 첫 단계부터 다시 시작됩니다.
       </p>
-      <form action={formAction} className="mt-4 grid gap-3">
+      <form onSubmit={event => {
+        event.preventDefault();
+        if (busy.current) return;
+        const data = new FormData(event.currentTarget, (event.nativeEvent as SubmitEvent).submitter);
+        busy.current = true;
+        startTransition(() => formAction(data));
+      }} className="mt-4 grid gap-3">
+        <ApprovalMutationFields version={document.authorization?.version ?? 0} />
         <input name="id" type="hidden" value={document.id} />
-        <input name="actorLabel" type="hidden" value={document.drafterLabel} />
+        <input name="actorLabel" type="hidden" value={actorLabel ?? document.drafterLabel} />
         <label className="text-sm font-semibold">
           제목
           <input className={inputClass} defaultValue={document.title} name="title" required />

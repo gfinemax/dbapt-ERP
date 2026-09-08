@@ -47,7 +47,7 @@ let created = false;
 const schemaQuery = await readFile(path.join(root, 'supabase/schema.sql'), 'utf8');
 const migrationQueries = await Promise.all((await readdir(path.join(root, 'supabase/migrations'))).filter(f => f.endsWith('.sql')).sort()
   .map(file => readFile(path.join(root, 'supabase/migrations', file), 'utf8')));
-const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql', 'finance_task_sources.sql', 'advance_settlement_drafts.sql', 'legacy_expense_authorization.sql'];
+const testFiles = ['personal_reimbursement.sql', 'unified_monthly_budget.sql', 'unified_budget_partial_reservation.sql', 'fund_workflow.sql', 'trust_request_versions.sql', 'payment_workspace.sql', 'accounting_drafts.sql', 'legacy_settlement_source.sql', 'expense_workspace.sql', 'finance_task_sources.sql', 'advance_settlement_drafts.sql', 'legacy_expense_authorization.sql', 'approval_document_authorization.sql'];
 const testQueries = await Promise.all(testFiles.map(async file => ({ file, query: await readFile(path.join(root, 'supabase/tests', file), 'utf8') })));
 try {
   await checked(['run', '--detach', '--name', name, '--label', label, '--env', 'POSTGRES_HOST_AUTH_METHOD=trust', '--publish', '127.0.0.1::5432', 'postgres:16']);
@@ -168,6 +168,21 @@ insert into finance.expense_authorization_bindings(resolution_id,organization_id
   await sql(approvalCommands[approvalRaces.findIndex(result => result.code === 0)]);
   assert.equal((await sql(`select count(*) from finance.expense_workflow_audit_logs where resolution_id='${approvalId}' and action='AUTH:APPROVAL';`)).trim(), '1');
   console.log('PASS: concurrent UUID approvals commit one transition and audit; same-key retry preserves it');
+  const documentId = randomUUID();
+  const documentCreate = { document: { documentType: 'GENERAL', title: 'Concurrent document', departmentLabel: 'Operations', purpose: 'Concurrent approval verification', amount: 0 }, steps: [{ approverLabel: 'Test', approverRole: 'Actor' }], lines: [] };
+  const createOutput = await sql(`select approval.document_command('${org}','${actor}','CREATE','${documentId}',0,'${JSON.stringify(documentCreate)}','doc-create');`);
+  const createdDoc = JSON.parse(createOutput.trim().split('\n').at(-1));
+  const bindOutput = await sql(`select approval.document_command('${org}','${actor}','BIND','${documentId}',${createdDoc.version},'${JSON.stringify({ drafter_user_id: actor, steps: [{ order: 1, user_id: actor }], reason: 'Explicit fixture identity' })}','doc-bind');`);
+  const boundDoc = JSON.parse(bindOutput.trim().split('\n').at(-1));
+  const submittedOutput = await sql(`select approval.document_command('${org}','${actor}','SUBMIT','${documentId}',${boundDoc.version},'{}','doc-submit');`);
+  const submittedDoc = JSON.parse(submittedOutput.trim().split('\n').at(-1));
+  const documentCommands = [1, 2].map(index => `begin;set role service_role;select approval.document_command('${org}','${actor}','APPROVE','${documentId}',${submittedDoc.version},'{}','document-race-${index}');select pg_sleep(0.5);commit;`);
+  const documentRaces = await Promise.all(documentCommands.map(query => run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1', '-At'], query)));
+  assert.equal(documentRaces.filter(result => result.code === 0).length, 1, JSON.stringify(documentRaces));
+  assert(documentRaces.find(result => result.code !== 0)?.stderr.includes('기안이 변경'), 'other document approval sees committed version');
+  await sql(documentCommands[documentRaces.findIndex(result => result.code === 0)]);
+  assert.equal((await sql(`select count(*) from approval.audit_logs where document_id='${documentId}' and action_type='AUTH:APPROVE';`)).trim(), '1');
+  console.log('PASS: concurrent document UUID approvals persist one decision and audit, with stable retries');
   const denied = await run(['exec', '-i', name, 'psql', '-U', 'postgres', '-v', 'ON_ERROR_STOP=1'], `set role authenticated; select * from finance.workflow_payments;`);
   assert.notEqual(denied.code, 0, 'authenticated direct privileged table read must fail');
   await sql(`insert into storage.objects(bucket_id,name) values('finance-workflow','isolated-private'),('isolated-public','legacy-visible');`);

@@ -51,8 +51,8 @@ function client() {
   if (!value) throw new Error("Supabase 서버 연결이 설정되지 않았어.");
   return value;
 }
-export async function getApprovalSettings(): Promise<ApprovalSettings> {
-  const { data: org } = await client()
+export async function getApprovalSettings(organizationId?: string): Promise<ApprovalSettings> {
+  const { data: org } = organizationId ? { data: { organization_id: organizationId } } : await client()
     .schema("finance")
     .from("expense_compliance_settings")
     .select("organization_id")
@@ -92,12 +92,14 @@ export async function saveApprovalSettings(settings: ApprovalSettings) {
     );
   if (error) throw new Error(`기안 설정을 저장하지 못했어: ${error.message}`);
 }
-export async function listMeetingRules() {
-  const { data, error } = await client()
+export async function listMeetingRules(organizationId?: string) {
+  let query = client()
     .schema("approval")
     .from("meeting_rules")
     .select("*")
     .order("priority");
+  if (organizationId) query = query.or(`organization_id.eq.${organizationId},organization_id.is.null`);
+  const { data, error } = await query;
   if (error) throw new Error(error.message);
   return data ?? [];
 }
@@ -194,13 +196,15 @@ export async function saveApprovalBudget(input: {
     );
   if (error) throw new Error(`예산을 저장하지 못했어: ${error.message}`);
 }
-export async function listApprovalLineRules(): Promise<ApprovalLineRule[]> {
-  const { data, error } = await client()
+export async function listApprovalLineRules(organizationId?: string): Promise<ApprovalLineRule[]> {
+  let query = client()
     .schema("approval")
     .from("approval_line_rules")
     .select("id,rule_name,document_type,min_amount,max_amount,steps")
     .eq("is_active", true)
     .order("priority");
+  if (organizationId) query = query.or(`organization_id.eq.${organizationId},organization_id.is.null`);
+  const { data, error } = await query;
   if (error) throw new Error(`결재선 규칙을 불러오지 못했어: ${error.message}`);
   return (data ?? []).map((row) => ({
     documentType: row.document_type,

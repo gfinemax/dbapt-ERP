@@ -1,5 +1,6 @@
 "use server";
 
+import { requireApprovalActor, type ApprovalCommandContext } from "@/features/approval/approval-authorization";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
@@ -15,12 +16,25 @@ import {
   resubmitApprovalDocument,
   updateApprovalDocument,
   uploadApprovalAttachment,
+  submitApprovalDocument,
 } from "@/features/approval/approval-repository";
 import type { ApprovalDocumentType } from "@/features/approval/approval-domain";
 import { getOrganizationApprovalSteps } from "@/features/approval/organization-approval-line";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
+}
+
+function commandContext(formData: FormData): ApprovalCommandContext {
+  const value = text(formData, "expectedVersion");
+  const key = text(formData, "operationKey");
+  if (!value || !key || !Number.isInteger(Number(value)) || Number(value) < 0) throw new Error("기안 버전과 처리키가 필요합니다. 새로 조회해주세요.");
+  return { expectedVersion: Number(value), key };
+}
+export async function submitApprovalAction(formData: FormData) {
+  const id = text(formData, "id");
+  await submitApprovalDocument(id, commandContext(formData));
+  revalidatePath("/approval"); revalidatePath(`/approval/${id}`);
 }
 
 function currentSeoulDate() {
@@ -30,6 +44,7 @@ function currentSeoulDate() {
 }
 
 export async function createApprovalAction(formData: FormData) {
+  const actor = await requireApprovalActor();
   const today = currentSeoulDate();
   const title = text(formData, "title");
   const submit = text(formData, "intent") === "submit";
@@ -58,9 +73,9 @@ export async function createApprovalAction(formData: FormData) {
     body: text(formData, "body") || title,
     budgetItem: text(formData, "budgetItem") || undefined,
     counterpartyName: text(formData, "counterpartyName") || undefined,
-    departmentLabel: text(formData, "departmentLabel") || "사무국",
+    departmentLabel: text(formData, "departmentLabel"),
     documentType: text(formData, "documentType") as ApprovalDocumentType,
-    drafterLabel: text(formData, "drafterLabel") || "오학동",
+    drafterLabel: actor.display_name,
     purpose: text(formData, "purpose") || title,
     title,
     lines,
@@ -97,6 +112,7 @@ export async function createApprovalAction(formData: FormData) {
   const id = await createApprovalDocument(
     draft,
     submit,
+    { id: text(formData, "documentId"), key: text(formData, "operationKey") },
   );
   const attachment = formData.get("attachment");
   if (attachment instanceof File && attachment.size)
@@ -121,6 +137,7 @@ export async function decideApprovalAction(
       text(formData, "actorLabel"),
       text(formData, "decision") as "APPROVE" | "REJECT",
       text(formData, "comment"),
+      commandContext(formData),
     );
     revalidatePath("/approval");
     revalidatePath(`/approval/${id}`);
@@ -197,7 +214,7 @@ export async function updateApprovalAction(formData: FormData) {
     counterpartyName: text(formData, "counterpartyName"),
     projectName: text(formData, "projectName"),
     title: text(formData, "title"),
-  });
+  }, commandContext(formData));
   revalidatePath(`/approval/${id}`);
   revalidatePath("/approval");
 }
@@ -221,7 +238,7 @@ export async function resubmitApprovalAction(
       projectName: text(formData, "projectName"),
       purpose: text(formData, "purpose"),
       title: text(formData, "title"),
-    });
+    }, commandContext(formData));
     revalidatePath(`/approval/${id}`);
     revalidatePath("/approval");
     return { success: true };
@@ -241,6 +258,7 @@ export async function closeApprovalAction(formData: FormData) {
     text(formData, "actorLabel"),
     text(formData, "action") as "WITHDRAWN" | "CANCELLED",
     text(formData, "reason"),
+    commandContext(formData),
   );
   revalidatePath(`/approval/${id}`);
   revalidatePath("/approval");

@@ -6,7 +6,9 @@ import { ErpShell } from "@/components/erp-shell";
 import { createApprovalAction } from "@/app/approval/actions";
 import type { ApprovalBudgetOption } from "./approval-settings-repository";
 import type { ApprovalDocumentType } from "./approval-domain";
-import { organizationApprovalLine } from "./organization-approval-line";
+import type { ReimbursementMember } from "@/features/finance/reimbursement-domain";
+import { ApprovalCommandForm } from "./approval-command-form";
+import { ApprovalMutationFields } from "./approval-mutation-fields";
 import { suggestApprovalDraft } from "./approval-draft-assistant";
 
 const inputClass =
@@ -17,15 +19,20 @@ export function ApprovalNewPage({
   accountSubjects = [],
   budgets = [],
   partners = [],
+  viewer,
 }: {
   accountSubjects?: string[];
   budgets?: ApprovalBudgetOption[];
   partners?: string[];
+  viewer?: ReimbursementMember;
 }) {
+  const draftKey = `${LOCAL_DRAFT_KEY}:${viewer?.organization_id ?? "local"}:${viewer?.user_id ?? "local"}`;
+  const actorLabel = viewer?.display_name ?? "";
   const today = currentSeoulDate();
   const currentYear = Number(today.slice(0, 4));
   const [documentType, setDocumentType] =
     useState<ApprovalDocumentType>("GENERAL");
+  const [departmentLabel, setDepartmentLabel] = useState("");
   const [title, setTitle] = useState("");
   const [purpose, setPurpose] = useState("");
   const [body, setBody] = useState("");
@@ -51,11 +58,11 @@ export function ApprovalNewPage({
   useEffect(() => {
     const timer = window.setTimeout(() => {
       if (!title && !body && !counterpartyName && !amount) return;
-      window.localStorage.setItem(LOCAL_DRAFT_KEY, JSON.stringify({ amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title }));
+      window.localStorage.setItem(draftKey, JSON.stringify({ amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title }));
       setSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit" }).format(new Date()));
     }, 500);
     return () => window.clearTimeout(timer);
-  }, [amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title]);
+  }, [amount, body, budgetEnabled, budgetId, counterpartyName, documentType, title, draftKey]);
 
   function changeTitle(value: string) {
     setTitle(value);
@@ -81,7 +88,7 @@ export function ApprovalNewPage({
   }
 
   function restoreLocalDraft() {
-    const raw = window.localStorage.getItem(LOCAL_DRAFT_KEY);
+    const raw = window.localStorage.getItem(draftKey);
     if (!raw) {
       setAssistantMessage("불러올 임시저장 기안이 없어요.");
       return;
@@ -103,7 +110,7 @@ export function ApprovalNewPage({
   }
 
   return (
-    <ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재">
+    <ErpShell userLabel={actorLabel} activeDetailLabel="새 기안" activeLabel="기안·결재">
       <main className="mx-auto max-w-[1480px] space-y-4">
         <header className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--color-soft-border)] bg-white px-5 py-4">
           <div>
@@ -116,9 +123,11 @@ export function ApprovalNewPage({
           </div>
         </header>
 
-        <form action={createApprovalAction} className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <ApprovalCommandForm action={createApprovalAction} className="grid items-start gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <ApprovalMutationFields version={0} create />
           <div className="space-y-5">
           <Section title="기본 내용">
+            <label className="text-sm font-semibold">부서<input className={inputClass} name="departmentLabel" value={departmentLabel} onChange={event => setDepartmentLabel(event.target.value)} required /></label>
             <label className="text-sm font-semibold">
               기안 유형
               <select
@@ -291,8 +300,7 @@ export function ApprovalNewPage({
             </button>
             {advancedOpen ? (
               <div className="mt-4 grid gap-4 md:grid-cols-2">
-                <Field defaultValue="오학동" label="기안자" name="drafterLabel" required />
-                <Field defaultValue="사무국" label="부서" name="departmentLabel" required />
+                <label className="text-sm font-semibold">기안자<input className={inputClass} name="drafterLabel" value={actorLabel} readOnly /></label>
                 <Field defaultValue={today} label="시행 희망일" name="desiredExecutionDate" type="date" />
                 <Field label="프로젝트" name="projectName" />
                 <label className="text-sm font-semibold">
@@ -346,8 +354,7 @@ export function ApprovalNewPage({
               </div>
             ) : (
               <>
-                <input name="drafterLabel" type="hidden" value="오학동" />
-                <input name="departmentLabel" type="hidden" value="사무국" />
+                <input name="drafterLabel" type="hidden" value={actorLabel} />
                 <input name="desiredExecutionDate" type="hidden" value={today} />
                 <input name="securityLevel" type="hidden" value="INTERNAL" />
                 <input name="purpose" type="hidden" value={purpose || title} />
@@ -362,6 +369,8 @@ export function ApprovalNewPage({
           <datalist id="approval-partners">{partners.map((name) => <option key={name} value={name} />)}</datalist>
           <datalist id="approval-account-subjects">{accountSubjects.map((name) => <option key={name} value={name} />)}</datalist>
           <ApprovalReviewPanel
+            actorLabel={actorLabel}
+            departmentLabel={departmentLabel}
             accountSubject={accountSubject}
             amount={amount}
             assistantMessage={assistantMessage}
@@ -372,7 +381,7 @@ export function ApprovalNewPage({
             suggestion={suggestion}
             title={title}
           />
-        </form>
+        </ApprovalCommandForm>
       </main>
     </ErpShell>
   );
@@ -410,6 +419,8 @@ function Section({ children, title }: { children: React.ReactNode; title: string
 }
 
 function ApprovalReviewPanel({
+  actorLabel,
+  departmentLabel,
   accountSubject,
   amount,
   assistantMessage,
@@ -420,6 +431,8 @@ function ApprovalReviewPanel({
   suggestion,
   title,
 }: {
+  actorLabel: string;
+  departmentLabel: string;
   accountSubject: string;
   amount: number;
   assistantMessage: string;
@@ -431,6 +444,7 @@ function ApprovalReviewPanel({
   title: string;
 }) {
   const checks = [
+    { complete: Boolean(departmentLabel.trim()), label: "부서" },
     { complete: Boolean(title.trim()), label: "제목" },
     { complete: Boolean(body.trim()), label: "기안 내용" },
     { complete: amount > 0 || !budgetEnabled, label: "기안 금액" },
@@ -472,15 +486,15 @@ function ApprovalReviewPanel({
       <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5">
         <h2 className="text-lg font-bold">자동 설정</h2>
         <div className="mt-3 grid grid-cols-2 gap-2">
-          <AutoValue label="기안자" value="오학동" />
-          <AutoValue label="부서" value="사무국" />
+          <AutoValue label="기안자" value={actorLabel} />
+
           <AutoValue label="공개·보안" value="내부" />
           <AutoValue label="예산" value={budgetEnabled ? "예산 사용" : "예산 없음"} />
           <AutoValue label="의결" value="자동 검토 중" />
         </div>
         <div className="mt-3 rounded-xl bg-[var(--color-cloud-veil)] p-3">
           <p className="text-xs font-bold text-[var(--color-stone)]">공통 결재선</p>
-          <p className="mt-1 text-sm font-semibold">{organizationApprovalLine.map((step) => `${step.approverRole} ${step.approverLabel}`).join(" → ")}</p>
+          <p className="mt-1 text-sm font-semibold">초안 저장 후 관리자가 결재 계정을 연결해줘.</p>
         </div>
       </section>
 
@@ -496,7 +510,7 @@ function ApprovalReviewPanel({
         <div className="grid grid-cols-2 gap-2">
           <Link className="rounded-full border border-[var(--color-soft-border)] px-4 py-3 text-center text-sm font-bold" href="/approval">취소</Link>
           <button className="rounded-full border border-[var(--color-soft-border)] px-4 py-3 text-sm font-bold" name="intent" value="draft">임시저장</button>
-          <button className="col-span-2 rounded-full bg-[var(--color-pressed-charcoal)] px-5 py-3 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled={completeCount < checks.length} name="intent" value="submit">결재 요청</button>
+          <p className="col-span-2 text-xs text-[var(--color-stone)]">초안 저장 후 결재 계정을 연결하면 상세 화면에서 결재를 요청할 수 있어.</p>
         </div>
       </section>
     </aside>

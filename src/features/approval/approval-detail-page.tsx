@@ -3,6 +3,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { ApprovalPrint } from "./approval-print";
 import {
   closeApprovalAction,
+  submitApprovalAction,
   createContractAction,
   createContractPaymentExpenseAction,
   createLinkedExpenseAction,
@@ -19,11 +20,22 @@ import {
   type ApprovalDocument,
 } from "./approval-domain";
 
+import type { ReimbursementMember } from "@/features/finance/reimbursement-domain";
+import { canDecideApproval, isApprovalAuthor } from "./approval-access-model";
+import { ApprovalCommandForm } from "./approval-command-form";
+import { ApprovalMutationFields } from "./approval-mutation-fields";
+
 export function ApprovalDetailPage({
   document,
+  viewer,
 }: {
   document: ApprovalDocument;
+  viewer?: ReimbursementMember;
 }) {
+  const admin = !!viewer?.permissions.includes("ADMIN");
+  const author = isApprovalAuthor(document, viewer);
+  const bound = !!document.authorization?.drafter_user_id && document.authorization.steps.length === document.approvalSteps.length && document.authorization.steps.length > 0;
+  const actorLabel = viewer?.display_name ?? "";
   const current = document.approvalSteps.find(
     (step) => step.status === "PENDING",
   );
@@ -33,7 +45,7 @@ export function ApprovalDetailPage({
     )?.comment ??
     document.approvalSteps.find((step) => step.status === "REJECTED")?.comment;
   return (
-    <ErpShell activeLabel="기안·결재">
+    <ErpShell userLabel={actorLabel} activeLabel="기안·결재">
       <main className="mx-auto max-w-6xl space-y-5">
         <header className="rounded-[28px] border border-[var(--color-soft-border)] bg-white p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -279,12 +291,17 @@ export function ApprovalDetailPage({
             </div>
           </section>
           <aside className="space-y-5">
-            {["REJECTED", "REVISION_REQUESTED"].includes(
+            {!bound ? <Card title="계정 연결 확인"><p className="text-sm">작성자와 결재자의 로그인 계정 연결이 필요해. 기존 내용과 출력은 확인할 수 있어.</p>{admin ? <Link href="/approval/authorizations" className="mt-3 inline-block font-bold text-[var(--color-deep-cobalt)]">기안 계정 연결 관리</Link> : null}</Card> : null}
+            {author && bound && document.approvalStatus === "DRAFT" ? <Card title="결재 요청"><ApprovalCommandForm action={submitApprovalAction}><ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
+                  <input name="id" type="hidden" value={document.id} /><button className="rounded-full bg-[var(--color-deep-cobalt)] px-4 py-2 font-bold text-white">결재 요청</button></ApprovalCommandForm></Card> : null}
+            {author && bound && ["REJECTED", "REVISION_REQUESTED"].includes(
               document.approvalStatus,
             ) ? (
               <ApprovalResubmitForm
+                key={`${document.id}:${document.authorization?.version ?? 0}`}
                 document={document}
                 rejectionReason={rejectionReason}
+                actorLabel={actorLabel}
               />
             ) : null}
             {document.contractId ? (
@@ -312,12 +329,13 @@ export function ApprovalDetailPage({
                     className="mt-3 rounded-xl border border-[var(--color-soft-border)] p-3"
                     key={payment.id}
                   >
-                    <input name="id" type="hidden" value={document.id} />
+                    <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
+                  <input name="id" type="hidden" value={document.id} />
                     <input name="paymentId" type="hidden" value={payment.id} />
                     <input
                       name="actorLabel"
                       type="hidden"
-                      value={document.drafterLabel}
+                      value={actorLabel}
                     />
                     <p className="text-xs font-bold">
                       {payment.dueDate ?? "일자 미정"} ·{" "}
@@ -326,7 +344,7 @@ export function ApprovalDetailPage({
                     <p className="mt-1 text-xs text-[var(--color-stone)]">
                       {payment.status}
                     </p>
-                    {payment.status === "SCHEDULED" ? (
+                    {admin && payment.status === "SCHEDULED" ? (
                       <button className="mt-2 w-full rounded-full bg-[var(--color-deep-cobalt)] px-3 py-2 text-xs font-bold text-white">
                         지출결의서 생성
                       </button>
@@ -370,28 +388,32 @@ export function ApprovalDetailPage({
                 ))}
               </ol>
             </Card>
-            {current ? (
+            {current && canDecideApproval(document, viewer) ? (
               <Card title="현재 결재 처리">
                 <ApprovalDecisionForm
-                  approverLabel={current.approverLabel}
+                  key={`${document.id}:${document.authorization?.version ?? 0}`}
+                  approverLabel={actorLabel}
+                  expectedVersion={document.authorization?.version ?? 0}
                   documentId={document.id}
                 />
               </Card>
             ) : null}
-            {document.approvalStatus === "APPROVED" &&
+            {admin && document.approvalStatus === "APPROVED" &&
             (document.meetingStatus === "NOT_REQUIRED" ||
               document.meetingStatus === "APPROVED") &&
             (document.documentType !== "CONTRACT" ||
               !document.paymentSchedule?.length) ? (
               <Card title="회계 연결">
                 <form action={createLinkedExpenseAction} className="space-y-3">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <label className="text-sm font-semibold">
                     처리자
                     <input
                       className="mt-1 w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2"
                       name="actorLabel"
-                      defaultValue={document.drafterLabel}
+                      value={actorLabel}
+                      readOnly
                       required
                     />
                   </label>
@@ -401,14 +423,15 @@ export function ApprovalDetailPage({
                 </form>
               </Card>
             ) : null}
-            {document.meetingStatus === "REQUIRED" ? (
+            {admin && document.meetingStatus === "REQUIRED" ? (
               <Card title="회의·의결">
                 <form action={createMeetingAgendaAction} className="space-y-3">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <input
                     name="actorLabel"
                     type="hidden"
-                    value={document.drafterLabel}
+                    value={actorLabel}
                   />
                   <select
                     className="w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2 text-sm"
@@ -424,14 +447,15 @@ export function ApprovalDetailPage({
                 </form>
               </Card>
             ) : null}
-            {document.meetingStatus === "SCHEDULED" ? (
+            {admin && document.meetingStatus === "SCHEDULED" ? (
               <Card title="의결 결과 등록">
                 <form action={decideMeetingAgendaAction} className="space-y-2">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <input
                     name="actorLabel"
                     type="hidden"
-                    value={document.drafterLabel}
+                    value={actorLabel}
                   />
                   <input
                     className="w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2 text-sm"
@@ -470,18 +494,19 @@ export function ApprovalDetailPage({
                 </form>
               </Card>
             ) : null}
-            {document.documentType === "CONTRACT" &&
+            {admin && document.documentType === "CONTRACT" &&
             document.approvalStatus === "APPROVED" &&
             (document.meetingStatus === "NOT_REQUIRED" ||
               document.meetingStatus === "APPROVED") &&
             !document.contractId ? (
               <Card title="계약 연결">
                 <form action={createContractAction} className="space-y-2">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <input
                     name="actorLabel"
                     type="hidden"
-                    value={document.drafterLabel}
+                    value={actorLabel}
                   />
                   <textarea
                     className="w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2 text-sm"
@@ -495,19 +520,20 @@ export function ApprovalDetailPage({
                 </form>
               </Card>
             ) : null}
-            {![
+            {(author || admin) && ![
               "REJECTED",
               "REVISION_REQUESTED",
               "WITHDRAWN",
               "CANCELLED",
             ].includes(document.approvalStatus) ? (
               <Card title="수정·변경통제">
-                <form action={updateApprovalAction} className="space-y-2">
+                <ApprovalCommandForm action={updateApprovalAction} className="space-y-2">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <input
                     name="actorLabel"
                     type="hidden"
-                    value={document.drafterLabel}
+                    value={actorLabel}
                   />
                   <input
                     className="w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2 text-sm"
@@ -536,13 +562,14 @@ export function ApprovalDetailPage({
                   <button className="w-full rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-bold">
                     수정 저장
                   </button>
-                </form>
-                <form action={closeApprovalAction} className="mt-4 space-y-2">
+                </ApprovalCommandForm>
+                <ApprovalCommandForm action={closeApprovalAction} className="mt-4 space-y-2">
+                  <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
                   <input
                     name="actorLabel"
                     type="hidden"
-                    value={document.drafterLabel}
+                    value={actorLabel}
                   />
                   <input
                     className="w-full rounded-xl border border-[var(--color-soft-border)] px-3 py-2 text-sm"
@@ -566,7 +593,7 @@ export function ApprovalDetailPage({
                       취소
                     </button>
                   </div>
-                </form>
+                </ApprovalCommandForm>
               </Card>
             ) : null}
           </aside>

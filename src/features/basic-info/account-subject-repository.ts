@@ -64,19 +64,21 @@ export function mapAccountSubjectToInsert(subject: RegisteredAccountSubject): Su
 const accountSubjectSelect =
   "id, code, name, parent_id, is_active, created_at, subject_type, normal_balance, business_category, source, aliases, description, sort_order";
 
-export async function listAccountSubjectsFromSupabase() {
+export async function listAccountSubjectsFromSupabase(organizationId?: string) {
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
     return null;
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema(accountSubjectRepositorySchema)
     .from("account_subjects")
     .select(accountSubjectSelect)
     .order("sort_order", { ascending: true })
     .order("code", { ascending: true });
+  if (organizationId) query = query.or(`organization_id.eq.${organizationId},organization_id.is.null`);
+  const { data, error } = await query;
 
   if (error) {
     return null;
