@@ -1,6 +1,6 @@
 # 운영 적용 준비 조사 — 2026-09-08
 
-> **현재 상태:** 2026-09-08 16:08 KST에 운영 DB 호환 변경과 workflow migration 12개를 하나의 transaction으로 적용했다. 16:11 KST에 rollback 전용 SQL 회귀검사 10개와 원본 수치 재대조를 통과했다. 실제 담당자 Auth UUID 연결과 로그인 계정별 운영 화면 검증은 아직 남아 있다.
+> **현재 상태:** 2026-09-08 16:08 KST에 운영 DB 호환 변경과 workflow migration 12개를 하나의 transaction으로 적용했다. 16:11 KST에 rollback 전용 SQL 회귀검사 10개와 원본 수치 재대조를 통과했다. 16:23 KST에 사용자가 직접 확인한 오학동 계정을 기존 지출결의·기안의 작성자와 해당 결재 단계에 연결했다. 계정이 아직 없는 장현제·안동연 단계는 미연결 상태다.
 
 ## 완료 범위
 
@@ -182,4 +182,23 @@ node scripts/rehearse-finance-operational-db-restore.mjs `
 
 Supabase Advisor 사후 조회에는 ERROR가 없었다. 새 authorization/정산 표 일부의 `RLS enabled, no policy` INFO는 클라이언트 직접 접근을 닫고 service-role RPC만 허용하는 현재 설계와 일치한다. 새 workflow 표의 미사용 index는 자료가 없는 적용 직후라 삭제 근거로 사용하지 않는다. 일부 foreign key의 covering index 권고는 실제 사용량을 측정한 뒤 별도 성능 migration으로 판단한다. 기존 함수 `approval.prevent_audit_mutation`, `approval.guard_contract_payment`의 search path 경고와 Auth 유출 비밀번호 보호 설정 경고는 이번 migration에서 새로 만든 항목이 아니며 별도 보안 정비 대상으로 남긴다. [Supabase Database Linter](https://supabase.com/docs/guides/database/database-linter), [Supabase password security](https://supabase.com/docs/guides/auth/password-security#password-strength-and-leaked-password-protection)
 
-운영 DB schema 적용은 완료됐다. 남은 운영 마무리는 확인된 실제 사용자별 Auth UUID를 기존 작성자·결재 단계에 연결하고, 그 계정으로 로그인해 목록·상세·저장·재조회·권한 차단·동시 승인·중복 처리와 감사 로그를 확인하는 것이다. 이름만 같은 사용자를 자동 연결하거나 이미 승인된 과거 이력을 재승인하지 않는다.
+운영 DB schema 적용은 완료됐다. 사용자 확인을 받은 실제 계정 연결 결과는 아래 절에 기록한다. 이름만 같은 사용자를 자동 연결하거나 이미 승인된 과거 이력을 재승인하지 않는다.
+
+## 실제 담당자 계정 연결 — 2026-09-08
+
+사용자가 현재 등록된 Auth 계정이 기존 오학동 담당자의 계정이라고 직접 확인했다. 장현제·안동연 계정은 아직 없다고 확인했으므로 해당 사람에게 임의 계정을 배정하거나 한 관리자 계정을 중복 연결하지 않았다.
+
+확인된 오학동 Auth UUID를 지출결의 6건의 작성자와 각 문서의 오학동 2차 결재 단계에 연결했다. 승인 완료된 기존 기안 2건에도 기안자와 오학동 2차 결재 단계만 연결했다. 기안의 과거 `approver_id`, 처리 시각, 승인 결과를 소급 변경하지 않았다. 장현제 1차와 안동연 3차 단계는 UUID가 없는 미연결 상태로 유지되므로 해당 계정이 만들어질 때까지 새 결재 실행이 차단된다.
+
+적용 도구는 ignored private mapping에 명시된 문서 ID·순번·UUID만 허용한다. 운영 project ref, migration head, 관리자 조직·권한, 기존 binding version, 기존 오학동 표시 위치를 검사했다. 같은 명령을 먼저 transaction에서 실행하고 rollback한 뒤 자료 불변을 확인했으며, 실제 8건은 하나의 transaction으로 반영했다.
+
+| 확인 항목 | 결과 |
+|---|---:|
+| 지출결의 작성자·오학동 단계 연결 | 6건 |
+| 기존 기안 기안자·오학동 단계 연결 | 2건 |
+| 지출결의 `AUTH:BIND` 감사·처리키 | 각 6건 |
+| 기안 `AUTH:BIND` 감사·처리키 | 각 2건 |
+| 지출결의·금액·기안·기존 승인 단계·Storage 원본 | 적용 전후 동일 |
+| 업무현황·통합 지출 원본 RPC의 확인 계정 조회 | 정상 |
+
+관리자 연결 화면은 부분 연결을 불완전 상태로 표시하고, 모든 결재 계정이 선택되기 전에는 화면에서 다시 저장할 수 없다. 장현제·안동연 계정이 생성되면 각 사람의 실제 이메일과 본인 확인을 거쳐 남은 순번만 연결하고, 세 계정으로 로그인해 순차 결재와 권한 차단을 최종 확인한다.
