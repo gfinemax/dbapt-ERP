@@ -98,8 +98,9 @@ function PersonalReimbursementTools({ record: r }: { record: ExpenseWorkspaceRec
     if (!r.personal_updated_at) return setMessage("원본 수정 시각을 확인할 수 없어. 새로고침 후 다시 시도해줘.");
     setBusy(true); setMessage("");
     try {
-      await updatePersonalReimbursementDetailsAction({ id: r.source_id, merchant, purpose, reason, expectedUpdatedAt: r.personal_updated_at });
-      setMessage("거래처와 사용내용을 수정했고 변경 이력을 남겼어. 연결된 업무가 있다면 원본 변경 여부를 확인해줘."); setEditing(false); setReason(""); router.refresh();
+      const result = await updatePersonalReimbursementDetailsAction({ id: r.source_id, merchant, purpose, reason, expectedUpdatedAt: r.personal_updated_at });
+      if (!result.ok) return setMessage(result.message);
+      setMessage(`${result.message} 연결된 업무가 있다면 원본 변경 여부를 확인해줘.`); setEditing(false); setReason(""); router.refresh();
     } catch (error) { setMessage(error instanceof Error ? error.message : "개인 정산 원본을 수정하지 못했어."); } finally { setBusy(false); }
   }
   if (!r.personal_can_edit) return null;

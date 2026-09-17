@@ -12,7 +12,7 @@ function fixture(): ExpenseWorkspace {
   return { viewer: { staff: true, permissions: ["ADMIN"] }, records: [base, { ...base, source_kind: "QUICK", source_id: "same-text-id", number: null, title: "개인 사용", approval_status: "CONVERTED", payment_status: null, transaction_id: "connected", can_connect: false }] };
 }
 const expenseDetails: OperatingExpenseDetail[] = [{ id: "detail-supplies", code: "GENERAL-SUPPLIES", groupName: "일반운영비", name: "사무용품비", budgetItem: "일반운영비>사무용품비", status: "CONFIRMED", quickExpenseEligible: true }];
-beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.personalUpdate.mockResolvedValue({ id: "personal" }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
+beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.personalUpdate.mockResolvedValue({ ok: true, message: "거래처와 사용내용을 수정했고 변경 이력을 남겼어." }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
   it("keeps the original reimbursement budget month when opening its existing page", () => {
     const data = fixture(); data.records[0] = { ...data.records[0], source_kind: "PERSONAL", budget_month: "2026-03-01" };
@@ -122,5 +122,11 @@ describe("common original expense workspace", () => {
     fireEvent.click(screen.getByRole("button",{name:"수정 저장"}));
     await waitFor(()=>expect(mocks.personalUpdate).toHaveBeenCalledWith({id:"personal",merchant:"새 거래처",purpose:"새 사용내용",reason:"상호 오기",expectedUpdatedAt:"2026-09-18T00:00:00Z"}));
     expect(mocks.personalUpdate.mock.calls[0][0]).not.toHaveProperty("amount"); expect(mocks.personalUpdate.mock.calls[0][0]).not.toHaveProperty("usedOn");
+  });
+  it("shows a safe personal edit error without refreshing stale data", async () => {
+    mocks.personalUpdate.mockResolvedValue({ ok: false, message: "변경된 거래처 또는 사용내용이 없습니다." });
+    const workspace=fixture(); workspace.records[0]={...workspace.records[0],source_kind:"PERSONAL",source_id:"personal",counterparty:"기존 거래처",approval_status:"SUBMITTED",personal_purpose:"기존 내용",personal_updated_at:"2026-09-18T00:00:00Z",personal_can_edit:true};
+    render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="PERSONAL" initialSourceId="personal"/>); fireEvent.click(screen.getByRole("button",{name:"거래처·사용내용 수정"})); fireEvent.change(screen.getByLabelText("수정 사유"),{target:{value:"확인"}}); fireEvent.click(screen.getByRole("button",{name:"수정 저장"}));
+    expect(await screen.findByText("변경된 거래처 또는 사용내용이 없습니다.")).toBeInTheDocument(); expect(mocks.refresh).not.toHaveBeenCalled();
   });
 });

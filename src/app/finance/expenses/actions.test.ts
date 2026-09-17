@@ -34,8 +34,13 @@ describe("common expense source connection action", () => {
     expect(mocks.rpc).toHaveBeenCalledWith("quick_expense_command", { p_org: "org", p_actor: "actor", p_command: "ATTACH_EVIDENCE", p_id: "quick", p_data: { ocr_job_id: "job" }, p_key: "attach-key" });
   });
   it("updates only personal reimbursement descriptive fields and records the reason", async () => {
-    await updatePersonalReimbursementDetailsAction({ id: "personal", merchant: " 새 거래처 ", purpose: " 수정한 사용내용 ", reason: " 상호 오기 ", expectedUpdatedAt: "2026-09-18T00:00:00Z" });
+    await expect(updatePersonalReimbursementDetailsAction({ id: "personal", merchant: " 새 거래처 ", purpose: " 수정한 사용내용 ", reason: " 상호 오기 ", expectedUpdatedAt: "2026-09-18T00:00:00Z" })).resolves.toEqual({ ok: true, message: "거래처와 사용내용을 수정했고 변경 이력을 남겼어." });
     expect(mocks.rpc).toHaveBeenCalledWith("reimbursement_detail_update", { p_org: "org", p_actor: "actor", p_id: "personal", p_merchant: "새 거래처", p_purpose: "수정한 사용내용", p_reason: "상호 오기", p_expected_updated_at: "2026-09-18T00:00:00Z" });
     expect(mocks.revalidate.mock.calls.map(call => call[0])).toEqual(["/finance/expenses", "/finance/reimbursements", "/finance/trust", "/finance/payments", "/finance"]);
+  });
+  it("returns a safe Korean validation result instead of a production server digest", async () => {
+    mocks.rpc.mockResolvedValue({ data: null, error: { message: "변경된 거래처 또는 사용내용이 없습니다." } });
+    await expect(updatePersonalReimbursementDetailsAction({ id: "personal", merchant: "기존", purpose: "기존", reason: "확인", expectedUpdatedAt: "2026-09-18T00:00:00Z" })).resolves.toEqual({ ok: false, message: "변경된 거래처 또는 사용내용이 없습니다." });
+    expect(mocks.revalidate).not.toHaveBeenCalled();
   });
 });
