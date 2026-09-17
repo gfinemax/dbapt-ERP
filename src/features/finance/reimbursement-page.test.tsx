@@ -1,10 +1,10 @@
 import { fireEvent,render,screen,waitFor } from "@testing-library/react";
 import { beforeEach,describe,expect,it,vi } from "vitest";
-import { ReimbursementPage } from "./reimbursement-page";
+import { ReimbursementLogin, ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({command:vi.fn(),policy:vi.fn(),refresh:vi.fn(),push:vi.fn()}));
+const mocks=vi.hoisted(()=>({command:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn()}));
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push})}));
-vi.mock("@/app/finance/reimbursements/actions",()=>({runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:vi.fn(),reimbursementLogout:vi.fn(),submitReimbursement:vi.fn(),reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
+vi.mock("@/app/finance/reimbursements/actions",()=>({runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:vi.fn(),reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
 const w:ReimbursementWorkspace={month:"2026-03-01",member:{user_id:"a",organization_id:"o",display_name:"관리자",permissions:["ADMIN"],active:true},members:[],policy:null,periods:[{month:"2026-03-01",status:"CLOSED",submission_deadline:"2026-04-05",completion_deadline:"2026-04-10",long_delay_days:60,revision:1}],requests:[{id:"r",applicant_id:"b",budget_id:"budget",used_on:"2026-03-15",budget_month:"2026-03-01",amount:80000,merchant:"문구점",purpose:"사무용품",delay_reason:"영수증 누락",source_quick_id:null,status:"APPROVED",needs_exception:true,needs_senior:false,exception_approved_at:"2026-06-01",senior_approved_at:null,over_budget_approved_at:null,submitted_at:"2026-06-01",approved_at:"2026-06-02",paid_at:null,bank_transaction_id:null}],budgets:[],reports:[],audits:[],banks:[{id:"bank",transacted_at:"2026-06-15T12:00:00+09:00",withdrawal_amount:80000,counterparty:"신청자",description:"정산"}],sources:[]};
 describe("reimbursement workspace",()=>{
  beforeEach(()=>vi.clearAllMocks());
@@ -47,5 +47,26 @@ describe("reimbursement workspace",()=>{
   fireEvent.change(screen.getByRole("spinbutton",{name:"장기 지연 기준 \(사용 후 일수\)"}),{target:{value:"60"}});
   fireEvent.click(screen.getByRole("button",{name:"기준 저장"}));
   await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("보완 마감일은 제출 마감일과 같거나 늦은 1일부터 28일 사이여야 해."));
+ });
+});
+describe("reimbursement login",()=>{
+ beforeEach(()=>vi.clearAllMocks());
+ it("shows the safe authentication result instead of a production server digest",async()=>{
+  mocks.login.mockResolvedValue({ok:false,message:"이메일 또는 비밀번호가 올바르지 않아."});
+  render(<ReimbursementLogin/>);
+  fireEvent.change(screen.getByRole("textbox",{name:"이메일"}),{target:{value:"user@example.com"}});
+  fireEvent.change(screen.getByLabelText("비밀번호"),{target:{value:"wrong-password"}});
+  fireEvent.click(screen.getByRole("button",{name:"로그인"}));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("이메일 또는 비밀번호가 올바르지 않아."));
+  expect(mocks.refresh).not.toHaveBeenCalled();
+ });
+ it("refreshes only after a successful authenticated and authorized login",async()=>{
+  mocks.login.mockResolvedValue({ok:true,message:"로그인했어."});
+  render(<ReimbursementLogin/>);
+  fireEvent.change(screen.getByRole("textbox",{name:"이메일"}),{target:{value:"user@example.com"}});
+  fireEvent.change(screen.getByLabelText("비밀번호"),{target:{value:"valid-password"}});
+  fireEvent.click(screen.getByRole("button",{name:"로그인"}));
+  await waitFor(()=>expect(mocks.refresh).toHaveBeenCalled());
+  expect(screen.getByRole("status")).toHaveTextContent("로그인했어.");
  });
 });

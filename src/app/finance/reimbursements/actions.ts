@@ -20,14 +20,43 @@ export async function assignBudgetSource(data: Record<string,unknown>) {
   refresh();
 }
 export async function reimbursementLogin(form: FormData) {
-  const config = getSupabaseServerConfig();
-  if (!config) throw new Error("로그인 연결이 설정되지 않았습니다.");
-  // Dedicated client: signing in must never alter the shared service client.
-  const auth = createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
-  const { data,error } = await auth.auth.signInWithPassword({email:String(form.get("email") ?? "").trim(),password:String(form.get("password") ?? "")});
-  if (error || !data.session) throw new Error("이메일과 비밀번호를 확인해주세요.");
-  (await cookies()).set(reimbursementCookie,data.session.access_token,{httpOnly:true,secure:process.env.NODE_ENV === "production",sameSite:"lax",path:"/",maxAge:data.session.expires_in});
-  refresh();
+  const email=String(form.get("email") ?? "").trim();
+  const password=String(form.get("password") ?? "");
+  if(!email||!password) return {ok:false as const,message:"이메일과 비밀번호를 입력해줘."};
+  const failed=(phase:string,error?:{code?:string;status?:number})=>{
+    console.warn(JSON.stringify({level:"warn",message:"reimbursement_login_failed",phase,code:error?.code,status:error?.status}));
+  };
+  try {
+    const config = getSupabaseServerConfig();
+    if (!config) {
+      failed("configuration");
+      return {ok:false as const,message:"로그인 서비스 설정을 확인할 수 없어. 관리자에게 문의해줘."};
+    }
+    // Dedicated client: signing in must never alter the shared service client.
+    const auth = createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
+    const { data,error } = await auth.auth.signInWithPassword({email,password});
+    if (error || !data.session || !data.user) {
+      failed("authentication",error ? {code:error.code,status:error.status} : undefined);
+      const invalidCredentials=error?.code==="invalid_credentials"||error?.status===400||error?.status===401;
+      return {ok:false as const,message:invalidCredentials?"이메일 또는 비밀번호가 올바르지 않아.":"로그인 서비스에 연결하지 못했어. 잠시 후 다시 시도해줘."};
+    }
+    const {data:members,error:memberError}=await reimbursementDb().schema("finance").from("reimbursement_members")
+      .select("user_id").eq("user_id",data.user.id).eq("active",true).limit(2);
+    if(memberError) {
+      failed("authorization_lookup",{code:memberError.code});
+      return {ok:false as const,message:"정산 권한을 확인하지 못했어. 잠시 후 다시 시도해줘."};
+    }
+    if(members?.length!==1) {
+      failed(members?.length?"duplicate_authorization":"missing_authorization");
+      return {ok:false as const,message:members?.length?"활성 정산 권한이 중복되어 있어. 정산 관리자에게 확인해줘.":"로그인 계정에 활성 정산 권한이 없어. 정산 관리자에게 계정과 권한 등록을 요청해줘."};
+    }
+    (await cookies()).set(reimbursementCookie,data.session.access_token,{httpOnly:true,secure:process.env.NODE_ENV === "production",sameSite:"lax",path:"/",maxAge:data.session.expires_in});
+    refresh();
+    return {ok:true as const,message:"로그인했어."};
+  } catch {
+    failed("unexpected");
+    return {ok:false as const,message:"로그인 처리 중 문제가 발생했어. 잠시 후 다시 시도해줘."};
+  }
 }
 export async function reimbursementLogout() {
   (await cookies()).delete(reimbursementCookie);

@@ -34,7 +34,7 @@ export function ReimbursementLogin({error,title="개인 지출 정산·월 마�
   const op=useOperation();
   return <section className={`${card} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">{title}</h1>
     <p className="my-4 text-sm text-slate-600">{description}</p>
-    <form className="space-y-4" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);op.run(()=>reimbursementLogin(form),"로그인했어.");}}>
+    <form className="space-y-4" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);op.run(async()=>{const result=await reimbursementLogin(form);if(!result.ok)throw new Error(result.message);},"로그인했어.");}}>
       <label className="block">이메일<input className={input} name="email" type="email" autoComplete="username" required /></label>
       <label className="block">비밀번호<input className={input} name="password" type="password" autoComplete="current-password" required /></label>
       <button className={button} disabled={op.pending}>로그인</button>
