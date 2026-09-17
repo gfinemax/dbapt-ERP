@@ -1,12 +1,13 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ actor: vi.fn(), rpc: vi.fn(), run: vi.fn(), revalidate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ actor: vi.fn(), identity: vi.fn(), rpc: vi.fn(), run: vi.fn(), revalidate: vi.fn() }));
 vi.mock("next/cache", () => ({ revalidatePath: mocks.revalidate }));
 vi.mock("@/features/finance/fund-workflow-repository", () => ({ runFundWorkflow: mocks.run }));
 vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseActor: mocks.actor }));
+vi.mock("@/features/finance/reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("@/features/finance/reimbursement-repository", () => ({ reimbursementDb: () => ({ schema: () => ({ rpc: mocks.rpc }) }) }));
-import { attachQuickExpenseEvidenceAction, connectExpenseOriginal, updateQuickExpenseDetailsAction } from "./actions";
+import { attachQuickExpenseEvidenceAction, connectExpenseOriginal, updatePersonalReimbursementDetailsAction, updateQuickExpenseDetailsAction } from "./actions";
 import type { ExpenseSourceKind } from "@/features/finance/expense-workspace-repository";
-beforeEach(() => { vi.clearAllMocks(); mocks.run.mockResolvedValue({ id: "existing-transaction" }); mocks.actor.mockResolvedValue({ organization_id: "org", user_id: "actor" }); mocks.rpc.mockResolvedValue({ data: { id: "quick" }, error: null }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.run.mockResolvedValue({ id: "existing-transaction" }); mocks.actor.mockResolvedValue({ organization_id: "org", user_id: "actor" }); mocks.identity.mockResolvedValue({ organization_id: "org", user_id: "actor" }); mocks.rpc.mockResolvedValue({ data: { id: "quick" }, error: null }); });
 describe("common expense source connection action", () => {
   it("reuses ENROLL with original type/text ID and refreshes linked workspaces", async () => {
     expect(await connectExpenseOriginal("RESOLUTION", "old-text-id", "retry-key")).toEqual({ id: "existing-transaction" });
@@ -31,5 +32,10 @@ describe("common expense source connection action", () => {
   it("attaches only the server-issued OCR job identifier", async () => {
     await attachQuickExpenseEvidenceAction("quick", { id: "job", ocrJobId: "job", contentType: "image/jpeg", evidenceType: "영수증", fileName: "receipt.jpg", fileSize: 10, ocrData: {}, ocrStatus: "REVIEW_REQUIRED", storageBucket: "expense-evidence", storagePath: "untrusted-client-path", uploadedAt: "2026-09-08", uploadedBy: "Admin" }, "attach-key");
     expect(mocks.rpc).toHaveBeenCalledWith("quick_expense_command", { p_org: "org", p_actor: "actor", p_command: "ATTACH_EVIDENCE", p_id: "quick", p_data: { ocr_job_id: "job" }, p_key: "attach-key" });
+  });
+  it("updates only personal reimbursement descriptive fields and records the reason", async () => {
+    await updatePersonalReimbursementDetailsAction({ id: "personal", merchant: " 새 거래처 ", purpose: " 수정한 사용내용 ", reason: " 상호 오기 ", expectedUpdatedAt: "2026-09-18T00:00:00Z" });
+    expect(mocks.rpc).toHaveBeenCalledWith("reimbursement_detail_update", { p_org: "org", p_actor: "actor", p_id: "personal", p_merchant: "새 거래처", p_purpose: "수정한 사용내용", p_reason: "상호 오기", p_expected_updated_at: "2026-09-18T00:00:00Z" });
+    expect(mocks.revalidate.mock.calls.map(call => call[0])).toEqual(["/finance/expenses", "/finance/reimbursements", "/finance/trust", "/finance/payments", "/finance"]);
   });
 });

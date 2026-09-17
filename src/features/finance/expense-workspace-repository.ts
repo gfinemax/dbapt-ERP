@@ -16,6 +16,7 @@ export type ExpenseWorkspaceRecord = {
   evidence_files?: { ocr_job_id: string; file_name: string; content_type: string; storage_path: string; evidence_type: string; status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"; stage: EvidenceOcrJobStage; progress: number; result_data: EvidenceOcrData; error_message: string | null; created_at: string }[];
   evidence_kind?: string; evidence_review_status?: string; missing_evidence_reason?: string; evidence_review_note?: string;
   budget_item?: string; expense_detail_id?: string;
+  personal_purpose?: string; personal_updated_at?: string; personal_can_edit?: boolean;
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
 
@@ -28,7 +29,19 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   const quickIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK").map((record: ExpenseWorkspaceRecord) => record.source_id);
   const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
   if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
+  const personalIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "PERSONAL").map((record: ExpenseWorkspaceRecord) => record.source_id);
+  const personalMeta = personalIds.length ? await reimbursementDb().schema("finance").from("personal_reimbursements").select("id,applicant_id,purpose,updated_at").eq("organization_id", member.organization_id).in("id", personalIds) : { data: [], error: null };
+  if (personalMeta.error) throw new Error(`개인 정산 수정 정보 조회 실패: ${personalMeta.error.message}`);
   const byId = new Map((quickMeta.data ?? []).map(row => [row.id, row]));
-  const records = data.records.map((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK" ? { ...record, ...(byId.get(record.source_id) ?? {}) } : record);
+  const personalById = new Map((personalMeta.data ?? []).map(row => [row.id, row]));
+  const isAdmin = member.permissions.includes("ADMIN");
+  const records = data.records.map((record: ExpenseWorkspaceRecord) => {
+    if (record.source_kind === "QUICK") return { ...record, ...(byId.get(record.source_id) ?? {}) };
+    if (record.source_kind === "PERSONAL") {
+      const meta = personalById.get(record.source_id);
+      return { ...record, personal_purpose: meta?.purpose, personal_updated_at: meta?.updated_at, personal_can_edit: record.approval_status === "SUBMITTED" && !!meta && (meta.applicant_id === member.user_id || isAdmin) };
+    }
+    return record;
+  });
   return { records, viewer: { staff: member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p)), permissions: [...member.permissions] } };
 }

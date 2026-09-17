@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { attachQuickExpenseEvidenceAction, connectExpenseOriginal, reviewQuickExpenseEvidenceAction, updateQuickExpenseDetailsAction } from "@/app/finance/expenses/actions";
+import { attachQuickExpenseEvidenceAction, connectExpenseOriginal, reviewQuickExpenseEvidenceAction, updatePersonalReimbursementDetailsAction, updateQuickExpenseDetailsAction } from "@/app/finance/expenses/actions";
 import { createExpenseEvidenceDownloadUrlAction, getExpenseEvidenceOcrJobAction } from "@/app/finance/expense-resolutions/actions";
 import type { EvidenceOcrData, ExpenseEvidenceUploadResult } from "./expense-evidence";
 import { expenseResolutionHref } from "./expense-entry";
@@ -91,6 +91,25 @@ function QuickExpenseTools({ canApprove, expenseDetails, record: r }: { canAppro
   </section>;
 }
 
+function PersonalReimbursementTools({ record: r }: { record: ExpenseWorkspaceRecord }) {
+  const router = useRouter(); const [editing, setEditing] = useState(false); const [merchant, setMerchant] = useState(r.counterparty ?? "");
+  const [purpose, setPurpose] = useState(r.personal_purpose ?? ""); const [reason, setReason] = useState(""); const [busy, setBusy] = useState(false); const [message, setMessage] = useState("");
+  async function save() {
+    if (!r.personal_updated_at) return setMessage("원본 수정 시각을 확인할 수 없어. 새로고침 후 다시 시도해줘.");
+    setBusy(true); setMessage("");
+    try {
+      await updatePersonalReimbursementDetailsAction({ id: r.source_id, merchant, purpose, reason, expectedUpdatedAt: r.personal_updated_at });
+      setMessage("거래처와 사용내용을 수정했고 변경 이력을 남겼어. 연결된 업무가 있다면 원본 변경 여부를 확인해줘."); setEditing(false); setReason(""); router.refresh();
+    } catch (error) { setMessage(error instanceof Error ? error.message : "개인 정산 원본을 수정하지 못했어."); } finally { setBusy(false); }
+  }
+  if (!r.personal_can_edit) return null;
+  return <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4" aria-label="개인 정산 원본 수정">
+    <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">개인 정산 원본 수정</h3><p className="mt-1 text-sm text-slate-600">승인대기 중에는 거래처와 사용내용만 고칠 수 있어. 금액·사용일·예산·증빙은 기존 신청 화면에서 취소 후 다시 신청해야 해.</p></div><button className={secondary} onClick={() => setEditing(value => !value)}>{editing ? "수정 닫기" : "거래처·사용내용 수정"}</button></div>
+    {editing && <div className="mt-4 grid gap-3 sm:grid-cols-2"><label>거래처<input className={field} maxLength={200} value={merchant} onChange={e => setMerchant(e.target.value)} /></label><label>사용내용<input className={field} maxLength={500} value={purpose} onChange={e => setPurpose(e.target.value)} /></label><label className="sm:col-span-2">수정 사유<input className={field} maxLength={500} value={reason} onChange={e => setReason(e.target.value)} placeholder="예: 거래처명 오기 수정" /></label><div className="sm:col-span-2"><button className={button} disabled={busy || !merchant.trim() || !purpose.trim() || !reason.trim()} onClick={() => void save()}>수정 저장</button></div></div>}
+    <p role="status" className="mt-3 text-sm">{message}</p>
+  </section>;
+}
+
 export function filterExpenseRecords(records: ExpenseWorkspaceRecord[], kind: string, connection: string, search: string) {
   const query = search.trim().toLocaleLowerCase();
   return records.filter(r => (kind === "ALL" || r.source_kind === kind) && (connection === "ALL" || (connection === "CONNECTED" ? !!r.transaction_id : !r.transaction_id)) &&
@@ -118,6 +137,7 @@ function ExpenseDetail({ canApprove, expenseDetails, record: r, staff }: { canAp
     {r.transaction_id && r.amounts ? <div className="rounded-lg bg-slate-50 p-4"><h3 className="font-semibold">연결된 지급 현황</h3><p className="mt-2">누적 실제 지급 {money(r.amounts.paid)} · 총 미지급 {money(r.amounts.remaining)} · 승인 중 미지급 {money(r.amounts.approved_unpaid)}</p>{r.amounts.legacy_payment_complete && <p className="mt-2 text-sm">기존 지급완료 기록을 보존했어. 금액 근거가 없으면 확인 필요로 표시돼.</p>}</div> : <div className="rounded-lg bg-slate-50 p-4"><p>통합 업무에 아직 연결되지 않은 원본이야. 연결해도 원본을 복제하거나 새 지급·비용을 만들지 않아.</p>{r.can_connect && <button className={`${button} mt-3`} disabled={pending} onClick={connect}>원본 연결</button>}</div>}
     <p role="status" className="my-3">{message}</p>
     {staff && r.source_kind === "QUICK" && <QuickExpenseTools canApprove={canApprove} expenseDetails={expenseDetails} record={r} />}
+    {r.source_kind === "PERSONAL" && <PersonalReimbursementTools record={r} />}
     <h3 className="mt-4 font-semibold">신탁 요청 연결</h3>{r.trust_items.length ? <ul className="mt-2 space-y-2">{r.trust_items.map(i => <li className="rounded-lg border p-3" key={i.id}>{staff ? <Link className="underline" href={`/finance/trust?request=${encodeURIComponent(i.request_id)}`}>{i.request_no}</Link> : <span>{i.request_no}</span>} · {labels[i.status] ?? i.status} · 요청 {money(i.requested_amount)} · 승인 {money(i.approved_amount)} · 지급 {money(i.paid_amount)}{i.needs_review && <span className="ml-2 text-amber-700">재검토 필요</span>}</li>)}</ul> : <p className="mt-2 text-sm">연결된 신탁 요청이 없어.</p>}
     <h3 className="mt-4 font-semibold">회계전표 연결</h3>{r.vouchers.length ? <ul className="mt-2 space-y-2">{r.vouchers.map(v => <li key={v.id}>{staff ? <Link className="underline" href={`/finance?voucherId=${encodeURIComponent(v.id)}`}>{v.voucher_no}</Link> : <span>{v.voucher_no}</span>} · {v.status} · {v.source_kind === "RECOGNITION" ? "발생 인식" : v.source_kind === "PAYMENT" ? "실제 지급" : "기존 전표"}</li>)}</ul> : <p className="mt-2 text-sm">연결된 전표가 없어.</p>}
     <div className="mt-5 flex flex-wrap gap-3">{staff && <Link className={secondary} href={`/finance/payments?tab=ALL&q=${encodeURIComponent(r.title)}`}>제목으로 지급 목록 확인</Link>}{(staff || r.source_kind === "PERSONAL") && <Link className={secondary} href={r.source_kind === "RESOLUTION" ? expenseResolutionHref({ resolutionId: r.source_id }) : r.source_kind === "QUICK" ? "/finance/quick-expenses" : `/finance/reimbursements${r.budget_month ? `?month=${r.budget_month.slice(0, 7)}` : ""}`}>기존 {kinds[r.source_kind]} 화면에서 확인</Link>}</div><p className="mt-3 text-xs text-slate-600">기존 작성·승인·출력 기능은 각 원본 화면에 있어. 지출결의는 선택한 원본 상세로 바로 열려. 간편지출·개인 정산은 해당 목록에서 확인해줘.</p>

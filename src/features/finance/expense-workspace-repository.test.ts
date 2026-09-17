@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn() }));
+const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn(), rows: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: mocks.db }));
 import { loadExpenseWorkspace } from "./expense-workspace-repository";
 const member = { organization_id: "org", user_id: "user", permissions: ["ADMIN"], active: true };
-beforeEach(() => { vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc }) }); mocks.rpc.mockResolvedValue({ data: { records: [] }, error: null }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.rows.mockResolvedValue({ data: [], error: null }); const chain = { select: () => chain, eq: () => chain, in: mocks.rows }; mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc, from: () => chain }) }); mocks.rpc.mockResolvedValue({ data: { records: [] }, error: null }); });
 describe("expense original workspace identity and persistence", () => {
   it("loads more than 100 rows through the scoped RPC without truncating the source list", async () => {
     const records = Array.from({ length: 105 }, (_, i) => ({ source_kind: "RESOLUTION", source_id: String(i) }));
@@ -17,7 +17,12 @@ describe("expense original workspace identity and persistence", () => {
     mocks.rpc.mockResolvedValue({ data: { records: [{ source_kind: "PERSONAL", source_id: "own" }], staff: true }, error: null });
     const loaded = await loadExpenseWorkspace();
     expect(loaded.viewer).toEqual({ staff: false, permissions: [] });
-    expect(loaded.records[0].source_id).toBe("own");
+    expect(loaded.records[0].source_id).toBe("own"); expect(loaded.records[0].personal_can_edit).toBe(false);
+  });
+  it("marks a submitted personal source editable only for its applicant or an administrator", async () => {
+    mocks.rpc.mockResolvedValue({ data: { records: [{ source_kind: "PERSONAL", source_id: "own", approval_status: "SUBMITTED" }] }, error: null });
+    mocks.rows.mockResolvedValue({ data: [{ id: "own", applicant_id: "user", purpose: "사무용품", updated_at: "2026-09-18T00:00:00Z" }], error: null });
+    const loaded = await loadExpenseWorkspace(); expect(loaded.records[0]).toMatchObject({ personal_purpose: "사무용품", personal_updated_at: "2026-09-18T00:00:00Z", personal_can_edit: true });
   });
   it("denies inactive and unauthenticated access before touching privileged storage", async () => {
     mocks.identity.mockResolvedValueOnce({ ...member, active: false }); await expect(loadExpenseWorkspace()).rejects.toThrow("활성");
