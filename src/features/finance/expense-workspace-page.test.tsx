@@ -17,6 +17,7 @@ describe("common original expense workspace", () => {
   it("keeps the original reimbursement budget month when opening its existing page", () => {
     const data = fixture(); data.records[0] = { ...data.records[0], source_kind: "PERSONAL", budget_month: "2026-03-01" };
     render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="text-id" />);
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     expect(screen.getByRole("link", { name: "기존 개인 대납 정산 화면에서 확인" })).toHaveAttribute("href", "/finance/reimbursements?month=2026-03");
   });
   it("filters original kind, connection and search with matching counts", () => {
@@ -34,14 +35,16 @@ describe("common original expense workspace", () => {
   it("opens its own ID-specific detail and preserves legacy completion without inventing paid amounts", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
     const detail = within(screen.getByRole("region", { name: "지출 상세" }));
-    expect(detail.getByText("지급완료")).toBeInTheDocument();
+    expect(detail.getAllByText("지급완료")).toHaveLength(2);
     expect(detail.queryByText("미지정")).not.toBeInTheDocument();
     expect(detail.queryByText(/누적 실제 지급 0원/)).not.toBeInTheDocument();
+    fireEvent.click(detail.getByRole("tab", { name: "연결 현황" }));
     expect(detail.getByRole("link", { name: "기존 지출결의 화면에서 확인" })).toHaveAttribute("href", "/finance/expense-resolutions?resolutionId=text-id");
     expect(detail.getByText(/선택한 원본 상세로 바로/)).toBeInTheDocument();
   });
   it("connects the existing source once and reads back the saved transaction without duplicate original rows", async () => {
     const workspace = fixture(); const rendered = render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     fireEvent.click(screen.getByRole("button", { name: "원본 연결" }));
     await waitFor(() => expect(mocks.connect).toHaveBeenCalledTimes(1));
     expect(mocks.connect).toHaveBeenCalledWith("RESOLUTION", "text-id", expect.any(String));
@@ -55,6 +58,7 @@ describe("common original expense workspace", () => {
   it("keeps selected original and retries the same key on failure", async () => {
     mocks.connect.mockRejectedValueOnce(new Error("일시적 연결 실패"));
     render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     fireEvent.click(screen.getByRole("button", { name: "원본 연결" })); await screen.findByText("일시적 연결 실패");
     await waitFor(() => expect(screen.getByRole("button", { name: "원본 연결" })).not.toBeDisabled());
     fireEvent.click(screen.getByRole("button", { name: "원본 연결" })); await waitFor(() => expect(mocks.connect).toHaveBeenCalledTimes(2));
@@ -64,6 +68,7 @@ describe("common original expense workspace", () => {
     let resolve!: (value: { id: string }) => void;
     mocks.connect.mockImplementation(() => new Promise(r => { resolve = r; }));
     render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     const button = screen.getByRole("button", { name: "원본 연결" }); fireEvent.click(button); fireEvent.click(button);
     expect(mocks.connect).toHaveBeenCalledTimes(1);
     await act(async () => resolve({ id: "saved" }));
@@ -72,6 +77,7 @@ describe("common original expense workspace", () => {
     const workspace = fixture(); workspace.records[0].vouchers = [{ id: "voucher-1", voucher_no: "회계-1", status: "승인대기", source_kind: "RECOGNITION" }];
     workspace.records[0].trust_items = [{ id: "item", request_id: "request-1", request_no: "신탁-1", status: "PARTIAL", requested_amount: 1000, approved_amount: 500, paid_amount: 200, needs_review: true }];
     render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     expect(screen.getByRole("link", { name: "회계-1" })).toHaveAttribute("href", "/finance?voucherId=voucher-1");
     expect(screen.getByRole("link", { name: "신탁-1" })).toHaveAttribute("href", "/finance/trust?request=request-1");
     expect(screen.getByText("재검토 필요")).toBeInTheDocument();
@@ -92,8 +98,27 @@ describe("common original expense workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: "이미 사용하거나 지급한 거래" }));
     expect(screen.getByRole("link", { name: "개인이 먼저 쓴 경비 정산 신청" })).toHaveAttribute("href", "/finance/reimbursements");
     expect(screen.queryByRole("link", { name: /간편지출 등록/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("tab", { name: "연결 현황" }));
     expect(screen.queryByRole("link", { name: "제목으로 지급 목록 확인" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "원본 연결" })).toBeInTheDocument();
+  });
+  it("selects rows into the side panel and closes back to the selected row", async () => {
+    render(<ExpenseWorkspacePage workspace={fixture()} />);
+    const source = screen.getByRole("button", { name: "사무용품" });
+    fireEvent.click(source);
+    expect(source.closest("tr")).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("complementary", { name: "선택한 지출 원본 상세 패널" })).toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("source_kind=RESOLUTION"), { scroll: false });
+    fireEvent.click(screen.getByRole("button", { name: "지출 상세 닫기" }));
+    await waitFor(() => expect(source).toHaveFocus());
+    expect(source.closest("tr")).toHaveAttribute("aria-selected", "false");
+    expect(mocks.replace).toHaveBeenLastCalledWith("/finance/expenses?from=home", { scroll: false });
+  });
+  it("closes the side panel with Escape", () => {
+    render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("complementary", { name: "선택한 지출 원본 상세 패널" })).not.toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenLastCalledWith("/finance/expenses?from=home", { scroll: false });
   });
   it("reviews saved receipt OCR before updating quick-expense text and preserves the original amount", async () => {
     const workspace = fixture(); workspace.records[1] = { ...workspace.records[1], title: "사무용품", amount: 14000, counterparty: "다이소", updated_at: "2026-09-08T08:00:00Z", evidence_files: [{ ocr_job_id: "job-1", file_name: "영수증.jpg", content_type: "image/jpeg", storage_path: "org/user/receipt.jpg", evidence_type: "영수증", status: "COMPLETED", stage: "COMPLETED", progress: 100, result_data: { issuer: "(주)아성다이소봉천본점", totalAmount: 15000, items: [{ itemName: "서류꽂이" }, { itemName: "건전지" }] }, error_message: null, created_at: "2026-09-08" }] };
