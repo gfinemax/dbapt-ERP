@@ -2405,6 +2405,7 @@ export function ExpenseResolutionPage({
           ...nextState,
           accountAllocations: current.accountAllocations.map((allocation, index) => index === 0 ? { ...allocation, accountTitle: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : allocation.accountTitle, budgetItem: category === "택시" || category === "주차" || category === "통행료" ? "운영비 > 여비교통비" : allocation.budgetItem } : allocation),
           approvalSkipReason: "승인 예산 내 일상 지출",
+          accountHolder: "",
           cardReconciliationStatus: current.cardTransactionId ? "MATCHED" : "PENDING",
           creationSource: "DIRECT",
           evidenceKind: "CARD_RECEIPT",
@@ -2415,7 +2416,10 @@ export function ExpenseResolutionPage({
           inputMethod: "MANUAL",
           missingEvidenceReason: "",
           operationExpenseDetail: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : current.operationExpenseDetail,
+          paymentAccountNo: "",
+          paymentBank: "",
           paymentFlowType: "사후정산",
+          paymentTargetId: "manual",
           reason: current.reason.trim() || `업무 목적 ${category} 비용 · 공용 법인카드 결제`,
           subject,
           vendorName: current.vendorName.trim() || "법인카드 사용처 미확인",
@@ -3186,10 +3190,10 @@ export function ExpenseResolutionPage({
       expenseItems: isBatch ? batchSummary.items : [],
       singleItems: isBatch ? [] : formSingleSummary.items,
       accountAllocations: isBatch ? [] : formState.accountAllocations,
-      paymentBank: formState.paymentBank,
-      paymentAccountNo: formState.paymentAccountNo,
-      accountHolder: formState.accountHolder,
-      paymentTargetId: formState.paymentTargetId,
+      paymentBank: isAlreadyPaid ? "" : formState.paymentBank,
+      paymentAccountNo: isAlreadyPaid ? "" : formState.paymentAccountNo,
+      accountHolder: isAlreadyPaid ? "" : formState.accountHolder,
+      paymentTargetId: isAlreadyPaid ? undefined : formState.paymentTargetId,
       supplyAmount: isBatch ? batchSummary.totalSupplyAmount : formSingleSummary.supplyAmount,
       vat: isBatch ? batchSummary.totalVatAmount : formSingleSummary.vatAmount,
       totalPaymentAmount: isBatch ? batchSummary.totalAmount : formTotalAmount,
@@ -4052,6 +4056,7 @@ function ExpenseResolutionCreateModal({
     ...formState.accountAllocations.map((allocation) => allocation.budgetItem),
   ].filter(Boolean)));
   const isBatch = formState.resolutionType === "BATCH";
+  const isCorporateCardPayment = formState.expenseTiming === "REIMBURSEMENT" && formState.expenseBurdenType === "CORPORATE_CARD";
   const cardMatchCandidates = useMemo(() => findCorporateCardMatchCandidates({ amount: totalAmount, cardLastFour: formState.cardLastFour, expenseDate: formState.actualExpenseDate, transactions: cardTransactionCandidates }), [cardTransactionCandidates, formState.actualExpenseDate, formState.cardLastFour, totalAmount]);
   const displayedCardTransactions = useMemo(() => {
     const recommendedIds = new Set(cardMatchCandidates.map((candidate) => candidate.id));
@@ -4934,7 +4939,7 @@ function ExpenseResolutionCreateModal({
               ) : null}
             </CollapsibleFormSection> : null}
 
-            {currentStep === 1 ? <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget, formState)} title="지급정보">
+            {currentStep === 1 && !isCorporateCardPayment ? <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget, formState)} title="지급정보">
               <TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} />
               <label className="grid gap-1 text-sm font-semibold md:col-span-2">
                 <span>지급대상</span>
@@ -4963,9 +4968,10 @@ function ExpenseResolutionCreateModal({
               <TextInput label="지급계좌번호" onChange={(value) => onChange("paymentAccountNo", value)} value={formState.paymentAccountNo} />
               <TextInput label="예금주" onChange={(value) => onChange("accountHolder", value)} value={formState.accountHolder} />
             </CollapsibleFormSection> : null}
+            {currentStep === 1 && isCorporateCardPayment ? <section className="rounded-xl border border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] px-5 py-4"><h3 className="font-bold text-[var(--color-green-ink)]">공용 법인카드 결제완료</h3><p className="mt-1 text-sm font-semibold text-[var(--color-stone)]">이미 법인카드로 결제한 건이므로 지급대상·지급계좌를 입력하지 않으며 별도 계좌이체도 발생하지 않습니다.</p></section> : null}
 
             {currentStep === 3 ? <section className="grid gap-4 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">기본·지급정보</h3><p className="mt-1 text-sm text-[var(--color-stone)]">{formState.projectName || "프로젝트 미선택"} · {formState.subject || "건명 미입력"} · {selectedPaymentTarget.label}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
+              <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">기본·지급정보</h3><p className="mt-1 text-sm text-[var(--color-stone)]">{formState.projectName || "프로젝트 미선택"} · {formState.subject || "건명 미입력"} · {isCorporateCardPayment ? "공용 법인카드 결제완료" : selectedPaymentTarget.label}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
                 <DetailItem label="지출일" value={formState.plannedPaymentDate || "-"} />
                 <DetailItem label="거래처" value={formState.vendorName || "-"} />
@@ -4998,7 +5004,7 @@ function ExpenseResolutionCreateModal({
             <section className="mb-3 rounded-lg bg-white p-3">
               <h3 className="text-base font-bold">현재 결의 요약</h3>
               <div className="mt-3 grid gap-2 text-sm">
-                <BudgetRow label="지급대상" value={selectedPaymentTarget.label} />
+                <BudgetRow label={isCorporateCardPayment ? "결제수단" : "지급대상"} value={isCorporateCardPayment ? "공용 법인카드 · 별도 지급 없음" : selectedPaymentTarget.label} />
                 <BudgetRow label="지출예정일" value={formState.plannedPaymentDate} />
                 <BudgetRow label="총지급액" value={formatExpenseResolutionAmount(totalAmount)} />
                 <BudgetRow label="예산상태" value={budgetSnapshot.budgetCheckStatus} />
@@ -5392,6 +5398,7 @@ export function ExpenseResolutionDetailModal({
   resolution: ManagedExpenseResolution;
 }) {
   const evidenceRows = getEvidenceRows(resolution);
+  const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
   const approvalLine = getDisplayApprovalLine(resolution);
   const [historySort, setHistorySort] = useState<"asc" | "desc">("asc");
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
@@ -5531,10 +5538,8 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="지출사유" value={resolution.reason || "-"} wide />
           </DetailSection>
 
-          <DetailSection title="지급정보">
-            <DetailItem label="지급은행" value={resolution.paymentBank || "-"} />
-            <DetailItem label="지급계좌번호" value={resolution.paymentAccountNo || "-"} />
-            <DetailItem label="예금주" value={resolution.accountHolder || "-"} />
+          <DetailSection title={isCorporateCardPayment ? "법인카드 결제정보" : "지급정보"}>
+            {isCorporateCardPayment ? <><DetailItem label="결제수단" value="공용 법인카드" /><DetailItem label="별도 지급" value="없음" /><DetailItem label="카드번호" value={resolution.cardLastFour ? `끝 ${resolution.cardLastFour}` : "카드내역 연결대기"} /></> : <><DetailItem label="지급은행" value={resolution.paymentBank || "-"} /><DetailItem label="지급계좌번호" value={resolution.paymentAccountNo || "-"} /><DetailItem label="예금주" value={resolution.accountHolder || "-"} /></>}
             <DetailItem label="지급예정일" value={resolution.plannedPaymentDate || "-"} />
             <DetailItem label="지급일" value={resolution.paidAt ?? "-"} />
             <DetailItem label="업무유형" value={getExpenseTimingLabel(normalizeExpenseTiming(resolution))} />

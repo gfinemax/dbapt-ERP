@@ -247,11 +247,34 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("비용부담 유형")).toHaveValue("CORPORATE_CARD");
     expect(within(dialog).getByRole("button", { name: "카드 사용 임시등록" })).toBeInTheDocument();
     expect(within(dialog).getByText("카드 승인내역 연결대기")).toBeInTheDocument();
+    expect(within(dialog).getByText("공용 법인카드 결제완료")).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("지급은행")).not.toBeInTheDocument();
+    expect(within(dialog).queryByLabelText("지급계좌번호")).not.toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "영수증 미발행" }));
     expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("영수증 미발행 · 공용 법인카드 사용내역 확인 필요");
     expect(within(dialog).getByText(/결재권자의 추가 확인 대상/)).toBeInTheDocument();
+  });
+
+  it("does not persist a payment account for an already-paid corporate-card expense", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "카드 사용 임시등록" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    expect(persistResolution.mock.calls[0][0]).toMatchObject({
+      accountHolder: "",
+      expenseBurdenType: "CORPORATE_CARD",
+      paymentAccountNo: "",
+      paymentBank: "",
+      paymentStatus: "지급완료",
+    });
   });
 
   it("creates a taxi expense draft from an unresolved corporate-card transaction", () => {
