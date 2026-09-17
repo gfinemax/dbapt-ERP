@@ -1,10 +1,54 @@
-import { requireApprovalActor } from "./approval-authorization";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getApprovalSettings } from "./approval-settings-repository";
-import { createDefaultApprovalLines, type ExpenseResolution } from "@/features/finance/finance-model";
-import { toManagedExpenseResolutionDraft } from "@/features/finance/expense-resolution-draft-adapter";
-export type SmallExpense={id:string;expenseDate:string;partnerName:string;description:string;projectName:string;accountSubjectName:string;amount:number;payerLabel:string;memo:string;batchResolutionId?:string};
-function client(){const value=getSupabaseServerClient();if(!value)throw new Error("Supabase 서버 연결이 설정되지 않았어.");return value;}
-export async function listSmallExpenses(organizationId?:string):Promise<SmallExpense[]>{const actor=await requireApprovalActor();if(organizationId&&organizationId!==actor.organization_id)throw new Error("다른 조합의 소액경비를 조회할 수 없습니다.");const {data,error}=await client().schema("approval").from("small_expenses").select("*").eq("organization_id",actor.organization_id).is("deleted_at",null).order("expense_date",{ascending:false});if(error)throw new Error(`소액경비를 불러오지 못했어: ${error.message}`);return (data??[]).map(row=>({accountSubjectName:row.account_subject_name,amount:Number(row.amount),batchResolutionId:row.batch_resolution_id??undefined,description:row.description,expenseDate:row.expense_date,id:row.id,memo:row.memo,partnerName:row.partner_name,payerLabel:row.payer_label,projectName:row.project_name}));}
-export async function createSmallExpense(input:Omit<SmallExpense,"id"|"batchResolutionId"> & {evidence?:File}){const actor=await requireApprovalActor();const settings=await getApprovalSettings(actor.organization_id);if(input.amount>settings.smallExpenseLimit)throw new Error(`소액결의 한도 ${settings.smallExpenseLimit.toLocaleString("ko-KR")}원을 초과했어.`);const forbidden=/계약|조합원\s*환불|차입|상환|소송|예산\s*외|추가\s*부담/.test(`${input.description} ${input.memo}`);if(forbidden)throw new Error("계약·환불·차입·소송·예산 외·추가부담 업무는 소액결의를 사용할 수 없어.");let evidencePath:string|null=null;if(input.evidence&&input.evidence.size){if(input.evidence.size>10*1024*1024)throw new Error("증빙파일은 10MB 이하여야 해.");evidencePath=`small-expense/${crypto.randomUUID()}-${input.evidence.name.replace(/[^\w.가-힣-]/g,"_")}`;const {error}=await client().storage.from("approval-attachments").upload(evidencePath,await input.evidence.arrayBuffer(),{contentType:input.evidence.type,upsert:false});if(error)throw new Error(`증빙 업로드 실패: ${error.message}`);}const {error}=await client().schema("approval").from("small_expenses").insert({account_subject_name:input.accountSubjectName,amount:input.amount,created_by_label:actor.display_name,description:input.description,evidence_bucket:evidencePath?"approval-attachments":null,evidence_path:evidencePath,expense_date:input.expenseDate,memo:input.memo,organization_id:actor.organization_id,partner_name:input.partnerName,payer_label:input.payerLabel,project_name:input.projectName});if(error)throw new Error(`소액경비 저장 실패: ${error.message}`);}
-export async function createSmallExpenseBatch(ids:string[],actorLabel:string){const actor=await requireApprovalActor("ADMIN");actorLabel=actor.display_name;if(!ids.length)throw new Error("일괄 처리할 내역을 선택해줘.");const rows=(await listSmallExpenses()).filter(row=>ids.includes(row.id)&&!row.batchResolutionId);if(rows.length!==ids.length)throw new Error("이미 처리됐거나 찾을 수 없는 내역이 포함됐어.");const total=rows.reduce((sum,row)=>sum+row.amount,0);const today=new Date().toLocaleDateString("en-CA",{timeZone:"Asia/Seoul"});const base:ExpenseResolution={accountHolder:actorLabel,accountNumber:"",approvalLines:createDefaultApprovalLines(),approvalStatus:"DRAFT",bankName:"미지정",budgetItem:"소액경비",createdAt:today,createdBy:actorLabel,createdByTitle:"회계담당",evidenceFiles:[],expenseType:"소액경비",history:[],id:"small-expense-pending",paymentStatus:"BEFORE_PAYMENT",plannedPaymentDate:today,reason:"월별 소액경비 일괄결의",resolutionNo:"생성중",settlementStatus:"SETTLEMENT_PENDING",subject:`${rows[0].expenseDate.slice(0,7)} 소액경비 일괄결의`,supplyAmount:total,totalAmount:total,vatAmount:0,vendorName:"다수 거래처"};const managed={...toManagedExpenseResolutionDraft(base),creationSource:"SMALL_EXPENSE" as const,directExpenseDecision:"ALLOWED" as const,directExpenseReasons:["월별 소액경비 일괄결의입니다."],approvalSkipReason:"소액경비 일괄결의"};const {data,error}=await client().schema("approval").rpc("create_small_expense_batch",{p_actor_label:actorLabel,p_ids:ids,p_resolution_data:managed});if(error)throw new Error(`월별 일괄결의를 만들지 못했어: ${error.message}`);return data as string;}
+import type { ReimbursementMember } from "@/features/finance/reimbursement-domain";
+import type { SmallExpense, SmallExpenseBudget, SmallExpenseMember, SmallExpenseRoles, SmallExpenseSource } from "./small-expense-domain";
+
+export function smallExpenseDb() {
+  const db = getSupabaseServerClient();
+  if (!db) throw new Error("소액지출 저장소가 설정되지 않았습니다.");
+  return db;
+}
+export async function smallExpenseCommand(member: ReimbursementMember, command: string, data: Record<string, unknown>) {
+  const { data: result, error } = await smallExpenseDb().schema("approval").rpc("small_expense_command", {
+    p_org: member.organization_id, p_actor: member.user_id, p_command: command, p_data: data,
+  });
+  if (error) throw new Error(error.code === "23505" ? "이미 등록·처리된 거래입니다. 새로고침 후 확인해주세요." : error.message);
+  return result;
+}
+export type SmallExpenseWorkspace = {
+  member: ReimbursementMember; roles: SmallExpenseRoles | null; members: SmallExpenseMember[]; rows: SmallExpense[];
+  budgets: SmallExpenseBudget[]; sources: SmallExpenseSource[]; month: string; limit: number;
+  audits: { id: string; expense_id: string | null; actor_label: string; action: string; reason: string; created_at: string }[];
+};
+export async function loadSmallExpenseWorkspace(member: ReimbursementMember, month: string): Promise<SmallExpenseWorkspace> {
+  const db = smallExpenseDb(); const org = member.organization_id;
+  const roleResult = await db.schema("approval").from("small_expense_roles").select("director_id,chair_id").eq("organization_id", org).maybeSingle();
+  if (roleResult.error) throw new Error("소액지출 확인 기능의 DB 업데이트가 필요합니다. 관리자에게 확인해주세요.");
+  const roles = roleResult.data as SmallExpenseRoles | null;
+  if (!member.permissions.includes("ADMIN") && ![roles?.director_id, roles?.chair_id].includes(member.user_id)) throw new Error("소액지출 담당자로 지정되지 않았습니다. 관리자에게 역할 지정을 요청해주세요.");
+  const start = `${month}-01`; const end = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1)).toISOString().slice(0, 10);
+  const results = await Promise.all([
+    db.schema("approval").from("small_expenses").select("*", { count: "exact" }).eq("organization_id", org).is("deleted_at", null).gte("expense_date", start).lt("expense_date", end).order("expense_date", { ascending: false }),
+    db.schema("finance").from("reimbursement_members").select("user_id,display_name").eq("organization_id", org).eq("active", true),
+    db.schema("approval").from("budgets").select("id,budget_item,fiscal_year").eq("organization_id", org).eq("fiscal_year", Number(month.slice(0, 4))),
+    db.schema("approval").from("settings").select("small_expense_limit").eq("organization_id", org).maybeSingle(),
+    db.schema("approval").from("small_expense_audit").select("id,expense_id,actor_label,action,reason,created_at").eq("organization_id", org).order("created_at", { ascending: false }).limit(50),
+    db.schema("finance").from("bank_transactions").select("id,transacted_at,withdrawal_amount,counterparty,description").eq("organization_id", org).is("deleted_at", null).gte("transacted_at", `${start}T00:00:00+09:00`).lt("transacted_at", `${end}T00:00:00+09:00`).gt("withdrawal_amount", 0).order("transacted_at", { ascending: false }),
+    db.schema("finance").from("corporate_card_transactions").select("id,approved_at,amount,merchant_name").eq("organization_id", org).is("linked_resolution_id", null).gte("approved_at", `${start}T00:00:00+09:00`).lt("approved_at", `${end}T00:00:00+09:00`).order("approved_at", { ascending: false }),
+  ]);
+  for (const result of results) if (result.error) throw new Error(`소액지출 조회 실패: ${result.error.message}`);
+  if ((results[0].count ?? 0) > (results[0].data?.length ?? 0)) throw new Error("조회 한도를 넘는 월별 내역이 있어 정확한 집계를 표시할 수 없습니다. 관리자에게 조회 범위 확장을 요청해주세요.");
+  const rows: SmallExpense[] = (results[0].data ?? []).map(row => ({
+    id: row.id, expenseDate: row.expense_date, partnerName: row.partner_name, description: row.description,
+    projectName: row.project_name, accountSubjectName: row.account_subject_name, amount: Number(row.amount), payerLabel: row.payer_label,
+    memo: row.memo, batchResolutionId: row.batch_resolution_id ?? undefined, reviewStatus: row.review_status,
+    registeredBy: row.registered_by, spenderId: row.spender_id, confirmedLabel: row.confirmed_label, confirmedAt: row.confirmed_at,
+    reviewReason: row.review_reason, revision: row.revision, budgetId: row.budget_id, paymentMethod: row.payment_method,
+    bankTransactionId: row.bank_transaction_id, cardTransactionId: row.corporate_card_transaction_id, hasEvidence: !!row.evidence_path,
+  }));
+  const date = (value: string) => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul" }).format(new Date(value));
+  const sources: SmallExpenseSource[] = [
+    ...(results[5].data ?? []).map(row => ({ id: row.id, date: date(row.transacted_at), amount: Number(row.withdrawal_amount), label: row.counterparty || row.description, method: "BANK_TRANSFER" as const })),
+    ...(results[6].data ?? []).map(row => ({ id: row.id, date: date(row.approved_at), amount: Number(row.amount), label: row.merchant_name, method: "CORPORATE_CARD" as const })),
+  ];
+  return { member, roles, month, rows, members: results[1].data ?? [], budgets: results[2].data ?? [], limit: Number(results[3].data?.small_expense_limit ?? 50000), audits: results[4].data ?? [], sources };
+}

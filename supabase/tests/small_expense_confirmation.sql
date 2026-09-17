@@ -1,0 +1,84 @@
+-- Run with the new migration inside BEGIN/ROLLBACK. No fixtures persist.
+do $$
+declare org uuid:=gen_random_uuid(); director uuid:=gen_random_uuid(); chair uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid();
+ b uuid:=gen_random_uuid(); first_id uuid:=gen_random_uuid(); second_id uuid:=gen_random_uuid(); self_id uuid:=gen_random_uuid(); over_id uuid:=gen_random_uuid();
+ yr int:=extract(year from now() at time zone 'Asia/Seoul'); used date; payload jsonb; item jsonb; total numeric; n int; quick uuid;
+begin
+ used:=make_date(yr,3,15);
+ insert into core.organizations(id,name,status) values(org,'Small expense rollback verification','active');
+ insert into auth.users(id) values(director),(chair),(outsider);
+ insert into finance.reimbursement_members values(org,director,'Director',array['ADMIN'],true),(org,chair,'Chair','{}',true),(org,outsider,'Other','{}',true);
+ insert into approval.budgets(id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount) values(b,org,yr,'소모품비',480000,0,40000);
+ begin perform approval.small_expense_command(org,outsider,'CONFIGURE',jsonb_build_object('director_id',director,'chair_id',chair,'reason','setup'));raise exception 'TEST: unauthorized configuration';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,director,'CONFIGURE',jsonb_build_object('director_id',director,'chair_id',director,'reason','setup'));raise exception 'TEST: same person roles';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'CONFIGURE',jsonb_build_object('director_id',director,'chair_id',chair,'reason','test policy'));
+ foreach quick in array array[first_id,second_id,self_id,over_id] loop
+  insert into storage.objects(bucket_id,name) values('small-expense-evidence',org||'/'||director||'/'||quick||'/receipt');
+ end loop;
+ payload:=jsonb_build_object('id',first_id,'expense_date',used,'partner_name','Office store','description','복사용지 구입','account_subject_name','소모품비','amount',20000,'spender_id',director,'budget_id',b,'payment_method','CASH','evidence_path',org||'/'||director||'/'||first_id||'/receipt','evidence_hash','receipt-1');
+ begin perform approval.small_expense_command(org,chair,'SUBMIT',payload);raise exception 'TEST: chair registered';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||'{"evidence_path":"missing"}'::jsonb);raise exception 'TEST: missing evidence';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||'{"amount":50001}'::jsonb);raise exception 'TEST: limit exceeded';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'SUBMIT',payload);
+ perform approval.small_expense_command(org,director,'SUBMIT',payload);
+ if (select count(*) from approval.small_expenses where organization_id=org)<>1 then raise exception 'TEST: duplicate submit';end if;
+ payload:=payload||jsonb_build_object('id',second_id,'amount',15000,'evidence_path',org||'/'||director||'/'||second_id||'/receipt','evidence_hash','receipt-2');
+ perform approval.small_expense_command(org,director,'SUBMIT',payload);
+ perform approval.small_expense_command(org,director,'SUBMIT',payload||jsonb_build_object('id',self_id,'amount',1000,'spender_id',chair,'evidence_path',org||'/'||director||'/'||self_id||'/receipt','evidence_hash','receipt-3'));
+ item:=jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',first_id,'revision',1)),'evidence_verified',true);
+ begin perform approval.small_expense_command(org,director,'CONFIRM',item);raise exception 'TEST: director confirmed';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,outsider,'CONFIRM',item);raise exception 'TEST: outsider confirmed';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,chair,'CONFIRM',item||'{"evidence_verified":false}'::jsonb);raise exception 'TEST: evidence acknowledgement missing';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,chair,'CONFIRM',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',first_id,'revision',1),jsonb_build_object('id',self_id,'revision',1)),'evidence_verified',true));raise exception 'TEST: self approval';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ if exists(select 1 from finance.quick_expense_records where organization_id=org) then raise exception 'TEST: partial confirmation committed';end if;
+ perform approval.small_expense_command(org,chair,'RETURN',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',second_id,'revision',1)),'reason','설명 보완'));
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||'{"revision":1,"memo":"보완"}'::jsonb);raise exception 'TEST: stale edit';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'SUBMIT',payload||'{"revision":2,"memo":"보완"}'::jsonb);
+ perform approval.small_expense_command(org,chair,'CONFIRM',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',first_id,'revision',1),jsonb_build_object('id',second_id,'revision',3)),'evidence_verified',true));
+ select sum(amount),count(*) into total,n from approval.small_expenses where organization_id=org and review_status='CONFIRMED';
+ if total<>35000 or n<>2 then raise exception 'TEST: confirmed aggregate';end if;
+ if (finance.reimbursement_budget_rows(org,make_date(yr,3,1))->0->>'quick_amount')::numeric<>35000 then raise exception 'TEST: budget not reflected once';end if;
+ begin perform approval.small_expense_command(org,chair,'CONFIRM',item);raise exception 'TEST: duplicate confirm';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ if (select count(*) from finance.quick_expense_records where organization_id=org)<>2 then raise exception 'TEST: duplicate budget row';end if;
+ select quick_record_id into quick from approval.small_expenses where id=first_id;
+ begin update finance.quick_expense_records set amount=1 where id=quick;raise exception 'TEST: derived row editable';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'SUBMIT',payload||jsonb_build_object('id',over_id,'amount',10000,'evidence_path',org||'/'||director||'/'||over_id||'/receipt','evidence_hash','receipt-4'));
+ begin perform approval.small_expense_command(org,chair,'CONFIRM',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',over_id,'revision',1)),'evidence_verified',true));raise exception 'TEST: monthly budget exceeded';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform finance.reimbursement_command(org,director,'POLICY','{"submission_day":5,"completion_day":10,"long_delay_days":60}');
+ perform finance.reimbursement_command(org,director,'OPEN',jsonb_build_object('month',make_date(yr,3,1)));
+ begin perform finance.reimbursement_command(org,director,'CLOSE',jsonb_build_object('month',make_date(yr,3,1),'reason','test'));raise exception 'TEST: pending close';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'CANCEL',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',self_id,'revision',1),jsonb_build_object('id',over_id,'revision',1)),'reason','별도 절차로 처리'));
+ perform finance.reimbursement_command(org,director,'CLOSE',jsonb_build_object('month',make_date(yr,3,1),'reason','verified'));
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||jsonb_build_object('id',gen_random_uuid()));raise exception 'TEST: closed month submit';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ if not exists(select 1 from approval.small_expense_audit where organization_id=org and action='CONFIRM' and actor_id=chair and before_data->>'review_status'='PENDING' and after_data->>'review_status'='CONFIRMED') then raise exception 'TEST: missing audit';end if;
+ if has_function_privilege('anon','approval.small_expense_command(uuid,uuid,text,jsonb)','EXECUTE') or has_function_privilege('authenticated','approval.small_expense_command(uuid,uuid,text,jsonb)','EXECUTE') then raise exception 'TEST: exposed command';end if;
+end;$$;
+
+do $$
+declare org uuid:=gen_random_uuid(); other_org uuid:=gen_random_uuid(); director uuid:=gen_random_uuid(); chair uuid:=gen_random_uuid();
+ b uuid:=gen_random_uuid(); acct uuid:=gen_random_uuid(); bank uuid:=gen_random_uuid(); card uuid:=gen_random_uuid();
+ req uuid:=gen_random_uuid(); req2 uuid:=gen_random_uuid(); duplicate uuid:=gen_random_uuid(); payload jsonb; used date:=(now() at time zone 'Asia/Seoul')::date;
+begin
+ insert into core.organizations(id,name,status) values(org,'Small transaction rollback test','active'),(other_org,'Other tenant rollback test','active');
+ insert into auth.users(id) values(director),(chair);
+ insert into finance.reimbursement_members values(org,director,'Director',array['ADMIN'],true),(org,chair,'Chair','{}',true);
+ insert into approval.budgets(id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount) values(b,org,extract(year from used),'Office',1200000,0,100000);
+ perform approval.small_expense_command(org,director,'CONFIGURE',jsonb_build_object('director_id',director,'chair_id',chair,'reason','test policy'));
+ insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type,usage_status) values(acct,org,'Test','Test','SMALL-TEST','운영계좌','사용');
+ insert into finance.bank_transactions(id,organization_id,bank_account_id,transacted_at,description,withdrawal_amount,deposit_amount,balance_amount) values(bank,org,acct,used::timestamp at time zone 'Asia/Seoul','Paper',20000,0,0);
+ insert into finance.corporate_card_transactions(id,organization_id,transaction_uid,approved_at,amount,merchant_name,card_name,card_last_four) values(card,org,'TEST',used::timestamp at time zone 'Asia/Seoul',15000,'Store','Test card','1234');
+ insert into storage.objects(bucket_id,name) values('small-expense-evidence',org||'/'||director||'/'||req||'/receipt'),('small-expense-evidence',org||'/'||director||'/'||req2||'/receipt'),('small-expense-evidence',org||'/'||director||'/'||duplicate||'/receipt');
+ payload:=jsonb_build_object('id',req,'expense_date',used,'partner_name','Store','description','Paper','account_subject_name','소모품비','amount',20000,'spender_id',director,'budget_id',b,'payment_method','BANK_TRANSFER','bank_transaction_id',bank,'evidence_path',org||'/'||director||'/'||req||'/receipt','evidence_hash','bank');
+ begin perform approval.small_expense_command(other_org,director,'SUBMIT',payload);raise exception 'TEST: cross-tenant write';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||'{"amount":19000}'::jsonb);raise exception 'TEST: mismatched bank amount';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ perform approval.small_expense_command(org,director,'SUBMIT',payload);
+ begin perform approval.small_expense_command(org,director,'SUBMIT',payload||jsonb_build_object('id',duplicate,'evidence_path',org||'/'||director||'/'||duplicate||'/receipt'));raise exception 'TEST: duplicate bank pending';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ payload:=payload||jsonb_build_object('id',req2,'amount',15000,'payment_method','CORPORATE_CARD','bank_transaction_id',null,'corporate_card_transaction_id',card,'evidence_path',org||'/'||director||'/'||req2||'/receipt','evidence_hash','card');
+ perform approval.small_expense_command(org,director,'SUBMIT',payload);
+ update finance.reimbursement_members set active=false where organization_id=org and user_id=chair;
+ begin perform approval.small_expense_command(org,chair,'CONFIRM',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',req,'revision',1)),'evidence_verified',true));raise exception 'TEST: inactive actor';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+ update finance.reimbursement_members set active=true where organization_id=org and user_id=chair;
+ perform approval.small_expense_command(org,chair,'CONFIRM',jsonb_build_object('items',jsonb_build_array(jsonb_build_object('id',req,'revision',1),jsonb_build_object('id',req2,'revision',1)),'evidence_verified',true));
+ if not exists(select 1 from finance.quick_expense_records where organization_id=org and bank_transaction_id=bank and record_status='RECORDED') or not exists(select 1 from finance.quick_expense_records where organization_id=org and corporate_card_transaction_id=card and record_status='RECORDED') then raise exception 'TEST: transaction link lost';end if;
+ begin update approval.small_expense_audit set reason='changed' where organization_id=org;raise exception 'TEST: audit editable';exception when others then if sqlerrm like 'TEST:%' then raise;end if;end;
+end;$$;
