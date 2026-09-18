@@ -27,6 +27,39 @@ describe("QuickExpensePage", () => {
     expect(screen.getByLabelText("거래처·지급대상")).toBeInTheDocument();
   });
 
+  it("uploads and attaches a selected receipt after saving the quick expense", async () => {
+    const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["증빙 확인 필요"], id: "quick-1", recordStatus: "EVIDENCE_PENDING" as const }));
+    const attachment = { contentType: "image/jpeg", evidenceType: "영수증", fileName: "receipt.jpg", fileSize: 1234, id: "evidence-1", ocrData: {}, ocrJobId: "ocr-1", ocrStatus: "REVIEW_REQUIRED" as const, storageBucket: "expense-evidence", storagePath: "org/receipt.jpg", uploadedAt: "2026-08-27T12:00:00+09:00", uploadedBy: "user-1" };
+    const uploadEvidence = vi.fn(async () => ({ attachment, ok: true as const }));
+    const attachEvidence = vi.fn(async () => undefined);
+    render(<QuickExpensePage attachEvidence={attachEvidence} initialBankTransactions={[{ counterparty: "KT", description: "인터넷", id: "bank-1", resolutionStatus: "UNRESOLVED", transactedAt: "2026-08-27T09:00:00+09:00", withdrawalAmount: 55000 }]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} uploadEvidence={uploadEvidence} />);
+
+    fireEvent.change(screen.getByLabelText("미처리 통장 출금거래"), { target: { value: "bank-1" } });
+    fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "조합 사무실 인터넷 요금" } });
+    const file = new File(["receipt"], "receipt.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [file] } });
+    fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
+
+    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith(file, "QUICK-quick-1", "영수증"));
+    expect(attachEvidence).toHaveBeenCalledWith("quick-1", attachment, "quick-receipt:quick-1:ocr-1");
+    expect(await screen.findByText("사용내용과 영수증을 등록했고 OCR 자동입력을 시작했어.")).toBeInTheDocument();
+  });
+
+  it("keeps the saved record and explains how to retry when receipt upload fails", async () => {
+    const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["증빙 확인 필요"], id: "quick-1", recordStatus: "EVIDENCE_PENDING" as const }));
+    const uploadEvidence = vi.fn(async () => ({ code: "STORAGE_FAILED" as const, message: "저장소 오류", ok: false as const }));
+    render(<QuickExpensePage attachEvidence={vi.fn()} initialBankTransactions={[{ counterparty: "KT", description: "인터넷", id: "bank-1", resolutionStatus: "UNRESOLVED", transactedAt: "2026-08-27T09:00:00+09:00", withdrawalAmount: 55000 }]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} uploadEvidence={uploadEvidence} />);
+
+    fireEvent.change(screen.getByLabelText("미처리 통장 출금거래"), { target: { value: "bank-1" } });
+    fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "조합 사무실 인터넷 요금" } });
+    fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [new File(["receipt"], "receipt.jpg", { type: "image/jpeg" })] } });
+    fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
+
+    expect(await screen.findByText(/사용내용은 등록했지만 영수증 첨부에 실패했어/)).toBeInTheDocument();
+    expect(screen.getByText("조합 사무실 인터넷 요금")).toBeInTheDocument();
+    expect(persistRecord).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a clear empty-card state and temporarily records usage without an approval transaction", async () => {
     const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["카드내역 연결 필요"], id: "quick-card-1", recordStatus: "SOURCE_PENDING" as const }));
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} />);

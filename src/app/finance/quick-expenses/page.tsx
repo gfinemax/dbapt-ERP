@@ -6,10 +6,11 @@ import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-rep
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { importCorporateCardTransactionsAction, linkQuickExpenseCardAction, saveQuickExpenseRecordAction } from "./actions";
+import { attachQuickExpenseEvidenceAction } from "@/app/finance/expenses/actions";
 
 export const dynamic = "force-dynamic";
 
 export default async function QuickExpensesRoute() {
   const [bankResult, budgetResult, cardResult, recordResult, detailResult] = await Promise.allSettled([listUnresolvedWithdrawalTransactions(), listExpenseBudgetProfiles(), listUnresolvedCorporateCardTransactions(), listQuickExpenseRecords(), listOperatingExpenseDetails()]);
-  return <QuickExpensePage importCardTransactions={hasSupabaseSecretConfig() ? importCorporateCardTransactionsAction : undefined} linkCardTransaction={hasSupabaseSecretConfig() ? linkQuickExpenseCardAction : undefined} initialBankTransactions={bankResult.status === "fulfilled" ? bankResult.value : []} initialBudgetItems={budgetResult.status === "fulfilled" ? Object.keys(budgetResult.value) : []} initialExpenseDetails={detailResult.status === "fulfilled" ? detailResult.value : []} initialCardTransactions={cardResult.status === "fulfilled" ? cardResult.value : []} initialRecords={recordResult.status === "fulfilled" ? recordResult.value : []} persistRecord={hasSupabaseSecretConfig() ? saveQuickExpenseRecordAction : undefined} />;
+  return <QuickExpensePage attachEvidence={hasSupabaseSecretConfig() ? attachQuickExpenseEvidenceAction : undefined} importCardTransactions={hasSupabaseSecretConfig() ? importCorporateCardTransactionsAction : undefined} linkCardTransaction={hasSupabaseSecretConfig() ? linkQuickExpenseCardAction : undefined} initialBankTransactions={bankResult.status === "fulfilled" ? bankResult.value : []} initialBudgetItems={budgetResult.status === "fulfilled" ? Object.keys(budgetResult.value) : []} initialExpenseDetails={detailResult.status === "fulfilled" ? detailResult.value : []} initialCardTransactions={cardResult.status === "fulfilled" ? cardResult.value : []} initialRecords={recordResult.status === "fulfilled" ? recordResult.value : []} persistRecord={hasSupabaseSecretConfig() ? saveQuickExpenseRecordAction : undefined} />;
 }

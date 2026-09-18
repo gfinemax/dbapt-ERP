@@ -12,9 +12,11 @@ import { parseCorporateCardTransactionText } from "./corporate-card-transaction-
 import { readBankTransactionFile } from "./bank-transaction-file";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import { recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
+import type { ExpenseEvidenceAttachment, ExpenseEvidenceUploadResult } from "./expense-evidence";
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
-export function QuickExpensePage({ importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, persistRecord }: {
+export function QuickExpensePage({ attachEvidence, importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, persistRecord, uploadEvidence = uploadQuickExpenseEvidence }: {
+  attachEvidence?: (recordId: string, attachment: ExpenseEvidenceAttachment, operationKey: string) => Promise<unknown>;
   importCardTransactions?: (rows: CorporateCardTransactionImportRow[]) => Promise<unknown>;
   linkCardTransaction?: (input: { recordId: string; cardTransactionId: string }) => Promise<{ recordStatus: "RECORDED" | "EVIDENCE_PENDING" | "NEEDS_RESOLUTION" }>;
   initialBankTransactions: BankTransactionResolutionCandidate[];
@@ -23,6 +25,7 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
   initialCardTransactions: CorporateCardTransactionCandidate[];
   initialRecords: QuickExpenseRecord[];
   persistRecord?: (input: QuickExpenseRecordInput) => Promise<QuickExpenseRecord>;
+  uploadEvidence?: (file: File, resolutionNo: string, evidenceType: string) => Promise<ExpenseEvidenceUploadResult>;
 }) {
   const [paymentMethod, setPaymentMethod] = useState<QuickExpensePaymentMethod>("BANK_TRANSFER");
   const [sourceId, setSourceId] = useState("");
@@ -35,6 +38,9 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
   const [manualOccurredAt, setManualOccurredAt] = useState(new Date().toISOString().slice(0, 10));
   const [manualCardEntry, setManualCardEntry] = useState(false);
   const [receiptAvailable, setReceiptAvailable] = useState(true);
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptInputKey, setReceiptInputKey] = useState(0);
+  const [evidenceType, setEvidenceType] = useState("영수증");
   const [missingEvidenceReason, setMissingEvidenceReason] = useState("");
   const [records, setRecords] = useState(initialRecords);
   const [linkingRecordId, setLinkingRecordId] = useState("");
@@ -72,12 +78,27 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
     if (missingFields.length) return setMessage(`먼저 ${missingFields.join(", ")}을 입력해줘.`);
     const sourceType = isBank ? "BANK_TRANSACTION" as const : isCard && !isManualCard ? "CORPORATE_CARD" as const : "MANUAL" as const;
     startTransition(async () => {
+      let saved: QuickExpenseRecord | undefined;
       try {
-        const saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBank ? sourceId : undefined, budgetItem: effectiveBudgetItem, corporateCardTransactionId: isCard && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCard ? "CARD_TRANSACTION" : isBank ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", expenseDetailId: effectiveExpenseDetailId, missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무장", sourceType, usageDescription });
-        setRecords((current) => [saved, ...current]);
-        setUsageDescription(""); setBudgetItem(""); setExpenseDetailId(""); setExpenseDetailSelection("AUTO"); setSourceId(""); setManualAmount(""); setManualCounterparty(""); setMissingEvidenceReason("");
-        setMessage(saved.recordStatus === "RECORDED" ? "지출결의 없이 사용내용을 등록했어." : saved.recordStatus === "SOURCE_PENDING" ? "사용내용을 임시등록했어. 카드 승인내역이 들어오면 실제 거래를 연결해줘." : saved.recordStatus === "EVIDENCE_PENDING" ? "사용내용을 등록했어. 영수증 또는 대체증빙을 확인하면 간편처리가 완료돼." : "정식 지출결의가 필요한 거래로 분류했어.");
+        saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBank ? sourceId : undefined, budgetItem: effectiveBudgetItem, corporateCardTransactionId: isCard && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCard ? "CARD_TRANSACTION" : isBank ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", expenseDetailId: effectiveExpenseDetailId, missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무장", sourceType, usageDescription });
       } catch (error) { setMessage(error instanceof Error ? error.message : "사용내용을 저장하지 못했습니다."); }
+      if (!saved) return;
+      setRecords((current) => [saved, ...current]);
+      setUsageDescription(""); setBudgetItem(""); setExpenseDetailId(""); setExpenseDetailSelection("AUTO"); setSourceId(""); setManualAmount(""); setManualCounterparty(""); setMissingEvidenceReason(""); setReceiptFile(null); setReceiptInputKey((current) => current + 1);
+      if (receiptAvailable && receiptFile) {
+        try {
+          if (!attachEvidence) throw new Error("영수증 연결 저장소가 연결되지 않았어.");
+          const result = await uploadEvidence(receiptFile, `QUICK-${saved.id}`, evidenceType);
+          if (!result.ok) throw new Error(result.message);
+          await attachEvidence(saved.id, result.attachment, `quick-receipt:${saved.id}:${result.attachment.ocrJobId}`);
+          setMessage("사용내용과 영수증을 등록했고 OCR 자동입력을 시작했어.");
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : "영수증을 등록하지 못했어.";
+          setMessage(`사용내용은 등록했지만 영수증 첨부에 실패했어. 지출관리 상세에서 다시 첨부해줘. (${reason})`);
+        }
+        return;
+      }
+      setMessage(saved.recordStatus === "RECORDED" ? "지출결의 없이 사용내용을 등록했어." : saved.recordStatus === "SOURCE_PENDING" ? "사용내용을 임시등록했어. 카드 승인내역이 들어오면 실제 거래를 연결해줘." : saved.recordStatus === "EVIDENCE_PENDING" ? "사용내용을 등록했어. 영수증 또는 대체증빙을 확인하면 간편처리가 완료돼." : "정식 지출결의가 필요한 거래로 분류했어.");
     });
   }
 
@@ -127,11 +148,22 @@ export function QuickExpensePage({ importCardTransactions, linkCardTransaction, 
       <label className="grid gap-2 text-sm font-bold"><span>사용내용</span><textarea className="min-h-24 rounded-lg border p-3" onChange={(event) => setUsageDescription(event.target.value)} placeholder="예: 조합 사무실 인터넷 요금" value={usageDescription} /></label>
       <label className="grid gap-2 text-sm font-bold"><span>지출 세부항목</span><select aria-label="지출 세부항목" className="h-11 rounded-lg border px-3" onChange={(event) => { const detail=initialExpenseDetails.find((item)=>item.id===event.target.value); setExpenseDetailSelection(event.target.value ? "MANUAL" : "AUTO"); setExpenseDetailId(event.target.value); setBudgetItem(detail?.budgetItem ?? ""); }} value={effectiveExpenseDetailId}><option value="">세부항목 선택</option>{initialExpenseDetails.map((detail)=><option disabled={!detail.quickExpenseEligible || detail.status!=="CONFIRMED"} key={detail.id} value={detail.id}>{detail.groupName} · {detail.name}{detail.status==="POLICY_REVIEW"?" (정책 확인 필요)":!detail.quickExpenseEligible?" (정식결의)":""}</option>)}</select><span className="text-xs font-normal text-[var(--color-stone)]">{effectiveExpenseDetailId && expenseDetailSelection === "AUTO" ? `사용내용·거래처에서 자동 선택 · ${expenseDetailRecommendation?.recommendation.reason ?? "추천 기준 일치"}` : expenseDetailRecommendation && (!expenseDetailRecommendation.detail.quickExpenseEligible || expenseDetailRecommendation.detail.status !== "CONFIRMED") ? `${expenseDetailRecommendation.detail.groupName} · ${expenseDetailRecommendation.detail.name}으로 인식했지만 정식 지출결의 또는 정책 확인이 필요해.` : "사용내용·거래처·실제 거래를 바탕으로 자동 선택하며, 직접 고른 값은 유지해."}</span></label>
       <label className="grid gap-2 text-sm font-bold"><span>연결 승인 예산</span><input className="h-11 rounded-lg border bg-slate-50 px-3" readOnly value={effectiveBudgetItem} placeholder={initialExpenseDetails.length ? "세부항목을 먼저 선택해줘" : "세부항목 기준을 불러오지 못했어"}/><datalist id="quick-expense-budget-items">{initialBudgetItems.map((item) => <option key={item} value={item} />)}</datalist></label>
-      <fieldset className="grid gap-3 rounded-xl border p-4"><legend className="px-1 text-sm font-bold">영수증 상태</legend><div className="flex flex-wrap gap-2"><button aria-pressed={receiptAvailable} className={receiptAvailable ? "rounded-full border border-blue-600 bg-blue-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>setReceiptAvailable(true)} type="button">영수증 있음 · 등록 후 첨부</button><button aria-pressed={!receiptAvailable} className={!receiptAvailable ? "rounded-full border border-amber-600 bg-amber-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>setReceiptAvailable(false)} type="button">영수증 없음 · 대체증빙 사용</button></div>{!receiptAvailable?<label className="grid gap-2 text-sm font-bold"><span>영수증 미첨부 사유</span><textarea className="min-h-20 rounded-lg border p-3" value={missingEvidenceReason} onChange={event=>setMissingEvidenceReason(event.target.value)} placeholder="예: 구매 후 영수증 분실. 카드 승인내역과 주문내역을 제출합니다." /></label>:<p className="text-xs text-slate-600">저장 후 지출 상세에서 영수증 OCR을 연결하고 담당자가 확인해.</p>}</fieldset>
+      <fieldset className="grid gap-3 rounded-xl border p-4"><legend className="px-1 text-sm font-bold">영수증 상태</legend><div className="flex flex-wrap gap-2"><button aria-pressed={receiptAvailable} className={receiptAvailable ? "rounded-full border border-blue-600 bg-blue-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>setReceiptAvailable(true)} type="button">영수증 있음 · 바로 첨부</button><button aria-pressed={!receiptAvailable} className={!receiptAvailable ? "rounded-full border border-amber-600 bg-amber-50 px-4 py-2 text-sm font-bold" : "rounded-full border px-4 py-2 text-sm"} onClick={()=>{setReceiptAvailable(false);setReceiptFile(null);setReceiptInputKey((current)=>current+1);}} type="button">영수증 없음 · 대체증빙 사용</button></div>{!receiptAvailable?<label className="grid gap-2 text-sm font-bold"><span>영수증 미첨부 사유</span><textarea className="min-h-20 rounded-lg border p-3" value={missingEvidenceReason} onChange={event=>setMissingEvidenceReason(event.target.value)} placeholder="예: 구매 후 영수증 분실. 카드 승인내역과 주문내역을 제출합니다." /></label>:<div className="grid gap-3 sm:grid-cols-[220px_1fr]"><label className="grid gap-2 text-sm font-bold"><span>증빙 종류</span><select className="h-11 rounded-lg border px-3" value={evidenceType} onChange={event=>setEvidenceType(event.target.value)}><option>영수증</option><option>주문내역</option><option>거래명세서</option><option>카드 승인내역</option><option>계좌이체 확인증</option><option>물품 사진</option><option>기타 대체증빙</option></select></label><label className="grid gap-2 text-sm font-bold"><span>증빙 파일</span><input accept="application/pdf,image/jpeg,image/png,image/webp,text/plain,text/csv" aria-label="증빙 파일" className="h-11 rounded-lg border px-3 file:mr-3" disabled={isPending} key={receiptInputKey} onChange={event=>setReceiptFile(event.target.files?.[0] ?? null)} type="file"/><span className="text-xs font-normal text-slate-600">PDF·JPG·PNG·WEBP·TXT·CSV, 최대 10MB. 선택하지 않으면 저장 후 지출관리 상세에서 첨부할 수 있어.</span></label></div>}</fieldset>
       <div className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 sm:grid-cols-[1fr_auto] sm:items-center"><div><p className="text-sm font-bold">{amount > 0 ? `${counterparty || "거래처 미입력"} · ${amount.toLocaleString("ko-KR")}원` : "거래와 사용내용을 입력해줘."}</p><p className={`mt-1 text-xs font-semibold ${missingFields.length ? "text-[var(--color-tangerine)]" : "text-[var(--color-green-ink)]"}`}>{missingFields.length ? `입력 필요: ${missingFields.join(", ")}` : isManualCard ? "등록 후 카드내역 연결대기로 보관됩니다." : "등록 후 증빙 확인대기로 보관됩니다."}</p></div><Button className="min-w-36 bg-[var(--color-pressed-charcoal)] text-white" disabled={isPending} onClick={submit}>{isPending ? "저장 중" : isManualCard ? "사용내용 임시등록" : "사용내용 등록"}</Button></div>
       {message ? <p aria-live="polite" className="rounded-lg bg-[var(--color-morning-tint)] px-4 py-3 text-sm font-bold text-[var(--color-deep-cobalt)]">{message}</p> : null}
     </section>
     <Link href="/finance/reimbursements" className="rounded-xl border bg-white p-4 text-sm font-semibold text-blue-700">개인 선지출은 개인 지출 정산에서 신청·지급 상태를 관리해. 정산 화면으로 이동 →</Link>
     <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-6"><h2 className="text-lg font-bold">최근 간편지출 기록</h2><div className="mt-4 grid gap-3">{records.length ? records.map((record) => <article className="rounded-xl border p-4" key={record.id}><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{record.usageDescription}</p>{record.recordStatus==="SOURCE_PENDING"?<button className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900" onClick={()=>setLinkingRecordId(record.id)} type="button">카드내역 연결대기</button>:<span className={`rounded-full px-3 py-1 text-xs font-bold ${record.recordStatus === "RECORDED" ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`}>{record.recordStatus === "RECORDED" ? "간편처리 완료" : record.recordStatus === "EVIDENCE_PENDING" ? "증빙 확인대기" : record.recordStatus === "CONVERTED" ? "정산·결의 연결" : "정식결의 필요"}</span>}</div><p className="mt-2 text-sm text-[var(--color-stone)]">{record.counterparty} · {record.amount.toLocaleString("ko-KR")}원 · {record.budgetItem}</p>{linkingRecordId===record.id?<div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3"><p className="text-sm font-bold">금액·사용일이 일치하는 카드내역</p>{candidates(record).length?candidates(record).map(card=><button className="rounded-lg border bg-white px-3 py-2 text-left text-sm" key={card.id} onClick={()=>connect(record,card.id)} type="button">{card.approvedAt.slice(0,10)} · {card.merchantName} · {card.amount.toLocaleString("ko-KR")}원 · 연결</button>):<p className="text-sm text-[var(--color-stone)]">일치 후보가 없어. 카드내역 파일을 먼저 등록해줘.</p>}</div>:null}</article>) : <p className="text-sm text-[var(--color-stone)]">등록된 간편지출이 없습니다.</p>}</div></section>
   </div></ErpShell>;
+}
+
+async function uploadQuickExpenseEvidence(file: File, resolutionNo: string, evidenceType: string): Promise<ExpenseEvidenceUploadResult> {
+  const formData = new FormData();
+  formData.set("file", file);
+  formData.set("resolutionNo", resolutionNo);
+  formData.set("evidenceType", evidenceType);
+  const response = await fetch("/api/finance/expense-evidence", { body: formData, method: "POST" });
+  const result = await response.json().catch(() => null) as ExpenseEvidenceUploadResult | null;
+  if (result && typeof result === "object" && "ok" in result) return result;
+  throw new Error("영수증 업로드 결과를 확인하지 못했어. 다시 시도해줘.");
 }
