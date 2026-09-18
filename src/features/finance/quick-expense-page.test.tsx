@@ -27,6 +27,14 @@ describe("QuickExpensePage", () => {
     expect(screen.getByLabelText("거래처·지급대상")).toBeInTheDocument();
   });
 
+  it("opens the receipt picker from the primary receipt button", () => {
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
+    const input = screen.getByLabelText("증빙 파일");
+    const click = vi.spyOn(input, "click");
+    fireEvent.click(screen.getByRole("button", { name: "영수증 선택 · OCR 자동입력" }));
+    expect(click).toHaveBeenCalledOnce();
+  });
+
   it("uploads and attaches a selected receipt after saving the quick expense", async () => {
     const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["증빙 확인 필요"], id: "quick-1", recordStatus: "EVIDENCE_PENDING" as const }));
     const attachment = { contentType: "image/jpeg", evidenceType: "영수증", fileName: "receipt.jpg", fileSize: 1234, id: "evidence-1", ocrData: {}, ocrJobId: "ocr-1", ocrStatus: "REVIEW_REQUIRED" as const, storageBucket: "expense-evidence", storagePath: "org/receipt.jpg", uploadedAt: "2026-08-27T12:00:00+09:00", uploadedBy: "user-1" };
@@ -38,11 +46,11 @@ describe("QuickExpensePage", () => {
     fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "조합 사무실 인터넷 요금" } });
     const file = new File(["receipt"], "receipt.jpg", { type: "image/jpeg" });
     fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [file] } });
+    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith(file, expect.stringMatching(/^QUICK-DRAFT-/), "영수증"));
     fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
 
-    await waitFor(() => expect(uploadEvidence).toHaveBeenCalledWith(file, "QUICK-quick-1", "영수증"));
-    expect(attachEvidence).toHaveBeenCalledWith("quick-1", attachment, "quick-receipt:quick-1:ocr-1");
-    expect(await screen.findByText("사용내용과 영수증을 등록했고 OCR 자동입력을 시작했어.")).toBeInTheDocument();
+    await waitFor(() => expect(attachEvidence).toHaveBeenCalledWith("quick-1", attachment, "quick-receipt:quick-1:ocr-1"));
+    expect(await screen.findByText(/사용내용과 영수증을 등록했어/)).toBeInTheDocument();
   });
 
   it("keeps the saved record and explains how to retry when receipt upload fails", async () => {
@@ -53,11 +61,29 @@ describe("QuickExpensePage", () => {
     fireEvent.change(screen.getByLabelText("미처리 통장 출금거래"), { target: { value: "bank-1" } });
     fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "조합 사무실 인터넷 요금" } });
     fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [new File(["receipt"], "receipt.jpg", { type: "image/jpeg" })] } });
+    expect(await screen.findByText(/자동입력 실패 · 저장소 오류/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
 
-    expect(await screen.findByText(/사용내용은 등록했지만 영수증 첨부에 실패했어/)).toBeInTheDocument();
+    expect(await screen.findByText(/사용내용은 등록했지만 영수증 자동입력은 완료하지 못했어/)).toBeInTheDocument();
     expect(screen.getByText("조합 사무실 인터넷 요금")).toBeInTheDocument();
     expect(persistRecord).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills manual card fields from OCR without overwriting later user edits", async () => {
+    const attachment = { contentType: "image/jpeg", evidenceType: "영수증", fileName: "receipt.jpg", fileSize: 1234, id: "evidence-1", ocrData: {}, ocrJobId: "ocr-1", ocrStatus: "REVIEW_REQUIRED" as const, storageBucket: "expense-evidence", storagePath: "org/receipt.jpg", uploadedAt: "2026-09-18T12:00:00+09:00", uploadedBy: "user-1" };
+    const uploadEvidence = vi.fn(async () => ({ attachment, ok: true as const }));
+    const getEvidenceOcrJob = vi.fn(async () => ({ id: "ocr-1", progress: 100, resultData: { documentDate: "2026-09-17", issuer: "문구상사", itemName: "복사용지", totalAmount: 32000 }, stage: "COMPLETED" as const, status: "COMPLETED" as const }));
+    render(<QuickExpensePage getEvidenceOcrJob={getEvidenceOcrJob} initialBankTransactions={[]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} uploadEvidence={uploadEvidence} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "법인카드" }));
+    fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [new File(["receipt"], "receipt.jpg", { type: "image/jpeg" })] } });
+
+    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32000"), { timeout: 2500 });
+    expect(screen.getByLabelText(/카드 사용일/)).toHaveValue("2026-09-17");
+    expect(screen.getByLabelText(/가맹점·사용처/)).toHaveValue("문구상사");
+    expect(screen.getByRole("textbox", { name: /^사용내용/ })).toHaveValue("복사용지");
+    fireEvent.change(screen.getByLabelText(/가맹점·사용처/), { target: { value: "사용자 수정 상호" } });
+    expect(screen.getByLabelText(/가맹점·사용처/)).toHaveValue("사용자 수정 상호");
   });
 
   it("shows a clear empty-card state and temporarily records usage without an approval transaction", async () => {

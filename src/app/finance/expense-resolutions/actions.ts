@@ -281,6 +281,22 @@ export async function deleteExpenseEvidenceAction(storagePath: string) {
   if (error) throw new Error(`증빙파일 삭제 실패: ${error.message}`);
 }
 
+export async function discardUnlinkedExpenseEvidenceAction(id: string) {
+  if (!id) throw new Error("정리할 영수증 정보를 확인해줘.");
+  const access = await requireExpenseOcrJob(id, true);
+  if (access.attached) throw new Error("이미 지출에 연결된 영수증은 등록 화면에서 제거할 수 없어.");
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
+  const { data: job, error: jobError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("storage_bucket,storage_path").eq("id", id).maybeSingle();
+  if (jobError || !job) throw new Error("정리할 영수증 원본을 찾을 수 없어.");
+  const { error: storageError } = await supabase.storage.from(job.storage_bucket)
+    .remove([job.storage_path, buildExpenseEvidenceOcrSourcePath(job.storage_path)]);
+  if (storageError) throw new Error(`영수증 파일을 정리하지 못했어: ${storageError.message}`);
+  const { error: deleteError } = await supabase.schema("finance").from("expense_evidence_ocr_jobs").delete().eq("id", id);
+  if (deleteError) throw new Error(`영수증 작업 기록을 정리하지 못했어: ${deleteError.message}`);
+}
+
 export async function saveExpenseResolutionAction(resolution: ManagedExpenseResolution) {
   const actor = await requireExpenseActor();
   const supabase = getSupabaseServerClient();
