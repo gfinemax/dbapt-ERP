@@ -11,6 +11,12 @@ const nextConfig: NextConfig = {
     },
   },
   serverExternalPackages: ["@napi-rs/canvas", "pdf-parse"],
+  // PDF.js loads its worker dynamically, so automatic tracing misses it.
+  // Include it for both the upload route and finance retry server actions.
+  outputFileTracingIncludes: {
+    "/api/finance/expense-evidence": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+    "/finance/*": ["./node_modules/pdfjs-dist/legacy/build/pdf.worker.mjs"],
+  },
   turbopack: {
     root: process.cwd(),
   },
