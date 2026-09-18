@@ -14,7 +14,7 @@ export type QuickExpensePrintTarget =
   | { kind: "record"; record: QuickExpenseRecord }
   | { kind: "month"; month: string; records: QuickExpenseRecord[] };
 
-type EvidencePage = QuickExpensePrintEvidence & { page: number; pageCount: number; src: string };
+type EvidencePage = QuickExpensePrintEvidence & { page: number; pageCount: number; recordId: string; src: string };
 
 export function getQuickExpensePrintNumber(record: QuickExpenseRecord) {
   const date = record.occurredAt.slice(0, 10).replaceAll("-", "");
@@ -31,17 +31,17 @@ export function getQuickExpenseTransactionLabel(record: QuickExpenseRecord) {
 
 export function QuickExpensePrintModal({ getPrintEvidence, onClose, target }: { getPrintEvidence?: (recordId: string) => Promise<QuickExpensePrintEvidence[]>; onClose: () => void; target: QuickExpensePrintTarget }) {
   const [evidencePages, setEvidencePages] = useState<EvidencePage[]>([]);
-  const [preparingEvidence, setPreparingEvidence] = useState(target.kind === "record" && Boolean(getPrintEvidence));
+  const [preparingEvidence, setPreparingEvidence] = useState(Boolean(getPrintEvidence));
   const [printing, setPrinting] = useState(false);
   const [error, setError] = useState("");
   const printTitle = target.kind === "record" ? `${getQuickExpensePrintNumber(target.record)}_${safeFilePart(target.record.usageDescription)}` : `간편지출_월별총괄표_${target.month}`;
 
   useEffect(() => {
-    if (target.kind !== "record" || !getPrintEvidence) return;
+    if (!getPrintEvidence) return;
     let cancelled = false;
-    void getPrintEvidence(target.record.id)
-      .then(prepareEvidencePages)
-      .then((pages) => { if (!cancelled) setEvidencePages(pages); })
+    const records = target.kind === "record" ? [target.record] : target.records;
+    void Promise.all(records.map(async (record) => prepareEvidencePages(await getPrintEvidence(record.id), record.id)))
+      .then((pages) => { if (!cancelled) setEvidencePages(pages.flat()); })
       .catch((reason) => { if (!cancelled) setError(reason instanceof Error ? reason.message : "증빙 원본을 출력용으로 준비하지 못했어."); })
       .finally(() => { if (!cancelled) setPreparingEvidence(false); });
     return () => { cancelled = true; };
@@ -82,7 +82,7 @@ export function QuickExpensePrintModal({ getPrintEvidence, onClose, target }: { 
         <button aria-label="출력 미리보기 닫기" className="rounded-full border bg-white p-2" onClick={onClose} type="button"><X className="size-4" /></button>
       </header>
       <div className="print-expense-resolution grid gap-6 bg-[var(--color-cloud-veil)] p-6">
-        {target.kind === "record" ? <RecordPrintPages evidencePages={evidencePages} record={target.record} /> : <MonthlyPrintPages month={target.month} records={target.records} />}
+        {target.kind === "record" ? <RecordPrintPages evidencePages={evidencePages} record={target.record} /> : <MonthlyPrintPages evidencePages={evidencePages} month={target.month} records={target.records} />}
       </div>
       <footer className="expense-resolution-print-actions flex items-center justify-end gap-2 border-t px-6 py-4">
         {error ? <p className="mr-auto text-sm font-bold text-[var(--color-tangerine)]" role="alert">{error}</p> : null}
@@ -93,9 +93,9 @@ export function QuickExpensePrintModal({ getPrintEvidence, onClose, target }: { 
   </div>, document.body);
 }
 
-function RecordPrintPages({ evidencePages, record }: { evidencePages: EvidencePage[]; record: QuickExpenseRecord }) {
+function RecordPrintPages({ documentTotalPages, evidencePages, pageOffset = 0, record }: { documentTotalPages?: number; evidencePages: EvidencePage[]; pageOffset?: number; record: QuickExpenseRecord }) {
   const number = getQuickExpensePrintNumber(record);
-  const totalPages = 1 + evidencePages.length;
+  const totalPages = documentTotalPages ?? 1 + evidencePages.length;
   const review = record.evidenceReviewStatus ? reviewLabels[record.evidenceReviewStatus] : record.evidenceStatus === "NONE" ? "증빙 미첨부" : "증빙 확인대기";
   return <>
     <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white shadow-sm">
@@ -118,7 +118,7 @@ function RecordPrintPages({ evidencePages, record }: { evidencePages: EvidencePa
         {record.evidenceReviewNote ? <PrintCell label="검토 메모" value={record.evidenceReviewNote} wide /> : null}
       </div></section>
       <section className="mt-5 rounded-sm border border-[#9ca3af] p-4 text-[11px]"><p className="font-bold">보관 안내</p><p className="mt-1 text-[var(--color-stone)]">본 문서는 예산 내 간편지출의 거래·용도·증빙 연결을 확인하는 기록서이며 지출결의서가 아닙니다. 원본 거래와 전자 증빙은 시스템 기록을 기준으로 확인합니다.</p>{record.recordStatus === "CONVERTED" ? <p className="mt-2 font-bold text-[var(--color-tangerine)]">정식결의로 전환된 건이므로 금액 집계는 지출결의서를 기준으로 합니다.</p> : null}</section>
-      <PrintFooter number={number} page={1} total={totalPages} />
+      <PrintFooter number={number} page={pageOffset + 1} total={totalPages} />
     </article>
     {evidencePages.map((evidence, index) => <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white shadow-sm" key={`${evidence.id}-${evidence.page}`}>
       <header className="flex items-end justify-between gap-6 border-b-2 border-[var(--color-midnight-ink)] pb-4"><div><h3 className="text-[22px] font-black tracking-[0.08em]">간편지출 증빙자료</h3><p className="mt-1.5 text-[10px] font-semibold text-[var(--color-stone)]">{number} · {evidence.fileName}</p></div><p className="text-[10px] font-bold text-[var(--color-stone)]">{evidence.evidenceType} · {evidence.page} / {evidence.pageCount}</p></header>
@@ -126,32 +126,40 @@ function RecordPrintPages({ evidencePages, record }: { evidencePages: EvidencePa
         {/* eslint-disable-next-line @next/next/no-img-element */}
         <img alt={`${evidence.fileName} 증빙 ${evidence.page}페이지`} className="max-h-full max-w-full object-contain" src={evidence.src} />
       </figure>
-      <PrintFooter number={number} page={index + 2} total={totalPages} />
+      <PrintFooter number={number} page={pageOffset + index + 2} total={totalPages} />
     </article>)}
   </>;
 }
 
-function MonthlyPrintPages({ month, records }: { month: string; records: QuickExpenseRecord[] }) {
+function MonthlyPrintPages({ evidencePages, month, records }: { evidencePages: EvidencePage[]; month: string; records: QuickExpenseRecord[] }) {
   const pages = chunk(records, 12);
+  const summaryPageCount = Math.max(pages.length, 1);
+  const totalPages = summaryPageCount + records.length + evidencePages.length;
   const active = records.filter((record) => record.recordStatus !== "CONVERTED");
   const converted = records.filter((record) => record.recordStatus === "CONVERTED");
   const total = active.reduce((sum, record) => sum + record.amount, 0);
   const paymentSummary = summarize(active, (record) => paymentLabels[record.paymentMethod]);
   const budgetSummary = summarize(active, (record) => record.budgetItem || "미분류");
+  const recordPrintGroups = records.map((record, index) => {
+    const recordEvidencePages = evidencePages.filter((page) => page.recordId === record.id);
+    const previousRecordPages = records.slice(0, index).reduce((count, previousRecord) => count + 1 + evidencePages.filter((page) => page.recordId === previousRecord.id).length, 0);
+    return { evidencePages: recordEvidencePages, pageOffset: summaryPageCount + previousRecordPages, record };
+  });
   return <>{(pages.length ? pages : [[]]).map((pageRecords, pageIndex) => <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white shadow-sm" key={pageIndex}>
     <header className="flex items-end justify-between gap-6 border-b-2 border-[var(--color-midnight-ink)] pb-5"><div><p className="mb-2 inline-flex rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-[9px] font-bold">월별 보관대장</p><h3 className="text-[29px] font-black tracking-[0.08em]">간편지출 월별 총괄표</h3><p className="mt-1.5 text-[15px] font-semibold text-[var(--color-stone)]">대방동 지역주택조합 · {month}</p></div><div className="text-right"><p className="text-[11px] font-bold">조회 {records.length}건</p><p className="mt-1 text-[22px] font-black">{formatWon(total)}</p><p className="text-[9px] text-[var(--color-stone)]">정식결의 전환 {converted.length}건 제외</p></div></header>
     {pageIndex === 0 ? <section className="mt-5 grid grid-cols-2 gap-4"><SummaryBox title="결제수단별" values={paymentSummary} /><SummaryBox title="예산항목별" values={budgetSummary} /></section> : null}
     <section className="mt-5"><div className="mb-2 flex items-end justify-between"><h4 className="text-[15px] font-bold">간편지출 기록</h4><p className="text-[10px] text-[var(--color-stone)]">전환 건은 참고표시만 하며 합계에서 제외</p></div><table className="w-full table-fixed border-collapse text-[9px]"><colgroup><col className="w-[7%]"/><col className="w-[12%]"/><col className="w-[12%]"/><col className="w-[18%]"/><col className="w-[21%]"/><col className="w-[15%]"/><col className="w-[15%]"/></colgroup><thead><tr className="bg-[var(--color-cloud-veil)]">{["순번","사용일","결제","거래처","사용내용·예산","상태","금액"].map((label)=><th className="border px-1 py-2" key={label}>{label}</th>)}</tr></thead><tbody>{pageRecords.map((record,index)=><tr className={record.recordStatus === "CONVERTED" ? "text-[var(--color-stone)]" : ""} key={record.id}><td className="border p-1.5 text-center">{pageIndex*12+index+1}</td><td className="border p-1.5 text-center">{dateOnly(record.occurredAt).slice(5)}</td><td className="border p-1.5 text-center">{paymentLabels[record.paymentMethod]}</td><td className="border p-1.5">{record.counterparty}</td><td className="border p-1.5"><p className="font-semibold">{record.usageDescription}</p><p className="mt-0.5 text-[8px] text-[var(--color-stone)]">{record.budgetItem}</p></td><td className="border p-1.5 text-center">{statusLabels[record.recordStatus]}</td><td className="border p-1.5 text-right font-bold">{formatWon(record.amount)}</td></tr>)}</tbody></table></section>
     {pageIndex === pages.length - 1 ? <section className="mt-5 border-y-2 border-[var(--color-midnight-ink)] py-3"><div className="flex justify-between font-bold"><span>간편지출 관리합계</span><span>{formatWon(total)}</span></div>{converted.length ? <div className="mt-2 flex justify-between text-[10px] text-[var(--color-stone)]"><span>정식결의 전환 참고금액</span><span>{formatWon(converted.reduce((sum, record) => sum + record.amount, 0))}</span></div> : null}</section> : null}
-    <PrintFooter number={`간편지출-${month}`} page={pageIndex + 1} total={Math.max(pages.length, 1)} />
-  </article>)}</>;
+    <PrintFooter number={`간편지출-${month}`} page={pageIndex + 1} total={totalPages} />
+  </article>)}
+  {recordPrintGroups.map((group) => <RecordPrintPages documentTotalPages={totalPages} evidencePages={group.evidencePages} key={group.record.id} pageOffset={group.pageOffset} record={group.record} />)}</>;
 }
 
 function PrintCell({ label, last, value, wide }: { label: string; last?: boolean; value: React.ReactNode; wide?: boolean }) { return <div className={`grid grid-cols-[31mm_1fr] border-b ${wide ? "col-span-2" : ""} ${last ? "border-r-0" : "border-r"}`}><p className="bg-[var(--color-cloud-veil)] px-3 py-2 font-bold">{label}</p><div className="px-3 py-2 text-center font-semibold">{value}</div></div>; }
 function SummaryBox({ title, values }: { title: string; values: { amount: number; count: number; label: string }[] }) { return <div className="border p-3"><h4 className="mb-2 text-[12px] font-bold">{title}</h4><div className="grid gap-1 text-[9px]">{values.slice(0,5).map((item)=><div className="flex justify-between gap-2" key={item.label}><span className="truncate">{item.label} · {item.count}건</span><span className="font-bold">{formatWon(item.amount)}</span></div>)}</div></div>; }
 function PrintFooter({ number, page, total }: { number: string; page: number; total: number }) { return <footer className="mt-auto flex items-end justify-between gap-6 border-t pt-4 text-[9px] text-[var(--color-stone)]"><div><p className="text-[12px] font-bold text-[var(--color-midnight-ink)]">대방동 지역주택조합</p><p className="mt-1">월별 총괄표와 건별 기록서·증빙을 함께 편철하여 보관합니다.</p></div><p>{number} · 출력일 {new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })} · {page} / {total}</p></footer>; }
 
-async function prepareEvidencePages(evidence: QuickExpensePrintEvidence[]) {
+async function prepareEvidencePages(evidence: QuickExpensePrintEvidence[], recordId: string) {
   const pages: EvidencePage[] = [];
   for (const item of evidence) {
     const response = await fetch(item.signedUrl);
@@ -159,8 +167,8 @@ async function prepareEvidencePages(evidence: QuickExpensePrintEvidence[]) {
     const contentType = response.headers.get("content-type")?.split(";")[0]?.trim().toLowerCase() || item.contentType.toLowerCase();
     if (contentType === "application/pdf" || item.fileName.toLowerCase().endsWith(".pdf")) {
       const images = await renderPdf(await response.arrayBuffer());
-      images.forEach((src, index) => pages.push({ ...item, page: index + 1, pageCount: images.length, src }));
-    } else if (contentType.startsWith("image/") || item.contentType.startsWith("image/")) pages.push({ ...item, page: 1, pageCount: 1, src: await blobToDataUrl(await response.blob()) });
+      images.forEach((src, index) => pages.push({ ...item, page: index + 1, pageCount: images.length, recordId, src }));
+    } else if (contentType.startsWith("image/") || item.contentType.startsWith("image/")) pages.push({ ...item, page: 1, pageCount: 1, recordId, src: await blobToDataUrl(await response.blob()) });
   }
   return pages;
 }

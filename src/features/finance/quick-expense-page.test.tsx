@@ -1,8 +1,10 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { QuickExpensePage } from "./quick-expense-page";
 
 const details = [{ id: "detail-communications", code: "PUBLIC-COMM", groupName: "공공요금·수수료", name: "통신비", budgetItem: "제세공과금>통신비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe("QuickExpensePage", () => {
   const printableRecord = { amount: 32600, approvalSkipReason: "승인 예산 내 일상 지출", budgetItem: "일반운영비>소모품비", corporateCardTransactionId: "card-1", counterparty: "주식회사공단유통", createdAt: "2026-09-18T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: [], evidenceStatus: "GENERAL" as const, evidenceReviewStatus: "APPROVED" as const, id: "8e3f3446-1111-2222-3333-444444444444", occurredAt: "2026-09-18T10:00:00+09:00", paymentMethod: "CORPORATE_CARD" as const, recordedByLabel: "오학동 사무장", recordStatus: "RECORDED" as const, sourceType: "CORPORATE_CARD" as const, usageDescription: "맥심 모카골드 커피믹스 구입" };
@@ -36,6 +38,19 @@ describe("QuickExpensePage", () => {
     expect(screen.getByText("정식결의 전환 참고금액")).toBeInTheDocument();
     expect(screen.getAllByText("32,600원").length).toBeGreaterThan(0);
     expect(screen.getAllByText("10,000원").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("간편지출 기록서")).toHaveLength(2);
+    expect(screen.getAllByText("별첨 없음")).toHaveLength(2);
+  });
+
+  it("appends each attached receipt after the monthly summary and record sheet", async () => {
+    const getPrintEvidence = vi.fn(async (recordId: string) => recordId === printableRecord.id ? [{ contentType: "image/png", evidenceType: "영수증", fileName: "receipt.png", id: "evidence-1", signedUrl: "https://example.com/receipt.png" }] : []);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ blob: async () => new window.Blob(["receipt"], { type: "image/png" }), headers: { get: () => "image/png" }, ok: true })));
+    render(<QuickExpensePage getPrintEvidence={getPrintEvidence} initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[printableRecord]} />);
+    fireEvent.click(screen.getByRole("button", { name: "월별 총괄표 A4 출력" }));
+    expect(await screen.findByAltText("receipt.png 증빙 1페이지")).toBeInTheDocument();
+    expect(screen.getByText("간편지출 증빙자료")).toBeInTheDocument();
+    expect(screen.getByText("1건 · 별첨 1쪽")).toBeInTheDocument();
+    expect(getPrintEvidence).toHaveBeenCalledWith(printableRecord.id);
   });
 
   it("saves usage against a bank transaction without creating an expense resolution", async () => {
