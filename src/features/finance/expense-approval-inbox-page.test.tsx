@@ -3,11 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 import { ExpenseApprovalInboxPage } from "./expense-approval-inbox-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 describe("ExpenseApprovalInboxPage", () => {
   it("renders an empty approval inbox without sample resolutions", () => {
     render(<ExpenseApprovalInboxPage />);
 
-    expect(screen.getByRole("heading", { name: "결재함" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "지출결의 승인" })).toBeInTheDocument();
     expect(screen.getByRole("table", { name: "결재함 목록" })).toBeInTheDocument();
     expect(screen.queryByText(/지결-2026-01/)).not.toBeInTheDocument();
   });
@@ -41,13 +43,14 @@ describe("ExpenseApprovalInboxPage", () => {
       ],
       approvalStatus: "승인대기" as const,
       currentApprover: "오학동 사무국장",
-    } as ManagedExpenseResolution;
+    authorization: { author_user_id: "author", version: 1, steps: [{ order: 2, approver_user_id: "reviewer", legacy_step: { approver: "오학동", role: "사무국장", order: 2 } }] },
+    } as unknown as ManagedExpenseResolution;
     const transitionApproval = vi.fn().mockResolvedValue({
       ...resolution,
       approvalLine: resolution.approvalLine.map((step, index) => index === 1 ? { ...step, status: "승인완료" } : index === 2 ? { ...step, status: "결재대기" } : step),
       currentApprover: "안동연 조합장",
     });
-    render(<ExpenseApprovalInboxPage initialResolutions={[resolution]} transitionApproval={transitionApproval} />);
+    render(<ExpenseApprovalInboxPage viewer={{ user_id: "reviewer", organization_id: "org", display_name: "오학동 사무국장", permissions: ["APPROVE"], active: true }} initialResolutions={[resolution]} transitionApproval={transitionApproval} />);
     fireEvent.click(screen.getByRole("button", { name: "승인" }));
     await waitFor(() => expect(transitionApproval).toHaveBeenCalledWith(expect.objectContaining({
       actorLabel: "오학동 사무국장",
@@ -56,6 +59,11 @@ describe("ExpenseApprovalInboxPage", () => {
       expectedStatus: "승인대기",
       resolutionId: resolution.id,
     })));
+    fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));
     expect(await screen.findByText("안동연 조합장")).toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "지출결의 검색" }), { target: { value: "존재하지않는거래처" } });
+    expect(screen.queryByText("지결-2026-0001")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByRole("textbox", { name: "지출결의 검색" }), { target: { value: "다이스" } });
+    expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
   });
 });

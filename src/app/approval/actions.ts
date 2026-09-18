@@ -34,7 +34,7 @@ function commandContext(formData: FormData): ApprovalCommandContext {
 export async function submitApprovalAction(formData: FormData) {
   const id = text(formData, "id");
   await submitApprovalDocument(id, commandContext(formData));
-  revalidatePath("/approval"); revalidatePath(`/approval/${id}`);
+  revalidatePath("/approval"); revalidatePath("/approval/inbox"); revalidatePath(`/approval/${id}`);
 }
 
 function currentSeoulDate() {
@@ -117,7 +117,7 @@ export async function createApprovalAction(formData: FormData) {
   const attachment = formData.get("attachment");
   if (attachment instanceof File && attachment.size)
     await uploadApprovalAttachment(id, attachment, draft.drafterLabel);
-  revalidatePath("/approval");
+  revalidatePath("/approval"); revalidatePath("/approval/inbox");
   redirect(`/approval/${id}`);
 }
 
@@ -139,7 +139,7 @@ export async function decideApprovalAction(
       text(formData, "comment"),
       commandContext(formData),
     );
-    revalidatePath("/approval");
+    revalidatePath("/approval"); revalidatePath("/approval/inbox");
     revalidatePath(`/approval/${id}`);
     return { success: true };
   } catch (error) {
@@ -182,7 +182,7 @@ export async function decideMeetingAgendaAction(formData: FormData) {
     round: text(formData, "round"),
   });
   revalidatePath(`/approval/${id}`);
-  revalidatePath("/approval");
+  revalidatePath("/approval"); revalidatePath("/approval/inbox");
 }
 
 export async function createContractAction(formData: FormData) {
@@ -216,7 +216,7 @@ export async function updateApprovalAction(formData: FormData) {
     title: text(formData, "title"),
   }, commandContext(formData));
   revalidatePath(`/approval/${id}`);
-  revalidatePath("/approval");
+  revalidatePath("/approval"); revalidatePath("/approval/inbox");
 }
 
 export type ApprovalResubmitActionState = {
@@ -240,7 +240,7 @@ export async function resubmitApprovalAction(
       title: text(formData, "title"),
     }, commandContext(formData));
     revalidatePath(`/approval/${id}`);
-    revalidatePath("/approval");
+    revalidatePath("/approval"); revalidatePath("/approval/inbox");
     return { success: true };
   } catch (error) {
     return {
@@ -261,7 +261,7 @@ export async function closeApprovalAction(formData: FormData) {
     commandContext(formData),
   );
   revalidatePath(`/approval/${id}`);
-  revalidatePath("/approval");
+  revalidatePath("/approval"); revalidatePath("/approval/inbox");
 }
 
 export async function openApprovalAttachmentAction(formData: FormData) {

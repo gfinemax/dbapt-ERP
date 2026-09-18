@@ -12,7 +12,7 @@ const workspace: SmallExpenseWorkspace = { member:{organization_id:"org",user_id
 
 describe("소액지출 확인 화면", () => {
   it("조합장은 본인 건을 제외하고 증빙 확인 후 선택 확정한다", async () => {
-    render(<SmallExpensePage workspace={workspace}/>);
+    render(<SmallExpensePage workspace={workspace} mode="review"/>);
     expect(screen.queryByRole("button",{name:"내역 등록"})).not.toBeInTheDocument();
     expect(screen.getByLabelText("조합장 사용 선택")).toBeDisabled();
     fireEvent.click(screen.getByLabelText("복사용지 구입 선택"));
@@ -32,5 +32,14 @@ describe("소액지출 확인 화면", () => {
     const summary=summarizeSmallExpenses([row,{...row,id:"2",reviewStatus:"CONFIRMED"},{...row,id:"3",amount:20000,accountSubjectName:"수선비",reviewStatus:"CONFIRMED"},{...row,id:"4",reviewStatus:"CANCELLED"},{...row,id:"5",reviewStatus:"LEGACY_BATCH"}]);
     expect(summary).toMatchObject({pendingCount:1,confirmedCount:2,confirmedAmount:35000});
     expect(summary.accounts).toHaveLength(2);
+  });
+  it("확인 화면에서는 사무국장의 중복 등록 폼을 제공하지 않는다", () => {
+    render(<SmallExpensePage mode="review" workspace={{...workspace,member:{...workspace.member,user_id:"director"}}}/>);
+    expect(screen.queryByRole("button", { name: "내역 등록" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "등록·보완 내역" })).toHaveAttribute("href", "/finance/expenses/small?month=2026-09");
+  });
+  it("등록 화면에서는 조합장도 확정 버튼을 제공하지 않는다", () => {
+    render(<SmallExpensePage mode="register" workspace={workspace}/>);
+    expect(screen.queryByRole("button", { name: "선택 내역 확정" })).not.toBeInTheDocument();
   });
 });

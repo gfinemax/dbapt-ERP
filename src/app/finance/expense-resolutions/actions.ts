@@ -349,6 +349,7 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/exp");
   revalidatePath("/finance/approval-inbox");
+  revalidatePath("/approval/inbox");
   return saved;
 }
 
@@ -471,6 +472,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   }, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/approval-inbox");
+  revalidatePath("/approval/inbox");
   revalidatePath("/finance/workspace");
   return saved as ManagedExpenseResolution;
 }

@@ -25,7 +25,7 @@ describe("ErpShell", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
     expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "업무현황", "결재함", "지출관리", "신탁 집행관리", "지급관리", "대납·선지급 정산",
+      "업무현황", "지출 승인함", "지출관리", "신탁 집행관리", "지급관리", "대납·선지급 정산",
       "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
       "세금계산서·계산서", "예산집행 현황", "월 마감", "지출·신탁 설정",
     ]);

@@ -1,10 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import ApprovalInboxRoute from "./page";
-
+vi.mock("next/navigation", () => ({ redirect: (url: string) => { throw new Error(url); } }));
 describe("approval inbox route", () => {
-  it("renders the approval inbox page component", async () => {
-    expect(await ApprovalInboxRoute()).toMatchObject({
-      type: expect.any(Function),
-    });
+  it("opens the expense view of the unified inbox", async () => {
+    await expect(ApprovalInboxRoute()).rejects.toThrow("/approval/inbox?type=expense");
   });
 });

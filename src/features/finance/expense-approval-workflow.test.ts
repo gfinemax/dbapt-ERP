@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalWorkflowError, transitionExpenseApproval } from "./expense-approval-workflow";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
@@ -24,6 +24,8 @@ function createResolution(overrides: Partial<ManagedExpenseResolution> = {}) {
 }
 
 describe("expense approval workflow", () => {
+  beforeEach(() => { vi.useFakeTimers({ toFake: ["Date"] }); vi.setSystemTime(new Date("2026-07-12T03:00:00Z")); });
+  afterEach(() => { vi.useRealTimers(); });
   it("requests approval and advances only the current approver in order", () => {
     const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution(), transitionedAt: "2026-07-12 10:00" });
     expect(requested).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 담당자" });

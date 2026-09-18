@@ -6,7 +6,7 @@ import { requireReimbursementIdentity } from "@/features/finance/reimbursement-a
 import { smallExpenseCommand, smallExpenseDb } from "@/features/approval/small-expense-repository";
 
 function refresh() {
-  for (const path of ["/approval/small-expense", "/finance/reimbursements", "/finance/quick-expenses"]) revalidatePath(path);
+  for (const path of ["/approval/small-expense", "/approval/inbox", "/finance/expenses", "/finance/expenses/small", "/finance/reimbursements", "/finance/quick-expenses"]) revalidatePath(path);
 }
 export async function createSmallExpenseAction(form: FormData) {
   const member = await requireReimbursementIdentity(); const db = smallExpenseDb();

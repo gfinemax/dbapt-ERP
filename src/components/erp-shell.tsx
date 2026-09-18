@@ -27,7 +27,7 @@ import { financeNavigation, normalizeFinanceDetailLabel } from "@/features/finan
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
-  { label: "기안·결재", icon: FilePenLine, href: "/approval" },
+  { label: "기안·결재", icon: FilePenLine, href: "/approval/inbox" },
   { label: "회계/자금", icon: Wallet, href: "/finance/workspace" },
   { label: "조합원", icon: Users, href: "/members" },
   { label: "총회", icon: CalendarCheck, href: "#" },
@@ -55,13 +55,13 @@ type WorkspaceMenu = {
 const workspaceMenus: Record<string, WorkspaceMenu[]> = {
   "기안·결재": [
     {
-      defaultDetailLabel: "기안 목록",
-      href: "/approval",
+      defaultDetailLabel: "통합 결재함",
+      href: "/approval/inbox",
       label: "기안·결재",
       items: [
+        { label: "통합 결재함", href: "/approval/inbox" },
         { label: "기안 목록", href: "/approval" },
         { label: "새 기안", href: "/approval/new" },
-        { label: "소액결의", href: "/approval/small-expense" },
         { label: "결재 설정", href: "/basic-info/approval" },
       ],
     },

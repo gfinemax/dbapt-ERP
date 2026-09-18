@@ -1,6 +1,6 @@
 export const financeNavigation = [
   { group: "처리할 업무", label: "업무현황", href: "/finance/workspace" },
-  { group: "처리할 업무", label: "결재함", href: "/finance/approval-inbox" },
+  { group: "처리할 업무", label: "지출 승인함", href: "/approval/inbox?type=expense" },
   { group: "지출·지급", label: "지출관리", href: "/finance/expenses" },
   { group: "지출·지급", label: "신탁 집행관리", href: "/finance/trust" },
   { group: "지출·지급", label: "지급관리", href: "/finance/payments" },
@@ -17,6 +17,7 @@ export const financeNavigation = [
 ];
 
 const legacyLabels: Record<string, string> = {
+  "결재함": "지출 승인함",
   "지출결의서 관리": "지출관리",
   "간편지출": "지출관리",
   "간편지출 관리": "지출관리",
