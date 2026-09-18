@@ -38,19 +38,32 @@ describe("QuickExpensePage", () => {
     expect(screen.getByText("정식결의 전환 참고금액")).toBeInTheDocument();
     expect(screen.getAllByText("32,600원").length).toBeGreaterThan(0);
     expect(screen.getAllByText("10,000원").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("간편지출 기록서")).toHaveLength(2);
-    expect(screen.getAllByText("별첨 없음")).toHaveLength(2);
+    expect(screen.getAllByText("전자시스템 원본 기준 · 월별 검토용 출력본")).toHaveLength(2);
+    expect(screen.getByText("간지-20260918-8E3F3446")).toBeInTheDocument();
+    expect(screen.queryByText("간편지출 기록서")).not.toBeInTheDocument();
   });
 
-  it("appends each attached receipt after the monthly summary and record sheet", async () => {
+  it("appends an attached receipt after the monthly summary without a duplicate record sheet", async () => {
     const getPrintEvidence = vi.fn(async (recordId: string) => recordId === printableRecord.id ? [{ contentType: "image/png", evidenceType: "영수증", fileName: "receipt.png", id: "evidence-1", signedUrl: "https://example.com/receipt.png" }] : []);
     vi.stubGlobal("fetch", vi.fn(async () => ({ blob: async () => new window.Blob(["receipt"], { type: "image/png" }), headers: { get: () => "image/png" }, ok: true })));
     render(<QuickExpensePage getPrintEvidence={getPrintEvidence} initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[printableRecord]} />);
     fireEvent.click(screen.getByRole("button", { name: "월별 총괄표 A4 출력" }));
-    expect(await screen.findByAltText("receipt.png 증빙 1페이지")).toBeInTheDocument();
-    expect(screen.getByText("간편지출 증빙자료")).toBeInTheDocument();
-    expect(screen.getByText("1건 · 별첨 1쪽")).toBeInTheDocument();
+    expect(await screen.findByAltText("receipt.png 월별 증빙 1페이지")).toBeInTheDocument();
+    expect(screen.getByText("간편지출 영수증 첨부지")).toBeInTheDocument();
+    expect(screen.getByText("순번 1 · 간지-20260918-8E3F3446")).toBeInTheDocument();
+    expect(screen.queryByText("간편지출 기록서")).not.toBeInTheDocument();
     expect(getPrintEvidence).toHaveBeenCalledWith(printableRecord.id);
+  });
+
+  it("places two compact image receipts on one monthly attachment sheet", async () => {
+    const secondRecord = { ...printableRecord, id: "quick-2", usageDescription: "두 번째 간편지출" };
+    const getPrintEvidence = vi.fn(async (recordId: string) => [{ contentType: "image/png", evidenceType: "영수증", fileName: `${recordId}.png`, id: `evidence-${recordId}`, signedUrl: `https://example.com/${recordId}.png` }]);
+    vi.stubGlobal("fetch", vi.fn(async () => ({ blob: async () => new window.Blob(["receipt"], { type: "image/png" }), headers: { get: () => "image/png" }, ok: true })));
+    render(<QuickExpensePage getPrintEvidence={getPrintEvidence} initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[printableRecord, secondRecord]} />);
+    fireEvent.click(screen.getByRole("button", { name: "월별 총괄표 A4 출력" }));
+    expect(await screen.findByAltText(`${printableRecord.id}.png 월별 증빙 1페이지`)).toBeInTheDocument();
+    expect(screen.getByAltText("quick-2.png 월별 증빙 1페이지")).toBeInTheDocument();
+    expect(screen.getAllByText("간편지출 영수증 첨부지")).toHaveLength(1);
   });
 
   it("saves usage against a bank transaction without creating an expense resolution", async () => {
