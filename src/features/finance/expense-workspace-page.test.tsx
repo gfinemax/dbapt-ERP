@@ -141,9 +141,8 @@ describe("common original expense workspace", () => {
     fireEvent.click(source);
     expect(source.closest("tr")).toHaveAttribute("aria-selected", "true");
     const panel = screen.getByRole("complementary", { name: "선택한 지출 원본 상세 패널" });
-    expect(panel).toHaveClass("top-[176px]", "md:top-[115px]", "@min-[1120px]/expense:top-4", "@min-[1120px]/expense:bottom-auto");
-    expect(panel).not.toHaveClass("inset-y-0");
-    expect(screen.getByRole("button", { name: "상세 패널 배경 닫기" })).toHaveClass("@min-[1120px]/expense:hidden");
+    expect(panel).toHaveFocus();
+    expect(screen.queryByRole("button", { name: "상세 패널 배경 닫기" })).not.toBeInTheDocument();
     expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("source_kind=RESOLUTION"), { scroll: false });
     fireEvent.click(screen.getByRole("button", { name: "지출 상세 닫기" }));
     await waitFor(() => expect(source).toHaveFocus());
