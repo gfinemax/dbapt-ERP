@@ -3,8 +3,10 @@ import { buildExpenseEvidenceImageVariants } from "./expense-evidence-image.serv
 
 const maximumPdfVisionPages = 3;
 const openAiEndpoint = "https://api.openai.com/v1/chat/completions";
+const defaultRetryDelaysMs = [600, 1_800];
 
 type EvidenceImage = { label: string; url: string };
+type OpenAiFetcher = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 type OpenAiReceiptResult = {
   confidence: number | null;
@@ -37,9 +39,10 @@ export async function extractExpenseEvidenceWithOpenAI(
   file: File,
   options: {
     apiKey?: string;
-    fetcher?: (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
+    fetcher?: OpenAiFetcher;
     model?: string;
     onStage?: (stage: "PREPROCESSING" | "RECOGNIZING" | "STRUCTURING") => void | Promise<void>;
+    retryDelaysMs?: number[];
   } = {},
 ): Promise<EvidenceOcrData> {
   const apiKey = options.apiKey ?? process.env.OPENAI_API_KEY;
@@ -49,8 +52,7 @@ export async function extractExpenseEvidenceWithOpenAI(
   if (!images.length) throw new Error("OpenAI로 분석할 이미지가 없습니다.");
   await options.onStage?.("RECOGNIZING");
 
-  const response = await (options.fetcher ?? fetch)(openAiEndpoint, {
-    body: JSON.stringify({
+  const body = JSON.stringify({
       messages: [{
         content: [
           {
@@ -111,17 +113,56 @@ export async function extractExpenseEvidenceWithOpenAI(
         },
         type: "json_schema",
       },
-    }),
-    headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
-    method: "POST",
-    signal: AbortSignal.timeout(60_000),
   });
-  if (!response.ok) throw new Error(`OpenAI 분석 실패 (${response.status}): ${await response.text()}`);
+  const response = await requestOpenAiAnalysis(options.fetcher ?? fetch, body, apiKey, options.retryDelaysMs ?? defaultRetryDelaysMs);
   await options.onStage?.("STRUCTURING");
   const payload = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("OpenAI 분석 결과가 비어 있습니다.");
   return compactOpenAiResult(JSON.parse(content) as OpenAiReceiptResult, file.name);
+}
+
+async function requestOpenAiAnalysis(fetcher: OpenAiFetcher, body: string, apiKey: string, retryDelaysMs: number[]) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retryDelaysMs.length; attempt += 1) {
+    try {
+      const response = await fetcher(openAiEndpoint, {
+        body,
+        headers: { Authorization: `Bearer ${apiKey}`, "Content-Type": "application/json" },
+        method: "POST",
+        signal: AbortSignal.timeout(60_000),
+      });
+      if (response.ok) return response;
+      const error = await openAiResponseError(response);
+      if (!isRetryableOpenAiStatus(response.status) || attempt === retryDelaysMs.length) throw error;
+      lastError = error;
+    } catch (error) {
+      lastError = error;
+      if (error instanceof OpenAiRequestError && !error.retryable) throw error;
+      if (attempt === retryDelaysMs.length) break;
+    }
+    await delay(retryDelaysMs[attempt]);
+  }
+  throw lastError instanceof Error ? lastError : new Error("OpenAI 분석 요청에 실패했습니다.");
+}
+
+class OpenAiRequestError extends Error {
+  constructor(message: string, readonly retryable: boolean) { super(message); }
+}
+
+async function openAiResponseError(response: Response) {
+  const payload = await response.json().catch(() => null) as { error?: { code?: string; message?: string; type?: string } } | null;
+  const code = payload?.error?.code ?? payload?.error?.type;
+  const detail = payload?.error?.message?.replace(/\s+/g, " ").slice(0, 300);
+  return new OpenAiRequestError(`OpenAI 분석 실패 (${response.status}${code ? `/${code}` : ""})${detail ? `: ${detail}` : ""}`, isRetryableOpenAiStatus(response.status));
+}
+
+function isRetryableOpenAiStatus(status: number) {
+  return status === 408 || status === 409 || status === 429 || status >= 500;
+}
+
+function delay(ms: number) {
+  return ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve();
 }
 
 async function getEvidenceImages(file: File) {

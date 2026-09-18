@@ -72,4 +72,33 @@ describe("OpenAI expense evidence analysis", () => {
     expect(result.totalAmount).toBe(40120);
     expect(result.quantity).toBe(68);
   });
+
+  it("retries transient OpenAI failures and keeps the final structured result", async () => {
+    const failed = () => new Response(JSON.stringify({ error: { code: "server_error", message: "Temporary failure", type: "server_error" } }), { status: 503 });
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(failed())
+      .mockResolvedValueOnce(failed())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+        confidence: 0.9, documentDate: "2026/09/18 10:42:01", documentType: "영수증", issuer: "주식회사공단유통",
+        issuerAddress: null, issuerBusinessCategory: null, issuerBusinessNumber: null, issuerBusinessType: null,
+        issuerContact: null, issuerRepresentative: null, itemName: "커피", items: [], quantity: 1,
+        recognizedText: "합계 32,600원", supplyAmount: null, totalAmount: 32600, vatAmount: null,
+      }) } }] }), { status: 200 }));
+    const image = await sharp({ create: { background: "white", channels: 3, height: 300, width: 300 } }).jpeg().toBuffer();
+
+    await expect(extractExpenseEvidenceWithOpenAI(new File([new Uint8Array(image)], "receipt.jpg", { type: "image/jpeg" }), {
+      apiKey: "test-key", fetcher, retryDelaysMs: [0, 0],
+    })).resolves.toMatchObject({ documentDate: "2026-09-18", issuer: "주식회사공단유통", totalAmount: 32600 });
+    expect(fetcher).toHaveBeenCalledTimes(3);
+  });
+
+  it("does not retry a non-retryable OpenAI request error", async () => {
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: { code: "invalid_request_error", message: "Invalid image", type: "invalid_request_error" } }), { status: 400 }));
+    const image = await sharp({ create: { background: "white", channels: 3, height: 300, width: 300 } }).jpeg().toBuffer();
+
+    await expect(extractExpenseEvidenceWithOpenAI(new File([new Uint8Array(image)], "receipt.jpg", { type: "image/jpeg" }), {
+      apiKey: "test-key", fetcher, retryDelaysMs: [0, 0],
+    })).rejects.toThrow("OpenAI 분석 실패 (400/invalid_request_error): Invalid image");
+    expect(fetcher).toHaveBeenCalledOnce();
+  });
 });

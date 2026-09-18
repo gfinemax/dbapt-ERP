@@ -230,7 +230,16 @@ async function processExpenseEvidenceOcrJob(id: string) {
       } catch (openAiError) {
         const openAiFailureMessage = openAiError instanceof Error ? openAiError.message : String(openAiError);
         console.error(`[expense-evidence] OpenAI vision failed for ${file.name}: ${openAiFailureMessage}`);
-        throw new Error("자동인식 서비스에 연결하지 못했습니다. 잠시 후 다시 분석해 주세요.");
+        await updateOcrJob(id, "RECOGNIZING", 70, { provider: "TESSERACT" });
+        try {
+          result = {
+            ...await extractExpenseEvidenceFile(file),
+            processingNote: `OpenAI 자동인식 실패 후 로컬 OCR로 전환됨 (${summarizeOcrError(openAiFailureMessage)})`,
+          };
+        } catch (fallbackError) {
+          const fallbackMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
+          throw new Error(`OpenAI ${summarizeOcrError(openAiFailureMessage)}; 로컬 OCR ${summarizeOcrError(fallbackMessage)}`);
+        }
       }
     } else {
       await updateOcrJob(id, "RECOGNIZING", 65, { provider: "TESSERACT" });
@@ -279,6 +288,10 @@ export async function deleteExpenseEvidenceAction(storagePath: string) {
   if (!supabase) throw new Error("Supabase가 설정되지 않았습니다.");
   const { error } = await supabase.storage.from(expenseEvidenceBucket).remove([storagePath, buildExpenseEvidenceOcrSourcePath(storagePath)]);
   if (error) throw new Error(`증빙파일 삭제 실패: ${error.message}`);
+}
+
+function summarizeOcrError(message: string) {
+  return message.replace(/Bearer\s+\S+/gi, "Bearer [redacted]").replace(/\s+/g, " ").trim().slice(0, 360);
 }
 
 export async function discardUnlinkedExpenseEvidenceAction(id: string) {

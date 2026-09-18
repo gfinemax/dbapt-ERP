@@ -86,6 +86,25 @@ describe("QuickExpensePage", () => {
     expect(screen.getByLabelText(/가맹점·사용처/)).toHaveValue("사용자 수정 상호");
   });
 
+  it("retries a failed receipt OCR job without uploading the receipt again", async () => {
+    const attachment = { contentType: "application/pdf", evidenceType: "영수증", fileName: "receipt.pdf", fileSize: 1234, id: "evidence-1", ocrData: {}, ocrJobId: "ocr-1", ocrStatus: "REVIEW_REQUIRED" as const, storageBucket: "expense-evidence", storagePath: "org/receipt.pdf", uploadedAt: "2026-09-18T12:00:00+09:00", uploadedBy: "user-1" };
+    const uploadEvidence = vi.fn(async () => ({ attachment, ok: true as const }));
+    const retryEvidenceOcrJob = vi.fn(async () => undefined);
+    const getEvidenceOcrJob = vi.fn()
+      .mockResolvedValueOnce({ errorMessage: "OpenAI 분석 실패 (503/server_error)", id: "ocr-1", progress: 100, resultData: {}, stage: "FAILED" as const, status: "FAILED" as const })
+      .mockResolvedValue({ id: "ocr-1", progress: 100, resultData: { documentDate: "2026-09-18", issuer: "주식회사공단유통", itemName: "커피", totalAmount: 32600 }, stage: "COMPLETED" as const, status: "COMPLETED" as const });
+    render(<QuickExpensePage getEvidenceOcrJob={getEvidenceOcrJob} initialBankTransactions={[]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} retryEvidenceOcrJob={retryEvidenceOcrJob} uploadEvidence={uploadEvidence} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "법인카드" }));
+    fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [new File(["receipt"], "receipt.pdf", { type: "application/pdf" })] } });
+    expect(await screen.findByRole("button", { name: "OCR 다시 분석" }, { timeout: 2500 })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "OCR 다시 분석" }));
+
+    await waitFor(() => expect(retryEvidenceOcrJob).toHaveBeenCalledWith("ocr-1"));
+    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32600"), { timeout: 2500 });
+    expect(uploadEvidence).toHaveBeenCalledTimes(1);
+  });
+
   it("shows a clear empty-card state and temporarily records usage without an approval transaction", async () => {
     const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["카드내역 연결 필요"], id: "quick-card-1", recordStatus: "SOURCE_PENDING" as const }));
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} />);

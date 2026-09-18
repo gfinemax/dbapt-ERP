@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyExpenseEvidence, extractEvidenceText, hasExtractedEvidenceData, inferEvidenceType, normalizeEvidenceVendorFields, normalizeVendorName, sanitizeVendorName } from "./expense-evidence";
+import { classifyExpenseEvidence, extractEvidenceText, hasExtractedEvidenceData, inferEvidenceType, normalizeEvidenceDate, normalizeEvidenceVendorFields, normalizeVendorName, sanitizeVendorName } from "./expense-evidence";
 
 describe("expense evidence OCR helpers", () => {
   it("extracts reviewable fields from text evidence", () => {
@@ -25,6 +25,11 @@ describe("expense evidence OCR helpers", () => {
       issuerRepresentative: "서광표",
       supplyAmount: 60000,
     });
+  });
+
+  it("normalizes OCR dates that include time text", () => {
+    expect(normalizeEvidenceDate("2026/09/18 10:42:01")).toBe("2026-09-18");
+    expect(normalizeEvidenceDate("2026-02-30")).toBeUndefined();
   });
 
   it("does not include the adjacent representative field in the supplier name", () => {

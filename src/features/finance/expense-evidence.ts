@@ -79,6 +79,7 @@ export function normalizeVendorName(value: string) {
 export function normalizeEvidenceVendorFields(data: EvidenceOcrData): EvidenceOcrData {
   return compactOcrData({
     ...data,
+    documentDate: normalizeEvidenceDate(data.documentDate),
     issuer: data.issuer ? normalizeVendorName(data.issuer) : undefined,
     issuerAddress: cleanOcrCell(data.issuerAddress, /(?:업\s*태|종\s*목|연\s*락\s*처)/),
     issuerBusinessCategory: cleanOcrCell(data.issuerBusinessCategory, /(?:연\s*락\s*처|전\s*화)/),
@@ -86,6 +87,19 @@ export function normalizeEvidenceVendorFields(data: EvidenceOcrData): EvidenceOc
     issuerContact: cleanOcrCell(data.issuerContact),
     issuerRepresentative: cleanOcrCell(data.issuerRepresentative, /(?:사업장\s*소재지|주\s*소|업\s*태|종\s*목)/),
   });
+}
+
+export function normalizeEvidenceDate(value?: string) {
+  if (!value) return undefined;
+  const match = value.normalize("NFKC").match(/(\d{4})\s*[./-]\s*(\d{1,2})\s*[./-]\s*(\d{1,2})/);
+  if (!match) return undefined;
+  const [, yearText, monthText, dayText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return undefined;
+  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 export type EvidenceClassification = Pick<EvidenceOcrData, "classificationConfidence" | "classificationReasons" | "normalizedEvidenceType" | "vatTreatment">;
@@ -172,7 +186,7 @@ export function extractEvidenceText(text: string): EvidenceOcrData {
   const issuerAddress = cleanOcrCell(matchText(normalized, /(?:사업장\s*소재지|주\s*소)\s*[:：]?\s*([^\n]+)/), /(?:업\s*태|종\s*목|연\s*락\s*처)/);
   const issuerBusinessType = cleanOcrCell(matchText(normalized, /(?:업\s*태)\s*[:：]?\s*([^\n]+)/), /(?:종\s*목|연\s*락\s*처|전\s*화)/);
   const issuerBusinessCategory = cleanOcrCell(matchText(normalized, /(?:종\s*목)\s*[:：]?\s*([^\n]+)/), /(?:연\s*락\s*처|전\s*화)/);
-  const documentDate = normalizeDate(matchText(normalized, /(?:작\s*성\s*(?:년\s*월\s*일|일)|발\s*행\s*일|거\s*래\s*일|일\s*자)\s*[:：]?\s*([0-9]{4}\s*[./-]\s*[0-9]{1,2}\s*[./-]\s*[0-9]{1,2})/));
+  const documentDate = normalizeEvidenceDate(matchText(normalized, /(?:작\s*성\s*(?:년\s*월\s*일|일)|발\s*행\s*일|거\s*래\s*일|일\s*자)\s*[:：]?\s*([0-9]{4}\s*[./-]\s*[0-9]{1,2}\s*[./-]\s*[0-9]{1,2})/));
   const supplyAmount = matchAmount(normalized, /(?:공\s*급\s*가\s*액|공\s*급\s*금\s*액|공\s*급\s*대\s*가\s*총\s*액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   const vatAmount = matchAmount(normalized, /(?:부가세|세액)\s*[:：]?\s*([0-9,]+)\s*원?/);
   const totalAmount = matchAmount(normalized, /(?:합계|총액|총요금|수납요금|결제금액)\s*[:：]?\s*(?:\([^\n)]*\)\s*)?[^\n]*?([0-9][0-9,]*)\s*원/)
@@ -220,14 +234,6 @@ function matchAmount(text: string, pattern: RegExp) {
   if (!value) return undefined;
   const amount = Number(value.replace(/,/g, ""));
   return Number.isFinite(amount) && amount >= 0 ? amount : undefined;
-}
-
-function normalizeDate(value?: string) {
-  if (!value) return undefined;
-  const [year, month, day] = value.replace(/\s/g, "").replace(/[./]/g, "-").split("-").map(Number);
-  const date = new Date(Date.UTC(year, month - 1, day));
-  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month || date.getUTCDate() !== day) return undefined;
-  return `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }
 
 function compactOcrData(data: EvidenceOcrData) {
