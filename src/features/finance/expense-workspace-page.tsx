@@ -111,6 +111,37 @@ function PersonalReimbursementTools({ record: r }: { record: ExpenseWorkspaceRec
   </section>;
 }
 
+function personalReimbursementHref(r: ExpenseWorkspaceRecord, action?: "APPROVE" | "PAY") {
+  const params = new URLSearchParams({ tab: "requests", request: r.source_id });
+  if (r.budget_month) params.set("month", r.budget_month.slice(0, 7));
+  if (action) params.set("action", action);
+  return `/finance/reimbursements?${params.toString()}#reimbursement-request-${r.source_id}`;
+}
+
+function PersonalWorkflowAction({ permissions, record: r }: { permissions: ExpenseWorkspace["viewer"]["permissions"]; record: ExpenseWorkspaceRecord }) {
+  const canApprove = !r.personal_is_applicant && permissions.some(permission => ["ADMIN", "APPROVE"].includes(permission));
+  const canPay = permissions.some(permission => ["ADMIN", "PAY"].includes(permission));
+  const action = r.approval_status === "SUBMITTED" && canApprove ? "APPROVE" : r.approval_status === "APPROVED" && canPay ? "PAY" : undefined;
+  const label = action === "APPROVE" ? "정산 승인 검토" : action === "PAY" ? "실제 출금 거래 연결" : "개인 정산 신청 화면에서 확인";
+  const guidance = r.approval_status === "SUBMITTED"
+    ? canApprove ? "증빙과 예산 귀속을 확인한 뒤 승인할 수 있습니다." : "승인 담당자의 처리를 기다리고 있습니다."
+    : r.approval_status === "APPROVED"
+      ? canPay ? "승인된 정산에 실제 출금 거래를 연결할 수 있습니다." : "지급 담당자의 출금 거래 연결을 기다리고 있습니다."
+      : r.approval_status === "PAID" ? "지급 연결과 처리 이력을 확인할 수 있습니다." : "개인 정산 원본에서 처리 상태와 이력을 확인할 수 있습니다.";
+  return <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4" aria-label="개인 정산 다음 작업">
+    <h3 className="font-bold">다음 작업</h3><p className="mt-1 text-sm text-slate-600">{guidance}</p>
+    <Link className={`${action ? button : secondary} mt-3 inline-block`} href={personalReimbursementHref(r, action)}>{label}</Link>
+  </section>;
+}
+
+function displayPaymentStatus(r: ExpenseWorkspaceRecord) {
+  if (r.payment_status) return r.payment_status;
+  if (r.source_kind !== "PERSONAL") return "별도 지급 확인 필요";
+  if (r.approval_status === "SUBMITTED") return "승인 후 지급 연결";
+  if (r.approval_status === "APPROVED") return "지급 거래 연결 대기";
+  return "별도 지급 없음";
+}
+
 export function filterExpenseRecords(records: ExpenseWorkspaceRecord[], kind: string, connection: string, search: string) {
   const query = search.trim().toLocaleLowerCase();
   return records.filter(r => (kind === "ALL" || r.source_kind === kind) && (connection === "ALL" || (connection === "CONNECTED" ? !!r.transaction_id : !r.transaction_id)) &&
@@ -127,7 +158,7 @@ function ExpenseStart({ staff }: { staff: boolean }) {
   </section>;
 }
 
-function ExpenseDetail({ canApprove, expenseDetails, onClose, record: r, staff }: { canApprove: boolean; expenseDetails: OperatingExpenseDetail[]; onClose: () => void; record: ExpenseWorkspaceRecord; staff: boolean }) {
+function ExpenseDetail({ canApprove, expenseDetails, onClose, permissions, record: r, staff }: { canApprove: boolean; expenseDetails: OperatingExpenseDetail[]; onClose: () => void; permissions: ExpenseWorkspace["viewer"]["permissions"]; record: ExpenseWorkspaceRecord; staff: boolean }) {
   const router = useRouter(); const [pending, start] = useTransition(); const busy = useRef(false); const operationKey = useRef<string | null>(null); const [message, setMessage] = useState(""); const [tab, setTab] = useState<"DETAIL" | "CONNECTIONS">("DETAIL");
   function connect() {
     if (busy.current) return; busy.current = true; operationKey.current ??= crypto.randomUUID(); setMessage("");
@@ -136,7 +167,8 @@ function ExpenseDetail({ canApprove, expenseDetails, onClose, record: r, staff }
   return <section aria-label="지출 상세" className={card}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-sm font-semibold text-blue-700">{kinds[r.source_kind]}{r.number ? ` · ${r.number}` : ""}</p><h2 className="mt-1 break-words text-xl font-bold">{r.title}</h2><div className="mt-3 flex flex-wrap gap-2"><span className="rounded-full bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700">{labels[r.approval_status] ?? r.approval_status}</span><span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{r.transaction_id ? "통합 연결됨" : "미연결"}</span>{r.payment_status && <span className="rounded-full bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-700">{r.payment_status}</span>}</div></div><button aria-label="지출 상세 닫기" className={`${secondary} shrink-0`} onClick={onClose}>닫기</button></div>
     <p className="mt-5 text-3xl font-bold">{money(r.amount)}</p>
     <div aria-label="지출 상세 구분" className="mt-5 grid grid-cols-2 rounded-xl bg-slate-100 p-1" role="tablist"><button aria-controls="expense-detail-panel" aria-selected={tab === "DETAIL"} className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "DETAIL" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`} id="expense-detail-tab" onClick={() => setTab("DETAIL")} role="tab">원본 정보</button><button aria-controls="expense-connections-panel" aria-selected={tab === "CONNECTIONS"} className={`rounded-lg px-3 py-2 text-sm font-semibold ${tab === "CONNECTIONS" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`} id="expense-connections-tab" onClick={() => setTab("CONNECTIONS")} role="tab">연결 현황</button></div>
-    {tab === "DETAIL" && <div aria-labelledby="expense-detail-tab" id="expense-detail-panel" role="tabpanel"><dl className="my-5 grid gap-4 sm:grid-cols-2">{[["원본 승인·처리 상태", labels[r.approval_status] ?? r.approval_status], ["원본 지급 상태", r.payment_status ?? "별도 지급 확인 필요"], ["작성자", r.author_label ?? "미확인"], ["거래처", r.counterparty || "미확인"], ["작성일", day(r.created_at)], ["실제 사용일", day(r.used_at)], ["회계 귀속일", day(r.accounting_date)], ["개인 정산 예산월", r.budget_month?.slice(0, 7) ?? "해당 없음"]].map(([label, value]) => <div key={label}><dt className="text-sm text-slate-600">{label}</dt><dd className="mt-1 font-medium">{value}</dd></div>)}</dl>
+    {tab === "DETAIL" && <div aria-labelledby="expense-detail-tab" id="expense-detail-panel" role="tabpanel"><dl className="my-5 grid gap-4 sm:grid-cols-2">{[["원본 승인·처리 상태", labels[r.approval_status] ?? r.approval_status], ["원본 지급 상태", displayPaymentStatus(r)], ["작성자", r.author_label ?? "미확인"], ["거래처", r.counterparty || "미확인"], ["작성일", day(r.created_at)], ["실제 사용일", day(r.used_at)], ["회계 귀속일", day(r.accounting_date)], ["개인 정산 예산월", r.budget_month?.slice(0, 7) ?? "해당 없음"]].map(([label, value]) => <div key={label}><dt className="text-sm text-slate-600">{label}</dt><dd className="mt-1 font-medium">{value}</dd></div>)}</dl>
+      {r.source_kind === "PERSONAL" && <PersonalWorkflowAction permissions={permissions} record={r} />}
       {staff && r.source_kind === "QUICK" && <QuickExpenseTools canApprove={canApprove} expenseDetails={expenseDetails} record={r} />}
       {r.source_kind === "PERSONAL" && <PersonalReimbursementTools record={r} />}
     </div>}
@@ -163,7 +195,7 @@ export function ExpenseWorkspacePage({ workspace, expenseDetails = [], initialKi
     <div className="2xl:grid 2xl:grid-cols-[minmax(650px,1fr)_minmax(420px,480px)] 2xl:items-start 2xl:gap-5"><section className={card}><h2 className="text-xl font-bold">지출 원본 목록</h2><p className="mt-2 text-sm text-slate-600">같은 사용을 결의·정산으로 전환한 기록도 원본별로 보존해. 이 목록의 금액을 합산하면 중복될 수 있어.</p><div className="my-4 grid gap-3 sm:grid-cols-3"><label>원본 종류<select className={field} value={kind} onChange={e => { setKind(e.target.value); navigate({ kind: e.target.value }); }}><option value="ALL">전체</option>{Object.entries(kinds).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label><label>통합 연결<select className={field} value={connection} onChange={e => { setConnection(e.target.value); navigate({ connection: e.target.value }); }}><option value="ALL">전체</option><option value="CONNECTED">연결됨</option><option value="UNCONNECTED">미연결</option></select></label><label>지출 검색<input className={field} value={search} placeholder="제목·문서번호·거래처" onChange={e => { setSearch(e.target.value); navigate({ q: e.target.value }); }} /></label></div>
       <p className="mb-3">전체 원본 {workspace.records.length}건 · 조회 결과 {rows.length}건</p><div className="overflow-x-auto"><table className="w-full min-w-[650px] text-left text-sm"><thead><tr><th className="p-2">원본</th><th>금액</th><th>원본 상태</th><th>통합 연결</th></tr></thead><tbody>{rows.map(r => { const active = selected === keyOf(r); return <tr aria-selected={active} key={keyOf(r)} className={`cursor-pointer border-t transition-colors hover:bg-blue-50/60 ${active ? "bg-blue-50 shadow-[inset_4px_0_0_#2563eb]" : ""}`} onClick={() => selectDetail(r)}><td className="p-2"><button id={`expense-source-${r.source_kind}-${r.source_id}`} className="w-full text-left font-semibold underline decoration-slate-400 underline-offset-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-600" aria-pressed={active} onClick={event => { event.stopPropagation(); selectDetail(r); }}>{r.title}</button><p className="mt-1 text-xs">{kinds[r.source_kind]}{r.number ? ` · ${r.number}` : ""}</p></td><td>{money(r.amount)}</td><td>{labels[r.approval_status] ?? r.approval_status}{r.payment_status ? ` · ${r.payment_status}` : ""}</td><td>{r.transaction_id ? "연결됨" : "미연결"}</td></tr>; })}</tbody></table></div>{!rows.length && <p className="py-6 text-center">조건에 맞는 지출 원본이 없어.</p>}</section>
       {!detail && !selected && <div className="hidden 2xl:block"><section className={`${card} sticky top-4`}><h2 className="font-bold">원본 상세</h2><p className="mt-2 text-sm text-slate-600">목록에서 원본을 선택하면 상세와 연결 현황을 확인할 수 있어.</p></section></div>}
-      {detail && <aside aria-label="선택한 지출 원본 상세 패널" className="fixed right-0 bottom-0 top-[176px] z-50 w-full overflow-y-auto bg-slate-50 p-3 shadow-2xl sm:max-w-[520px] md:top-[115px] 2xl:sticky 2xl:top-4 2xl:bottom-auto 2xl:z-auto 2xl:col-start-2 2xl:row-start-1 2xl:max-h-[calc(100vh-2rem)] 2xl:max-w-none 2xl:bg-transparent 2xl:p-0 2xl:shadow-none"><ExpenseDetail canApprove={workspace.viewer.permissions.some(p => ["ADMIN","APPROVE"].includes(p))} expenseDetails={expenseDetails} key={keyOf(detail)} onClose={closeDetail} record={detail} staff={workspace.viewer.staff} /></aside>}
+      {detail && <aside aria-label="선택한 지출 원본 상세 패널" className="fixed right-0 bottom-0 top-[176px] z-50 w-full overflow-y-auto bg-slate-50 p-3 shadow-2xl sm:max-w-[520px] md:top-[115px] 2xl:sticky 2xl:top-4 2xl:bottom-auto 2xl:z-auto 2xl:col-start-2 2xl:row-start-1 2xl:max-h-[calc(100vh-2rem)] 2xl:max-w-none 2xl:bg-transparent 2xl:p-0 2xl:shadow-none"><ExpenseDetail canApprove={workspace.viewer.permissions.some(p => ["ADMIN","APPROVE"].includes(p))} expenseDetails={expenseDetails} key={keyOf(detail)} onClose={closeDetail} permissions={workspace.viewer.permissions} record={detail} staff={workspace.viewer.staff} /></aside>}
       {!detail && selected && <aside className={`${card} fixed inset-x-3 top-[176px] z-50 sm:left-auto sm:w-[520px] md:top-[115px] 2xl:static 2xl:col-start-2 2xl:row-start-1 2xl:w-auto`}><button className={`${secondary} float-right`} onClick={closeDetail}>닫기</button><p className="pr-20" role="alert">조회 권한이 있는 원본 목록에서 해당 지출을 찾을 수 없어.</p></aside>}
     </div>
   </div>;

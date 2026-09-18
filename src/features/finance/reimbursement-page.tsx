@@ -50,14 +50,16 @@ function Report({report,previous}:{report:ReimbursementReport;previous?:Reimburs
     <a className="mt-3 inline-block text-sm text-blue-700 underline" href={`/finance/reimbursements/report?month=${report.month}&revision=${report.revision}`} target="_blank" rel="noreferrer">보고서 열기·인쇄</a>
   </details>;
 }
-export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace:ReimbursementWorkspace;initialTab?:string}) {
+export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialAction}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialAction?:"APPROVE"|"PAY"}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
-  const [tab,setTab]=useState(initialTab); const [selected,setSelected]=useState<Reimbursement|null>(null); const [action,setAction]=useState("");
+  const period=w.periods.find(p=>p.month===w.month);
+  const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
+  const allowedInitialAction=initialRequest&&initialAction&&requestActions(initialRequest,w.member,period).includes(initialAction)?initialAction:"";
+  const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [action,setAction]=useState(allowedInitialAction);
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
   const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
   const [status,setStatus]=useState("ALL");
-  const period=w.periods.find(p=>p.month===w.month);
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
   const submissionDeadline=usedPeriod?.submission_deadline ?? (w.policy?autoSubmissionDeadline(usedOn,w.policy.submission_day):null);
   const longDelayDays=usedPeriod?.long_delay_days ?? w.policy?.long_delay_days;
@@ -96,7 +98,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests"}:{workspace
         </form>
       </details>
       <section className={card}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">{w.month.slice(0,7)} 사용분 · {visible.length}건</h2><select aria-label="정산 상태" className="rounded-lg border p-2" value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">전체 상태</option>{Object.entries(reimbursementStatusLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
-        <div className="space-y-4">{visible.map(r=><article key={r.id} className="rounded-xl border p-4"><div className="flex flex-wrap justify-between gap-2"><h3 className="font-bold">{r.merchant} · {money(r.amount)}</h3><span className="text-sm font-semibold">{reimbursementStatusLabels[r.status]}</span></div>
+        <div className="space-y-4">{visible.map(r=><article id={`reimbursement-request-${r.id}`} key={r.id} className={`rounded-xl border p-4 ${initialRequestId===r.id?"border-blue-400 bg-blue-50/30":""}`}><div className="flex flex-wrap justify-between gap-2"><h3 className="font-bold">{r.merchant} · {money(r.amount)}</h3><span className="text-sm font-semibold">{reimbursementStatusLabels[r.status]}</span></div>
           <p className="mt-2 text-sm">{r.purpose}</p><p className="mt-2 text-sm text-slate-600">신청자 {names[r.applicant_id]??"등록 사용자"} · 사용일 {r.used_on} · 예산 귀속 {r.budget_month.slice(0,7)}</p>
           <p className="mt-1 text-xs text-slate-600">신청 {dateTime(r.submitted_at)} · 예산 승인 {dateTime(r.approved_at)} · 실제 지급 {dateTime(r.paid_at)}</p>
           {r.delay_reason&&<p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">지연 사유: {r.delay_reason}</p>}

@@ -16,7 +16,7 @@ export type ExpenseWorkspaceRecord = {
   evidence_files?: { ocr_job_id: string; file_name: string; content_type: string; storage_path: string; evidence_type: string; status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"; stage: EvidenceOcrJobStage; progress: number; result_data: EvidenceOcrData; error_message: string | null; created_at: string }[];
   evidence_kind?: string; evidence_review_status?: string; missing_evidence_reason?: string; evidence_review_note?: string;
   budget_item?: string; expense_detail_id?: string;
-  personal_purpose?: string; personal_updated_at?: string; personal_can_edit?: boolean;
+  personal_purpose?: string; personal_updated_at?: string; personal_can_edit?: boolean; personal_is_applicant?: boolean;
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
 
@@ -39,7 +39,7 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
     if (record.source_kind === "QUICK") return { ...record, ...(byId.get(record.source_id) ?? {}) };
     if (record.source_kind === "PERSONAL") {
       const meta = personalById.get(record.source_id);
-      return { ...record, personal_purpose: meta?.purpose, personal_updated_at: meta?.updated_at, personal_can_edit: record.approval_status === "SUBMITTED" && !!meta && (meta.applicant_id === member.user_id || isAdmin) };
+      return { ...record, personal_purpose: meta?.purpose, personal_updated_at: meta?.updated_at, personal_can_edit: record.approval_status === "SUBMITTED" && !!meta && (meta.applicant_id === member.user_id || isAdmin), personal_is_applicant: meta?.applicant_id === member.user_id };
     }
     return record;
   });

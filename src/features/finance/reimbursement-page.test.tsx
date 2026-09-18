@@ -8,6 +8,22 @@ vi.mock("@/app/finance/reimbursements/actions",()=>({runReimbursementCommand:moc
 const w:ReimbursementWorkspace={month:"2026-03-01",member:{user_id:"a",organization_id:"o",display_name:"관리자",permissions:["ADMIN"],active:true},members:[],policy:null,periods:[{month:"2026-03-01",status:"CLOSED",submission_deadline:"2026-04-05",completion_deadline:"2026-04-10",long_delay_days:60,revision:1}],requests:[{id:"r",applicant_id:"b",budget_id:"budget",used_on:"2026-03-15",budget_month:"2026-03-01",amount:80000,merchant:"문구점",purpose:"사무용품",delay_reason:"영수증 누락",source_quick_id:null,status:"APPROVED",needs_exception:true,needs_senior:false,exception_approved_at:"2026-06-01",senior_approved_at:null,over_budget_approved_at:null,submitted_at:"2026-06-01",approved_at:"2026-06-02",paid_at:null,bank_transaction_id:null}],budgets:[],reports:[],audits:[],banks:[{id:"bank",transacted_at:"2026-06-15T12:00:00+09:00",withdrawal_amount:80000,counterparty:"신청자",description:"정산"}],sources:[]};
 describe("reimbursement workspace",()=>{
  beforeEach(()=>vi.clearAllMocks());
+ it("opens a deep-linked approval only when the current actor may approve it",()=>{
+  const request={...w.requests[0],status:"SUBMITTED" as const,needs_exception:false,approved_at:null};
+  render(<ReimbursementPage workspace={{...w,requests:[request]}} initialRequestId="r" initialAction="APPROVE"/>);
+  expect(screen.getByRole("dialog",{name:"예산 반영 승인"})).toBeInTheDocument();
+  expect(document.getElementById("reimbursement-request-r")).toHaveClass("border-blue-400");
+ });
+ it("does not open a deep-linked approval for the applicant's own request",()=>{
+  const request={...w.requests[0],applicant_id:"a",status:"SUBMITTED" as const,needs_exception:false,approved_at:null};
+  render(<ReimbursementPage workspace={{...w,requests:[request]}} initialRequestId="r" initialAction="APPROVE"/>);
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(document.getElementById("reimbursement-request-r")).toHaveClass("border-blue-400");
+ });
+ it("opens a deep-linked payment only after approval for a payment operator",()=>{
+  render(<ReimbursementPage workspace={w} initialRequestId="r" initialAction="PAY"/>);
+  expect(screen.getByRole("dialog",{name:"지급 연결"})).toBeInTheDocument();
+ });
  it("passes a bank ID rather than a backdated payment date and refreshes after saving",async()=>{
   mocks.command.mockResolvedValue({}); render(<ReimbursementPage workspace={w}/>);
   fireEvent.click(screen.getByRole("button",{name:"지급 연결",exact:true}));

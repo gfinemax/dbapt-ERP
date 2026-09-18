@@ -14,6 +14,25 @@ function fixture(): ExpenseWorkspace {
 const expenseDetails: OperatingExpenseDetail[] = [{ id: "detail-supplies", code: "GENERAL-SUPPLIES", groupName: "일반운영비", name: "사무용품비", budgetItem: "일반운영비>사무용품비", status: "CONFIRMED", quickExpenseEligible: true }];
 beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.personalUpdate.mockResolvedValue({ ok: true, message: "거래처와 사용내용을 수정했고 변경 이력을 남겼어." }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
+  it("links an eligible approver directly to the personal reimbursement review", () => {
+    const data = fixture(); data.viewer.permissions = ["APPROVE"]; data.records[0] = { ...data.records[0], source_kind: "PERSONAL", source_id: "personal-review", budget_month: "2026-03-01", approval_status: "SUBMITTED", payment_status: null, personal_is_applicant: false };
+    render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="personal-review" />);
+    expect(screen.getByText("승인 후 지급 연결")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "정산 승인 검토" })).toHaveAttribute("href", "/finance/reimbursements?tab=requests&request=personal-review&month=2026-03&action=APPROVE#reimbursement-request-personal-review");
+  });
+  it("does not offer an applicant approval of their own reimbursement", () => {
+    const data = fixture(); data.viewer.permissions = ["APPROVE"]; data.records[0] = { ...data.records[0], source_kind: "PERSONAL", source_id: "own-request", budget_month: "2026-03-01", approval_status: "SUBMITTED", payment_status: null, personal_is_applicant: true };
+    render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="own-request" />);
+    expect(screen.queryByRole("link", { name: "정산 승인 검토" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "개인 정산 신청 화면에서 확인" })).toBeInTheDocument();
+    expect(screen.getByText("승인 담당자의 처리를 기다리고 있습니다.")).toBeInTheDocument();
+  });
+  it("links an approved reimbursement to payment for a payment operator", () => {
+    const data = fixture(); data.viewer.permissions = ["PAY"]; data.records[0] = { ...data.records[0], source_kind: "PERSONAL", source_id: "personal-payment", budget_month: "2026-03-01", approval_status: "APPROVED", payment_status: null };
+    render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="personal-payment" />);
+    expect(screen.getByText("지급 거래 연결 대기")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "실제 출금 거래 연결" })).toHaveAttribute("href", "/finance/reimbursements?tab=requests&request=personal-payment&month=2026-03&action=PAY#reimbursement-request-personal-payment");
+  });
   it("keeps the original reimbursement budget month when opening its existing page", () => {
     const data = fixture(); data.records[0] = { ...data.records[0], source_kind: "PERSONAL", budget_month: "2026-03-01" };
     render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="text-id" />);
