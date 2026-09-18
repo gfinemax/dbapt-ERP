@@ -87,7 +87,7 @@ describe("QuickExpensePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "법인카드" }));
     fireEvent.change(screen.getByLabelText("증빙 파일"), { target: { files: [new File(["receipt"], "receipt.jpg", { type: "image/jpeg" })] } });
 
-    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32000"), { timeout: 2500 });
+    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32,000"), { timeout: 2500 });
     expect(screen.getByLabelText(/카드 사용일/)).toHaveValue("2026-09-17");
     expect(screen.getByLabelText(/가맹점·사용처/)).toHaveValue("문구상사");
     expect(screen.getByRole("textbox", { name: /^사용내용/ })).toHaveValue("복사용지");
@@ -110,7 +110,7 @@ describe("QuickExpensePage", () => {
     fireEvent.click(screen.getByRole("button", { name: "OCR 다시 분석" }));
 
     await waitFor(() => expect(retryEvidenceOcrJob).toHaveBeenCalledWith("ocr-1"));
-    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32600"), { timeout: 2500 });
+    await waitFor(() => expect(screen.getByLabelText(/카드 사용금액/)).toHaveValue("32,600"), { timeout: 2500 });
     expect(uploadEvidence).toHaveBeenCalledTimes(1);
   });
 
