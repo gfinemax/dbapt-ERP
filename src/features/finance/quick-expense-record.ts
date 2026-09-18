@@ -6,6 +6,14 @@ export type QuickExpenseSourceType = "BANK_TRANSACTION" | "CORPORATE_CARD" | "MA
 export type QuickExpenseEvidenceKind = "CARD_TRANSACTION" | "BANK_TRANSFER" | "RECEIPT" | "ALTERNATIVE" | "NONE";
 export type QuickExpenseEvidenceReviewStatus = "MISSING" | "READY" | "REVIEW_REQUIRED" | "SUPPLEMENT_REQUIRED" | "APPROVED";
 
+export type QuickExpensePrintEvidence = {
+  contentType: string;
+  evidenceType: string;
+  fileName: string;
+  id: string;
+  signedUrl: string;
+};
+
 export type QuickExpenseRecordInput = {
   amount: number;
   approvalSkipReason: string;

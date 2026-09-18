@@ -5,6 +5,8 @@ import { QuickExpensePage } from "./quick-expense-page";
 const details = [{ id: "detail-communications", code: "PUBLIC-COMM", groupName: "공공요금·수수료", name: "통신비", budgetItem: "제세공과금>통신비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
 
 describe("QuickExpensePage", () => {
+  const printableRecord = { amount: 32600, approvalSkipReason: "승인 예산 내 일상 지출", budgetItem: "일반운영비>소모품비", corporateCardTransactionId: "card-1", counterparty: "주식회사공단유통", createdAt: "2026-09-18T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: [], evidenceStatus: "GENERAL" as const, evidenceReviewStatus: "APPROVED" as const, id: "8e3f3446-1111-2222-3333-444444444444", occurredAt: "2026-09-18T10:00:00+09:00", paymentMethod: "CORPORATE_CARD" as const, recordedByLabel: "오학동 사무장", recordStatus: "RECORDED" as const, sourceType: "CORPORATE_CARD" as const, usageDescription: "맥심 모카골드 커피믹스 구입" };
+
   it("shows payment methods in the requested priority order", () => {
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
     const fieldset = screen.getByText("결제수단").closest("fieldset");
@@ -12,6 +14,28 @@ describe("QuickExpensePage", () => {
     expect(within(fieldset!).getAllByRole("button").map((button) => button.textContent)).toEqual([
       "법인카드", "개인 선결제", "현금", "계좌이체", "자동이체",
     ]);
+  });
+
+  it("opens an A4 record sheet with stable management and reconciliation details", async () => {
+    const getPrintEvidence = vi.fn(async () => []);
+    render(<QuickExpensePage getPrintEvidence={getPrintEvidence} initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[printableRecord]} />);
+    fireEvent.click(screen.getByRole("button", { name: "A4 기록서 출력" }));
+    expect(await screen.findByRole("dialog", { name: "간편지출 기록서 출력 미리보기" })).toBeInTheDocument();
+    expect(screen.getByText("간지-20260918-8E3F3446")).toBeInTheDocument();
+    expect(screen.getAllByText("법인카드 승인내역 연결").length).toBeGreaterThan(0);
+    expect(screen.getByText("32,600원")).toBeInTheDocument();
+    await waitFor(() => expect(getPrintEvidence).toHaveBeenCalledWith(printableRecord.id));
+  });
+
+  it("prints a monthly summary and keeps converted records outside the management total", async () => {
+    const converted = { ...printableRecord, amount: 10000, id: "converted-1", recordStatus: "CONVERTED" as const, usageDescription: "정식결의 전환 건" };
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[printableRecord, converted]} />);
+    fireEvent.click(screen.getByRole("button", { name: "월별 총괄표 A4 출력" }));
+    expect(await screen.findByRole("dialog", { name: "간편지출 월별 총괄표 출력 미리보기" })).toBeInTheDocument();
+    expect(screen.getByText("간편지출 관리합계")).toBeInTheDocument();
+    expect(screen.getByText("정식결의 전환 참고금액")).toBeInTheDocument();
+    expect(screen.getAllByText("32,600원").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("10,000원").length).toBeGreaterThan(0);
   });
 
   it("saves usage against a bank transaction without creating an expense resolution", async () => {

@@ -6,6 +6,8 @@ import { validateQuickExpenseRecord, type QuickExpenseRecordInput } from "@/feat
 import { importCorporateCardTransactions, linkQuickExpenseCard } from "@/features/finance/corporate-card-transaction-repository";
 import type { CorporateCardTransactionImportRow } from "@/features/finance/corporate-card-transaction-import";
 import { revalidatePath } from "next/cache";
+import { expenseDb, requireExpenseActor } from "@/features/finance/expense-authorization";
+import type { QuickExpensePrintEvidence } from "@/features/finance/quick-expense-record";
 
 export async function saveQuickExpenseRecordAction(input: QuickExpenseRecordInput) {
   const organizationId = await getDefaultOrganizationId();
@@ -38,4 +40,29 @@ export async function linkQuickExpenseCardAction(input: { recordId: string; card
   await linkQuickExpenseCard(input.recordId, input.cardTransactionId, recordStatus);
   revalidatePath("/finance/quick-expenses");
   return { recordStatus };
+}
+
+export async function getQuickExpensePrintEvidenceAction(recordId: string): Promise<QuickExpensePrintEvidence[]> {
+  if (!recordId) throw new Error("출력할 간편지출 기록을 확인해줘.");
+  const actor = await requireExpenseActor();
+  const db = expenseDb();
+  const { data: record, error: recordError } = await db.schema("finance").from("quick_expense_records")
+    .select("id").eq("organization_id", actor.organization_id).eq("id", recordId).maybeSingle();
+  if (recordError || !record) throw new Error("조회 권한이 있는 간편지출 기록을 찾을 수 없어.");
+  const { data: links, error: linkError } = await db.schema("finance").from("quick_expense_evidence")
+    .select("ocr_job_id,created_at").eq("organization_id", actor.organization_id).eq("quick_expense_id", recordId).order("created_at", { ascending: true });
+  if (linkError) throw new Error("간편지출 증빙 연결을 확인하지 못했어.");
+  const ids = (links ?? []).map((link) => link.ocr_job_id as string);
+  if (!ids.length) return [];
+  const { data: jobs, error: jobError } = await db.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("id,storage_bucket,storage_path,original_filename,content_type,evidence_type").eq("organization_id", actor.organization_id).in("id", ids);
+  if (jobError) throw new Error("간편지출 증빙 원본을 확인하지 못했어.");
+  const byId = new Map((jobs ?? []).map((job) => [job.id as string, job]));
+  return Promise.all(ids.map(async (id) => {
+    const job = byId.get(id);
+    if (!job) throw new Error("연결된 증빙 원본 정보를 찾을 수 없어.");
+    const { data, error } = await db.storage.from(job.storage_bucket as string).createSignedUrl(job.storage_path as string, 120);
+    if (error || !data?.signedUrl) throw new Error(`${job.original_filename} 증빙을 출력용으로 불러오지 못했어.`);
+    return { contentType: job.content_type as string, evidenceType: job.evidence_type as string, fileName: job.original_filename as string, id, signedUrl: data.signedUrl };
+  }));
 }

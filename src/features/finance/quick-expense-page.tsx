@@ -6,7 +6,8 @@ import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import type { BankTransactionResolutionCandidate } from "./expense-compliance-repository";
 import type { CorporateCardTransactionCandidate } from "./corporate-card-transaction";
-import type { QuickExpenseRecord, QuickExpenseRecordInput, QuickExpensePaymentMethod } from "./quick-expense-record";
+import type { QuickExpensePrintEvidence, QuickExpenseRecord, QuickExpenseRecordInput, QuickExpensePaymentMethod } from "./quick-expense-record";
+import { QuickExpensePrintModal, type QuickExpensePrintTarget } from "./quick-expense-print";
 import type { CorporateCardTransactionImportRow } from "./corporate-card-transaction-import";
 import { parseCorporateCardTransactionText } from "./corporate-card-transaction-import";
 import { readBankTransactionFile } from "./bank-transaction-file";
@@ -16,10 +17,11 @@ import type { EvidenceOcrData, EvidenceOcrJobProgress, ExpenseEvidenceAttachment
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
 const paymentMethodOrder: QuickExpensePaymentMethod[] = ["CORPORATE_CARD", "PERSONAL_PREPAID", "CASH", "BANK_TRANSFER", "AUTO_DEBIT"];
-export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceOcrJob, retryEvidenceOcrJob, importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, persistRecord, uploadEvidence = uploadQuickExpenseEvidence }: {
+export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceOcrJob, getPrintEvidence, retryEvidenceOcrJob, importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, persistRecord, uploadEvidence = uploadQuickExpenseEvidence }: {
   attachEvidence?: (recordId: string, attachment: ExpenseEvidenceAttachment, operationKey: string) => Promise<unknown>;
   discardEvidence?: (ocrJobId: string) => Promise<void>;
   getEvidenceOcrJob?: (ocrJobId: string) => Promise<EvidenceOcrJobProgress>;
+  getPrintEvidence?: (recordId: string) => Promise<QuickExpensePrintEvidence[]>;
   retryEvidenceOcrJob?: (ocrJobId: string) => Promise<void>;
   importCardTransactions?: (rows: CorporateCardTransactionImportRow[]) => Promise<unknown>;
   linkCardTransaction?: (input: { recordId: string; cardTransactionId: string }) => Promise<{ recordStatus: "RECORDED" | "EVIDENCE_PENDING" | "NEEDS_RESOLUTION" }>;
@@ -55,12 +57,16 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceO
   const [ocrAppliedFields, setOcrAppliedFields] = useState({ amount: false, counterparty: false, occurredAt: false, usageDescription: false });
   const [missingEvidenceReason, setMissingEvidenceReason] = useState("");
   const [records, setRecords] = useState(initialRecords);
+  const [printMonth, setPrintMonth] = useState(initialRecords[0]?.occurredAt.slice(0, 7) ?? new Date().toISOString().slice(0, 7));
+  const [printTarget, setPrintTarget] = useState<QuickExpensePrintTarget | null>(null);
   const [linkingRecordId, setLinkingRecordId] = useState("");
   const [message, setMessage] = useState("");
   const [isPending, startTransition] = useTransition();
   const receiptInputRef = useRef<HTMLInputElement>(null);
   const editedFields = useRef({ amount: false, counterparty: false, occurredAt: false, usageDescription: false });
   const appliedOcrJobs = useRef(new Set<string>());
+  const recordMonths = Array.from(new Set(records.map((record) => record.occurredAt.slice(0, 7)))).sort().reverse();
+  const monthlyRecords = records.filter((record) => record.occurredAt.startsWith(printMonth));
   const isBank = paymentMethod === "BANK_TRANSFER" || paymentMethod === "AUTO_DEBIT";
   const isCard = paymentMethod === "CORPORATE_CARD";
   const availableCards = initialCardTransactions.filter((item) => !item.linkedResolutionId && !records.some((record) => record.corporateCardTransactionId === item.id));
@@ -256,7 +262,11 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceO
       <details className="rounded-xl border border-dashed border-[var(--color-deep-cobalt)]/35 p-4"><summary className="cursor-pointer font-bold">법인카드 이용내역 파일 불러오기</summary><div className="mt-3 flex flex-wrap items-center justify-between gap-3"><p className="text-xs text-[var(--color-stone)]">CSV·XLSX·XLS 파일의 승인일자, 금액, 가맹점, 카드번호, 승인번호를 불러옵니다.</p><label className="cursor-pointer rounded-full bg-[var(--color-deep-cobalt)] px-4 py-2 text-sm font-bold text-white"><input accept=".csv,.tsv,.xlsx,.xls" aria-label="법인카드 이용내역 파일" className="sr-only" onChange={(event)=>{const file=event.target.files?.[0];if(file)void uploadCardFile(file);}} type="file"/>카드내역 파일 선택</label></div></details>
     </section>
     <Link href="/finance/reimbursements" className="rounded-xl border bg-white p-4 text-sm font-semibold text-blue-700">개인 선지출은 개인 지출 정산에서 신청·지급 상태를 관리해. 정산 화면으로 이동 →</Link>
-    <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-6"><h2 className="text-lg font-bold">최근 간편지출 기록</h2><div className="mt-4 grid gap-3">{records.length ? records.map((record) => <article className="rounded-xl border p-4" key={record.id}><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{record.usageDescription}</p>{record.recordStatus==="SOURCE_PENDING"?<button className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900" onClick={()=>setLinkingRecordId(record.id)} type="button">카드내역 연결대기</button>:<span className={`rounded-full px-3 py-1 text-xs font-bold ${record.recordStatus === "RECORDED" ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`}>{record.recordStatus === "RECORDED" ? "간편처리 완료" : record.recordStatus === "EVIDENCE_PENDING" ? "증빙 확인대기" : record.recordStatus === "CONVERTED" ? "정산·결의 연결" : "정식결의 필요"}</span>}</div><p className="mt-2 text-sm text-[var(--color-stone)]">{record.counterparty} · {record.amount.toLocaleString("ko-KR")}원 · {record.budgetItem}</p>{linkingRecordId===record.id?<div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3"><p className="text-sm font-bold">금액·사용일이 일치하는 카드내역</p>{candidates(record).length?candidates(record).map(card=><button className="rounded-lg border bg-white px-3 py-2 text-left text-sm" key={card.id} onClick={()=>connect(record,card.id)} type="button">{card.approvedAt.slice(0,10)} · {card.merchantName} · {card.amount.toLocaleString("ko-KR")}원 · 연결</button>):<p className="text-sm text-[var(--color-stone)]">일치 후보가 없어. 카드내역 파일을 먼저 등록해줘.</p>}</div>:null}</article>) : <p className="text-sm text-[var(--color-stone)]">등록된 간편지출이 없습니다.</p>}</div></section>
+    <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-6">
+      <div className="flex flex-wrap items-end justify-between gap-3"><div><h2 className="text-lg font-bold">최근 간편지출 기록</h2><p className="mt-1 text-xs text-[var(--color-stone)]">월별 총괄표와 건별 기록서를 A4로 출력해서 증빙과 함께 보관할 수 있어.</p></div><div className="flex flex-wrap items-end gap-2"><label className="grid gap-1 text-xs font-bold"><span>출력월</span><select aria-label="간편지출 출력월" className="h-10 rounded-lg border bg-white px-3 text-sm" onChange={(event)=>setPrintMonth(event.target.value)} value={printMonth}>{recordMonths.length ? recordMonths.map((month)=><option key={month} value={month}>{month}</option>) : <option value={printMonth}>{printMonth}</option>}</select></label><Button className="h-10 rounded-full bg-[var(--color-pressed-charcoal)] text-white" disabled={!monthlyRecords.length} onClick={()=>setPrintTarget({kind:"month",month:printMonth,records:monthlyRecords})}>월별 총괄표 A4 출력</Button></div></div>
+      <div className="mt-4 grid gap-3">{records.length ? records.map((record) => <article className="rounded-xl border p-4" key={record.id}><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{record.usageDescription}</p><div className="flex flex-wrap items-center gap-2">{record.recordStatus==="SOURCE_PENDING"?<button className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900" onClick={()=>setLinkingRecordId(record.id)} type="button">카드내역 연결대기</button>:<span className={`rounded-full px-3 py-1 text-xs font-bold ${record.recordStatus === "RECORDED" ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`}>{record.recordStatus === "RECORDED" ? "간편처리 완료" : record.recordStatus === "EVIDENCE_PENDING" ? "증빙 확인대기" : record.recordStatus === "CONVERTED" ? "정산·결의 연결" : "정식결의 필요"}</span>}<button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1 text-xs font-bold" onClick={()=>setPrintTarget({kind:"record",record})} type="button">A4 기록서 출력</button></div></div><p className="mt-2 text-sm text-[var(--color-stone)]">{record.counterparty} · {record.amount.toLocaleString("ko-KR")}원 · {record.budgetItem}</p>{linkingRecordId===record.id?<div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3"><p className="text-sm font-bold">금액·사용일이 일치하는 카드내역</p>{candidates(record).length?candidates(record).map(card=><button className="rounded-lg border bg-white px-3 py-2 text-left text-sm" key={card.id} onClick={()=>connect(record,card.id)} type="button">{card.approvedAt.slice(0,10)} · {card.merchantName} · {card.amount.toLocaleString("ko-KR")}원 · 연결</button>):<p className="text-sm text-[var(--color-stone)]">일치 후보가 없어. 카드내역 파일을 먼저 등록해줘.</p>}</div>:null}</article>) : <p className="text-sm text-[var(--color-stone)]">등록된 간편지출이 없습니다.</p>}</div>
+    </section>
+    {printTarget ? <QuickExpensePrintModal getPrintEvidence={getPrintEvidence} onClose={()=>setPrintTarget(null)} target={printTarget} /> : null}
   </div></ErpShell>;
 }
 
