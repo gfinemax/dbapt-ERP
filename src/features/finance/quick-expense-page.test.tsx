@@ -11,6 +11,7 @@ describe("QuickExpensePage", () => {
 
   it("shows payment methods in the requested priority order", () => {
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
+    expect(screen.getByText("월별 총괄표와 영수증 첨부지를 A4로 묶어 보관하고, 건별 기록서는 필요할 때만 출력할 수 있어.")).toBeInTheDocument();
     const fieldset = screen.getByText("결제수단").closest("fieldset");
     expect(fieldset).not.toBeNull();
     expect(within(fieldset!).getAllByRole("button").map((button) => button.textContent)).toEqual([
