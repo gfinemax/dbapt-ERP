@@ -10,6 +10,6 @@ export type InboxTask = { key: string; kind: "general" | "expense" | "small"; ti
 export function documentInboxTasks(viewer: ReimbursementMember, documents: ApprovalDocument[], resolutions: ManagedExpenseResolution[]): InboxTask[] {
   return [
     ...documents.filter(d => canDecideApproval(d, viewer)).map(d => ({ key: `general:${d.id}`, kind: "general" as const, title: d.title, label: approvalTypeLabels[d.documentType], amount: d.amount, href: `/approval/${d.id}` })),
-    ...resolutions.filter(r => canApproveExpense(r, viewer)).map(r => ({ key: `expense:${r.id}`, kind: "expense" as const, title: r.resolutionNo, label: "지출결의", amount: r.totalPaymentAmount, href: `/approval/inbox?${new URLSearchParams({ type: "expense", id: r.id })}` })),
+    ...resolutions.filter(r => canApproveExpense(r, viewer)).map(r => ({ key: `expense:${r.id}`, kind: "expense" as const, title: r.subject || r.resolutionNo, label: `지출결의 · ${r.resolutionNo}`, amount: r.totalPaymentAmount, href: `/approval/inbox?${new URLSearchParams({ type: "expense", id: r.id })}` })),
   ];
 }

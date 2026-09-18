@@ -8,6 +8,7 @@ export async function loadSmallExpenseInbox(member: ReimbursementMember): Promis
   const { data: roles, error } = await db.schema("approval").from("small_expense_roles")
     .select("chair_id").eq("organization_id", member.organization_id).maybeSingle();
   if (error) throw new Error("소액지출 담당자 정보를 불러오지 못했어.");
+  if (!roles) throw new Error("소액지출 담당자 지정이 필요해. 소액지출 확인 화면에서 관리자가 등록자와 확인자를 설정해줘.");
   if (!member.active || roles?.chair_id !== member.user_id) return [];
   const tasks: InboxTask[] = [];
   for (let offset = 0; ; offset += 500) {

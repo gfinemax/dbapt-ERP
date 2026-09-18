@@ -31,4 +31,9 @@ describe("소액 확인대기 조회", () => {
     mock.range.mockResolvedValueOnce({ data: [], count: 600 });
     await expect(loadSmallExpenseInbox(member)).rejects.toThrow("조회 한도");
   });
+  it("담당자 미지정을 대기 0건으로 숨기지 않는다", async () => {
+    mock.roles.mockResolvedValue({ data: null });
+    await expect(loadSmallExpenseInbox(member)).rejects.toThrow("담당자 지정이 필요해");
+    expect(mock.range).not.toHaveBeenCalled();
+  });
 });
