@@ -1,8 +1,28 @@
 import { describe, expect, it, vi } from "vitest";
+import { PDFDocument, StandardFonts } from "pdf-lib";
 import sharp from "sharp";
 import { extractExpenseEvidenceWithOpenAI } from "./expense-evidence-openai.server";
 
 describe("OpenAI expense evidence analysis", () => {
+  it("renders a PDF in Node after installing the pdf.js canvas globals", async () => {
+    const document = await PDFDocument.create();
+    const page = document.addPage([420, 595]);
+    const font = await document.embedFont(StandardFonts.Helvetica);
+    page.drawText("Receipt total 32600", { font, size: 18, x: 40, y: 520 });
+    const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify({
+      confidence: 0.9, documentDate: "2026-09-18", documentType: "영수증", issuer: "주식회사공단유통",
+      itemName: "커피", items: [], quantity: 1, recognizedText: "합계 32,600원", supplyAmount: null, totalAmount: 32600, vatAmount: null,
+    }) } }] }), { status: 200 }));
+
+    const result = await extractExpenseEvidenceWithOpenAI(new File([await document.save()], "receipt.pdf", { type: "application/pdf" }), {
+      apiKey: "test-key", fetcher,
+    });
+
+    expect(result).toMatchObject({ issuer: "주식회사공단유통", totalAmount: 32600 });
+    const request = JSON.parse(String(fetcher.mock.calls[0][1]?.body));
+    expect(request.messages[0].content.filter((part: { image_url?: unknown }) => part.image_url)).toHaveLength(4);
+  });
+
   it("sends an image and returns structured Korean receipt values", async () => {
     const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       choices: [{ message: { content: JSON.stringify({

@@ -1,6 +1,7 @@
 import { createWorker } from "tesseract.js";
 import { classifyExpenseEvidence, extractEvidenceText, type EvidenceOcrData } from "./expense-evidence";
 import { preprocessExpenseEvidenceImage } from "./expense-evidence-image.server";
+import { ensurePdfNodeGlobals } from "./pdf-node-globals.server";
 
 const minimumEmbeddedPdfTextLength = 20;
 const maximumPdfOcrPages = 3;
@@ -36,6 +37,7 @@ export async function extractExpenseEvidenceFile(file: File): Promise<EvidenceOc
 }
 
 async function extractPdfEvidence(bytes: Uint8Array) {
+  await ensurePdfNodeGlobals();
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {

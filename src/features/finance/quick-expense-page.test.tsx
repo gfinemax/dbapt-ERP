@@ -1,10 +1,19 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { QuickExpensePage } from "./quick-expense-page";
 
 const details = [{ id: "detail-communications", code: "PUBLIC-COMM", groupName: "공공요금·수수료", name: "통신비", budgetItem: "제세공과금>통신비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
 
 describe("QuickExpensePage", () => {
+  it("shows payment methods in the requested priority order", () => {
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
+    const fieldset = screen.getByText("결제수단").closest("fieldset");
+    expect(fieldset).not.toBeNull();
+    expect(within(fieldset!).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "법인카드", "개인 선결제", "현금", "계좌이체", "자동이체",
+    ]);
+  });
+
   it("saves usage against a bank transaction without creating an expense resolution", async () => {
     const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: ["승인 예산 범위 내 일상·정기 지출로 직접 처리할 수 있습니다."], id: "quick-1", recordStatus: "RECORDED" as const }));
     render(<QuickExpensePage initialBankTransactions={[{ counterparty: "KT", description: "인터넷", id: "bank-1", resolutionStatus: "UNRESOLVED", transactedAt: "2026-08-27T09:00:00+09:00", withdrawalAmount: 55000 }]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} />);

@@ -1,5 +1,6 @@
 import { classifyExpenseEvidence, extractEvidenceText, normalizeEvidenceVendorFields, sanitizeVendorName, type EvidenceOcrData, type EvidenceOcrItem } from "./expense-evidence";
 import { buildExpenseEvidenceImageVariants } from "./expense-evidence-image.server";
+import { ensurePdfNodeGlobals } from "./pdf-node-globals.server";
 
 const maximumPdfVisionPages = 3;
 const openAiEndpoint = "https://api.openai.com/v1/chat/completions";
@@ -174,6 +175,7 @@ async function getEvidenceImages(file: File) {
     })) satisfies EvidenceImage[];
   }
   if (file.type !== "application/pdf") return [];
+  await ensurePdfNodeGlobals();
   const { PDFParse } = await import("pdf-parse");
   const parser = new PDFParse({ data: bytes });
   try {

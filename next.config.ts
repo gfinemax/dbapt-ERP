@@ -10,6 +10,7 @@ const nextConfig: NextConfig = {
       bodySizeLimit: "12mb",
     },
   },
+  serverExternalPackages: ["@napi-rs/canvas", "pdf-parse"],
   turbopack: {
     root: process.cwd(),
   },
