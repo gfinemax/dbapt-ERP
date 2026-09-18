@@ -9,7 +9,8 @@ export async function reimbursementIdentity(): Promise<ReimbursementMember | nul
   const db = getSupabaseServerClient();
   if (!db) throw new Error("저장소가 설정되지 않았습니다.");
   // getUser validates with Auth on every call. Never accept actor IDs from a form.
-  const { data, error } = await db.auth.getUser(token);
+  let { data, error } = await db.auth.getUser(token);
+  if (error) ({ data, error } = await db.auth.getUser(token));
   if (error || !data.user) return null;
   const { data: member, error: memberError } = await db.schema("finance").from("reimbursement_members")
     .select("organization_id,user_id,display_name,permissions,active").eq("user_id",data.user.id).eq("active",true).limit(2);

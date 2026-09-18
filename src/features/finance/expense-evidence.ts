@@ -53,7 +53,7 @@ export type ExpenseEvidenceAttachment = {
 
 export type ExpenseEvidenceUploadResult =
   | { attachment: ExpenseEvidenceAttachment; ok: true }
-  | { code: "INVALID_FILE" | "SERVER_CONFIG" | "STORAGE_FAILED" | "JOB_REGISTRATION_FAILED" | "UNEXPECTED"; message: string; ok: false };
+  | { code: "AUTH_REQUIRED" | "ACCESS_DENIED" | "INVALID_FILE" | "SERVER_CONFIG" | "STORAGE_FAILED" | "JOB_REGISTRATION_FAILED" | "UNEXPECTED"; message: string; ok: false };
 
 export type EvidenceOcrJobStage = "UPLOADED" | "RENDERING" | "PREPROCESSING" | "RECOGNIZING" | "STRUCTURING" | "COMPLETED" | "FAILED";
 

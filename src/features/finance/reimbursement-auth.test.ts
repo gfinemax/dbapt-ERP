@@ -10,7 +10,12 @@ describe("reimbursement authorization",()=>{
  });
  it("rejects an invalid access token before reading roles",async()=>{
   mocks.token="invalid";mocks.getUser.mockResolvedValue({data:{user:null},error:new Error("invalid")});
-  await expect(requireReimbursementIdentity()).rejects.toThrow("로그인");expect(mocks.query).not.toHaveBeenCalled();
+  await expect(requireReimbursementIdentity()).rejects.toThrow("로그인");expect(mocks.getUser).toHaveBeenCalledTimes(2);expect(mocks.query).not.toHaveBeenCalled();
+ });
+ it("recovers from a transient Auth lookup failure",async()=>{
+  mocks.token="verified-token";mocks.getUser.mockResolvedValueOnce({data:{user:null},error:new Error("temporary")}).mockResolvedValueOnce({data:{user:{id:"auth-user"}},error:null});
+  const eq=vi.fn(); const q={select:()=>q,eq,limit:async()=>({data:[{user_id:"auth-user",organization_id:"org",permissions:["ADMIN"],active:true,display_name:"담당자"}],error:null})};eq.mockReturnValue(q);mocks.query.mockReturnValue(q);
+  await expect(requireReimbursementIdentity()).resolves.toMatchObject({user_id:"auth-user"});expect(mocks.getUser).toHaveBeenCalledTimes(2);
  });
  it("takes identity and permissions from verified Auth and the membership table",async()=>{
   mocks.token="verified-token";mocks.getUser.mockResolvedValue({data:{user:{id:"auth-user"}},error:null});
