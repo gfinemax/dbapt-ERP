@@ -57,7 +57,8 @@ describe("common original expense workspace", () => {
     const table = within(screen.getByRole("table"));
     const detail = within(screen.getByRole("region", { name: "지출 상세" }));
     expect(table.getByText("카드내역 연결대기")).toBeInTheDocument();
-    expect(table.getByText("법인카드 승인내역이 들어오면 실제 거래와 연결해줘.")).toBeInTheDocument();
+    expect(table.queryByText("법인카드 승인내역이 들어오면 실제 거래와 연결해줘.")).not.toBeInTheDocument();
+    expect(screen.getAllByText(/법인카드 승인내역이 들어오면 실제 거래와 연결해줘/)).toHaveLength(2);
     expect(detail.getAllByText("카드내역 연결대기").length).toBeGreaterThan(0);
     expect(detail.getByText("법인카드 승인내역이 들어오면 실제 거래와 연결해줘.")).toBeInTheDocument();
     expect(screen.queryByText("SOURCE_PENDING")).not.toBeInTheDocument();
@@ -140,8 +141,9 @@ describe("common original expense workspace", () => {
     fireEvent.click(source);
     expect(source.closest("tr")).toHaveAttribute("aria-selected", "true");
     const panel = screen.getByRole("complementary", { name: "선택한 지출 원본 상세 패널" });
-    expect(panel).toHaveClass("top-[176px]", "md:top-[115px]", "2xl:top-4", "2xl:bottom-auto");
+    expect(panel).toHaveClass("top-[176px]", "md:top-[115px]", "@min-[1120px]/expense:top-4", "@min-[1120px]/expense:bottom-auto");
     expect(panel).not.toHaveClass("inset-y-0");
+    expect(screen.getByRole("button", { name: "상세 패널 배경 닫기" })).toHaveClass("@min-[1120px]/expense:hidden");
     expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("source_kind=RESOLUTION"), { scroll: false });
     fireEvent.click(screen.getByRole("button", { name: "지출 상세 닫기" }));
     await waitFor(() => expect(source).toHaveFocus());
