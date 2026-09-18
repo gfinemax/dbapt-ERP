@@ -44,12 +44,25 @@ describe("common original expense workspace", () => {
     fireEvent.change(screen.getByLabelText("원본 종류"), { target: { value: "QUICK" } });
     expect(screen.getByText("전체 원본 2건 · 조회 결과 1건")).toBeInTheDocument();
     expect(within(screen.getByRole("table")).queryByText("사무용품")).not.toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("통합 연결"), { target: { value: "UNCONNECTED" } });
+    fireEvent.change(screen.getByLabelText("업무흐름 연결"), { target: { value: "UNCONNECTED" } });
     expect(screen.getByText("전체 원본 2건 · 조회 결과 0건")).toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("원본 종류"), { target: { value: "ALL" } });
     fireEvent.change(screen.getByLabelText("지출 검색"), { target: { value: "지결-2026-1" } });
     expect(screen.getByText("전체 원본 2건 · 조회 결과 1건")).toBeInTheDocument();
     expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("from=home"), { scroll: false });
+  });
+  it("explains a pending card source without exposing the internal status code", () => {
+    const data = fixture(); data.records[1] = { ...data.records[1], approval_status: "SOURCE_PENDING" };
+    render(<ExpenseWorkspacePage workspace={data} initialSourceKind="QUICK" initialSourceId="same-text-id" />);
+    const table = within(screen.getByRole("table"));
+    const detail = within(screen.getByRole("region", { name: "지출 상세" }));
+    expect(table.getByText("카드내역 연결대기")).toBeInTheDocument();
+    expect(table.getByText("법인카드 승인내역이 들어오면 실제 거래와 연결해줘.")).toBeInTheDocument();
+    expect(detail.getAllByText("카드내역 연결대기").length).toBeGreaterThan(0);
+    expect(detail.getByText("법인카드 승인내역이 들어오면 실제 거래와 연결해줘.")).toBeInTheDocument();
+    expect(screen.queryByText("SOURCE_PENDING")).not.toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "업무흐름 연결" })).toBeInTheDocument();
+    expect(screen.getAllByText("업무흐름 연결됨")).toHaveLength(2);
   });
   it("opens its own ID-specific detail and preserves legacy completion without inventing paid amounts", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
