@@ -123,3 +123,12 @@ Do not mark the objective complete based on navigation or focused component test
 - The `기존 자료 정리` page groups corporate-card linkage, evidence supplementation, formal-resolution conversion, budget attribution and unknown processing-route reviews. One source can appear under multiple reasons; it is never silently deduplicated into a misleading business count.
 - The cleanup inventory is read-only. It exposes only safe display fields and links back to existing authoritative resolution, quick-expense, budget and expense-workspace flows. It adds no bulk mutation, automatic reclassification, deletion or hidden-state transition.
 - Only active finance staff can load the inventory or badges. Ordinary applicants receive neither source details nor count disclosures.
+
+## Collection, refund and integrated close foundation
+
+- Collection assessments use an explicit external member ID and assessment code. Member names and numbers are immutable-time display snapshots and are never matching keys.
+- Actual deposits can be partially allocated across assessments, but database commands prevent both deposit over-allocation and assessment over-collection. Reversals append an immutable reason instead of deleting the allocation.
+- Refunds start from a preserved collection allocation, require a different approver from the author, and complete only when an exact-value actual withdrawal is linked. Draft/approved refunds and unpaid assessments now appear in readiness/sidebar queues.
+- The month-close workspace consolidates source-backed blockers across resolutions, accounting dates, bank transactions, vouchers, budgets, advances, trust operating funds, business trust items, personal repayments, collections and refunds.
+- Accounting-period lock/reopen remains intentionally unavailable until the association confirms the accounting policy and reopening authority. The consolidated screen is a readiness gate, not a claim that the general ledger has been closed.
+- Quick-expense OCR evidence is now a first-class source in the evidence manager and is signed only after organization-scoped evidence/job lookup.

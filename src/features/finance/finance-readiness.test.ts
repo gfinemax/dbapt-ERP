@@ -17,7 +17,7 @@ const responses: Record<string, { data: unknown[] | null; count: number | null; 
 };
 
 function database() {
-  return { schema: () => ({ rpc: vi.fn().mockResolvedValue({ data: [{ needs_review: true }, { needs_review: false }], count: null, error: null }), from: (table: string) => {
+  return { schema: () => ({ rpc: vi.fn().mockImplementation((name: string) => Promise.resolve({ data: name === "collection_ledger_read" ? { assessments: [{ assessed_amount: 100, allocated_amount: 50 }, { assessed_amount: 100, allocated_amount: 100 }], refunds: [{ status: "DRAFT" }, { status: "PAID" }] } : [{ needs_review: true }, { needs_review: false }], count: null, error: null })), from: (table: string) => {
     const filters: Record<string, unknown> = {};
     const chain = {
       select: () => chain,
@@ -39,7 +39,7 @@ describe("finance operational readiness", () => {
   it("keeps configuration gaps separate from source-backed work queues", async () => {
     const result = await loadFinanceReadiness();
     expect(result.configuration).toMatchObject({ activeStaff: 2, missingRoles: ["마감"], verifiedTrustContracts: 1, operatingFundContracts: 1, currentYearBudgets: 4 });
-    expect(result.queues).toEqual({ cardLinkPending: 5, evidencePending: 2, resolutionRequired: 1, personalPaymentPending: 3, advanceSettlementOpen: 2, operatingPeriodOpen: 1, routeUnclassified: 6, budgetReviewPending: 1 });
+    expect(result.queues).toEqual({ cardLinkPending: 5, evidencePending: 2, resolutionRequired: 1, personalPaymentPending: 3, advanceSettlementOpen: 2, operatingPeriodOpen: 1, routeUnclassified: 6, budgetReviewPending: 1, collectionPending: 1, refundPending: 1 });
   });
   it("does not expose the readiness inventory to an ordinary applicant", async () => {
     mocks.identity.mockResolvedValue({ organization_id: "org", user_id: "actor", permissions: [] });

@@ -2,10 +2,10 @@ import { reimbursementDb } from "./reimbursement-repository";
 import type { ReimbursementMember } from "./reimbursement-domain";
 
 export type ReviewKind = "evidence" | "tax-documents" | "month-close" | "collections" | "refunds";
-export type EvidenceSource = "RESOLUTION" | "PERSONAL" | "TRUST";
+export type EvidenceSource = "RESOLUTION" | "QUICK" | "PERSONAL" | "TRUST";
 export type ReviewRow = { id: string; title: string; date: string; status: string; href?: string; sourceHref?: string; amount?: number; deposit?: number; withdrawal?: number };
 export type ReviewResult = { rows: ReviewRow[]; count: number | null; page: number; connection?: "NOT_CONFIGURED" | "READY" };
-export function reviewEvidenceSource(value?: string): EvidenceSource { return value === "PERSONAL" || value === "TRUST" ? value : "RESOLUTION"; }
+export function reviewEvidenceSource(value?: string): EvidenceSource { return value === "QUICK" || value === "PERSONAL" || value === "TRUST" ? value : "RESOLUTION"; }
 export const reviewPageSize = 50;
 export function requireFinanceReviewAdmin(member: ReimbursementMember) {
   if (!member.active || !member.permissions.includes("ADMIN")) throw new Error("조직 전체 자료 조회는 관리자 권한이 필요합니다.");
@@ -37,6 +37,18 @@ export async function loadFinanceReview(member: ReimbursementMember, kind: Revie
     return { rows: (result.data ?? []).map(row => ({ id: row.id, title: row.file_name, date: row.uploaded_at,
       status: `신탁·지급 증빙 · ${row.document_type || row.purpose}`, href: `/finance/evidence/${encodeURIComponent(row.id)}/download?source=TRUST`,
       sourceHref: row.request_id ? `/finance/trust?request=${encodeURIComponent(row.request_id)}` : row.contract_version_id ? "/finance/workflow-settings" : undefined })), count: result.count, page };
+  }
+  if (kind === "evidence" && source === "QUICK") {
+    const result = await finance.from("quick_expense_evidence")
+      .select("ocr_job_id,quick_expense_id,created_at,expense_evidence_ocr_jobs!inner(original_filename,evidence_type,status,organization_id)", { count: "exact" })
+      .eq("organization_id", member.organization_id).eq("expense_evidence_ocr_jobs.organization_id", member.organization_id)
+      .order("created_at", { ascending: false }).order("ocr_job_id").range(start, start + reviewPageSize - 1);
+    if (result.error) throw new Error("간편지출 증빙 목록을 불러오지 못했습니다.");
+    return { rows: (result.data ?? []).map((row) => {
+      const job = Array.isArray(row.expense_evidence_ocr_jobs) ? row.expense_evidence_ocr_jobs[0] : row.expense_evidence_ocr_jobs;
+      return { id: row.ocr_job_id, title: job?.original_filename ?? "간편지출 증빙", date: row.created_at, status: `간편지출 · ${job?.evidence_type ?? job?.status ?? "증빙"}`,
+        href: `/finance/evidence/${encodeURIComponent(row.ocr_job_id)}/download?source=QUICK`, sourceHref: `/finance/expenses?source_kind=QUICK&source_id=${encodeURIComponent(row.quick_expense_id)}` };
+    }), count: result.count, page };
   }
   if (kind === "evidence" || kind === "tax-documents") {
     let query = finance.from("expense_resolution_evidence")
@@ -70,6 +82,16 @@ export async function financeEvidenceDownload(member: ReimbursementMember, id: s
   requireFinanceReviewAdmin(member);
   const db = reimbursementDb();
   if (source !== "RESOLUTION") {
+    if (source === "QUICK") {
+      const { data, error } = await db.schema("finance").from("quick_expense_evidence")
+        .select("ocr_job_id,expense_evidence_ocr_jobs!inner(storage_bucket,storage_path,organization_id)")
+        .eq("organization_id", member.organization_id).eq("ocr_job_id", id).eq("expense_evidence_ocr_jobs.organization_id", member.organization_id).maybeSingle();
+      const job = data && (Array.isArray(data.expense_evidence_ocr_jobs) ? data.expense_evidence_ocr_jobs[0] : data.expense_evidence_ocr_jobs);
+      if (error || !data || !job || job.storage_bucket !== "expense-evidence" || !job.storage_path) throw new Error("조회 가능한 증빙을 찾을 수 없습니다.");
+      const signed = await db.storage.from(job.storage_bucket).createSignedUrl(job.storage_path, 60, { download: true });
+      if (signed.error || !signed.data?.signedUrl) throw new Error("증빙을 열지 못했습니다.");
+      return signed.data.signedUrl;
+    }
     const personal = source === "PERSONAL";
     let bucket: string | undefined; let path: string | undefined;
     if (personal) {

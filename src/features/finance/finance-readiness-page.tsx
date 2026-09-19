@@ -11,6 +11,8 @@ const queueItems = [
   ["operatingPeriodOpen", "월 운영비 정산 진행 중", "/finance/trust?view=operating-settlement"],
   ["routeUnclassified", "처리경로 미분류", "/finance/expenses"],
   ["budgetReviewPending", "예산 귀속 확인", "/finance/data-cleanup"],
+  ["collectionPending", "미수납 부과", "/finance/collections"],
+  ["refundPending", "환급 승인·지급 대기", "/finance/refunds"],
 ] as const;
 
 function SetupCard({ ready, title, detail, href }: { ready: boolean; title: string; detail: string; href: string }) {

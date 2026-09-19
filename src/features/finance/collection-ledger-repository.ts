@@ -1,0 +1,125 @@
+import { requireReimbursementIdentity } from "./reimbursement-auth";
+import { reimbursementDb } from "./reimbursement-repository";
+import { hasReimbursementPermission, type ReimbursementPermission } from "./reimbursement-domain";
+
+export const collectionLedgerCommands = [
+  "ASSESSMENT_SAVE",
+  "RECEIPT_ALLOCATE",
+  "RECEIPT_REVERSE",
+  "REFUND_SAVE",
+  "REFUND_APPROVE",
+  "REFUND_PAY",
+  "REFUND_CANCEL",
+] as const;
+export type CollectionLedgerCommand = (typeof collectionLedgerCommands)[number];
+export type CollectionAssessment = {
+  id: string;
+  external_member_id: string;
+  member_no: string | null;
+  member_name_snapshot: string;
+  assessment_code: string;
+  due_date: string | null;
+  assessed_amount: number;
+  allocated_amount: number;
+  status: "ACTIVE" | "CANCELLED";
+  lock_version: number;
+};
+export type CollectionAllocation = {
+  id: string;
+  assessment_id: string;
+  bank_transaction_id: string;
+  amount: number;
+  reason: string;
+  created_at: string;
+  reversed: boolean;
+  reversal_reason: string | null;
+  bank_date: string;
+  bank_description: string;
+};
+export type CollectionRefund = {
+  id: string;
+  source_allocation_id: string;
+  external_member_id: string;
+  member_name_snapshot: string;
+  reason: string;
+  requested_amount: number;
+  status: "DRAFT" | "APPROVED" | "PAID" | "CANCELLED";
+  bank_transaction_id: string | null;
+  lock_version: number;
+  created_by: string;
+  approved_at: string | null;
+  paid_at: string | null;
+  created_at: string;
+};
+export type CollectionBankCandidate = {
+  id: string;
+  transacted_at: string;
+  description: string;
+  counterparty: string | null;
+  amount: number;
+  available_amount?: number;
+};
+export type CollectionLedgerWorkspace = {
+  assessments: CollectionAssessment[];
+  allocations: CollectionAllocation[];
+  refunds: CollectionRefund[];
+  deposit_candidates: CollectionBankCandidate[];
+  withdrawal_candidates: CollectionBankCandidate[];
+  viewer: { user_id: string; permissions: ReimbursementPermission[] };
+};
+export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
+
+const staffPermissions: readonly ReimbursementPermission[] = ["ADMIN", "CLOSE", "PAY", "APPROVE", "SENIOR"];
+const decisionCommands = new Set<CollectionLedgerCommand>(["ASSESSMENT_SAVE", "REFUND_SAVE", "REFUND_APPROVE", "REFUND_CANCEL"]);
+const forbidden = new Set(["organization_id", "organizationId", "p_org", "p_actor", "actor_id", "actorId", "permissions", "viewer"]);
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace> {
+  const member = await requireReimbursementIdentity();
+  if (!member.active || !staffPermissions.some((permission) => hasReimbursementPermission(member, permission)))
+    throw new Error("수납·환급 원장 조회 권한이 필요합니다.");
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_ledger_read", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+  });
+  if (error) throw new Error(error.message);
+  const keys = ["assessments", "allocations", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
+  if (!record(data) || keys.some((key) => !Array.isArray(data[key]))) throw new Error("수납·환급 원장 조회 결과를 확인해주세요.");
+  return {
+    assessments: data.assessments as CollectionAssessment[],
+    allocations: data.allocations as CollectionAllocation[],
+    refunds: data.refunds as CollectionRefund[],
+    deposit_candidates: data.deposit_candidates as CollectionBankCandidate[],
+    withdrawal_candidates: data.withdrawal_candidates as CollectionBankCandidate[],
+    viewer: { user_id: member.user_id, permissions: [...member.permissions] },
+  };
+}
+
+export async function runCollectionLedger(
+  command: CollectionLedgerCommand,
+  input: Record<string, unknown>,
+  operationKey: string,
+): Promise<CollectionLedgerResult> {
+  const member = await requireReimbursementIdentity();
+  if (!collectionLedgerCommands.includes(command)) throw new Error("지원하지 않는 수납·환급 처리입니다.");
+  const allowed = decisionCommands.has(command)
+    ? ["APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission))
+    : hasReimbursementPermission(member, "PAY");
+  if (!member.active || !allowed) throw new Error("이 수납·환급 업무를 처리할 권한이 없습니다.");
+  if (!record(input) || Object.keys(input).some((key) => forbidden.has(key))) throw new Error("조직과 처리자 정보는 서버에서 확인합니다.");
+  if (!operationKey.trim() || operationKey.length > 200) throw new Error("처리키를 확인해주세요.");
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_ledger_command", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_command: command,
+    p_data: input,
+    p_key: operationKey,
+  });
+  if (error) throw new Error(error.message);
+  if (!record(data) || typeof data.id !== "string" || typeof data.status !== "string" || !Number.isSafeInteger(data.lock_version))
+    throw new Error("수납·환급 처리 결과를 확인하지 못했어. 같은 처리키로 다시 확인해줘.");
+  return data as CollectionLedgerResult;
+}

@@ -16,6 +16,8 @@ export async function loadFinanceNavigationBadges(): Promise<FinanceNavigationBa
     "운영비 사용정산": q.operatingPeriodOpen,
     "조합 지급대기": q.personalPaymentPending,
     "증빙자료 관리": q.evidencePending,
+    "분담금 수납관리": q.collectionPending,
+    "환급관리": q.refundPending,
     "운영 준비 점검": configurationPending,
     "기존 자료 정리": cleanupPending,
   };

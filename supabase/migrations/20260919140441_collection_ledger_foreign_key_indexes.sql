@@ -1,0 +1,12 @@
+create index collection_assessments_created_by_idx on finance.collection_assessments(created_by);
+create index collection_assessments_updated_by_idx on finance.collection_assessments(updated_by);
+create index collection_events_actor_idx on finance.collection_ledger_events(actor_id);
+create index collection_events_org_created_idx on finance.collection_ledger_events(organization_id,created_at desc);
+create index collection_operations_actor_idx on finance.collection_ledger_operations(actor_id);
+create index collection_allocations_bank_idx on finance.collection_receipt_allocations(bank_transaction_id);
+create index collection_allocations_created_by_idx on finance.collection_receipt_allocations(created_by);
+create index collection_reversals_org_allocation_idx on finance.collection_receipt_reversals(organization_id,allocation_id);
+create index collection_reversals_created_by_idx on finance.collection_receipt_reversals(created_by);
+create index collection_refunds_created_by_idx on finance.collection_refunds(created_by);
+create index collection_refunds_approved_by_idx on finance.collection_refunds(approved_by) where approved_by is not null;
+create index collection_refunds_paid_by_idx on finance.collection_refunds(paid_by) where paid_by is not null;

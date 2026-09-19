@@ -28,6 +28,21 @@ describe("finance review access and evidence", () => {
     expect((await loadFinanceReview(admin, "evidence", "2026-09", 2, source)).rows).toEqual([]);
     expect(state.db).toHaveBeenCalledTimes(2);
   });
+  it("includes quick-expense evidence by its persisted OCR job and source ID", async () => {
+    state.result = { data: [{ ocr_job_id: "job", quick_expense_id: "quick", created_at: "2026-09-01", expense_evidence_ocr_jobs: { original_filename: "receipt.jpg", evidence_type: "영수증", status: "COMPLETED" } }], count: 1, error: null };
+    const result = await loadFinanceReview(admin, "evidence", "2026-09", 1, "QUICK");
+    expect(state.calls).toContainEqual(["from", "quick_expense_evidence"]);
+    expect(state.calls).toContainEqual(["eq", "organization_id", "org-a"]);
+    expect(result.rows[0]).toMatchObject({ title: "receipt.jpg", href: "/finance/evidence/job/download?source=QUICK", sourceHref: "/finance/expenses?source_kind=QUICK&source_id=quick" });
+  });
+  it("signs quick-expense evidence only after organization-scoped linkage lookup", async () => {
+    state.result.data = { ocr_job_id: "job", expense_evidence_ocr_jobs: { storage_bucket: "expense-evidence", storage_path: "org-a/receipt.jpg", organization_id: "org-a" } } as unknown as unknown[];
+    await expect(financeEvidenceDownload(admin, "job", "QUICK")).resolves.toContain("signed");
+    expect(state.calls).toContainEqual(["from", "quick_expense_evidence"]);
+    expect(state.calls).toContainEqual(["eq", "organization_id", "org-a"]);
+    expect(state.calls).toContainEqual(["eq", "expense_evidence_ocr_jobs.organization_id", "org-a"]);
+    expect(state.signed).toHaveBeenCalledWith("org-a/receipt.jpg", 60, { download: true });
+  });
   it("lists missing accounting dates across periods and links the exact common expense source", async () => {
     state.result = { data: [{ id: "original 1", resolution_no: "지결-1", subject: "미등록 일자", accounting_date: null, total_payment_amount: 500 }], count: 1, error: null };
     const result = await loadFinanceReview(admin, "month-close", "2026-09", 1, "RESOLUTION", true);

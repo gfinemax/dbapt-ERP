@@ -4,7 +4,7 @@ import { FinanceReadinessPage } from "./finance-readiness-page";
 
 describe("FinanceReadinessPage", () => {
   it("separates missing configuration from operational queues", () => {
-    render(<FinanceReadinessPage readiness={{ fiscalYear: 2026, configuration: { activeStaff: 2, missingRoles: ["마감"], verifiedTrustContracts: 1, operatingFundContracts: 0, currentYearBudgets: 3 }, queues: { cardLinkPending: 4, evidencePending: 2, resolutionRequired: 1, personalPaymentPending: 0, advanceSettlementOpen: 1, operatingPeriodOpen: 0, routeUnclassified: 3, budgetReviewPending: 2 } }} />);
+    render(<FinanceReadinessPage readiness={{ fiscalYear: 2026, configuration: { activeStaff: 2, missingRoles: ["마감"], verifiedTrustContracts: 1, operatingFundContracts: 0, currentYearBudgets: 3 }, queues: { cardLinkPending: 4, evidencePending: 2, resolutionRequired: 1, personalPaymentPending: 0, advanceSettlementOpen: 1, operatingPeriodOpen: 0, routeUnclassified: 3, budgetReviewPending: 2, collectionPending: 1, refundPending: 1 } }} />);
     expect(screen.getByRole("heading", { name: "필수 설정" })).toBeInTheDocument();
     expect(screen.getByText("2명 활성 · 마감 역할 없음")).toBeInTheDocument();
     expect(screen.getByText("운영비 사용 가능 계약 0건")).toBeInTheDocument();

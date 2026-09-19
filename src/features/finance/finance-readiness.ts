@@ -18,6 +18,8 @@ export type FinanceReadiness = {
     operatingPeriodOpen: number;
     routeUnclassified: number;
     budgetReviewPending: number;
+    collectionPending: number;
+    refundPending: number;
   };
   fiscalYear: number;
 };
@@ -43,10 +45,11 @@ export async function loadFinanceReadiness(): Promise<FinanceReadiness> {
     finance.from("trust_operating_periods").select("*", { count: "exact", head: true }).eq("organization_id", org).neq("status", "SETTLED"),
     finance.from("workflow_transactions").select("*", { count: "exact", head: true }).eq("organization_id", org).eq("route", "UNKNOWN"),
     finance.rpc("budget_review_queue", { p_org: org }),
+    finance.rpc("collection_ledger_read", { p_org: org, p_actor: member.user_id }),
   ]);
   const failure = results.find((result) => result.error)?.error;
   if (failure) throw new Error(`운영 준비 상태 조회 실패: ${failure.message}`);
-  const [staff, contracts, budgets, card, evidence, resolution, personal, advances, periods, routes, budgetReview] = results;
+  const [staff, contracts, budgets, card, evidence, resolution, personal, advances, periods, routes, budgetReview, collectionLedger] = results;
   const permissions = new Set(((staff.data ?? []) as { permissions: string[] }[]).flatMap((row) => row.permissions));
   const missingRoles = Object.entries(roleLabels).filter(([role]) => !permissions.has(role)).map(([, label]) => label);
   const verifiedContracts = (contracts.data ?? []) as { conditions: Record<string, unknown> | null }[];
@@ -67,6 +70,12 @@ export async function loadFinanceReadiness(): Promise<FinanceReadiness> {
       operatingPeriodOpen: periods.count ?? 0,
       routeUnclassified: routes.count ?? 0,
       budgetReviewPending: Array.isArray(budgetReview.data) ? budgetReview.data.filter((row) => Boolean((row as { needs_review?: unknown }).needs_review)).length : 0,
+      collectionPending: Array.isArray((collectionLedger.data as { assessments?: unknown[] } | null)?.assessments)
+        ? ((collectionLedger.data as { assessments: { assessed_amount: number; allocated_amount: number }[] }).assessments.filter((row) => Number(row.assessed_amount) > Number(row.allocated_amount)).length)
+        : 0,
+      refundPending: Array.isArray((collectionLedger.data as { refunds?: unknown[] } | null)?.refunds)
+        ? ((collectionLedger.data as { refunds: { status: string }[] }).refunds.filter((row) => row.status === "DRAFT" || row.status === "APPROVED").length)
+        : 0,
     },
     fiscalYear,
   };
