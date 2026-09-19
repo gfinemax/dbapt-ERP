@@ -14,6 +14,15 @@ function fixture(): ExpenseWorkspace {
 const expenseDetails: OperatingExpenseDetail[] = [{ id: "detail-supplies", code: "GENERAL-SUPPLIES", groupName: "일반운영비", name: "사무용품비", budgetItem: "일반운영비>사무용품비", status: "CONFIRMED", quickExpenseEligible: true }];
 beforeEach(() => { vi.clearAllMocks(); mocks.connect.mockResolvedValue({ id: "saved-tx" }); mocks.update.mockResolvedValue({ id: "same-text-id" }); mocks.personalUpdate.mockResolvedValue({ ok: true, message: "거래처와 사용내용을 수정했고 변경 이력을 남겼어." }); mocks.attach.mockResolvedValue({ id: "same-text-id" }); mocks.review.mockResolvedValue({ id: "same-text-id" }); window.history.replaceState(null, "", "/finance/expenses?from=home"); });
 describe("common original expense workspace", () => {
+  it("keeps drafting and status-filtered resolution management accessible from expenses", () => {
+    render(<ExpenseWorkspacePage workspace={fixture()} initialKind="RESOLUTION" initialStatus="승인완료" initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
+    expect(screen.getByRole("link", { name: "+ 지출결의 작성", exact: true })).toHaveAttribute("href", "/finance/expense-resolutions?start=advance");
+    expect(screen.getByLabelText("결의 승인상태")).toHaveValue("승인완료");
+    expect(screen.getByRole("link", { name: "결의서 상세 · 수정 · 출력" })).toHaveAttribute("href", "/finance/expense-resolutions?resolutionId=text-id");
+    fireEvent.change(screen.getByLabelText("결의 승인상태"), { target: { value: "반려" } });
+    expect(screen.getByText("전체 원본 2건 · 조회 결과 0건")).toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("status="), { scroll: false });
+  });
   it("links an eligible approver directly to the personal reimbursement review", () => {
     const data = fixture(); data.viewer.permissions = ["APPROVE"]; data.records[0] = { ...data.records[0], source_kind: "PERSONAL", source_id: "personal-review", budget_month: "2026-03-01", approval_status: "SUBMITTED", payment_status: null, personal_is_applicant: false };
     render(<ExpenseWorkspacePage workspace={data} initialSourceKind="PERSONAL" initialSourceId="personal-review" />);
@@ -41,12 +50,12 @@ describe("common original expense workspace", () => {
   });
   it("filters original kind, connection and search with matching counts", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} />);
-    fireEvent.change(screen.getByLabelText("원본 종류"), { target: { value: "QUICK" } });
+    fireEvent.click(screen.getByRole("button", { name: "간편지출 1", exact: true }));
     expect(screen.getByText("전체 원본 2건 · 조회 결과 1건")).toBeInTheDocument();
     expect(within(screen.getByRole("table")).queryByText("사무용품")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("업무흐름 연결"), { target: { value: "UNCONNECTED" } });
     expect(screen.getByText("전체 원본 2건 · 조회 결과 0건")).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("원본 종류"), { target: { value: "ALL" } });
+    fireEvent.click(screen.getByRole("button", { name: "전체 2", exact: true }));
     fireEvent.change(screen.getByLabelText("지출 검색"), { target: { value: "지결-2026-1" } });
     expect(screen.getByText("전체 원본 2건 · 조회 결과 1건")).toBeInTheDocument();
     expect(mocks.replace).toHaveBeenLastCalledWith(expect.stringContaining("from=home"), { scroll: false });
