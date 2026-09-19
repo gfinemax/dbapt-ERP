@@ -20,6 +20,7 @@ export const financeNavigation = [
   { group: "설정", label: "지출 처리 기준", href: "/finance/expense-settings" },
   { group: "설정", label: "신탁 집행 기준", href: "/finance/workflow-settings" },
   { group: "설정", label: "운영 준비 점검", href: "/finance/readiness" },
+  { group: "설정", label: "기존 자료 정리", href: "/finance/data-cleanup" },
 ];
 
 const legacyLabels: Record<string, string> = {

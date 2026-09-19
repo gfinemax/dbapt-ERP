@@ -17,6 +17,7 @@ export type FinanceReadiness = {
     advanceSettlementOpen: number;
     operatingPeriodOpen: number;
     routeUnclassified: number;
+    budgetReviewPending: number;
   };
   fiscalYear: number;
 };
@@ -41,10 +42,11 @@ export async function loadFinanceReadiness(): Promise<FinanceReadiness> {
     finance.from("advance_settlement_drafts").select("*", { count: "exact", head: true }).eq("organization_id", org).neq("status", "SETTLED"),
     finance.from("trust_operating_periods").select("*", { count: "exact", head: true }).eq("organization_id", org).neq("status", "SETTLED"),
     finance.from("workflow_transactions").select("*", { count: "exact", head: true }).eq("organization_id", org).eq("route", "UNKNOWN"),
+    finance.rpc("budget_review_queue", { p_org: org }),
   ]);
   const failure = results.find((result) => result.error)?.error;
   if (failure) throw new Error(`운영 준비 상태 조회 실패: ${failure.message}`);
-  const [staff, contracts, budgets, card, evidence, resolution, personal, advances, periods, routes] = results;
+  const [staff, contracts, budgets, card, evidence, resolution, personal, advances, periods, routes, budgetReview] = results;
   const permissions = new Set(((staff.data ?? []) as { permissions: string[] }[]).flatMap((row) => row.permissions));
   const missingRoles = Object.entries(roleLabels).filter(([role]) => !permissions.has(role)).map(([, label]) => label);
   const verifiedContracts = (contracts.data ?? []) as { conditions: Record<string, unknown> | null }[];
@@ -64,6 +66,7 @@ export async function loadFinanceReadiness(): Promise<FinanceReadiness> {
       advanceSettlementOpen: advances.count ?? 0,
       operatingPeriodOpen: periods.count ?? 0,
       routeUnclassified: routes.count ?? 0,
+      budgetReviewPending: Array.isArray(budgetReview.data) ? budgetReview.data.filter((row) => Boolean((row as { needs_review?: unknown }).needs_review)).length : 0,
     },
     fiscalYear,
   };

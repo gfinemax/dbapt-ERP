@@ -116,3 +116,10 @@ Do not mark the objective complete based on navigation or focused component test
 - Queue counts are read-only pointers to preserved originals: card linkage, evidence supplementation, formal-resolution conversion, personal repayment, advance settlement, operating-period settlement and unknown workflow route. A nonzero count is work to process, not an invented error or financial total.
 - Account preference SQL and UI tests pass locally. Authenticated production acceptance remains required after migration publication; no representative financial transaction should be created merely to test personalization.
 - Production migrations `user_quick_menu_preferences` and `quick_menu_preference_updated_by_index` were applied on 2026-09-19. RLS is enabled, anon/authenticated table reads are denied, and only service-role RPC access is granted. Authenticated browser acceptance is still separate evidence.
+
+## Pending badges and preserved-source cleanup
+
+- Finance navigation badges load after the shell renders and never block page content. Zero counts are omitted. Counts come from organization-scoped source states and are not presented as ledger totals.
+- The `기존 자료 정리` page groups corporate-card linkage, evidence supplementation, formal-resolution conversion, budget attribution and unknown processing-route reviews. One source can appear under multiple reasons; it is never silently deduplicated into a misleading business count.
+- The cleanup inventory is read-only. It exposes only safe display fields and links back to existing authoritative resolution, quick-expense, budget and expense-workspace flows. It adds no bulk mutation, automatic reclassification, deletion or hidden-state transition.
+- Only active finance staff can load the inventory or badges. Ordinary applicants receive neither source details nor count disclosures.

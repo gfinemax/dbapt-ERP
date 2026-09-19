@@ -10,6 +10,7 @@ const queueItems = [
   ["advanceSettlementOpen", "선지급 사용정산 진행 중", "/finance/advance-settlements"],
   ["operatingPeriodOpen", "월 운영비 정산 진행 중", "/finance/trust?view=operating-settlement"],
   ["routeUnclassified", "처리경로 미분류", "/finance/expenses"],
+  ["budgetReviewPending", "예산 귀속 확인", "/finance/data-cleanup"],
 ] as const;
 
 function SetupCard({ ready, title, detail, href }: { ready: boolean; title: string; detail: string; href: string }) {

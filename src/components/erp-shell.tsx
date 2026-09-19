@@ -22,9 +22,10 @@ import {
   Wallet,
 } from "lucide-react";
 import type { ReactNode } from "react";
-import { Fragment, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { ErpQuickMenu } from "./erp-quick-menu";
 import { financeNavigation, normalizeFinanceDetailLabel } from "@/features/finance/finance-navigation";
+import { loadFinanceNavigationBadgesAction } from "@/app/finance/navigation/actions";
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
@@ -214,9 +215,16 @@ type ErpShellProps = {
 export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "관리자", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [financeBadges, setFinanceBadges] = useState<Record<string, number>>({});
   const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
+  useEffect(() => {
+    if (selectedMenu !== "회계/자금") return;
+    let active = true;
+    void loadFinanceNavigationBadgesAction().then((badges) => { if (active) setFinanceBadges(badges); }).catch(() => { /* Navigation remains usable when counts cannot be refreshed. */ });
+    return () => { active = false; };
+  }, [selectedMenu]);
   const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];
   const selectedWorkspaceLabel = activeWorkspaceLabel ?? defaultWorkspaceLabels[selectedMenu] ?? currentWorkspaceMenus[0]?.label;
   const selectedWorkspace = currentWorkspaceMenus.find((workspace) => workspace.label === selectedWorkspaceLabel) ?? currentWorkspaceMenus[0];
@@ -237,7 +245,8 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
         href={item.href ?? "#"}
       >
         <ReceiptText aria-hidden="true" className="size-3.5 shrink-0" />
-        {item.label}
+        <span className="min-w-0 flex-1">{item.label}</span>
+        {(financeBadges[item.label] ?? 0) > 0 ? <span aria-label={`${item.label} 대기 ${financeBadges[item.label]}건`} className="min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{financeBadges[item.label]}</span> : null}
       </a>
     </Fragment>
   ));

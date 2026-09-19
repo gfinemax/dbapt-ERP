@@ -1,8 +1,11 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+const navigation = vi.hoisted(() => ({ badges: vi.fn() }));
+vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadgesAction: navigation.badges }));
 import { ErpShell } from "./erp-shell";
 
 describe("ErpShell", () => {
+  beforeEach(() => navigation.badges.mockReset().mockResolvedValue({}));
   it("highlights the explicitly selected approval detail menu", () => {
     render(
       <ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재">
@@ -28,7 +31,7 @@ describe("ErpShell", () => {
       "업무현황", "통합 결재함", "전체 지출", "지출 등록·신청", "선지급 사용정산",
       "월 운영비 요청·수령", "운영비 사용정산", "사업비 집행요청·현황", "조합 지급대기", "전체 지급내역",
       "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
-      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준", "운영 준비 점검",
+      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준", "운영 준비 점검", "기존 자료 정리",
     ]);
     expect(Array.from(detailMenu.querySelectorAll("p")).map((node) => node.textContent)).toEqual([
       "업무", "지출관리", "신탁 집행관리", "지급관리", "수납·환급", "회계·증빙", "예산·마감", "설정",
@@ -66,11 +69,20 @@ describe("ErpShell", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" });
-    expect(within(menu).getAllByRole("link")).toHaveLength(21);
+    expect(within(menu).getAllByRole("link")).toHaveLength(22);
     expect(within(menu).getByRole("link", { name: "조합 지급대기" })).toHaveAttribute("aria-current", "page");
     expect(within(menu).getByRole("link", { name: "신탁 집행 기준" })).toHaveAttribute("href", "/finance/workflow-settings");
     fireEvent.click(toggle);
     expect(screen.queryByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" })).not.toBeInTheDocument();
+  });
+
+  it("shows positive finance queue badges without changing link names", async () => {
+    navigation.badges.mockResolvedValue({ "전체 지출": 3, "기존 자료 정리": 8, "증빙자료 관리": 0 });
+    render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+    const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
+    expect(await within(detailMenu).findByLabelText("전체 지출 대기 3건")).toHaveTextContent("3");
+    expect(within(detailMenu).getByRole("link", { name: /기존 자료 정리/ })).toHaveAttribute("href", "/finance/data-cleanup");
+    await waitFor(() => expect(within(detailMenu).queryByLabelText("증빙자료 관리 대기 0건")).not.toBeInTheDocument());
   });
 
   it("renders basic info as a finance detail menu", () => {
