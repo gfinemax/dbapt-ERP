@@ -10,3 +10,18 @@
 - P0/P1/P2 issues: none found.
 
 final result: passed
+
+## Reimbursement receipt-first OCR
+
+- Source visual truth: the user-provided `대납·선지급 정산` screenshot in the implementation conversation.
+- Verified surface: production `/finance/reimbursements`, desktop Chrome viewport, signed-in staff account.
+- Default state: passed. Expanding `개인 지출 정산 신청` starts with `영수증으로 새 정산` selected and places the evidence file control before editable expense fields.
+- Hierarchy and copy: passed. `1. 정산 시작 방법` and `2. 자동입력 결과 확인·보완` make the sequence explicit without adding a separate wizard page.
+- Manual path: passed. Selecting `직접 입력` hides the receipt control while preserving the editable form.
+- Existing-source path: passed by automated component coverage. The option is disabled when no linkable source exists and reuses source values and evidence when available.
+- Accessibility: passed. The mode controls expose pressed/disabled state, form controls have accessible labels, and OCR progress/result messaging uses a live status region.
+- Visual review: passed. The receipt-first panel follows the existing card, spacing, border, and blue action hierarchy; no horizontal clipping or header/sidebar overlap was observed.
+- Console review: passed. No application-origin error was observed; warnings were limited to an unrelated browser extension content script.
+- P0/P1/P2 issues: none found.
+
+final result: passed
