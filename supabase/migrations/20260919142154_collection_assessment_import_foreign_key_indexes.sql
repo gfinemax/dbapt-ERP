@@ -1,0 +1,10 @@
+create index collection_assessment_import_batches_created_by_idx
+on finance.collection_assessment_import_batches(created_by);
+
+create index collection_assessment_import_batches_applied_by_idx
+on finance.collection_assessment_import_batches(applied_by)
+where applied_by is not null;
+
+create index collection_assessment_import_rows_existing_idx
+on finance.collection_assessment_import_rows(organization_id,existing_assessment_id)
+where existing_assessment_id is not null;

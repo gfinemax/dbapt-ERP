@@ -1,6 +1,7 @@
 import { requireReimbursementIdentity } from "./reimbursement-auth";
 import { reimbursementDb } from "./reimbursement-repository";
 import { hasReimbursementPermission, type ReimbursementPermission } from "./reimbursement-domain";
+import type { CollectionAssessmentImportInput } from "./collection-assessment-csv";
 
 export const collectionLedgerCommands = [
   "ASSESSMENT_SAVE",
@@ -68,6 +69,22 @@ export type CollectionLedgerWorkspace = {
   viewer: { user_id: string; permissions: ReimbursementPermission[] };
 };
 export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
+export type CollectionAssessmentImportRow = CollectionAssessmentImportInput & {
+  action: "CREATE" | "UPDATE" | "UNCHANGED" | "ERROR";
+  issue: string | null;
+};
+export type CollectionAssessmentImportPreview = {
+  batch_id: string;
+  file_name: string;
+  content_hash: string;
+  status: "PREVIEW" | "APPLIED";
+  row_count: number;
+  create_count: number;
+  update_count: number;
+  unchanged_count: number;
+  error_count: number;
+  rows: CollectionAssessmentImportRow[];
+};
 
 const staffPermissions: readonly ReimbursementPermission[] = ["ADMIN", "CLOSE", "PAY", "APPROVE", "SENIOR"];
 const decisionCommands = new Set<CollectionLedgerCommand>(["ASSESSMENT_SAVE", "REFUND_SAVE", "REFUND_APPROVE", "REFUND_CANCEL"]);
@@ -75,6 +92,47 @@ const forbidden = new Set(["organization_id", "organizationId", "p_org", "p_acto
 
 function record(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function importResult(value: unknown): CollectionAssessmentImportPreview {
+  if (!record(value) || typeof value.batch_id !== "string" || typeof value.file_name !== "string" || !Array.isArray(value.rows))
+    throw new Error("부과자료 일괄 처리 결과를 확인하지 못했어.");
+  for (const key of ["row_count", "create_count", "update_count", "unchanged_count", "error_count"])
+    if (!Number.isSafeInteger(Number(value[key]))) throw new Error("부과자료 집계 결과를 확인하지 못했어.");
+  return value as CollectionAssessmentImportPreview;
+}
+
+async function requireAssessmentImportActor() {
+  const member = await requireReimbursementIdentity();
+  if (!member.active || !["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission)))
+    throw new Error("분담금 부과자료 등록 권한이 필요합니다.");
+  return member;
+}
+
+export async function previewCollectionAssessmentImport(input: { fileName: string; contentHash: string; rows: CollectionAssessmentImportInput[] }) {
+  const member = await requireAssessmentImportActor();
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_assessment_import_preview", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_file_name: input.fileName,
+    p_content_hash: input.contentHash,
+    p_rows: input.rows,
+  });
+  if (error) throw new Error(error.message);
+  return importResult(data);
+}
+
+export async function applyCollectionAssessmentImport(batchId: string, operationKey: string) {
+  const member = await requireAssessmentImportActor();
+  if (!batchId || !operationKey.trim() || operationKey.length > 200) throw new Error("적용할 미리보기와 처리키를 확인해줘.");
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_assessment_import_apply", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_batch: batchId,
+    p_key: operationKey,
+  });
+  if (error) throw new Error(error.message);
+  return importResult(data);
 }
 
 export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace> {

@@ -1,7 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/app/finance/collections/actions", () => ({ executeCollectionLedger: vi.fn() }));
+vi.mock("@/app/finance/collections/actions", () => ({ executeCollectionLedger: vi.fn(), previewCollectionAssessmentCsv: vi.fn(), applyCollectionAssessmentCsv: vi.fn() }));
 import { CollectionLedgerPage } from "./collection-ledger-page";
 import type { CollectionLedgerWorkspace } from "./collection-ledger-repository";
 
@@ -22,5 +22,10 @@ describe("collection ledger page", () => {
     render(<CollectionLedgerPage workspace={workspace} mode="collections" />);
     expect(screen.getByRole("button", { name: "환급안 작성" })).toBeInTheDocument();
     expect(screen.queryByText(/이름으로 자동/)).not.toBeInTheDocument();
+  });
+  it("offers audited CSV preview for decision makers", () => {
+    render(<CollectionLedgerPage workspace={workspace} mode="collections" />);
+    expect(screen.getByRole("heading", { name: "CSV 일괄 등록" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "미리보기" })).toBeInTheDocument();
   });
 });

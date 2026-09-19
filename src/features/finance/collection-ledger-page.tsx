@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { executeCollectionLedger } from "@/app/finance/collections/actions";
 import type { CollectionLedgerCommand, CollectionLedgerWorkspace } from "./collection-ledger-repository";
+import { CollectionAssessmentImport } from "./collection-assessment-import";
 
 const card = "rounded-2xl border border-slate-200 bg-white p-5";
 const input = "min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
@@ -60,6 +61,7 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
           <button className={`${primary} md:col-span-3 md:justify-self-start`} disabled={pending}>부과 원본 저장</button>
         </form>
       </section> : null}
+      {canDecide ? <CollectionAssessmentImport /> : null}
       <section className="space-y-3" aria-label="분담금 부과 목록">
         {workspace.assessments.map((assessment) => {
           const remaining = Number(assessment.assessed_amount) - Number(assessment.allocated_amount);

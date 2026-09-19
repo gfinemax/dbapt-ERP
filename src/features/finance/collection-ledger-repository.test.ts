@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: () => ({ schema: () => ({ rpc: mocks.rpc }) }) }));
-import { loadCollectionLedger, runCollectionLedger } from "./collection-ledger-repository";
+import { applyCollectionAssessmentImport, loadCollectionLedger, previewCollectionAssessmentImport, runCollectionLedger } from "./collection-ledger-repository";
 
 beforeEach(() => {
   mocks.identity.mockReset().mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["ADMIN"] });
@@ -26,5 +26,19 @@ describe("collection ledger repository", () => {
     mocks.rpc.mockResolvedValue({ data: { id: "assessment", status: "ACTIVE", lock_version: 1 }, error: null });
     await expect(runCollectionLedger("ASSESSMENT_SAVE", { external_member_id: "peopleon-1" }, "stable-key")).resolves.toMatchObject({ id: "assessment" });
     expect(mocks.rpc).toHaveBeenCalledWith("collection_ledger_command", expect.objectContaining({ p_org: "org", p_actor: "actor", p_key: "stable-key" }));
+  });
+  it("previews and applies imports only with the authenticated organization", async () => {
+    const result = { batch_id: "batch", file_name: "rows.csv", content_hash: "a".repeat(64), status: "PREVIEW", row_count: 1, create_count: 1, update_count: 0, unchanged_count: 0, error_count: 0, rows: [] };
+    mocks.rpc.mockResolvedValue({ data: result, error: null });
+    await previewCollectionAssessmentImport({ fileName: "rows.csv", contentHash: "a".repeat(64), rows: [{ row_number: 2, external_member_id: "peopleon-1", member_no: "", member_name_snapshot: "홍길동", assessment_code: "A", due_date: "", assessed_amount: 1000 }] });
+    expect(mocks.rpc).toHaveBeenCalledWith("collection_assessment_import_preview", expect.objectContaining({ p_org: "org", p_actor: "actor", p_file_name: "rows.csv" }));
+    mocks.rpc.mockResolvedValue({ data: { ...result, status: "APPLIED" }, error: null });
+    await applyCollectionAssessmentImport("batch", "stable-key");
+    expect(mocks.rpc).toHaveBeenCalledWith("collection_assessment_import_apply", { p_org: "org", p_actor: "actor", p_batch: "batch", p_key: "stable-key" });
+  });
+  it("does not allow a payment-only actor to import assessments", async () => {
+    mocks.identity.mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["PAY"] });
+    await expect(previewCollectionAssessmentImport({ fileName: "rows.csv", contentHash: "a".repeat(64), rows: [] })).rejects.toThrow("등록 권한");
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });
