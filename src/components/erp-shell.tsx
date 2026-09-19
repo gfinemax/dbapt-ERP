@@ -185,6 +185,9 @@ const defaultWorkspaceLabels: Record<string, string> = {
 };
 
 const quickMenus = ["조합원 등록", "분담금 수납처리", "은행거래 업로드", "카드내역", "지출결의 작성", "지급대기", "증빙 미첨부", "미납 조합원"];
+const quickMenuHrefs: Partial<Record<(typeof quickMenus)[number], string>> = {
+  "지출결의 작성": "/finance/expense-resolutions?start=advance",
+};
 
 function normalizeActiveLabel(activeLabel: string) {
   if (activeLabel === "조합원관리") {
@@ -330,17 +333,15 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             <Settings className="size-3.5 text-[var(--color-fog)]" />
           </div>
           <div className="grid grid-cols-2 gap-1.5">
-            {quickMenus.map((item) => (
-              <button
-                aria-label={`퀵메뉴 ${item}`}
-                className="min-h-9 rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
-                key={item}
-                onClick={() => onQuickMenuSelect?.(item)}
-                type="button"
-              >
-                {item}
-              </button>
-            ))}
+            {quickMenus.map((item) => {
+              const className = "flex min-h-9 items-center rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]";
+              const href = quickMenuHrefs[item];
+              return href ? (
+                <a aria-label={`퀵메뉴 ${item}`} className={className} href={href} key={item}>{item}</a>
+              ) : (
+                <button aria-label={`퀵메뉴 ${item}`} className={className} key={item} onClick={() => onQuickMenuSelect?.(item)} type="button">{item}</button>
+              );
+            })}
           </div>
         </div>
       </aside>

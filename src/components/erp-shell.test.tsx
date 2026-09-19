@@ -42,6 +42,14 @@ describe("ErpShell", () => {
     expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
   });
 
+  it("opens a new expense resolution from the quick menu on every screen", () => {
+    render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+    expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toHaveAttribute(
+      "href",
+      "/finance/expense-resolutions?start=advance",
+    );
+  });
+
   it.each([
     ["지출결의서 관리", "지출관리"], ["지급대기", "지급관리"], ["지급완료 내역", "지급관리"],
     ["개인 지출 정산·월 마감", "대납·선지급 정산"], ["지출 관리설정", "지출·신탁 설정"],
