@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type ManagedExpenseResolution } from "./expense-resolution-page";
 
 describe("ExpenseResolutionPage", () => {
   it("turns stale Server Action errors into a refresh instruction", () => {
@@ -44,6 +44,50 @@ describe("ExpenseResolutionPage", () => {
     expect(within(listTable).queryByRole("columnheader", { name: "증빙" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "작성 양식" })).not.toBeInTheDocument();
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
+  });
+
+  it("routes new small expenses away from resolutions and keeps legacy batches read-only", () => {
+    const legacy = {
+      approvalLine: [],
+      approvalStatus: "작성중",
+      author: "오학동 사무장",
+      budgetSnapshot: { budgetCheckStatus: "PENDING", budgetPeriod: "2026-07", budgetUsageRate: 0, calculationBasis: "-", currentAnnualBudgetAmount: 0, currentRequestAmount: 10_000, expectedUsedAmount: 10_000, monthlyBudgetAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, remainingBudgetAmount: 0, usedAmount: 0 },
+      createdAt: "2026-07-01",
+      creationSource: "SMALL_EXPENSE",
+      evidenceMaterials: [],
+      expenseItems: [],
+      expenseKind: "PETTY_CASH_BATCH",
+      history: [],
+      id: "legacy-small-1",
+      paymentStatus: "지급전",
+      printRecords: [],
+      resolutionNo: "지결-2026-0001",
+      resolutionType: "SINGLE",
+      settlementStatus: "정산없음",
+      subject: "기존 소액 묶음",
+      supplyAmount: 10_000,
+      totalPaymentAmount: 10_000,
+      vat: 0,
+      vendorName: "과거 거래처",
+      voucherStatus: "미생성",
+    } as ManagedExpenseResolution;
+    render(<ExpenseResolutionPage initialResolutions={[legacy]} />);
+
+    expect(screen.queryByLabelText("소액 일괄결의 필터")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "소액지출 등록은 지출관리에서 →" })).toHaveAttribute("href", "/finance/expenses/small");
+    expect(screen.getByRole("button", { name: "기존 소액 일괄결의 1건" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    expect(within(createDialog).queryByText("소액경비 일괄결의", { selector: "button" })).not.toBeInTheDocument();
+    expect(within(createDialog).queryByRole("option", { name: "소액경비 일괄결의" })).not.toBeInTheDocument();
+    fireEvent.click(within(createDialog).getByRole("button", { name: "취소" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    expect(within(detailDialog).getAllByText("기존 소액 일괄결의 · 조회 전용")).toHaveLength(2);
+    expect(within(detailDialog).queryByRole("button", { name: "수정" })).not.toBeInTheDocument();
+    expect(within(detailDialog).queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
   });
 
   it("keeps the page available when the remote data source is unavailable", () => {

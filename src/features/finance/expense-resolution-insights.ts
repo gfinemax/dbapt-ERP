@@ -1,4 +1,5 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 
 export type ExpenseResolutionFilters = {
   approvalStatus?: string;
@@ -50,8 +51,8 @@ export function filterExpenseResolutions(resolutions: ManagedExpenseResolution[]
     if (filters.spender && !(resolution.advancePayer ?? "").toLocaleLowerCase("ko-KR").includes(filters.spender.toLocaleLowerCase("ko-KR"))) return false;
     if (filters.accountTitle && ![resolution.representativeAccountTitle, ...(resolution.accountAllocations ?? []).map((item) => item.accountTitle), ...resolution.expenseItems.map((item) => item.accountTitle)].some((value) => value?.toLocaleLowerCase("ko-KR").includes(filters.accountTitle!.toLocaleLowerCase("ko-KR")))) return false;
     if (filters.vendor && ![resolution.vendorName, resolution.representativeVendorName, ...resolution.expenseItems.map((item) => item.vendorName)].some((value) => value?.toLocaleLowerCase("ko-KR").includes(filters.vendor!.toLocaleLowerCase("ko-KR")))) return false;
-    if (filters.pettyCashBatch === "YES" && resolution.expenseKind !== "PETTY_CASH_BATCH") return false;
-    if (filters.pettyCashBatch === "NO" && resolution.expenseKind === "PETTY_CASH_BATCH") return false;
+    if (filters.pettyCashBatch === "YES" && !isLegacySmallExpenseResolution(resolution)) return false;
+    if (filters.pettyCashBatch === "NO" && isLegacySmallExpenseResolution(resolution)) return false;
     const filterDate = resolution.actualExpenseDate ?? resolution.createdAt;
     if (filters.dateFrom && filterDate < filters.dateFrom) return false;
     if (filters.dateTo && filterDate > filters.dateTo) return false;

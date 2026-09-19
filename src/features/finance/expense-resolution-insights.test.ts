@@ -17,6 +17,13 @@ describe("expense resolution insights", () => {
     expect(filterExpenseResolutions([resolution], { accountTitle: "사무용품", bankLinked: "YES", dateFrom: "2026-03-01", evidenceStatus: "DEFICIENT", expenseKind: "PERSONAL_REIMBURSEMENT", spender: "오학", vendor: "문구" })).toHaveLength(1);
   });
 
+  it("keeps both historical small-expense shapes behind the archive filter", () => {
+    const legacyKind = item({ id: "legacy-kind", expenseKind: "PETTY_CASH_BATCH" });
+    const legacySource = item({ id: "legacy-source", creationSource: "SMALL_EXPENSE" });
+    const current = item({ id: "current", expenseKind: "GENERAL", creationSource: "DIRECT" });
+    expect(filterExpenseResolutions([legacyKind, legacySource, current], { pettyCashBatch: "YES" }).map((value) => value.id)).toEqual(["legacy-kind", "legacy-source"]);
+  });
+
   it("builds overdue payment, settlement and receipt alerts", () => {
     const alerts = buildExpenseResolutionAlerts([
       item({ plannedPaymentDate: "2026-07-01" }),

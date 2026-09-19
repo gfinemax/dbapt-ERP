@@ -25,6 +25,7 @@ import { getExpenseComplianceSettings, listExpenseFactConfirmations, saveExpense
 import type { ExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
 import { evaluateDirectExpensePolicy } from "@/features/finance/direct-expense-policy";
+import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-small-expense";
 
 const expenseEvidenceBucket = "expense-evidence";
 
@@ -319,6 +320,7 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   if (existingError) throw new Error("기존 결의서를 확인하지 못했습니다.");
   const access = row ? await requireExpenseRecord(resolution.id, true, actor) : null;
   const existingResolution = access?.resolution;
+  assertLegacySmallExpenseReadOnly(resolution, existingResolution);
   if (existingResolution?.approvalStatus === "승인완료") throw new Error("승인 완료 문서는 직접 수정할 수 없습니다.");
   if (existingResolution?.createdAt && existingResolution.createdAt !== resolution.createdAt) throw new Error("작성일은 임의로 변경할 수 없습니다.");
   resolution = { ...resolution, author: existingResolution?.author ?? actor.display_name };

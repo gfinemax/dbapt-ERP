@@ -36,6 +36,7 @@ import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendo
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
+import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 import { readExpenseResolutionImportFile } from "./expense-resolution-file";
 import {
   buildExpenseResolutionImportTemplateCsv,
@@ -2216,6 +2217,8 @@ export function ExpenseResolutionPage({
   const selectedDetail = selectedDetailId ? resolutions.find((resolution) => resolution.id === selectedDetailId) : undefined;
   const paymentTarget = paymentTargetId ? resolutions.find((resolution) => resolution.id === paymentTargetId) : undefined;
   const printPreviewTarget = printPreviewTargetId ? resolutions.find((resolution) => resolution.id === printPreviewTargetId) : undefined;
+  const printWarningResolution = printWarning ? resolutions.find((resolution) => resolution.id === printWarning.resolutionId) : undefined;
+  const legacySmallExpenseCount = resolutions.filter(isLegacySmallExpenseResolution).length;
 
   const summary = useMemo(() => {
     const pendingApprovalItems = resolutions.filter((resolution) => resolution.approvalStatus === "승인대기");
@@ -3622,14 +3625,13 @@ export function ExpenseResolutionPage({
               </div>
             </div>
             <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
-              <select aria-label="지출 유형 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setExpenseKindFilter(event.target.value)} value={expenseKindFilter}><option value="">지출 유형 전체</option><option value="GENERAL">일반 지출</option><option value="PERSONAL_REIMBURSEMENT">개인 선지출 정산</option><option value="BANK_POST_APPROVAL">통장 선출금 사후결의</option><option value="PETTY_CASH_BATCH">소액경비 일괄결의</option><option value="RECURRING_BATCH">정기비용 일괄결의</option></select>
+              <select aria-label="지출 유형 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setExpenseKindFilter(event.target.value)} value={expenseKindFilter}><option value="">지출 유형 전체</option><option value="GENERAL">일반 지출</option><option value="PERSONAL_REIMBURSEMENT">개인 선지출 정산</option><option value="BANK_POST_APPROVAL">통장 선출금 사후결의</option><option value="RECURRING_BATCH">정기비용 일괄결의</option></select>
               <select aria-label="증빙 상태 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setEvidenceStatusFilter(event.target.value)} value={evidenceStatusFilter}><option value="">증빙 상태 전체</option><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select>
               <select aria-label="사후결의 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setPostApprovalFilter(event.target.value)} value={postApprovalFilter}><option value="">사후결의 전체</option><option value="YES">사후결의</option><option value="NO">사전결의</option></select>
               <select aria-label="통장거래 연결 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setBankLinkedFilter(event.target.value)} value={bankLinkedFilter}><option value="">통장연결 전체</option><option value="YES">연결됨</option><option value="NO">미연결</option></select>
               <input aria-label="개인 선지출자 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setSpenderFilter(event.target.value)} placeholder="개인 선지출자" value={spenderFilter} />
               <input aria-label="계정과목 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setAccountTitleFilter(event.target.value)} placeholder="계정과목" value={accountTitleFilter} />
               <input aria-label="거래처 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setVendorFilter(event.target.value)} placeholder="거래처" value={vendorFilter} />
-              <select aria-label="소액 일괄결의 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setPettyCashBatchFilter(event.target.value)} value={pettyCashBatchFilter}><option value="">소액 일괄 전체</option><option value="YES">소액 일괄</option><option value="NO">일반/기타</option></select>
               <select aria-label="승인상태 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setApprovalFilter(event.target.value)} value={approvalFilter}>
                 <option value="">승인상태 전체</option><option>작성중</option><option>승인대기</option><option>승인완료</option><option>반려</option>
               </select>
@@ -3639,6 +3641,19 @@ export function ExpenseResolutionPage({
               <input aria-label="작성일 시작" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setDateFromFilter(event.target.value)} type="date" value={dateFromFilter} />
               <input aria-label="작성일 종료" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setDateToFilter(event.target.value)} type="date" value={dateToFilter} />
               <label className="flex items-center gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold"><input checked={overdueOnly} onChange={(event) => setOverdueOnly(event.target.checked)} type="checkbox" />정산기한 경과만</label>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs">
+              <Link className="font-semibold text-[var(--color-deep-cobalt)] hover:underline" href="/finance/expenses/small">소액지출 등록은 지출관리에서 →</Link>
+              {legacySmallExpenseCount > 0 ? (
+                <button
+                  aria-pressed={pettyCashBatchFilter === "YES"}
+                  className={`rounded-full border px-3 py-1.5 font-semibold ${pettyCashBatchFilter === "YES" ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]" : "border-[var(--color-soft-border)] bg-white text-[var(--color-stone)]"}`}
+                  onClick={() => setPettyCashBatchFilter((current) => current === "YES" ? "" : "YES")}
+                  type="button"
+                >
+                  기존 소액 일괄결의 {legacySmallExpenseCount}건
+                </button>
+              ) : null}
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
               {tabItems.map((item) => (
@@ -3692,7 +3707,7 @@ export function ExpenseResolutionPage({
                     const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
                     const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
                     const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
-                    const expenseKindLabel = resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : resolution.expenseKind === "PETTY_CASH_BATCH" ? "소액경비 일괄" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출";
+                    const expenseKindLabel = resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : isLegacySmallExpenseResolution(resolution) ? "기존 소액 일괄결의" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출";
                     const primaryStatus = resolution.approvalStatus === "반려"
                       ? "반려"
                       : resolution.approvalStatus !== "승인완료"
@@ -3709,7 +3724,7 @@ export function ExpenseResolutionPage({
                           </button>
                           <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
                           {resolution.actualExpenseDate ? <p className="mt-0.5 text-xs text-[var(--color-stone)]">지출 {resolution.actualExpenseDate}</p> : null}
-                          <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : resolution.creationSource === "SMALL_EXPENSE" ? "소액일괄" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
+                          <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : isLegacySmallExpenseResolution(resolution) ? "기존자료" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
                           {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">카드내역 매칭완료</p> : null}
                         </td>
                         <td className="px-4 py-3 align-top">
@@ -3898,9 +3913,9 @@ export function ExpenseResolutionPage({
           onCancelVoucher={() => cancelVoucher(selectedDetail.id)}
           onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
-          onCreateFactConfirmation={(detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
-          onDelete={() => removeResolution(selectedDetail.id)}
-          onEdit={(viewer ? canEditExpense(selectedDetail, viewer) : selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus)) ? () => openEditModal(selectedDetail) : undefined}
+          onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
+          onDelete={isLegacySmallExpenseResolution(selectedDetail) ? undefined : () => removeResolution(selectedDetail.id)}
+          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && (viewer ? canEditExpense(selectedDetail, viewer) : selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus)) ? () => openEditModal(selectedDetail) : undefined}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
           onProcessPayment={() => openPaymentModal(selectedDetail)}
@@ -3944,7 +3959,7 @@ export function ExpenseResolutionPage({
         <PrintValidationWarningModal
           onCancel={() => setPrintWarning(null)}
           onContinue={continuePrintAfterWarning}
-          onEdit={editPrintWarningResolution}
+          onEdit={printWarningResolution && !isLegacySmallExpenseResolution(printWarningResolution) ? editPrintWarningResolution : undefined}
           warnings={printWarning.warnings}
         />
       ) : null}
@@ -4362,13 +4377,12 @@ function ExpenseResolutionCreateModal({
               onChange={(value) => {
                 onChange("expenseKind", value as ExpenseKind);
                 if (value === "BANK_POST_APPROVAL" || value === "PERSONAL_REIMBURSEMENT") onChange("expenseTiming", "REIMBURSEMENT");
-                if (value === "PETTY_CASH_BATCH" || value === "RECURRING_BATCH") onChange("resolutionMode", "PROJECT_BULK");
+                if (value === "RECURRING_BATCH") onChange("resolutionMode", "PROJECT_BULK");
               }}
               options={[
                 { label: "일반 지출", value: "GENERAL" },
                 { label: "개인 선지출 정산", value: "PERSONAL_REIMBURSEMENT" },
                 { label: "통장 선출금 사후결의", value: "BANK_POST_APPROVAL" },
-                { label: "소액경비 일괄결의", value: "PETTY_CASH_BATCH" },
                 { label: "정기비용 일괄결의", value: "RECURRING_BATCH" },
               ]}
               value={formState.expenseKind}
@@ -4516,7 +4530,7 @@ function ExpenseResolutionCreateModal({
               </div>
               <div aria-live="polite" className={`rounded-xl border p-4 text-sm ${directPolicy.decision === "REQUIRED" ? "border-red-300 bg-red-50 text-red-800" : directPolicy.decision === "RECOMMENDED" ? "border-amber-300 bg-amber-50 text-amber-900" : "border-green-300 bg-green-50 text-green-800"}`}><b>{directPolicy.decision === "REQUIRED" ? "기안 연결 필수" : directPolicy.decision === "RECOMMENDED" ? "기안 연결 권장" : "기안 없이 처리 가능"}</b><p className="mt-1">{directPolicy.reasons.join(" ")}</p></div>
               {formState.creationSource === "APPROVAL_LINKED" || directPolicy.decision === "REQUIRED" ? <label className="grid gap-2 text-sm font-bold"><span>승인된 기안 연결</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => { const selected = approvalDocuments.find((document) => document.id === event.target.value); onChange("approvalDocumentId", event.target.value); onChange("approvalDocumentNo", selected?.documentNo ?? ""); if (selected) { onChange("creationSource", "APPROVAL_LINKED"); onChange("subject", selected.title); onChange("projectName", selected.projectName ?? ""); onChange("vendorName", selected.counterpartyName ?? ""); onChange("budgetItem", selected.budgetItem ?? ""); if (selected.amount > 0) { onChange("singleItems", [createSingleExpenseItem({ itemName: selected.title, quantity: "1", taxCategory: "NO_VAT", unitPrice: String(selected.amount), vatAmount: 0 })]); onChange("accountAllocations", [createAccountAllocation({ accountTitle: selected.budgetItem || "미지정", amount: String(selected.amount), budgetItem: selected.budgetItem || "" })]); } } }} value={formState.approvalDocumentId}><option value="">문서번호·제목·거래처로 선택</option>{approvalDocuments.map((document) => <option key={document.id} value={document.id}>{document.documentNo} · {document.title} · {document.counterpartyName ?? "거래처 미지정"} · {document.amount.toLocaleString("ko-KR")}원</option>)}</select>{selectedApprovalDocument ? <span className="text-xs text-[var(--color-green-ink)]">승인완료 · 승인금액 {selectedApprovalDocument.amount.toLocaleString("ko-KR")}원</span> : null}</label> : null}
-              {formState.creationSource === "DIRECT" ? <div className="grid gap-3"><label className="grid gap-2 text-sm font-bold"><span>기안 생략 사유</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => onChange("approvalSkipReason", event.target.value)} value={formState.approvalSkipReason}><option value="">근거 선택</option><option>승인 예산 내 일상 지출</option><option>정기·반복 지출</option><option>기존 계약에 따른 지급</option><option>소액경비 일괄결의</option>{directExpenseSettings.allowOtherApprovalSkipReason ?? true ? <option>기타</option> : null}</select></label>{formState.approvalSkipReason === "기타" ? <label className="grid gap-2 text-sm font-bold"><span>기타 생략 사유</span><input className="h-11 rounded-lg border px-3" onChange={(event) => onChange("approvalSkipReasonDetail", event.target.value)} placeholder="기안을 생략할 수 있는 구체적인 사유" value={formState.approvalSkipReasonDetail} /></label> : null}</div> : null}
+              {formState.creationSource === "DIRECT" ? <div className="grid gap-3"><label className="grid gap-2 text-sm font-bold"><span>기안 생략 사유</span><select className="h-11 rounded-lg border bg-white px-3" onChange={(event) => onChange("approvalSkipReason", event.target.value)} value={formState.approvalSkipReason}><option value="">근거 선택</option><option>승인 예산 내 일상 지출</option><option>정기·반복 지출</option><option>기존 계약에 따른 지급</option>{directExpenseSettings.allowOtherApprovalSkipReason ?? true ? <option>기타</option> : null}</select></label>{formState.approvalSkipReason === "기타" ? <label className="grid gap-2 text-sm font-bold"><span>기타 생략 사유</span><input className="h-11 rounded-lg border px-3" onChange={(event) => onChange("approvalSkipReasonDetail", event.target.value)} placeholder="기안을 생략할 수 있는 구체적인 사유" value={formState.approvalSkipReasonDetail} /></label> : null}</div> : null}
             </section> : null}
             <FormSection layout="compact" title={currentStep === 1 ? "기본정보" : "지출내역·금액"}>
               {currentStep === 1 ? <>
@@ -5514,9 +5528,16 @@ export function ExpenseResolutionDetailModal({
             </>
           ) : null}
 
+          {isLegacySmallExpenseResolution(resolution) ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <p className="font-bold">기존 소액 일괄결의 · 조회 전용</p>
+              <p className="mt-1 leading-6">내용 수정과 삭제는 중단됐어. 기존 승인·지급 이력 확인과 출력, 진행 중인 후속 처리는 계속할 수 있어.</p>
+            </div>
+          ) : null}
+
           <DetailSection title="기본정보">
             <DetailItem label="결의서번호" value={resolution.resolutionNo} />
-            <DetailItem label="작성경로" value={resolution.creationSource === "APPROVAL_LINKED" ? `기안연결 · ${resolution.approvalDocumentNo ?? "문서번호 미확인"}` : resolution.creationSource === "SMALL_EXPENSE" ? "소액경비 일괄결의" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약 분할지급" : `직접 작성 · ${resolution.approvalSkipReason ?? "생략 사유 미입력"}`} />
+            <DetailItem label="작성경로" value={resolution.creationSource === "APPROVAL_LINKED" ? `기안연결 · ${resolution.approvalDocumentNo ?? "문서번호 미확인"}` : isLegacySmallExpenseResolution(resolution) ? "기존 소액 일괄결의 · 조회 전용" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약 분할지급" : `직접 작성 · ${resolution.approvalSkipReason ?? "생략 사유 미입력"}`} />
             <DetailItem label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
             <DetailItem label="건명" value={getResolutionSubject(resolution)} wide />
             <DetailItem label="작성일" value={resolution.createdAt} />
@@ -6517,7 +6538,7 @@ function PrintValidationWarningModal({
 }: {
   onCancel: () => void;
   onContinue: () => void;
-  onEdit: () => void;
+  onEdit?: () => void;
   warnings: string[];
 }) {
   return (
@@ -6550,9 +6571,9 @@ function PrintValidationWarningModal({
           </ul>
         </div>
         <div className="flex justify-end gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
-          <Button className="rounded-full" onClick={onEdit} variant="outline">
+          {onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">
             수정하기
-          </Button>
+          </Button> : null}
           <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onContinue}>
             그래도 출력하기
           </Button>
