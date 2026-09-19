@@ -82,7 +82,7 @@ describe("common original expense workspace", () => {
     expect(detail.queryByText(/누적 실제 지급 0원/)).not.toBeInTheDocument();
     fireEvent.click(detail.getByRole("tab", { name: "연결 현황" }));
     expect(detail.getByRole("link", { name: "기존 지출결의 화면에서 확인" })).toHaveAttribute("href", "/finance/expense-resolutions?resolutionId=text-id");
-    expect(detail.getByText(/선택한 원본 상세로 바로/)).toBeInTheDocument();
+    expect(detail.getByText(/선택한 유형의 원본 화면으로 이동/)).toBeInTheDocument();
   });
   it("connects the existing source once and reads back the saved transaction without duplicate original rows", async () => {
     const workspace = fixture(); const rendered = render(<ExpenseWorkspacePage workspace={workspace} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);
@@ -157,6 +157,21 @@ describe("common original expense workspace", () => {
     await waitFor(() => expect(source).toHaveFocus());
     expect(source.closest("tr")).toHaveAttribute("aria-selected", "false");
     expect(mocks.replace).toHaveBeenLastCalledWith("/finance/expenses?from=home", { scroll: false });
+  });
+  it("hides the detail area initially and reveals it only after selecting an expense", () => {
+    render(<ExpenseWorkspacePage workspace={fixture()} />);
+    expect(screen.queryByRole("complementary", { name: "선택한 지출 원본 상세 패널" })).not.toBeInTheDocument();
+    expect(screen.queryByText("목록에서 원본을 선택하면 상세와 연결 현황을 확인할 수 있어.")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "사무용품" }));
+    expect(screen.getByRole("complementary", { name: "선택한 지출 원본 상세 패널" })).toBeInTheDocument();
+  });
+  it("shows small expenses as a first-class source and opens their original detail", () => {
+    const workspace = fixture(); workspace.records.push({ ...workspace.records[0], source_kind: "SMALL", source_id: "small-1", number: null, title: "복사용지", used_at: "2026-09-18", budget_month: "2026-09-01", approval_status: "PENDING", payment_status: null, can_connect: false });
+    render(<ExpenseWorkspacePage workspace={workspace} />);
+    fireEvent.click(screen.getByRole("button", { name: "소액지출 1", exact: true }));
+    expect(screen.getByText("전체 원본 3건 · 조회 결과 1건")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "복사용지" }));
+    expect(screen.getByRole("link", { name: "소액지출 상세 · 처리" })).toHaveAttribute("href", "/finance/expenses/small?month=2026-09&id=small-1");
   });
   it("closes the side panel with Escape", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} initialSourceKind="RESOLUTION" initialSourceId="text-id" />);

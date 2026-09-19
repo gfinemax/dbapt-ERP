@@ -2,7 +2,6 @@
 .layout { display: grid; align-items: start; gap: 20px; }
 .list { min-width: 0; container: expense-list / inline-size; }
 .panel { min-width: 0; outline: none; }
-.empty { display: none; }
 .table { width: 100%; table-layout: fixed; text-align: left; font-size: 14px; }
 .detailCard { padding: 20px; }
 .detailHeader { position: sticky; top: 0; z-index: 1; background: white; padding: 16px 0; border-bottom: 1px solid #e2e8f0; }
@@ -21,13 +20,12 @@
   .table td:nth-child(3), .table td:nth-child(4) { grid-column: 1 / -1; font-size: 12px; }
 }
 @container expense (min-width: 760px) {
-  .layout { grid-template-columns: minmax(300px, 0.85fr) minmax(400px, 1.15fr); }
-  .empty { display: block; }
+  .layout[data-selected="true"] { grid-template-columns: minmax(300px, 0.85fr) minmax(400px, 1.15fr); }
   .panel { position: sticky; top: 131px; max-height: calc(100dvh - 147px); overflow-y: auto; scrollbar-gutter: stable; }
   .panel .detailHeader { top: 0; }
 }
 @container expense (min-width: 1240px) {
-  .layout { grid-template-columns: minmax(0, 1fr) 480px; }
+  .layout[data-selected="true"] { grid-template-columns: minmax(0, 1fr) 480px; }
 }
 @container expense (max-width: 759px) {
   .layout[data-selected="true"] > .list { display: none; }

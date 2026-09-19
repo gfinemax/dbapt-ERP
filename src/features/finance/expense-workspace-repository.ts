@@ -4,7 +4,7 @@ import type { ReimbursementPermission } from "./reimbursement-domain";
 import type { WorkflowAmounts } from "./fund-workflow-repository";
 import type { EvidenceOcrData, EvidenceOcrJobStage } from "./expense-evidence";
 
-export type ExpenseSourceKind = "RESOLUTION" | "QUICK" | "PERSONAL";
+export type ExpenseSourceKind = "RESOLUTION" | "SMALL" | "QUICK" | "PERSONAL";
 export type ExpenseWorkspaceRecord = {
   source_kind: ExpenseSourceKind; source_id: string; number: string | null; title: string; amount: number;
   created_at: string; used_at: string | null; accounting_date: string | null; budget_month: string | null;
@@ -20,12 +20,33 @@ export type ExpenseWorkspaceRecord = {
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
 
+type SmallExpenseRow = {
+  id: string; expense_date: string; partner_name: string; description: string; amount: number | string;
+  created_at: string; updated_at: string; review_status: string; created_by_label: string | null;
+  quick_record_id: string | null;
+};
+
+async function loadSmallExpenseRows(organizationId: string) {
+  const pageSize = 1000; const rows: SmallExpenseRow[] = [];
+  for (let from = 0; ; from += pageSize) {
+    const result = await reimbursementDb().schema("approval").from("small_expenses")
+      .select("id,expense_date,partner_name,description,amount,created_at,updated_at,review_status,created_by_label,quick_record_id")
+      .eq("organization_id", organizationId).is("deleted_at", null).order("created_at", { ascending: false }).range(from, from + pageSize - 1);
+    if (result.error) throw new Error(`소액지출 원본 조회 실패: ${result.error.message}`);
+    const page = (result.data ?? []) as SmallExpenseRow[]; rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
 export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   const member = await requireReimbursementIdentity();
   if (!member.active) throw new Error("활성 조직 권한이 필요합니다.");
   const { data, error } = await reimbursementDb().schema("finance").rpc("expense_workspace", { p_org: member.organization_id, p_actor: member.user_id });
   if (error) throw new Error(`지출 자료 조회 실패: ${error.message}`);
   if (!data || !Array.isArray(data.records)) throw new Error("지출 자료 조회 결과를 확인해주세요.");
+  const isStaff = member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p));
+  const smallRows = isStaff ? await loadSmallExpenseRows(member.organization_id) : [];
+  const smallQuickIds = new Set(smallRows.map(row => row.quick_record_id).filter((id): id is string => !!id));
   const quickIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK").map((record: ExpenseWorkspaceRecord) => record.source_id);
   const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
   if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
@@ -35,7 +56,7 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   const byId = new Map((quickMeta.data ?? []).map(row => [row.id, row]));
   const personalById = new Map((personalMeta.data ?? []).map(row => [row.id, row]));
   const isAdmin = member.permissions.includes("ADMIN");
-  const records = data.records.map((record: ExpenseWorkspaceRecord) => {
+  const rpcRecords: ExpenseWorkspaceRecord[] = data.records.map((record: ExpenseWorkspaceRecord): ExpenseWorkspaceRecord => {
     if (record.source_kind === "QUICK") return { ...record, ...(byId.get(record.source_id) ?? {}) };
     if (record.source_kind === "PERSONAL") {
       const meta = personalById.get(record.source_id);
@@ -43,5 +64,19 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
     }
     return record;
   });
-  return { records, viewer: { staff: member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p)), permissions: [...member.permissions] } };
+  const quickById = new Map<string, ExpenseWorkspaceRecord>(rpcRecords.filter(record => record.source_kind === "QUICK").map(record => [record.source_id, record]));
+  const smallRecords: ExpenseWorkspaceRecord[] = smallRows.map(row => {
+    const linked = row.quick_record_id ? quickById.get(row.quick_record_id) : undefined;
+    return {
+      source_kind: "SMALL", source_id: row.id, number: null, title: row.description, amount: Number(row.amount),
+      created_at: row.created_at, updated_at: row.updated_at, used_at: row.expense_date, accounting_date: null,
+      budget_month: `${row.expense_date.slice(0, 7)}-01`, approval_status: row.review_status, payment_status: linked?.payment_status ?? null,
+      author_label: row.created_by_label, counterparty: row.partner_name, transaction_id: linked?.transaction_id ?? null,
+      can_connect: false, amounts: linked?.amounts ?? null, trust_items: linked?.trust_items ?? [], vouchers: linked?.vouchers ?? [],
+      evidence_files: linked?.evidence_files ?? [],
+    };
+  });
+  const records = [...rpcRecords.filter((record: ExpenseWorkspaceRecord) => !(record.source_kind === "QUICK" && smallQuickIds.has(record.source_id))), ...smallRecords]
+    .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || a.source_kind.localeCompare(b.source_kind) || a.source_id.localeCompare(b.source_id));
+  return { records, viewer: { staff: isStaff, permissions: [...member.permissions] } };
 }
