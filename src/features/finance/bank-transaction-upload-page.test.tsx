@@ -87,6 +87,7 @@ describe("BankTransactionUploadPage", () => {
     ]);
     expect(await screen.findByText("1건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "1번 출금거래 사후결의 초안 작성" })).toHaveAttribute("href", "/finance/exp?bankTransactionId=bank-transaction-1");
+    expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
 });
 

@@ -1,16 +1,19 @@
 "use server";
 
-import { getExpenseComplianceSettings, getDefaultOrganizationId } from "@/features/finance/expense-compliance-repository";
+import { getExpenseComplianceSettings } from "@/features/finance/expense-compliance-repository";
 import { getQuickExpenseBudgetAvailability, getQuickExpenseRecord, saveQuickExpenseRecord } from "@/features/finance/quick-expense-record-repository";
 import { validateQuickExpenseRecord, type QuickExpenseRecordInput } from "@/features/finance/quick-expense-record";
 import { importCorporateCardTransactions, linkQuickExpenseCard } from "@/features/finance/corporate-card-transaction-repository";
 import type { CorporateCardTransactionImportRow } from "@/features/finance/corporate-card-transaction-import";
 import { revalidatePath } from "next/cache";
-import { expenseDb, requireExpenseActor } from "@/features/finance/expense-authorization";
+import { assertExpenseRelatedRow, expenseDb, requireExpenseActor } from "@/features/finance/expense-authorization";
 import type { QuickExpensePrintEvidence } from "@/features/finance/quick-expense-record";
 
 export async function saveQuickExpenseRecordAction(input: QuickExpenseRecordInput) {
-  const organizationId = await getDefaultOrganizationId();
+  const actor = await requireExpenseActor();
+  const organizationId = actor.organization_id;
+  if (input.bankTransactionId) await assertExpenseRelatedRow("bank_transactions", input.bankTransactionId, actor);
+  if (input.corporateCardTransactionId) await assertExpenseRelatedRow("corporate_card_transactions", input.corporateCardTransactionId, actor);
   const settings = organizationId ? await getExpenseComplianceSettings(organizationId) : null;
   const validation = validateQuickExpenseRecord(input, settings ?? undefined);
   if (validation.errors.length) throw new Error(validation.errors.join(" "));
@@ -21,17 +24,23 @@ export async function saveQuickExpenseRecordAction(input: QuickExpenseRecordInpu
   const recordStatus = sourcePending ? "SOURCE_PENDING" : validation.recordStatus === "NEEDS_RESOLUTION" || !withinApprovedBudget ? "NEEDS_RESOLUTION" : evidencePending ? "EVIDENCE_PENDING" : "RECORDED";
   const budgetReason = !budget ? "승인된 예산항목을 찾을 수 없습니다." : budget.unresolvedCount ? "이 예산항목·귀속월의 미정리 원본을 먼저 확인해주세요." : budget.annualRemainingAmount < input.amount ? "연간 승인예산 잔액을 초과했습니다." : budget.remainingAmount < input.amount ? `이번 달 승인예산 잔액 ${budget.remainingAmount.toLocaleString("ko-KR")}원을 초과했습니다.` : null;
   const directExpenseReasons = sourcePending ? ["법인카드 승인내역 동기화 후 실제 거래 연결이 필요합니다."] : budgetReason ? [...validation.policy.reasons, budgetReason] : evidencePending ? [...validation.policy.reasons, "영수증 또는 대체증빙 검토가 필요합니다."] : validation.policy.reasons;
-  return saveQuickExpenseRecord({ ...input, directExpenseDecision: recordStatus === "NEEDS_RESOLUTION" ? "REQUIRED" : validation.policy.decision, directExpenseReasons, recordStatus });
+  const result = await saveQuickExpenseRecord({ ...input, recordedByLabel: actor.display_name, directExpenseDecision: recordStatus === "NEEDS_RESOLUTION" ? "REQUIRED" : validation.policy.decision, directExpenseReasons, recordStatus }, organizationId);
+  revalidatePath("/finance/quick-expenses"); revalidatePath("/finance/expenses");
+  return result;
 }
 
 export async function importCorporateCardTransactionsAction(rows: CorporateCardTransactionImportRow[]) {
-  const result = await importCorporateCardTransactions(rows);
+  const actor = await requireExpenseActor();
+  const result = await importCorporateCardTransactions(rows, actor.organization_id);
   revalidatePath("/finance/quick-expenses");
   return result;
 }
 
 export async function linkQuickExpenseCardAction(input: { recordId: string; cardTransactionId: string }) {
-  const [organizationId, record] = await Promise.all([getDefaultOrganizationId(), getQuickExpenseRecord(input.recordId)]);
+  const actor = await requireExpenseActor();
+  const organizationId = actor.organization_id;
+  const record = await getQuickExpenseRecord(input.recordId, organizationId);
+  await assertExpenseRelatedRow("corporate_card_transactions", input.cardTransactionId, actor);
   if (!organizationId || !record) throw new Error("연결할 간편지출 기록을 찾을 수 없어.");
   const budget = await getQuickExpenseBudgetAvailability(organizationId, record.budgetItem, record.occurredAt);
   const recordStatus = budget && !budget.unresolvedCount && budget.remainingAmount >= record.amount && budget.annualRemainingAmount >= record.amount

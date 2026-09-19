@@ -37,6 +37,7 @@ export type QuickExpenseRecord = QuickExpenseRecordInput & {
   directExpenseDecision: DirectExpenseDecision;
   directExpenseReasons: string[];
   id: string;
+  linkedResolutionId?: string;
   evidenceReviewStatus?: QuickExpenseEvidenceReviewStatus;
   evidenceReviewedAt?: string;
   evidenceReviewNote?: string;

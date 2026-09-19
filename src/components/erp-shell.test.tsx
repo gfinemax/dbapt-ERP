@@ -25,12 +25,13 @@ describe("ErpShell", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
     expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "업무현황", "지출 승인함", "지출관리", "신탁 집행관리", "지급관리", "대납·선지급 정산",
+      "업무현황", "통합 결재함", "전체 지출", "지출 등록·신청", "선지급 사용정산",
+      "월 운영비 요청·수령", "운영비 사용정산", "사업비 집행요청·현황", "조합 지급대기", "전체 지급내역",
       "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
-      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출·신탁 설정",
+      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준",
     ]);
     expect(Array.from(detailMenu.querySelectorAll("p")).map((node) => node.textContent)).toEqual([
-      "처리할 업무", "지출·지급", "수납·환급", "회계·증빙", "예산·마감", "설정",
+      "업무", "지출관리", "신탁 집행관리", "지급관리", "수납·환급", "회계·증빙", "예산·마감", "설정",
     ]);
     expect(within(detailMenu).getByRole("link", { name: "업무현황" })).toHaveAttribute("aria-current", "page");
     expect(within(detailMenu).getAllByRole("link").every((link) => link.getAttribute("href")?.startsWith("/"))).toBe(true);
@@ -51,8 +52,8 @@ describe("ErpShell", () => {
   });
 
   it.each([
-    ["지출결의서 관리", "지출관리"], ["지급대기", "지급관리"], ["지급완료 내역", "지급관리"],
-    ["개인 지출 정산·월 마감", "대납·선지급 정산"], ["지출 관리설정", "지출·신탁 설정"],
+    ["지출결의서 관리", "전체 지출"], ["지급대기", "조합 지급대기"], ["지급완료 내역", "전체 지급내역"],
+    ["개인 지출 정산·월 마감", "지출 등록·신청"], ["지출 관리설정", "지출 처리 기준"],
   ])("preserves the active location for legacy page %s", (previous, current) => {
     render(<ErpShell activeLabel="회계/자금" activeDetailLabel={previous}><p>본문</p></ErpShell>);
     expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getByRole("link", { name: current })).toHaveAttribute("aria-current", "page");
@@ -60,14 +61,14 @@ describe("ErpShell", () => {
 
   it("opens mobile navigation with current location and every workflow destination", () => {
     render(<ErpShell activeLabel="회계/자금" activeDetailLabel="지급대기"><p>본문</p></ErpShell>);
-    const toggle = screen.getByRole("button", { name: "회계/자금 · 지급관리 메뉴 열기" });
+    const toggle = screen.getByRole("button", { name: "회계/자금 · 조합 지급대기 메뉴 열기" });
     expect(toggle).toHaveAttribute("aria-expanded", "false");
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" });
-    expect(within(menu).getAllByRole("link")).toHaveLength(15);
-    expect(within(menu).getByRole("link", { name: "지급관리" })).toHaveAttribute("aria-current", "page");
-    expect(within(menu).getByRole("link", { name: "지출·신탁 설정" })).toHaveAttribute("href", "/finance/workflow-settings");
+    expect(within(menu).getAllByRole("link")).toHaveLength(20);
+    expect(within(menu).getByRole("link", { name: "조합 지급대기" })).toHaveAttribute("aria-current", "page");
+    expect(within(menu).getByRole("link", { name: "신탁 집행 기준" })).toHaveAttribute("href", "/finance/workflow-settings");
     fireEvent.click(toggle);
     expect(screen.queryByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" })).not.toBeInTheDocument();
   });
@@ -238,7 +239,7 @@ describe("ErpShell", () => {
     );
   });
 
-  it("renders a vertical sidebar toggle tab and switches labels when clicked", () => {
+  it("collapses to an accessible icon rail without hiding navigation", () => {
     render(
       <ErpShell>
         <p>본문</p>
@@ -250,18 +251,20 @@ describe("ErpShell", () => {
 
     expect(sidebar).toHaveClass("md:block");
     expect(sidebar).not.toHaveClass("xl:block");
-    expect(closeButton).toHaveTextContent("닫기");
-    expect(closeButton).toHaveClass("w-9");
+    expect(closeButton).toHaveAttribute("aria-expanded", "true");
+    expect(sidebar).toHaveClass("w-60");
     expect(closeButton).toHaveClass("md:flex");
     expect(closeButton).not.toHaveClass("xl:flex");
-    expect(closeButton).toHaveClass("rounded-r-md");
+    expect(closeButton).toHaveClass("rounded-lg");
 
     fireEvent.click(closeButton);
 
     const openButton = screen.getByRole("button", { name: "사이드바 열기" });
-    const openLabel = within(openButton).getByText("메").parentElement;
-
-    expect(openButton).toHaveTextContent("메뉴");
-    expect(openLabel).toHaveClass("gap-1.5");
+    expect(openButton).toHaveAttribute("aria-expanded", "false");
+    expect(sidebar).toHaveClass("w-16");
+    expect(within(screen.getByRole("navigation", { name: "축소된 전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
+    fireEvent.click(openButton);
+    expect(screen.queryByRole("navigation", { name: "축소된 전체 메뉴" })).not.toBeInTheDocument();
+    expect(sidebar).toHaveClass("w-60");
   });
 });

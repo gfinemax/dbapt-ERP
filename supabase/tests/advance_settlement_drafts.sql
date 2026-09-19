@@ -70,7 +70,7 @@ begin
  begin perform finance.advance_settlement_command(org,admin_id,'DRAFT_SAVE',jsonb_set(input,'{usage,0,evidence_file_id}',to_jsonb(foreign_file)),'foreign-file'); raise exception 'TEST: foreign evidence'; exception when others then if sqlerrm not like '%조직의 사용 증빙%' then raise; end if; end;
  begin delete from finance.workflow_files where id=evidence; raise exception 'TEST: evidence deleted'; exception when others then if sqlerrm like 'TEST:%' then raise; end if; end;
  result:=finance.advance_settlement_workspace(org,reader);
- if result::text like '%PRIVATE-ACCOUNT%' or result::text like '%test/one%' or result#>>'{policy,approval_enabled}'<>'false' then raise exception 'TEST: private data or policy'; end if;
+ if result::text like '%PRIVATE-ACCOUNT%' or result::text like '%test/one%' or result#>>'{policy,approval_enabled}'<>'true' or result#>>'{policy,budget_posting_enabled}'<>'true' then raise exception 'TEST: private data or policy'; end if;
  perform finance.workflow_command(org,admin_id,'ALLOCATION_REVERSE',jsonb_build_object('id',ret,'reason','Mistaken return link'),'reverse-return');
  if (finance.advance_settlement_totals(org,draft)->>'balance')::numeric<>200 then raise exception 'TEST: reversal not reflected'; end if;
  if (select lock_version from finance.advance_settlement_drafts where id=draft)<>saved_version then raise exception 'TEST: rejected saves changed draft'; end if;

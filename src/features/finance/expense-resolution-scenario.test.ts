@@ -3,9 +3,10 @@ import { transitionExpenseApproval } from "./expense-approval-workflow";
 import { transitionExpenseDisbursement } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions } from "./expense-resolution-insights";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 
 function draft() {
-  return {
+  return expenseResolutionFixture({
     id: "scenario-1",
     resolutionNo: "지결-2026-9999",
     author: "오학동 사무장",
@@ -23,12 +24,12 @@ function draft() {
     settlementStatus: "정산없음",
     subject: "통합 시나리오 검증",
     totalPaymentAmount: 30000,
-  } as ManagedExpenseResolution;
+  });
 }
 
 describe("expense resolution full workflow scenario", () => {
   it("runs request, sequential approval, payment, voucher and confirmation", () => {
-    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: draft(), transitionedAt: "2026-07-12 09:00" });
+    let resolution: ManagedExpenseResolution = transitionExpenseApproval({ actorLabel: "오학동 사무장", command: "REQUEST", resolution: draft(), transitionedAt: "2026-07-12 09:00" });
     for (const actorLabel of ["장현제 부장", "오학동 사무장", "안동연 조합장"]) {
       resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution, transitionedAt: "2026-07-12 10:00" });
     }

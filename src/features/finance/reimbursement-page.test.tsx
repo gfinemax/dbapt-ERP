@@ -26,7 +26,7 @@ describe("reimbursement workspace",()=>{
  });
  it("passes a bank ID rather than a backdated payment date and refreshes after saving",async()=>{
   mocks.command.mockResolvedValue({}); render(<ReimbursementPage workspace={w}/>);
-  fireEvent.click(screen.getByRole("button",{name:"지급 연결",exact:true}));
+  fireEvent.click(screen.getByRole("button",{name:"지급 연결"}));
   fireEvent.change(screen.getByRole("combobox",{name:/실제 출금거래/}),{target:{value:"bank"}});
   fireEvent.change(screen.getByRole("textbox",{name:"처리 사유"}),{target:{value:"이체 확인"}});
   fireEvent.click(screen.getByRole("button",{name:"확인·처리"}));

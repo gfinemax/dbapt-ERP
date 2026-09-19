@@ -1,12 +1,18 @@
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { normalizeEvidenceStatus, validateExpenseCompliance } from "./expense-compliance";
 import { transitionExpenseDisbursement } from "./expense-disbursement-workflow";
-import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 
 const petty = (overrides: Record<string, unknown> = {}) => ({ accountTitle: "사무용품비", amount: 10_000, businessPurpose: "사무국 운영", id: "1", item: "복사용지", spender: "오학동", transactionDate: "2026-07-01", vendor: "문구점", ...overrides });
 
 describe("required expense compliance scenarios A-H", () => {
+  beforeEach(() => { vi.spyOn(Date, "now").mockReturnValue(new Date("2026-07-16T00:00:00+09:00").getTime()); });
+  afterEach(() => { vi.restoreAllMocks(); });
+  it("rejects a past bank withdrawal beyond the configured post-approval limit", () => {
+    const result = validateExpenseCompliance({ actualExpenseDate: "2026-01-01", bankTransactionId: "bank-old", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "기간 초과 검증" });
+    expect(result.errors).toContain("사후결의 허용기간 180일을 초과했습니다.");
+  });
   it("A keeps a personal cash expense without receipt deficient", () => {
     expect(normalizeEvidenceStatus("EXPENSE_FACT_CONFIRMATION", "QUALIFIED")).toBe("ALTERNATIVE");
     expect(validateExpenseCompliance({ actualExpenseDate: "2026-07-01", evidenceKind: "EXPENSE_FACT_CONFIRMATION", evidenceStatus: "DEFICIENT", expenseKind: "PERSONAL_REIMBURSEMENT", missingEvidenceReason: "영수증 분실" }).errors).toEqual([]);
@@ -14,7 +20,7 @@ describe("required expense compliance scenarios A-H", () => {
   it("B approves a linked past bank withdrawal without creating another payment", () => {
     const result = validateExpenseCompliance({ actualExpenseDate: "2026-03-15", bankTransactionId: "bank-1", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "미작성 지출결의 현행화" });
     expect(result.errors).toEqual([]);
-    const resolution = { approvalStatus: "승인완료", bankTransactionId: "bank-1", expenseItems: [], expenseKind: "BANK_POST_APPROVAL", history: [], paymentStatus: "지급대기", resolutionType: "SINGLE", settlementStatus: "정산없음", totalPaymentAmount: 120_000 } as ManagedExpenseResolution;
+    const resolution = expenseResolutionFixture({ approvalStatus: "승인완료", bankTransactionId: "bank-1", expenseItems: [], expenseKind: "BANK_POST_APPROVAL", history: [], paymentStatus: "지급대기", resolutionType: "SINGLE", settlementStatus: "정산없음", totalPaymentAmount: 120_000 });
     expect(() => transitionExpenseDisbursement({ actorLabel: "사무장", command: "PAYMENT_COMPLETE", paidAt: "2026-07-16", paymentAccountNo: "1", paymentMethod: "계좌이체", resolution })).toThrow("추가 지급");
   });
   it("C accepts five allowed small transactions", () => {
@@ -31,7 +37,7 @@ describe("required expense compliance scenarios A-H", () => {
     expect(validateExpenseCompliance({ actualExpenseDate: "2026-07-01", evidenceKind: "CARD_RECEIPT", evidenceStatus: "GENERAL", expenseKind: "PETTY_CASH_BATCH", pettyCashItems: [petty({ accountTitle: "자문료", amount: 20_000, item: "계약 자문료" })] }).errors.join(" ")).toContain("제외");
   });
   it("G blocks voucher creation when only a confirmation exists and resolution is not approved", () => {
-    const resolution = { approvalStatus: "작성중", evidenceKind: "EXPENSE_FACT_CONFIRMATION", expenseItems: [], history: [], paymentStatus: "지급전", resolutionType: "SINGLE", settlementStatus: "정산없음", totalPaymentAmount: 10_000 } as ManagedExpenseResolution;
+    const resolution = expenseResolutionFixture({ approvalStatus: "작성중", evidenceKind: "EXPENSE_FACT_CONFIRMATION", expenseItems: [], history: [], paymentStatus: "지급전", resolutionType: "SINGLE", settlementStatus: "정산없음", totalPaymentAmount: 10_000 });
     expect(() => transitionExpenseDisbursement({ actorLabel: "사무장", command: "VOUCHER_CREATE", resolution, voucherNo: "지출-2026-0001" })).toThrow("지급완료");
   });
   it("H has a database uniqueness gate for one bank transaction per resolution", () => {

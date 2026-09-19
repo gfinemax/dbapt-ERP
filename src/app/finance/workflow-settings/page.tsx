@@ -14,5 +14,5 @@ export default async function Page() {
   const content = workspace ? <FundTrustSettingsPage workspace={workspace} />
     : member ? <section className="rounded-2xl border bg-white p-5"><h1 className="text-2xl font-bold">지출·신탁 설정</h1><p className="mt-3" role="alert">{message}</p></section>
       : <ReimbursementLogin error={message} title="지출·신탁 설정" description="조합의 지출 기준과 신탁 계약을 확인하려면 본인 계정으로 로그인해줘." />;
-  return <ErpShell userLabel={member?.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="지출·신탁 설정"><div className="mx-auto max-w-7xl">{content}</div></ErpShell>;
+  return <ErpShell userLabel={member?.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="신탁 집행 기준"><div className="mx-auto max-w-7xl">{content}</div></ErpShell>;
 }

@@ -1,6 +1,5 @@
 import { budgetUsed, type ReimbursementBudget } from "./reimbursement-domain";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { getDefaultOrganizationId } from "./expense-compliance-repository";
 import type { QuickExpenseRecord, QuickExpenseRecordInput } from "./quick-expense-record";
 
 type QuickExpenseRecordRow = {
@@ -21,6 +20,7 @@ type QuickExpenseRecordRow = {
   expense_detail_id: string | null;
   missing_evidence_reason: string | null;
   id: string;
+  linked_resolution_id: string | null;
   occurred_at: string;
   payment_method: QuickExpenseRecordInput["paymentMethod"];
   record_status: QuickExpenseRecord["recordStatus"];
@@ -29,7 +29,7 @@ type QuickExpenseRecordRow = {
   usage_description: string;
 };
 
-const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,expense_detail_id,evidence_status,evidence_kind,evidence_review_status,evidence_reviewed_at,evidence_review_note,missing_evidence_reason,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at";
+const selectFields = "id,source_type,bank_transaction_id,corporate_card_transaction_id,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,expense_detail_id,evidence_status,evidence_kind,evidence_review_status,evidence_reviewed_at,evidence_review_note,missing_evidence_reason,approval_skip_reason,direct_expense_decision,direct_expense_reasons,record_status,recorded_by_label,created_at,linked_resolution_id";
 
 function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
   return {
@@ -50,6 +50,7 @@ function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
     evidenceReviewNote: row.evidence_review_note ?? undefined,
     missingEvidenceReason: row.missing_evidence_reason ?? undefined,
     id: row.id,
+    linkedResolutionId: row.linked_resolution_id ?? undefined,
     occurredAt: row.occurred_at,
     paymentMethod: row.payment_method,
     recordedByLabel: row.recorded_by_label,
@@ -59,18 +60,18 @@ function mapQuickExpenseRecord(row: QuickExpenseRecordRow): QuickExpenseRecord {
   };
 }
 
-export async function listQuickExpenseRecords(): Promise<QuickExpenseRecord[]> {
+export async function listQuickExpenseRecords(organizationId: string): Promise<QuickExpenseRecord[]> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return [];
-  const { data, error } = await supabase.schema("finance").from("quick_expense_records").select(selectFields).order("occurred_at", { ascending: false }).limit(200);
+  const { data, error } = await supabase.schema("finance").from("quick_expense_records").select(selectFields).eq("organization_id", organizationId).order("occurred_at", { ascending: false }).limit(200);
   if (error) throw new Error(`간편지출 기록 조회 실패: ${error.message}`);
   return ((data ?? []) as QuickExpenseRecordRow[]).map(mapQuickExpenseRecord);
 }
 
-export async function getQuickExpenseRecord(recordId: string): Promise<QuickExpenseRecord | null> {
+export async function getQuickExpenseRecord(recordId: string, organizationId: string): Promise<QuickExpenseRecord | null> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
-  const { data, error } = await supabase.schema("finance").from("quick_expense_records").select(selectFields).eq("id", recordId).maybeSingle();
+  const { data, error } = await supabase.schema("finance").from("quick_expense_records").select(selectFields).eq("id", recordId).eq("organization_id", organizationId).maybeSingle();
   if (error) throw new Error(`간편지출 기록 조회 실패: ${error.message}`);
   return data ? mapQuickExpenseRecord(data as QuickExpenseRecordRow) : null;
 }
@@ -94,10 +95,9 @@ export async function getQuickExpenseBudgetAvailability(organizationId: string, 
   return { approvedAmount, executedAmount, monthlyBudgetAmount, monthlyUsedAmount, unresolvedCount:Number(budget.unresolved_count??0), annualRemainingAmount:approvedAmount-executedAmount-Number(budget.annual_reserved_amount??0), remainingAmount: monthlyBudgetAmount - monthlyUsedAmount - Number(budget.reserved_amount) };
 }
 
-export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { directExpenseDecision: QuickExpenseRecord["directExpenseDecision"]; directExpenseReasons: string[]; recordStatus: QuickExpenseRecord["recordStatus"] }) {
+export async function saveQuickExpenseRecord(input: QuickExpenseRecordInput & { directExpenseDecision: QuickExpenseRecord["directExpenseDecision"]; directExpenseReasons: string[]; recordStatus: QuickExpenseRecord["recordStatus"] }, organizationId: string) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
-  const organizationId = await getDefaultOrganizationId();
   if (!organizationId) throw new Error("간편지출을 귀속할 활성 조합이 없습니다.");
   const { data, error } = await supabase.schema("finance").from("quick_expense_records").insert({
     amount: input.amount,

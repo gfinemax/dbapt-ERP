@@ -20,11 +20,9 @@ describe("bank transaction file reader", () => {
       ],
     ], {
       sheet: "거래내역",
-    }, {
-      buffer: true,
     });
     const buffer = await output.toBuffer();
-    const file = new File([buffer], "은행거래.xlsx", {
+    const file = new File([Uint8Array.from(buffer)], "은행거래.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 
@@ -46,11 +44,9 @@ describe("bank transaction file reader", () => {
       ],
     ], {
       sheet: "거래내역",
-    }, {
-      buffer: true,
     });
     const buffer = await output.toBuffer();
-    const file = new File([buffer], "은행거래.xlsx", {
+    const file = new File([Uint8Array.from(buffer)], "은행거래.xlsx", {
       type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     });
 

@@ -9,6 +9,7 @@ import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
+import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -1612,6 +1613,55 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
   }, "manual");
 }
 
+function createQuickExpenseConversionFormState(source: QuickExpenseConversionDraft, nextNo: string, authorLabel: string): ResolutionFormState {
+  const base = createFormState(nextNo, source.occurredDate, authorLabel);
+  const evidenceKind: EvidenceKind = source.evidenceKind === "CARD_TRANSACTION" ? "CARD_RECEIPT"
+    : source.evidenceKind === "RECEIPT" ? "SIMPLE_RECEIPT"
+      : source.evidenceKind === "ALTERNATIVE" ? "OTHER_ALTERNATIVE" : "NONE";
+  const evidenceStatus: EvidenceStatus = ["QUALIFIED", "GENERAL", "ALTERNATIVE"].includes(source.evidenceStatus)
+    ? source.evidenceStatus as EvidenceStatus : "NONE";
+  const expenseBurdenType: ExpenseBurdenType = source.paymentMethod === "CORPORATE_CARD" ? "CORPORATE_CARD"
+    : ["BANK_TRANSFER", "AUTO_DEBIT"].includes(source.paymentMethod) ? "ORGANIZATION_PAID"
+      : source.paymentMethod === "CASH" ? "CASH" : "EMPLOYEE_PREPAID";
+  const expenseKind: ExpenseKind = source.paymentMethod === "PERSONAL_PREPAID" ? "PERSONAL_REIMBURSEMENT" : "GENERAL";
+  const amount = String(source.amount);
+  return {
+    ...base,
+    accountingDate: source.occurredDate,
+    actualExpenseDate: source.occurredDate,
+    plannedPaymentDate: source.occurredDate,
+    paymentFlowType: "사후정산",
+    expenseTiming: "REIMBURSEMENT",
+    executionMethod: source.paymentMethod === "CORPORATE_CARD" ? "CORPORATE_CARD" : "AUTHORIZATION_ONLY",
+    expenseBurdenType,
+    expenseKind,
+    approvalSkipReason: source.approvalSkipReason,
+    bankTransactionId: source.bankTransactionId ?? "",
+    cardTransactionId: source.cardTransactionId ?? "",
+    cardReconciliationStatus: source.cardTransactionId ? "MATCHED" : "PENDING",
+    budgetItem: source.budgetItem,
+    expenseDetailId: source.expenseDetailId ?? "",
+    operationExpenseDetail: source.usageDescription,
+    subject: source.usageDescription,
+    vendorName: source.counterparty,
+    reason: source.usageDescription,
+    quickEntryMode: "BUDGET_DIRECT",
+    quickPaymentMethod: source.paymentMethod,
+    singleItems: [createSingleExpenseItem({ itemName: source.usageDescription, quantity: "1", taxCategory: "NO_VAT", unitPrice: amount })],
+    accountAllocations: [createAccountAllocation({ amount, budgetItem: source.budgetItem, description: source.usageDescription })],
+    supplyAmount: amount,
+    vat: "0",
+    actualUsedAmount: amount,
+    postApprovalReason: "간편지출에서 정식 지출결의로 전환",
+    settlementRecipient: expenseKind === "PERSONAL_REIMBURSEMENT" ? authorLabel : "",
+    evidenceFiles: source.evidenceFiles,
+    evidenceKind,
+    evidenceStatus,
+    evidenceType: (["세금계산서", "계산서", "영수증", "현금영수증", "이체확인증", "계약서", "견적서", "의결서"] as string[]).includes(source.evidenceFiles[0]?.evidenceType ?? "")
+      ? source.evidenceFiles[0]!.evidenceType as EvidenceType : "기타",
+  };
+}
+
 function toNumber(value: string) {
   const number = Number(value.replaceAll(",", ""));
   return Number.isFinite(number) ? number : 0;
@@ -2119,7 +2169,9 @@ export function ExpenseResolutionPage({
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
   initialEntryStart,
+  initialQuickExpense,
   initialResolutionId,
+  convertQuickExpense,
   persistResolution,
   saveFactConfirmation,
   listFactConfirmations,
@@ -2146,7 +2198,9 @@ export function ExpenseResolutionPage({
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
   initialEntryStart?: ExpenseEntryStart;
+  initialQuickExpense?: QuickExpenseConversionDraft;
   initialResolutionId?: string;
+  convertQuickExpense?: (sourceId: string, resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
   saveFactConfirmation?: (input: ExpenseFactConfirmationInput) => Promise<string>;
   listFactConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>;
@@ -2189,7 +2243,7 @@ export function ExpenseResolutionPage({
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialResolutionId && Boolean(initialBankDraft || initialEntryStart));
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
@@ -2200,9 +2254,11 @@ export function ExpenseResolutionPage({
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
     if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions)), author: currentUserName, settlementManager: currentUserName };
+    if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNo(resolutions), currentUserName);
     const form = createFormState(getNextResolutionNo(resolutions), undefined, currentUserName);
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
+  const [quickConversionSourceId, setQuickConversionSourceId] = useState<string | null>(initialQuickExpense?.sourceId ?? null);
   const expenseDetailSelectionRef = useRef<"AUTO" | "MANUAL">("AUTO");
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
     actualPaidAmount: "",
@@ -2327,6 +2383,7 @@ export function ExpenseResolutionPage({
   }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, initialExpenseDetails, isCreateModalOpen]);
 
   function openCreateModal() {
+    setQuickConversionSourceId(null);
     setBatchImportResult(null);
     setBatchImportFileName("");
     setBatchImportError("");
@@ -2339,6 +2396,7 @@ export function ExpenseResolutionPage({
   }
 
   function openExcelImportModal() {
+    setQuickConversionSourceId(null);
     setEditingResolutionId(null);
     expenseDetailSelectionRef.current = "AUTO";
     setBatchImportResult(null);
@@ -2358,9 +2416,11 @@ export function ExpenseResolutionPage({
     if (savingResolution.current) return;
     setIsCreateModalOpen(false);
     setEditingResolutionId(null);
+    setQuickConversionSourceId(null);
   }
 
   function openEditModal(resolution: ManagedExpenseResolution) {
+    setQuickConversionSourceId(null);
     setEvidenceUploadError("");
     setPrintWarning(null);
     setSelectedDetailId(null);
@@ -3270,7 +3330,10 @@ export function ExpenseResolutionPage({
       savingResolution.current = true;
       setIsSavingResolution(true);
       setSaveError("");
-      const savedDraft = persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
+      const savedDraft = quickConversionSourceId && convertQuickExpense
+        ? await convertQuickExpense(quickConversionSourceId, resolutionToSave)
+        : persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
+      if (quickConversionSourceId) setQuickConversionSourceId(null);
       if (viewer && mode === "approval-request") {
         setResolutions(current => [savedDraft, ...current.filter(r => r.id !== savedDraft.id)]);
         setEditingResolutionId(savedDraft.id);
@@ -3872,6 +3935,7 @@ export function ExpenseResolutionPage({
           expenseDetails={initialExpenseDetails}
           settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
           isEditing={Boolean(editingResolutionId)}
+          isQuickConversion={Boolean(quickConversionSourceId)}
           isEvidenceUploading={isEvidenceUploading}
           saveError={saveError}
           isSaving={isSavingResolution}
@@ -3987,6 +4051,7 @@ function ExpenseResolutionCreateModal({
   formState,
   settlementCandidates,
   isEditing,
+  isQuickConversion,
   isEvidenceUploading,
   onAddBatchItem,
   onAddSingleItem,
@@ -4033,6 +4098,7 @@ function ExpenseResolutionCreateModal({
   formState: ResolutionFormState;
   settlementCandidates: ManagedExpenseResolution[];
   isEditing: boolean;
+  isQuickConversion: boolean;
   isEvidenceUploading: boolean;
   onAddBatchItem: () => void;
   onAddSingleItem: () => void;
@@ -4280,11 +4346,13 @@ function ExpenseResolutionCreateModal({
         <div className="flex items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-6 py-5">
           <div>
             <h2 className="text-2xl font-bold" id="expense-resolution-dialog-title">
-              {isEditing ? "지출결의서 수정" : "지출결의서 작성"}
+              {isEditing ? "지출결의서 수정" : isQuickConversion ? "간편지출을 정식결의로 전환" : "지출결의서 작성"}
             </h2>
             <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">
               {isEditing
                 ? "누락된 결의 내용을 보완합니다. 승인대기 문서는 저장 시 결재 상태를 다시 시작합니다."
+                : isQuickConversion
+                  ? "기존 사용내용과 증빙을 가져왔어. 프로젝트·계정·세금 구분을 확인하면 원본과 연결된 지출결의 초안으로 저장돼."
                 : "조합 지출 전에 결의서를 작성하고 결재 승인 후 지급대기 및 지출전표 생성으로 연결합니다."}
             </p>
             <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">{lastSavedAt ? `마지막 임시저장 ${lastSavedAt}` : "아직 저장되지 않음 · 변경사항은 임시저장으로 보관할 수 있습니다."}</p>

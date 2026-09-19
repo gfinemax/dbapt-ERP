@@ -10,6 +10,7 @@ import { registeredAccountSubjects } from "@/features/basic-info/account-subject
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
 import { registeredBankAccounts } from "@/features/basic-info/business-partner-data";
 import { formatKrw } from "./finance-data";
+import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
 import { readBankTransactionFile } from "./bank-transaction-file";
 
@@ -220,7 +221,7 @@ export function BankTransactionUploadPage({
             </Button>
           </div>
           {saveMessage ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{saveMessage}</p> : null}
-          {savedTransactionIds.length ? <div className="mx-4 mt-3 flex flex-wrap gap-2">{savedTransactionIds.map((id, index) => <a className="rounded-full border border-[var(--color-deep-cobalt)] bg-white px-3 py-1.5 text-xs font-bold text-[var(--color-deep-cobalt)]" href={`/finance/exp?bankTransactionId=${encodeURIComponent(id)}`} key={id}>{index + 1}번 출금거래 사후결의 초안 작성</a>)}</div> : null}
+          {savedTransactionIds.length ? <div className="mx-4 mt-3 flex flex-wrap gap-2">{savedTransactionIds.map((id, index) => <div className="flex flex-wrap gap-2 rounded-lg border p-2" key={id}><a className="rounded-full border border-[var(--color-deep-cobalt)] bg-white px-3 py-1.5 text-xs font-bold text-[var(--color-deep-cobalt)]" href={`/finance/exp?bankTransactionId=${encodeURIComponent(id)}`}>{index + 1}번 출금거래 사후결의 초안 작성</a><a className="rounded-full border bg-white px-3 py-1.5 text-xs font-bold" href={quickExpenseEntryHref("BANK_TRANSFER", id)}>{index + 1}번 출금거래 간편 등록</a></div>)}</div> : null}
           {saveError ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1180px] border-collapse text-left text-sm">

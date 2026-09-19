@@ -14,7 +14,7 @@ describe("OpenAI expense evidence analysis", () => {
       itemName: "커피", items: [], quantity: 1, recognizedText: "합계 32,600원", supplyAmount: null, totalAmount: 32600, vatAmount: null,
     }) } }] }), { status: 200 }));
 
-    const result = await extractExpenseEvidenceWithOpenAI(new File([await document.save()], "receipt.pdf", { type: "application/pdf" }), {
+    const result = await extractExpenseEvidenceWithOpenAI(new File([Uint8Array.from(await document.save())], "receipt.pdf", { type: "application/pdf" }), {
       apiKey: "test-key", fetcher,
     });
 

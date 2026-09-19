@@ -15,5 +15,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ k
   const content = workspace ? <ExpenseWorkspacePage key={JSON.stringify(query)} workspace={workspace} expenseDetails={expenseDetails} initialKind={query.kind} initialConnection={query.connection} initialSearch={query.q} initialStatus={query.status} initialSourceKind={query.source_kind} initialSourceId={query.source_id} />
     : member ? <section className="rounded-2xl border bg-white p-5"><h1 className="text-2xl font-bold">지출관리</h1><p className="mt-3" role="alert">{message}</p></section>
       : <ReimbursementLogin error={message} title="지출관리" description="원본 조회와 연결 권한을 확인하기 위해 본인 계정으로 로그인해줘." />;
-  return <ErpShell userLabel={member?.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="지출관리"><div className="mx-auto max-w-7xl">{content}</div></ErpShell>;
+  return <ErpShell userLabel={member?.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="전체 지출"><div className="mx-auto max-w-7xl">{content}</div></ErpShell>;
 }

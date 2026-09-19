@@ -26,6 +26,7 @@ import type { ExpenseComplianceSettings } from "@/features/finance/expense-compl
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
 import { evaluateDirectExpensePolicy } from "@/features/finance/direct-expense-policy";
 import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-small-expense";
+import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
 
 const expenseEvidenceBucket = "expense-evidence";
 
@@ -352,6 +353,17 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   revalidatePath("/finance/exp");
   revalidatePath("/finance/approval-inbox");
   revalidatePath("/approval/inbox");
+  return saved;
+}
+
+export async function convertQuickExpenseResolutionAction(sourceId: string, resolution: ManagedExpenseResolution) {
+  if (!sourceId.trim()) throw new Error("전환할 간편지출 원본이 필요합니다.");
+  if (resolution.approvalStatus !== "작성중") throw new Error("먼저 전환 초안을 저장한 뒤 승인요청해주세요.");
+  const saved = await convertQuickExpenseToResolution(sourceId, resolution);
+  revalidatePath("/finance/quick-expenses");
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/expenses");
+  revalidatePath("/finance/exp");
   return saved;
 }
 

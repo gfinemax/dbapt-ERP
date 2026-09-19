@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import type { ReactNode } from "react";
 import { Fragment, useState } from "react";
+import { ErpQuickMenu } from "./erp-quick-menu";
 import { financeNavigation, normalizeFinanceDetailLabel } from "@/features/finance/finance-navigation";
 
 const primaryNavigation = [
@@ -184,11 +185,6 @@ const defaultWorkspaceLabels: Record<string, string> = {
   "회계/자금": "전표·증빙관리",
 };
 
-const quickMenus = ["조합원 등록", "분담금 수납처리", "은행거래 업로드", "카드내역", "지출결의 작성", "지급대기", "증빙 미첨부", "미납 조합원"];
-const quickMenuHrefs: Partial<Record<(typeof quickMenus)[number], string>> = {
-  "지출결의 작성": "/finance/expense-resolutions?start=advance",
-};
-
 function normalizeActiveLabel(activeLabel: string) {
   if (activeLabel === "조합원관리") {
     return "조합원";
@@ -219,8 +215,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
-  const sidebarToggleText = isSidebarOpen ? "닫기" : "메뉴";
-  const sidebarToggleLetters = Array.from(sidebarToggleText);
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
   const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];
@@ -252,10 +246,13 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
     <div className="min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)]">
       <aside
         aria-label="사이드바"
-        className={`fixed inset-y-0 left-0 z-20 hidden w-64 overflow-y-auto overscroll-contain border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/92 px-4 py-5 backdrop-blur transition-transform duration-300 ease-out md:block ${
-          isSidebarOpen ? "translate-x-0" : "-translate-x-full"
+        className={`fixed inset-y-0 left-0 z-20 hidden overflow-y-auto overscroll-contain border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)] py-5 transition-[width] duration-200 motion-reduce:transition-none md:block ${
+          isSidebarOpen ? "w-60 px-3" : "w-16 px-2"
         }`}
       >
+        {!isSidebarOpen ? <nav aria-label="축소된 전체 메뉴" className="space-y-2 pt-10">
+          {primaryNavigation.map((item) => <a key={item.label} href={item.href} title={item.label} aria-label={item.label} aria-current={item.label === selectedMenu ? "page" : undefined} className={`flex size-11 items-center justify-center rounded-lg focus-visible:outline-2 ${item.label === selectedMenu ? "bg-[var(--color-morning-tint)]" : "hover:bg-white"}`}><item.icon aria-hidden="true" className="size-5" /></a>)}
+        </nav> : <>
         <div className={`px-2 ${isDetailMode && hasDetailMenus ? "mb-5" : "mb-7"}`}>
           {isDetailMode && hasDetailMenus ? (
             <button
@@ -327,43 +324,24 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           </nav>
         )}
 
-        <div className="mt-6 border-t border-[var(--color-soft-border)] pt-4">
-          <div className="mb-2 flex items-center justify-between px-2">
-            <p className="text-xs font-bold text-[var(--color-fog)]">퀵메뉴</p>
-            <Settings className="size-3.5 text-[var(--color-fog)]" />
-          </div>
-          <div className="grid grid-cols-2 gap-1.5">
-            {quickMenus.map((item) => {
-              const className = "flex min-h-9 items-center rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]";
-              const href = quickMenuHrefs[item];
-              return href ? (
-                <a aria-label={`퀵메뉴 ${item}`} className={className} href={href} key={item}>{item}</a>
-              ) : (
-                <button aria-label={`퀵메뉴 ${item}`} className={className} key={item} onClick={() => onQuickMenuSelect?.(item)} type="button">{item}</button>
-              );
-            })}
-          </div>
-        </div>
+        <ErpQuickMenu onSelect={onQuickMenuSelect} />
+        </>}
       </aside>
 
       <button
         aria-label={sidebarToggleLabel}
-        aria-pressed={!isSidebarOpen}
-        className={`fixed top-1/2 z-30 hidden h-36 w-9 -translate-y-1/2 flex-col items-center justify-center gap-2 rounded-r-md border border-l-0 border-[rgba(16,20,24,0.16)] bg-[#8BEA00] text-[#101418] shadow-[0_8px_20px_rgba(16,20,24,0.18)] transition-[left,background-color] duration-300 ease-out hover:bg-[#6FD100] md:flex ${
-          isSidebarOpen ? "left-64" : "left-0"
+        aria-expanded={isSidebarOpen}
+        title={sidebarToggleLabel}
+        className={`fixed top-4 z-30 hidden size-8 items-center justify-center rounded-lg border border-[var(--color-soft-border)] bg-white text-[var(--color-stone)] shadow-sm transition-[left] duration-200 motion-reduce:transition-none hover:bg-[var(--color-morning-tint)] focus-visible:outline-2 md:flex ${
+          isSidebarOpen ? "left-56" : "left-4"
         }`}
         onClick={() => setIsSidebarOpen((current) => !current)}
         type="button"
       >
         <SidebarToggleIcon className="size-4 shrink-0 stroke-[3]" />
-        <span className="flex flex-col items-center gap-1.5 text-xs font-black tracking-normal">
-          {sidebarToggleLetters.map((letter) => (
-            <span key={letter}>{letter}</span>
-          ))}
-        </span>
       </button>
 
-      <div className={`transition-[padding] duration-300 ease-out ${isSidebarOpen ? "md:pl-64" : "md:pl-0"}`}>
+      <div className={`transition-[padding] duration-200 motion-reduce:transition-none ${isSidebarOpen ? "md:pl-60" : "md:pl-16"}`}>
         <header className="sticky top-0 z-10 border-b border-[var(--color-soft-border)] bg-[var(--color-sky-wash)]/86 backdrop-blur">
           <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">

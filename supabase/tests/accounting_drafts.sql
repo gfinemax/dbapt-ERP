@@ -97,7 +97,7 @@ begin
  if (s->>'existing_voucher_id')::uuid<>v then raise exception 'TEST: quick-first resolution bridge'; end if;
  begin perform finance.accounting_legacy_check(org,actor,rid); raise exception 'TEST: converted quick legacy mutation'; exception when others then if sqlerrm not like '%전표관리에서 확인%' then raise; end if; end;
  begin perform finance.accounting_command(org,actor,'DRAFT_CREATE',jsonb_build_object('source_kind','RECOGNITION','source_id',txr,'source_signature',s->>'signature','voucher_date','2026-09-01','lines','[]'::jsonb),'duplicate-resolution'); raise exception 'TEST: duplicate converted usage'; exception when others then if sqlerrm not like '%이미 연결%' then raise; end if; end;
- update finance.quick_expense_records set amount=100000000000000 where id=qid;
+ perform finance.quick_expense_correct_converted(org,actor,qid,jsonb_build_object('amount',100000000000000,'reason','원본 변경 감지 검증','expected_updated_at',(select updated_at::text from finance.quick_expense_records where id=qid)),'accounting-stale-correction');
  result:=finance.accounting_workspace(org,actor);
  if jsonb_array_length(result->'vouchers')<>1 or not exists(select 1 from jsonb_array_elements(result->'sources') unavailable where unavailable->>'id'=txq::text and unavailable->>'blocked_reason' is not null and unavailable->'amount'='null'::jsonb and unavailable->>'signature'='') then raise exception 'TEST: unavailable source hides workspace or invents zero'; end if;
  if result#>>'{vouchers,0,source_stale}'<>'true' then raise exception 'TEST: unavailable source not stale'; end if;

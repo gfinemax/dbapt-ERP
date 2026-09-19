@@ -7,6 +7,17 @@ import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { reimbursementDb } from "@/features/finance/reimbursement-repository";
 import type { ExpenseEvidenceAttachment } from "@/features/finance/expense-evidence";
 import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
+import { loadExpenseClassification, saveExpenseClassification } from "@/features/finance/expense-classification-repository";
+import type { ExpenseClassificationInput } from "@/features/finance/expense-classification";
+
+export async function loadExpenseClassificationAction(transactionId: string) {
+  return loadExpenseClassification(transactionId);
+}
+export async function saveExpenseClassificationAction(input: ExpenseClassificationInput, operationKey: string) {
+  const result = await saveExpenseClassification(input, operationKey);
+  revalidatePath("/finance/expenses");
+  return result;
+}
 
 export async function connectExpenseOriginal(sourceKind: ExpenseSourceKind, sourceId: string, operationKey: string) {
   if (!["RESOLUTION", "QUICK", "PERSONAL"].includes(sourceKind) || !sourceId.trim()) throw new Error("연결할 지출 원본을 확인해주세요.");

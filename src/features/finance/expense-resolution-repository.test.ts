@@ -7,6 +7,7 @@ import {
   mapExpenseResolutionToUpsert,
 } from "./expense-resolution-repository";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 
 describe("expense resolution repository", () => {
   it("maps the searchable lifecycle fields and preserves the complete snapshot", () => {
@@ -36,7 +37,7 @@ describe("expense resolution repository", () => {
   });
 
   it("normalizes single items and account allocations into child rows", () => {
-    const resolution = {
+    const resolution = expenseResolutionFixture({
       id: "expense-resolution-1",
       expenseItems: [],
       singleItems: [
@@ -45,7 +46,7 @@ describe("expense resolution repository", () => {
       accountAllocations: [
         { id: "allocation-1", accountTitle: "소모품비", amount: "11000", budgetItem: "운영비 > 사무용품", description: "복사용지" },
       ],
-    } as ManagedExpenseResolution;
+    });
 
     expect(mapExpenseResolutionItemsToRows(resolution)).toEqual([
       expect.objectContaining({ id: "item-1", item_kind: "SINGLE", item_no: 1, resolution_id: resolution.id, supply_amount: 10000, vat_amount: 1000, total_amount: 11000 }),

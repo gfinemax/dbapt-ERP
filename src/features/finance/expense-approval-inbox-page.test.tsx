@@ -59,7 +59,7 @@ describe("ExpenseApprovalInboxPage", () => {
       expectedStatus: "승인대기",
       resolutionId: resolution.id,
     })));
-    fireEvent.click(screen.getByRole("button", { name: "전체", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "전체" }));
     expect(await screen.findByText("안동연 조합장")).toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "지출결의 검색" }), { target: { value: "존재하지않는거래처" } });
     expect(screen.queryByText("지결-2026-0001")).not.toBeInTheDocument();

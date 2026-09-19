@@ -1,7 +1,6 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import type { CorporateCardTransactionImportRow } from "./corporate-card-transaction-import";
-import { getDefaultOrganizationId } from "./expense-compliance-repository";
 
 type CorporateCardTransactionRow = {
   amount: number | string;
@@ -31,10 +30,9 @@ export function mapCorporateCardTransaction(row: CorporateCardTransactionRow): C
   };
 }
 
-export async function importCorporateCardTransactions(rows: CorporateCardTransactionImportRow[]) {
+export async function importCorporateCardTransactions(rows: CorporateCardTransactionImportRow[], organizationId: string) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
-  const organizationId = await getDefaultOrganizationId();
   if (!organizationId) throw new Error("법인카드 내역을 귀속할 활성 조합이 없습니다.");
   const payload = rows.map((row) => ({ amount: row.amount, approval_no: row.approvalNo ?? null, approved_at: row.approvedAt, card_last_four: row.cardLastFour, card_name: row.cardName, category: row.category ?? null, memo: row.memo ?? null, merchant_name: row.merchantName, organization_id: organizationId, transaction_uid: row.transactionUid }));
   const { data, error } = await supabase.schema("finance").from("corporate_card_transactions").upsert(payload, { onConflict: "organization_id,transaction_uid", ignoreDuplicates: true }).select("id");

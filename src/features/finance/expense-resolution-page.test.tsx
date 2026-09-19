@@ -1,7 +1,9 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type ManagedExpenseResolution } from "./expense-resolution-page";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
+import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 describe("ExpenseResolutionPage", () => {
   it("turns stale Server Action errors into a refresh instruction", () => {
@@ -47,11 +49,11 @@ describe("ExpenseResolutionPage", () => {
   });
 
   it("routes new small expenses away from resolutions and keeps legacy batches read-only", () => {
-    const legacy = {
+    const legacy = expenseResolutionFixture({
       approvalLine: [],
       approvalStatus: "작성중",
       author: "오학동 사무장",
-      budgetSnapshot: { budgetCheckStatus: "PENDING", budgetPeriod: "2026-07", budgetUsageRate: 0, calculationBasis: "-", currentAnnualBudgetAmount: 0, currentRequestAmount: 10_000, expectedUsedAmount: 10_000, monthlyBudgetAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, remainingBudgetAmount: 0, usedAmount: 0 },
+      budgetSnapshot: { budgetCheckStatus: "예산항목 선택 필요", budgetPeriod: "2026-07", budgetUsageRate: 0, calculationBasis: "-", currentAnnualBudgetAmount: 0, currentRequestAmount: 10_000, expectedUsedAmount: 10_000, monthlyBudgetAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, remainingBudgetAmount: 0, usedAmount: 0 },
       createdAt: "2026-07-01",
       creationSource: "SMALL_EXPENSE",
       evidenceMaterials: [],
@@ -69,8 +71,7 @@ describe("ExpenseResolutionPage", () => {
       totalPaymentAmount: 10_000,
       vat: 0,
       vendorName: "과거 거래처",
-      voucherStatus: "미생성",
-    } as ManagedExpenseResolution;
+    });
     render(<ExpenseResolutionPage initialResolutions={[legacy]} />);
 
     expect(screen.queryByLabelText("소액 일괄결의 필터")).not.toBeInTheDocument();
@@ -108,6 +109,33 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
+  });
+
+  it("reuses a quick original and its evidence in the shared formal draft", async () => {
+    vi.useRealTimers();
+    const source: QuickExpenseConversionDraft = {
+      amount: 32000, approvalSkipReason: "Policy", budgetItem: "Operating supplies", cardTransactionId: "card-one",
+      counterparty: "Paint vendor", evidenceKind: "RECEIPT", evidenceStatus: "GENERAL", expenseDetailId: "detail-one",
+      occurredDate: "2026-09-19", paymentMethod: "CORPORATE_CARD", recordStatus: "NEEDS_RESOLUTION", sourceId: "quick-one",
+      usageDescription: "Paint supplies", evidenceFiles: [{ contentType: "image/jpeg", evidenceType: "영수증", fileName: "receipt.jpg",
+        fileSize: 120, id: "quick-evidence", ocrData: {}, ocrJobId: "job-one", ocrStatus: "EXTRACTED", storageBucket: "expense-evidence",
+        storagePath: "org/receipt.jpg", uploadedAt: "2026-09-19T01:00:00Z", uploadedBy: "Verified author" }],
+    };
+    const convertQuickExpense = vi.fn(async (_sourceId, resolution) => resolution);
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    render(<ExpenseResolutionPage convertQuickExpense={convertQuickExpense} initialQuickExpense={source} initialResolutions={[]} persistResolution={persistResolution} />);
+    const dialog = screen.getByRole("dialog", { name: "간편지출을 정식결의로 전환" });
+    expect(within(dialog).getByLabelText("건명 (필수)")).toHaveValue("Paint supplies");
+    fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
+    expect(within(dialog).getByLabelText("거래처명")).toHaveValue("Paint vendor");
+    expect(within(dialog).getByLabelText("단가 1")).toHaveValue(32000);
+    expect(within(dialog).getByText("receipt.jpg")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
+    await waitFor(() => expect(convertQuickExpense).toHaveBeenCalledWith("quick-one", expect.objectContaining({
+      actualExpenseDate: "2026-09-19", budgetItem: "Operating supplies", cardTransactionId: "card-one",
+      subject: "Paint supplies", totalPaymentAmount: 32000, vendorName: "Paint vendor",
+    })));
+    expect(persistResolution).not.toHaveBeenCalled();
   });
 
   it("automatically saves the shared expense detail from the resolution contents", async () => {

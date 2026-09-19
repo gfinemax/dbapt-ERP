@@ -2,15 +2,19 @@ begin;
 do $$
 declare org uuid:=gen_random_uuid(); other_org uuid:=gen_random_uuid(); admin_id uuid:=gen_random_uuid(); employee uuid:=gen_random_uuid();
  qid uuid:=gen_random_uuid(); other_qid uuid:=gen_random_uuid(); job_id uuid:=gen_random_uuid(); foreign_job uuid:=gen_random_uuid(); tx uuid; before_time timestamptz; result jsonb; workspace jsonb;
+ budget_id uuid:=gen_random_uuid(); detail_id uuid:=gen_random_uuid();
 begin
  insert into core.organizations(id,name,status) values(org,'Quick OCR test','active'),(other_org,'Other org','active');
  insert into auth.users(id) values(admin_id),(employee);
  insert into finance.reimbursement_members values(org,admin_id,'Admin',array['ADMIN'],true),(org,employee,'Employee','{}',true);
- insert into approval.budgets(organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount)
- values(org,2026,'운영비',1200000,0,100000);
+ insert into approval.budgets(id,organization_id,fiscal_year,budget_item,approved_amount,executed_amount,monthly_amount)
+ values(budget_id,org,2026,'운영비',1200000,0,100000);
+ insert into finance.expense_detail_items(id,budget_id,code,group_name,name,quick_expense_eligible)
+ values(detail_id,budget_id,'TEST-OFFICE','운영비','사무용품',true);
  insert into finance.quick_expense_records(id,organization_id,source_type,payment_method,occurred_at,amount,counterparty,usage_description,budget_item,evidence_status,approval_skip_reason,direct_expense_decision,record_status,recorded_by_label)
  values(qid,org,'MANUAL','CORPORATE_CARD','2026-09-07',14000,'다이소','사무용품','운영비','NONE','승인 예산 내 일상 지출','ALLOWED','SOURCE_PENDING','Admin'),
  (other_qid,org,'MANUAL','CASH','2026-09-07',1000,'다른 거래처','다른 지출','운영비','NONE','일상 지출','ALLOWED','RECORDED','Admin');
+ update finance.quick_expense_records set expense_detail_id=detail_id where id=qid;
  tx:=(finance.workflow_command(org,admin_id,'ENROLL',jsonb_build_object('source_kind','QUICK','source_id',qid),'quick-ocr-enroll')->>'id')::uuid;
  insert into finance.expense_evidence_ocr_jobs(id,resolution_no,storage_bucket,storage_path,original_filename,content_type,evidence_type,status,stage,progress,result_data,organization_id,created_by)
  values(job_id,'QUICK-'||qid,'expense-evidence',org||'/'||admin_id||'/quick/receipt.jpg','receipt.jpg','image/jpeg','영수증','COMPLETED','COMPLETED',100,'{"issuer":"(주)아성다이소봉천본점","totalAmount":14000,"itemName":"서류꽂이"}',org,admin_id),

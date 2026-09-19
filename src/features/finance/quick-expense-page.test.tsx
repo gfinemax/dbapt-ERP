@@ -9,6 +9,26 @@ afterEach(() => vi.unstubAllGlobals());
 describe("QuickExpensePage", () => {
   const printableRecord = { amount: 32600, approvalSkipReason: "승인 예산 내 일상 지출", budgetItem: "일반운영비>소모품비", corporateCardTransactionId: "card-1", counterparty: "주식회사공단유통", createdAt: "2026-09-18T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: [], evidenceStatus: "GENERAL" as const, evidenceReviewStatus: "APPROVED" as const, id: "8e3f3446-1111-2222-3333-444444444444", occurredAt: "2026-09-18T10:00:00+09:00", paymentMethod: "CORPORATE_CARD" as const, recordedByLabel: "오학동 사무장", recordStatus: "RECORDED" as const, sourceType: "CORPORATE_CARD" as const, usageDescription: "맥심 모카골드 커피믹스 구입" };
 
+  it("opens only a persisted resolution link, not an inferred converted destination", () => {
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[
+      { ...printableRecord, id: "linked", recordStatus: "CONVERTED", linkedResolutionId: "resolution&one" },
+      { ...printableRecord, id: "refund", recordStatus: "CONVERTED" },
+    ]} />);
+    const links = screen.getAllByRole("link", { name: "연결된 지출결의 보기" });
+    expect(links).toHaveLength(1);
+    expect(links[0]).toHaveAttribute("href", "/finance/expense-resolutions?resolutionId=resolution%26one");
+  });
+
+  it("offers formal authoring only for a source that requires a resolution", () => {
+    render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[
+      { ...printableRecord, id: "needs&one", recordStatus: "NEEDS_RESOLUTION" },
+      { ...printableRecord, id: "complete", recordStatus: "RECORDED" },
+    ]} />);
+    const link = screen.getByRole("link", { name: "정식 지출결의 작성" });
+    expect(link).toHaveAttribute("href", "/finance/expense-resolutions?quickExpenseId=needs%26one");
+    expect(screen.getAllByRole("link", { name: "정식 지출결의 작성" })).toHaveLength(1);
+  });
+
   it("shows payment methods in the requested priority order", () => {
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
     expect(screen.getByText("월별 총괄표와 영수증 첨부지를 A4로 묶어 보관하고, 건별 기록서는 필요할 때만 출력할 수 있어.")).toBeInTheDocument();
