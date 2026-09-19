@@ -77,12 +77,13 @@ describe("ErpShell", () => {
   });
 
   it("shows positive finance queue badges without changing link names", async () => {
-    navigation.badges.mockResolvedValue({ "전체 지출": 3, "기존 자료 정리": 8, "증빙자료 관리": 0 });
+    navigation.badges.mockResolvedValue({ "전체 지출": 3, "지출 등록·신청": 2, "기존 자료 정리": 8, "증빙자료 관리": 0 });
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
     expect(await within(detailMenu).findByLabelText("전체 지출 대기 3건")).toHaveTextContent("3");
     expect(within(detailMenu).getByRole("link", { name: /기존 자료 정리/ })).toHaveAttribute("href", "/finance/data-cleanup");
     await waitFor(() => expect(within(detailMenu).queryByLabelText("증빙자료 관리 대기 0건")).not.toBeInTheDocument());
+    expect(await within(screen.getByRole("region", { name: "퀵메뉴" })).findByLabelText("지출 등록·신청 대기 2건")).toHaveTextContent("2");
   });
 
   it("renders basic info as a finance detail menu", () => {

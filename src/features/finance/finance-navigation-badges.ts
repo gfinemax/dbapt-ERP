@@ -12,6 +12,8 @@ export async function loadFinanceNavigationBadges(): Promise<FinanceNavigationBa
   const cleanupPending = q.cardLinkPending + q.evidencePending + q.resolutionRequired + q.routeUnclassified + q.budgetReviewPending;
   return {
     "전체 지출": q.resolutionRequired + q.routeUnclassified,
+    "지출 등록·신청": q.routeUnclassified,
+    "법인카드 내역 연결": q.cardLinkPending,
     "선지급 사용정산": q.advanceSettlementOpen,
     "운영비 사용정산": q.operatingPeriodOpen,
     "조합 지급대기": q.personalPaymentPending,

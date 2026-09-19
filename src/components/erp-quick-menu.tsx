@@ -26,7 +26,7 @@ function readIds(raw: string | null): QuickMenuId[] {
   return defaultQuickMenuIds;
 }
 
-export function ErpQuickMenu({ onSelect }: { onSelect?: (label: string) => void }) {
+export function ErpQuickMenu({ badges = {}, onSelect }: { badges?: Record<string, number>; onSelect?: (label: string) => void }) {
   const raw = useSyncExternalStore(subscribe, snapshot, () => null);
   const [remoteIds, setRemoteIds] = useState<QuickMenuId[] | null>(null);
   const ids = remoteIds ?? readIds(raw);
@@ -103,7 +103,9 @@ export function ErpQuickMenu({ onSelect }: { onSelect?: (label: string) => void 
     </div> : <div className="grid grid-cols-2 gap-1.5">{ids.map((id) => {
       const entry = entries.find((item) => item.id === id)!;
       const className = "flex min-h-9 items-center rounded-md border border-[var(--color-soft-border)] bg-white px-2 text-left text-[11px] font-semibold text-[var(--color-stone)] hover:border-[var(--color-deep-cobalt)] focus-visible:outline-2 disabled:opacity-40";
-      return "href" in entry ? <a aria-label={`퀵메뉴 ${entry.label}`} className={className} href={entry.href} key={id}>{entry.label}</a> : <button aria-label={`퀵메뉴 ${entry.label}`} title={onSelect ? undefined : "이 화면에서는 지원하지 않는 바로가기야"} disabled={!onSelect} className={className} key={id} type="button" onClick={() => onSelect?.(entry.label)}>{entry.label}</button>;
+      const count = "badgeLabel" in entry ? badges[entry.badgeLabel] ?? 0 : 0;
+      const content = <><span className="min-w-0 flex-1">{entry.label}</span>{count > 0 ? <span aria-label={`${entry.label} 대기 ${count}건`} className="ml-1 min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{count}</span> : null}</>;
+      return "href" in entry ? <a aria-label={`퀵메뉴 ${entry.label}`} className={className} href={entry.href} key={id}>{content}</a> : <button aria-label={`퀵메뉴 ${entry.label}`} title={onSelect ? undefined : "이 화면에서는 지원하지 않는 바로가기야"} disabled={!onSelect} className={className} key={id} type="button" onClick={() => onSelect?.(entry.label)}>{content}</button>;
     })}</div>}
   </section>;
 }

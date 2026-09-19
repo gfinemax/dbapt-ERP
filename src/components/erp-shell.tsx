@@ -220,7 +220,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
   useEffect(() => {
-    if (selectedMenu !== "회계/자금") return;
     let active = true;
     void loadFinanceNavigationBadgesAction().then((badges) => { if (active) setFinanceBadges(badges); }).catch(() => { /* Navigation remains usable when counts cannot be refreshed. */ });
     return () => { active = false; };
@@ -333,7 +332,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           </nav>
         )}
 
-        <ErpQuickMenu onSelect={onQuickMenuSelect} />
+        <ErpQuickMenu badges={financeBadges} onSelect={onQuickMenuSelect} />
         </>}
       </aside>
 

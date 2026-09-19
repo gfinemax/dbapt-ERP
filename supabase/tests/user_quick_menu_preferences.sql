@@ -9,10 +9,12 @@ begin
  saved:=finance.quick_menu_preferences_save(org,actor,array['expenses','corporate-use'],0,'first');
  if saved<>jsonb_build_object('menu_ids',jsonb_build_array('expenses','corporate-use'),'revision',1) then raise exception 'TEST: first save %',saved; end if;
  if finance.quick_menu_preferences_save(org,actor,array['expenses','corporate-use'],0,'first')<>saved then raise exception 'TEST: retry'; end if;
- begin perform finance.quick_menu_preferences_save(org,actor,array['expenses'],0,'stale'); raise exception 'TEST: stale revision'; exception when others then if sqlerrm not like '%다른 화면%' then raise; end if; end;
- begin perform finance.quick_menu_preferences_save(org,actor,array['expenses','expenses'],1,'duplicate'); raise exception 'TEST: duplicate'; exception when others then if sqlerrm not like '%중복%' then raise; end if; end;
+ saved:=finance.quick_menu_preferences_save(org,actor,array['expenses','corporate-use','refunds'],1,'add-refunds');
+ if saved->'menu_ids'<>jsonb_build_array('expenses','corporate-use','refunds') or saved->>'revision'<>'2' then raise exception 'TEST: refund menu save %',saved; end if;
+ begin perform finance.quick_menu_preferences_save(org,actor,array['expenses'],1,'stale'); raise exception 'TEST: stale revision'; exception when others then if sqlerrm not like '%다른 화면%' then raise; end if; end;
+ begin perform finance.quick_menu_preferences_save(org,actor,array['expenses','expenses'],2,'duplicate'); raise exception 'TEST: duplicate'; exception when others then if sqlerrm not like '%중복%' then raise; end if; end;
  begin perform finance.quick_menu_preferences_read(org,other); raise exception 'TEST: inactive user'; exception when others then if sqlerrm not like '%활성 사용자%' then raise; end if; end;
- if (select count(*) from finance.workflow_events where organization_id=org and action='QUICK_MENU:SAVE')<>1 then raise exception 'TEST: audit'; end if;
+ if (select count(*) from finance.workflow_events where organization_id=org and action='QUICK_MENU:SAVE')<>2 then raise exception 'TEST: audit'; end if;
 end $$;
 set local role authenticated;
 do $$ begin
