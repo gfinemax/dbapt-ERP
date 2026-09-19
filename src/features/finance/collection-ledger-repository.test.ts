@@ -6,7 +6,9 @@ import { applyCollectionAssessmentImport, loadCollectionLedger, previewCollectio
 
 beforeEach(() => {
   mocks.identity.mockReset().mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["ADMIN"] });
-  mocks.rpc.mockReset().mockResolvedValue({ data: { assessments: [], allocations: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
+  mocks.rpc.mockReset().mockImplementation(async (name: string) => name === "collection_assessment_import_history"
+    ? { data: { batches: [], selected: null }, error: null }
+    : { data: { assessments: [], allocations: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
 });
 describe("collection ledger repository", () => {
   it("loads only through the authenticated organization and adds the verified viewer", async () => {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { parseCollectionAssessmentCsv } from "@/features/finance/collection-assessment-csv";
-import { applyCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
+import { applyCollectionAssessmentImport, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
 
 export async function executeCollectionLedger(command: CollectionLedgerCommand, input: Record<string, unknown>, operationKey: string) {
   const result = await runCollectionLedger(command, input, operationKey);
@@ -26,5 +26,15 @@ export async function previewCollectionAssessmentCsv(formData: FormData) {
 export async function applyCollectionAssessmentCsv(batchId: string, operationKey: string) {
   const result = await applyCollectionAssessmentImport(batchId, operationKey);
   for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace"]) revalidatePath(path);
+  return result;
+}
+
+export async function loadCollectionAssessmentCsv(batchId: string) {
+  return loadCollectionAssessmentImport(batchId);
+}
+
+export async function cancelCollectionAssessmentCsv(batchId: string, reason: string, operationKey: string) {
+  const result = await cancelCollectionAssessmentImport(batchId, reason, operationKey);
+  revalidatePath("/finance/collections");
   return result;
 }

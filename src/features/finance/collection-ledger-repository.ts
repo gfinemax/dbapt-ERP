@@ -5,6 +5,7 @@ import type { CollectionAssessmentImportInput } from "./collection-assessment-cs
 
 export const collectionLedgerCommands = [
   "ASSESSMENT_SAVE",
+  "ASSESSMENT_CANCEL",
   "RECEIPT_ALLOCATE",
   "RECEIPT_REVERSE",
   "REFUND_SAVE",
@@ -66,6 +67,7 @@ export type CollectionLedgerWorkspace = {
   refunds: CollectionRefund[];
   deposit_candidates: CollectionBankCandidate[];
   withdrawal_candidates: CollectionBankCandidate[];
+  import_batches: CollectionAssessmentImportSummary[];
   viewer: { user_id: string; permissions: ReimbursementPermission[] };
 };
 export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
@@ -77,7 +79,11 @@ export type CollectionAssessmentImportPreview = {
   batch_id: string;
   file_name: string;
   content_hash: string;
-  status: "PREVIEW" | "APPLIED";
+  status: "PREVIEW" | "APPLIED" | "CANCELLED";
+  created_at: string;
+  applied_at: string | null;
+  cancelled_at: string | null;
+  cancel_reason: string | null;
   row_count: number;
   create_count: number;
   update_count: number;
@@ -85,9 +91,10 @@ export type CollectionAssessmentImportPreview = {
   error_count: number;
   rows: CollectionAssessmentImportRow[];
 };
+export type CollectionAssessmentImportSummary = Omit<CollectionAssessmentImportPreview, "content_hash" | "rows">;
 
 const staffPermissions: readonly ReimbursementPermission[] = ["ADMIN", "CLOSE", "PAY", "APPROVE", "SENIOR"];
-const decisionCommands = new Set<CollectionLedgerCommand>(["ASSESSMENT_SAVE", "REFUND_SAVE", "REFUND_APPROVE", "REFUND_CANCEL"]);
+const decisionCommands = new Set<CollectionLedgerCommand>(["ASSESSMENT_SAVE", "ASSESSMENT_CANCEL", "REFUND_SAVE", "REFUND_APPROVE", "REFUND_CANCEL"]);
 const forbidden = new Set(["organization_id", "organizationId", "p_org", "p_actor", "actor_id", "actorId", "permissions", "viewer"]);
 
 function record(value: unknown): value is Record<string, unknown> {
@@ -135,15 +142,51 @@ export async function applyCollectionAssessmentImport(batchId: string, operation
   return importResult(data);
 }
 
+function importHistory(value: unknown): { batches: CollectionAssessmentImportSummary[]; selected: CollectionAssessmentImportPreview | null } {
+  if (!record(value) || !Array.isArray(value.batches)) throw new Error("부과자료 가져오기 이력을 확인하지 못했어.");
+  return { batches: value.batches as CollectionAssessmentImportSummary[], selected: value.selected ? importResult(value.selected) : null };
+}
+
+export async function loadCollectionAssessmentImport(batchId?: string) {
+  const member = await requireAssessmentImportActor();
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_assessment_import_history", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_batch: batchId || null,
+  });
+  if (error) throw new Error(error.message);
+  return importHistory(data);
+}
+
+export async function cancelCollectionAssessmentImport(batchId: string, reason: string, operationKey: string) {
+  const member = await requireAssessmentImportActor();
+  if (!batchId || !reason.trim() || reason.trim().length > 500 || !operationKey.trim() || operationKey.length > 200)
+    throw new Error("취소할 미리보기와 사유를 확인해줘.");
+  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_assessment_import_cancel", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_batch: batchId,
+    p_reason: reason.trim(),
+    p_key: operationKey,
+  });
+  if (error) throw new Error(error.message);
+  return importResult(data);
+}
+
 export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace> {
   const member = await requireReimbursementIdentity();
   if (!member.active || !staffPermissions.some((permission) => hasReimbursementPermission(member, permission)))
     throw new Error("수납·환급 원장 조회 권한이 필요합니다.");
-  const { data, error } = await reimbursementDb().schema("finance").rpc("collection_ledger_read", {
-    p_org: member.organization_id,
-    p_actor: member.user_id,
-  });
+  const canImport = ["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission));
+  const [ledgerResponse, historyResponse] = await Promise.all([
+    reimbursementDb().schema("finance").rpc("collection_ledger_read", { p_org: member.organization_id, p_actor: member.user_id }),
+    canImport
+      ? reimbursementDb().schema("finance").rpc("collection_assessment_import_history", { p_org: member.organization_id, p_actor: member.user_id, p_batch: null })
+      : Promise.resolve({ data: { batches: [], selected: null }, error: null }),
+  ]);
+  const { data, error } = ledgerResponse;
   if (error) throw new Error(error.message);
+  if (historyResponse.error) throw new Error(historyResponse.error.message);
   const keys = ["assessments", "allocations", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
   if (!record(data) || keys.some((key) => !Array.isArray(data[key]))) throw new Error("수납·환급 원장 조회 결과를 확인해주세요.");
   return {
@@ -152,6 +195,7 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
     refunds: data.refunds as CollectionRefund[],
     deposit_candidates: data.deposit_candidates as CollectionBankCandidate[],
     withdrawal_candidates: data.withdrawal_candidates as CollectionBankCandidate[],
+    import_batches: importHistory(historyResponse.data).batches,
     viewer: { user_id: member.user_id, permissions: [...member.permissions] },
   };
 }

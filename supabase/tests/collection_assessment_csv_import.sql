@@ -1,7 +1,7 @@
 begin;
 do $$
 declare
- org uuid:=gen_random_uuid(); admin_id uuid:=gen_random_uuid(); payer_id uuid:=gen_random_uuid(); batch jsonb; applied jsonb; duplicate_preview jsonb; update_preview jsonb; stale_preview jsonb; assessment_id uuid;
+ org uuid:=gen_random_uuid(); admin_id uuid:=gen_random_uuid(); payer_id uuid:=gen_random_uuid(); batch jsonb; applied jsonb; cancelled jsonb; duplicate_preview jsonb; update_preview jsonb; stale_preview jsonb; history jsonb; assessment_id uuid;
  rows jsonb:=jsonb_build_array(jsonb_build_object('row_number',2,'external_member_id','peopleon-1','member_no','M-1','member_name_snapshot','Member One','assessment_code','2026-09','due_date','2026-09-30','assessed_amount',1000));
 begin
  insert into core.organizations(id,name,status) values(org,'CSV import test','active');
@@ -19,6 +19,12 @@ begin
  duplicate_preview:=finance.collection_assessment_import_preview(org,admin_id,'duplicate.csv',repeat('b',64),rows||rows);
  if duplicate_preview->>'error_count'<>'2' then raise exception 'TEST: duplicate rows not blocked %',duplicate_preview; end if;
  begin perform finance.collection_assessment_import_apply(org,admin_id,(duplicate_preview->>'batch_id')::uuid,'csv-duplicate'); raise exception 'TEST: error preview applied'; exception when others then if sqlerrm not like '%오류 행%' then raise; end if; end;
+ cancelled:=finance.collection_assessment_import_cancel(org,admin_id,(duplicate_preview->>'batch_id')::uuid,'오류 원본 재작성','csv-cancel');
+ if cancelled->>'status'<>'CANCELLED' or cancelled->>'cancel_reason'<>'오류 원본 재작성' then raise exception 'TEST: preview cancellation failed %',cancelled; end if;
+ if finance.collection_assessment_import_cancel(org,admin_id,(duplicate_preview->>'batch_id')::uuid,'오류 원본 재작성','csv-cancel')<>cancelled then raise exception 'TEST: cancel retry changed'; end if;
+ begin perform finance.collection_assessment_import_apply(org,admin_id,(duplicate_preview->>'batch_id')::uuid,'csv-cancelled-apply'); raise exception 'TEST: cancelled preview applied'; exception when others then if sqlerrm not like '%새로 확인%' then raise; end if; end;
+ history:=finance.collection_assessment_import_history(org,admin_id,(duplicate_preview->>'batch_id')::uuid);
+ if jsonb_array_length(history->'batches')<2 or history#>>'{selected,status}'<>'CANCELLED' then raise exception 'TEST: import history missing %',history; end if;
 
  update_preview:=finance.collection_assessment_import_preview(org,admin_id,'update.csv',repeat('c',64),jsonb_build_array(jsonb_build_object('row_number',2,'external_member_id','peopleon-1','member_no','M-1','member_name_snapshot','Updated Name','assessment_code','2026-09','due_date','2026-09-30','assessed_amount',1200)));
  if update_preview->>'update_count'<>'1' then raise exception 'TEST: update not detected %',update_preview; end if;
@@ -33,6 +39,7 @@ end $$;
 set local role authenticated;
 do $$ begin
  begin perform finance.collection_assessment_import_preview(gen_random_uuid(),gen_random_uuid(),'x.csv',repeat('a',64),'[]'); raise exception 'TEST: direct preview RPC'; exception when insufficient_privilege then null; end;
+ begin perform finance.collection_assessment_import_history(gen_random_uuid(),gen_random_uuid(),null); raise exception 'TEST: direct history RPC'; exception when insufficient_privilege then null; end;
  begin perform 1 from finance.collection_assessment_import_batches; raise exception 'TEST: direct import table'; exception when insufficient_privilege then null; end;
 end $$;
 reset role;
