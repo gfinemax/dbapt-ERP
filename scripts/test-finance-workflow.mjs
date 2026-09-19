@@ -99,6 +99,7 @@ const testFiles = [
   "expense_classification_axes.sql",
   "quick_expense_resolution_conversion.sql",
   "trust_operating_fund_periods.sql",
+  "user_quick_menu_preferences.sql",
 ];
 const requestedTests = process.argv.slice(2);
 testFiles.push("budget_unknown_month_review.sql");

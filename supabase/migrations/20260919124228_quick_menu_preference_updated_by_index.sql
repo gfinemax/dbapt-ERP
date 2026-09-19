@@ -1,0 +1,2 @@
+create index user_quick_menu_preferences_updated_by_idx
+ on finance.user_quick_menu_preferences(updated_by);

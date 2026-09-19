@@ -19,6 +19,7 @@ export const financeNavigation = [
   { group: "예산·마감", label: "월 마감", href: "/finance/month-close" },
   { group: "설정", label: "지출 처리 기준", href: "/finance/expense-settings" },
   { group: "설정", label: "신탁 집행 기준", href: "/finance/workflow-settings" },
+  { group: "설정", label: "운영 준비 점검", href: "/finance/readiness" },
 ];
 
 const legacyLabels: Record<string, string> = {

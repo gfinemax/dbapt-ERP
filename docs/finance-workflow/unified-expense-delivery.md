@@ -107,3 +107,12 @@ Do not mark the objective complete based on navigation or focused component test
 - Advance settlements and monthly trust operating funds now provide A4 print previews. The documents keep requested amounts separate from actual receipts/payments and point back to preserved source records instead of becoming new accounting originals.
 - Final local gate on 2026-09-19 passed: ESLint, TypeScript, production build, 144 Vitest files / 874 tests, and all 20 isolated PostgreSQL suites plus concurrency and database-role denial checks. The SQL concurrency fixture uses a one-second-past transaction timestamp so clock adjustment cannot turn a valid test payment into a future transaction.
 - Production database migration and authenticated production workflow verification remain separate release evidence and must not be inferred from a Git push.
+
+## Account shortcuts and operational readiness
+
+- Quick-menu choices are stored per authenticated organization member and synchronized across browsers. The browser copy remains a login-free fallback; unsupported IDs are allowlisted out.
+- Saves use optimistic revisions and idempotent operation keys. A stale browser must reload instead of overwriting a newer preference, and every accepted account save creates a workflow audit event.
+- The finance sidebar exposes `운영 준비 점검`. It separates missing role, trust-contract, operating-fund and annual-budget configuration from ordinary processing queues.
+- Queue counts are read-only pointers to preserved originals: card linkage, evidence supplementation, formal-resolution conversion, personal repayment, advance settlement, operating-period settlement and unknown workflow route. A nonzero count is work to process, not an invented error or financial total.
+- Account preference SQL and UI tests pass locally. Authenticated production acceptance remains required after migration publication; no representative financial transaction should be created merely to test personalization.
+- Production migrations `user_quick_menu_preferences` and `quick_menu_preference_updated_by_index` were applied on 2026-09-19. RLS is enabled, anon/authenticated table reads are denied, and only service-role RPC access is granted. Authenticated browser acceptance is still separate evidence.

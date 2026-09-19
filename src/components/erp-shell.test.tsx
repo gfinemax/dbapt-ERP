@@ -28,7 +28,7 @@ describe("ErpShell", () => {
       "업무현황", "통합 결재함", "전체 지출", "지출 등록·신청", "선지급 사용정산",
       "월 운영비 요청·수령", "운영비 사용정산", "사업비 집행요청·현황", "조합 지급대기", "전체 지급내역",
       "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
-      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준",
+      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준", "운영 준비 점검",
     ]);
     expect(Array.from(detailMenu.querySelectorAll("p")).map((node) => node.textContent)).toEqual([
       "업무", "지출관리", "신탁 집행관리", "지급관리", "수납·환급", "회계·증빙", "예산·마감", "설정",
@@ -66,7 +66,7 @@ describe("ErpShell", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" });
-    expect(within(menu).getAllByRole("link")).toHaveLength(20);
+    expect(within(menu).getAllByRole("link")).toHaveLength(21);
     expect(within(menu).getByRole("link", { name: "조합 지급대기" })).toHaveAttribute("aria-current", "page");
     expect(within(menu).getByRole("link", { name: "신탁 집행 기준" })).toHaveAttribute("href", "/finance/workflow-settings");
     fireEvent.click(toggle);
