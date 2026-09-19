@@ -2,9 +2,9 @@ import { fireEvent,render,screen,waitFor } from "@testing-library/react";
 import { beforeEach,describe,expect,it,vi } from "vitest";
 import { ReimbursementLogin, ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({command:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn()}));
+const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),submit:vi.fn()}));
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push})}));
-vi.mock("@/app/finance/reimbursements/actions",()=>({runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:vi.fn(),reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
+vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
 const w:ReimbursementWorkspace={month:"2026-03-01",member:{user_id:"a",organization_id:"o",display_name:"관리자",permissions:["ADMIN"],active:true},members:[],policy:null,periods:[{month:"2026-03-01",status:"CLOSED",submission_deadline:"2026-04-05",completion_deadline:"2026-04-10",long_delay_days:60,revision:1}],requests:[{id:"r",applicant_id:"b",budget_id:"budget",used_on:"2026-03-15",budget_month:"2026-03-01",amount:80000,merchant:"문구점",purpose:"사무용품",delay_reason:"영수증 누락",source_quick_id:null,status:"APPROVED",needs_exception:true,needs_senior:false,exception_approved_at:"2026-06-01",senior_approved_at:null,over_budget_approved_at:null,submitted_at:"2026-06-01",approved_at:"2026-06-02",paid_at:null,bank_transaction_id:null}],budgets:[],reports:[],audits:[],banks:[{id:"bank",transacted_at:"2026-06-15T12:00:00+09:00",withdrawal_amount:80000,counterparty:"신청자",description:"정산"}],sources:[]};
 describe("reimbursement workspace",()=>{
  beforeEach(()=>vi.clearAllMocks());
@@ -48,12 +48,44 @@ describe("reimbursement workspace",()=>{
  it("allows the first request to auto-open its usage month when policy exists",()=>{
   render(<ReimbursementPage workspace={{...w,periods:[],policy:{submission_day:5,completion_day:10,long_delay_days:60}}}/>);
   expect(screen.getByText(/접수월은 신청과 함께 자동 개설돼/)).toBeInTheDocument();
-  expect(screen.getByRole("button",{name:"정산 신청"})).toBeEnabled();
+  expect(screen.getByRole("button",{name:"내용 확인 후 정산 신청"})).toBeEnabled();
  });
  it("blocks automatic period creation only when the operating policy is missing",()=>{
   render(<ReimbursementPage workspace={{...w,periods:[],policy:null}}/>);
   expect(screen.getByText("접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.")).toBeInTheDocument();
-  expect(screen.getByRole("button",{name:"정산 신청"})).toBeDisabled();
+  expect(screen.getByRole("button",{name:"내용 확인 후 정산 신청"})).toBeDisabled();
+ });
+ it("starts with receipt OCR and applies only recognized reimbursement facts",async()=>{
+  mocks.analyze.mockResolvedValue({ocrData:{documentDate:"2026-03-14",issuer:"공단유통",items:[{itemName:"페인트 붓"}],normalizedEvidenceType:"영수증",totalAmount:32600}});
+  render(<ReimbursementPage workspace={{...w,budgets:[{id:"budget",budget_item:"사무용품",approved_amount:1000000,monthly_amount:100000,annual_recorded_amount:0,quick_amount:0,personal_amount:0,unpaid_amount:0,reserved_amount:0}]}}/>);
+  expect(screen.getByRole("button",{name:"영수증으로 새 정산"})).toHaveAttribute("aria-pressed","true");
+  fireEvent.change(screen.getByLabelText(/^영수증 파일/),{target:{files:[new File([new Uint8Array([255,216,255])],"receipt.jpg",{type:"image/jpeg"})]}});
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 자동입력 완료"));
+  expect(screen.getByLabelText("실제 사용일")).toHaveValue("2026-03-14");
+  expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(32600);
+  expect(screen.getByLabelText("사용처")).toHaveValue("공단유통");
+  expect(screen.getByLabelText("업무 목적")).toHaveValue("페인트 붓 구입");
+  expect(screen.getByLabelText("예산항목")).toHaveValue("");
+ });
+ it("makes a replacement file optional when an existing expense is linked",()=>{
+  render(<ReimbursementPage workspace={{...w,sources:[{id:"quick",occurred_at:"2026-03-15T12:00:00+09:00",amount:20000,counterparty:"문구점",budget_item:"사무용품",usage_description:"페인트 용품"}]}}/>);
+  fireEvent.click(screen.getByRole("button",{name:"기존 지출 연결"}));
+  fireEvent.change(screen.getByLabelText(/^기존 개인 선지출/),{target:{value:"quick"}});
+  expect(screen.getByLabelText(/^새 증빙 파일 \(선택\)/)).not.toBeRequired();
+  expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(20000);
+  expect(screen.getByLabelText("사용처")).toHaveValue("문구점");
+ });
+ it("does not overwrite values edited while OCR is running",async()=>{
+  let finish:(value:{ocrData:{issuer:string;totalAmount:number}})=>void=()=>{};
+  mocks.analyze.mockReturnValue(new Promise(resolve=>{finish=resolve;}));
+  render(<ReimbursementPage workspace={w}/>);
+  fireEvent.change(screen.getByLabelText("영수증 파일"),{target:{files:[new File([new Uint8Array([255,216,255])],"receipt.jpg",{type:"image/jpeg"})]}});
+  fireEvent.change(screen.getByLabelText("개인 결제 금액"),{target:{value:"41000"}});
+  fireEvent.change(screen.getByLabelText("사용처"),{target:{value:"직접 확인한 상호"}});
+  finish({ocrData:{issuer:"OCR 상호",totalAmount:32600}});
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 자동입력 완료"));
+  expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(41000);
+  expect(screen.getByLabelText("사용처")).toHaveValue("직접 확인한 상호");
  });
  it("shows a specific policy validation error instead of a production server digest",async()=>{
   mocks.policy.mockResolvedValue({ok:false,message:"보완 마감일은 제출 마감일과 같거나 늦은 1일부터 28일 사이여야 해."});

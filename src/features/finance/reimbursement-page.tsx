@@ -2,12 +2,14 @@
 
 import { BudgetAllocationPanel } from "./budget-allocation-panel";
 import { UnifiedBudgetTable } from "./unified-budget-table";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
+import { analyzeReimbursementEvidence, changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
 import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementReport } from "./reimbursement-domain";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
+import { buildReimbursementOcrDraft } from "./reimbursement-ocr";
+import type { EvidenceOcrData } from "./expense-evidence";
 
 const card="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5";
 const input="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
@@ -59,6 +61,10 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
   const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
+  const [entryMode,setEntryMode]=useState<"OCR"|"SOURCE"|"MANUAL">("OCR");
+  const [ocrData,setOcrData]=useState<EvidenceOcrData|null>(null); const [ocrMessage,setOcrMessage]=useState(""); const [ocrPending,startOcr]=useTransition();
+  const [fileInputKey,setFileInputKey]=useState(0); const [evidenceFileName,setEvidenceFileName]=useState("");
+  const editedFields=useRef({amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false}); const ocrRequest=useRef(0);
   const [status,setStatus]=useState("ALL");
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
   const submissionDeadline=usedPeriod?.submission_deadline ?? (w.policy?autoSubmissionDeadline(usedOn,w.policy.submission_day):null);
@@ -69,7 +75,32 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const names=Object.fromEntries(w.members.map(m=>[m.user_id,m.display_name]));
   const visible=w.requests.filter(r=>status==="ALL"||r.status===status);
   function command(command:string,data:Record<string,unknown>){op.run(async()=>{await runReimbursementCommand(command,data);setSelected(null);setAction("");});}
-  function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");}}
+  function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");setOcrData(null);setOcrMessage("기존 지출의 값과 저장된 증빙을 재사용해. 제출 전에 내용을 확인해줘.");}else{setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setOcrMessage("");}}
+  function selectEntryMode(mode:"OCR"|"SOURCE"|"MANUAL") {
+    setEntryMode(mode); setOcrMessage(""); setOcrData(null); setEvidenceFileName(""); setFileInputKey(key=>key+1); ocrRequest.current+=1;
+    if(mode!=="SOURCE") {
+      setSource("");
+      if(entryMode==="SOURCE") {setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");editedFields.current={amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};}
+    }
+  }
+  function analyzeEvidence(file?:File) {
+    setEvidenceFileName(file?.name??""); setOcrData(null); setOcrMessage("");
+    if(!file||entryMode!=="OCR") return;
+    const request=++ocrRequest.current; const form=new FormData(); form.set("evidence",file);
+    startOcr(async()=>{try{
+      const result=await analyzeReimbursementEvidence(form); if(request!==ocrRequest.current)return;
+      const draft=buildReimbursementOcrDraft(result.ocrData); const applied:string[]=[];
+      if(draft.usedOn&&draft.usedOn<=today&&!editedFields.current.usedOn){setUsedOn(draft.usedOn);applied.push("사용일");}
+      if(draft.amount&&!editedFields.current.amount){setAmount(draft.amount);applied.push("금액");}
+      if(draft.merchant&&!editedFields.current.merchant){setMerchant(draft.merchant);applied.push("사용처");}
+      if(draft.purpose&&!editedFields.current.purpose){setPurpose(draft.purpose);applied.push("업무 목적");}
+      if(draft.evidenceKind&&!editedFields.current.evidenceKind){setEvidenceKind(draft.evidenceKind);applied.push("증빙 종류");}
+      setOcrData(result.ocrData); setOcrMessage(applied.length?`${applied.join("·")}을 자동입력했어. 제출 전에 확인해줘.`:"인식 결과를 확인했지만 자동입력할 항목이 없어. 직접 입력해줘.");
+    }catch(error){if(request===ocrRequest.current)setOcrMessage(error instanceof Error?error.message:"영수증 자동입력을 완료하지 못했어.");}});
+  }
+  function resetRequestForm() {
+    setRequestId(crypto.randomUUID());setSource("");setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setEvidenceKind("RECEIPT");setEntryMode("OCR");setOcrData(null);setOcrMessage("");setEvidenceFileName("");setFileInputKey(key=>key+1);editedFields.current={amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};
+  }
   return <>
     <header className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">{tab==="budgets"?"예산집행 현황":"대납·선지급 정산"}</h1><p className="mt-2 text-sm text-slate-600">개인 대납은 사용월 예산에 한 번 반영하고 지급일은 실제 출금일로 기록해. 이 화면의 월 마감은 개인 경비 정산 범위야.</p></div><div className="text-sm">{w.member.display_name}<button className={`${secondary} ml-3`} onClick={()=>op.run(reimbursementLogout)} disabled={op.pending}>로그아웃</button></div></div>
       <div className="mt-5 flex flex-wrap items-center gap-3"><label>조회 월 <input aria-label="조회 월" className="rounded-lg border p-2" type="month" value={w.month.slice(0,7)} onChange={e=>{if(e.target.value)router.push(`/finance/reimbursements?month=${e.target.value}&tab=${tab}`);}} /></label><span className="rounded-full bg-blue-50 px-3 py-2 text-sm">{period?periodLabel(period,today):"접수월 미개설"}</span>{period&&<span className="text-sm text-slate-600">제출 {period.submission_deadline} · 보완 {period.completion_deadline}</span>}</div>
@@ -79,22 +110,33 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
     {op.message&&<p role="status" className="rounded-lg border bg-blue-50 p-4">{op.message}</p>}
     {tab==="requests"&&<>
       <details className={card}><summary className="cursor-pointer text-lg font-bold">개인 지출 정산 신청</summary>
-        <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;const data=new FormData(el);op.run(async()=>{await submitReimbursement(data);el.reset();setRequestId(crypto.randomUUID());setSource("");setAmount("");setMerchant("");setPurpose("");setBudgetId("");},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
+        <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;const data=new FormData(el);op.run(async()=>{await submitReimbursement(data);el.reset();resetRequestForm();},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
           <input type="hidden" name="id" value={requestId}/>
-          <label className="sm:col-span-2">기존 개인 선지출 연결<select className={input} name="source_quick_id" value={source} onChange={e=>selectSource(e.target.value)}><option value="">새 지출 신청</option>{w.sources.map(s=><option key={s.id} value={s.id}>{koreaDate(new Date(s.occurred_at))} · {s.counterparty} · {money(s.amount)}</option>)}</select><span className="text-xs text-slate-600">기존 간편지출이면 해당 기록을 연결해줘. 승인 시 중복 집계를 방지해.</span></label>
-          <label>실제 사용일<input className={input} name="used_on" type="date" required min={`${today.slice(0,4)}-01-01`} max={today} value={usedOn} onChange={e=>setUsedOn(e.target.value)}/></label>
+          <fieldset className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-4"><legend className="px-2 font-bold text-blue-950">1. 정산 시작 방법</legend>
+            <p className="mb-3 text-sm text-blue-900">영수증을 먼저 분석하면 날짜·금액·사용처·업무 목적 입력을 도와줘.</p>
+            <div className="flex flex-wrap gap-2">
+              <button aria-pressed={entryMode==="OCR"} className={entryMode==="OCR"?button:secondary} onClick={()=>selectEntryMode("OCR")} type="button">영수증으로 새 정산</button>
+              <button aria-pressed={entryMode==="SOURCE"} className={entryMode==="SOURCE"?button:secondary} disabled={!w.sources.length} onClick={()=>selectEntryMode("SOURCE")} type="button">기존 지출 연결</button>
+              <button aria-pressed={entryMode==="MANUAL"} className={entryMode==="MANUAL"?button:secondary} onClick={()=>selectEntryMode("MANUAL")} type="button">직접 입력</button>
+            </div>
+            {entryMode==="SOURCE"?<label className="mt-4 block">기존 개인 선지출<select aria-label="기존 개인 선지출" className={input} name="source_quick_id" required value={source} onChange={e=>selectSource(e.target.value)}><option value="">연결할 지출 선택</option>{w.sources.map(s=><option key={s.id} value={s.id}>{koreaDate(new Date(s.occurred_at))} · {s.counterparty} · {money(s.amount)}</option>)}</select><span className="text-xs text-slate-600">저장된 값과 증빙을 재사용해서 중복 집계를 막아. 새 파일을 선택하면 그 증빙으로 교체해.</span></label>:<input name="source_quick_id" type="hidden" value=""/>}
+            <label className="mt-4 block">{entryMode==="OCR"?"영수증 파일":entryMode==="SOURCE"?"새 증빙 파일 (선택)":"증빙 파일"}<input aria-label={entryMode==="OCR"?"영수증 파일":entryMode==="SOURCE"?"새 증빙 파일 (선택)":"증빙 파일"} key={fileInputKey} className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required={entryMode!=="SOURCE"} onChange={e=>analyzeEvidence(e.target.files?.[0])}/><span className="text-xs text-slate-600">PDF·PNG·JPG·WEBP, 최대 3MB. {entryMode==="OCR"?"선택하면 바로 OCR 자동입력을 시작해.":entryMode==="SOURCE"?"기존 증빙이 없거나 교체할 때만 선택해.":"직접 입력하더라도 결제 사실을 확인할 증빙은 필요해."}</span></label>
+            {(ocrPending||ocrMessage)&&<div aria-live="polite" className={`mt-3 rounded-lg p-3 text-sm ${ocrPending?"bg-white text-blue-900":ocrData?"bg-emerald-50 text-emerald-900":entryMode==="SOURCE"?"bg-white text-blue-900":"bg-amber-50 text-amber-950"}`} role="status"><strong>{ocrPending?"OCR 자동입력 중":ocrData?"OCR 자동입력 완료":entryMode==="SOURCE"?"기존 지출 연결됨":"확인 필요"}</strong><p className="mt-1">{ocrPending?`${evidenceFileName}에서 정보를 읽고 있어. 직접 입력한 값은 덮어쓰지 않아.`:ocrMessage}</p>{ocrData&&<p className="mt-1 text-xs">인식 결과 · {ocrData.documentDate??"날짜 미인식"} · {ocrData.issuer??"사용처 미인식"} · {ocrData.totalAmount===undefined?"금액 미인식":money(ocrData.totalAmount)}</p>}</div>}
+          </fieldset>
+          <p className="sm:col-span-2 font-bold">2. 자동입력 결과 확인·보완</p>
+          <label>실제 사용일<input className={input} name="used_on" type="date" required min={`${today.slice(0,4)}-01-01`} max={today} value={usedOn} onChange={e=>{editedFields.current.usedOn=true;setUsedOn(e.target.value);}}/></label>
           <label>예산 귀속월<input className={input} readOnly value={usedOn.slice(0,7)}/></label>
           <label>예산항목<select className={input} name="budget_id" required value={budgetId} onChange={e=>setBudgetId(e.target.value)}><option value="">예산항목 선택</option>{w.budgets.map(b=><option key={b.id} value={b.id}>{b.budget_item}</option>)}</select></label>
-          <label>개인 결제 금액<input className={input} type="number" name="amount" min="1" step="1" required value={amount} onChange={e=>setAmount(e.target.value)}/></label>
-          <label>사용처<input className={input} name="merchant" required value={merchant} onChange={e=>setMerchant(e.target.value)}/></label>
-          <label>업무 목적<input className={input} name="purpose" required value={purpose} onChange={e=>setPurpose(e.target.value)}/></label>
+          <label>개인 결제 금액<input className={input} type="number" name="amount" min="1" step="1" required value={amount} onChange={e=>{editedFields.current.amount=true;setAmount(e.target.value);}}/></label>
+          <label>사용처<input className={input} name="merchant" required value={merchant} onChange={e=>{editedFields.current.merchant=true;setMerchant(e.target.value);}}/></label>
+          <label>업무 목적<input className={input} name="purpose" required value={purpose} onChange={e=>{editedFields.current.purpose=true;setPurpose(e.target.value);}}/></label>
           <label>개인 결제수단<select className={input} name="payment_method" required defaultValue="PERSONAL_CARD"><option value="PERSONAL_CARD">개인카드</option><option value="PERSONAL_TRANSFER">개인계좌 이체</option><option value="CASH">현금 직접 지급</option></select></label>
-          <label>제출 증빙 종류<select className={input} name="evidence_kind" required value={evidenceKind} onChange={e=>setEvidenceKind(e.target.value)}><option value="RECEIPT">영수증</option><option value="CARD_STATEMENT">개인카드 승인내역</option><option value="BANK_TRANSFER">계좌이체 확인증</option><option value="ORDER_DETAILS">주문내역</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="ITEM_PHOTO">물품·사용 사진</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option></select></label>
+          <label>제출 증빙 종류<select className={input} name="evidence_kind" required value={evidenceKind} onChange={e=>{editedFields.current.evidenceKind=true;setEvidenceKind(e.target.value);}}><option value="RECEIPT">영수증</option><option value="CARD_STATEMENT">개인카드 승인내역</option><option value="BANK_TRANSFER">계좌이체 확인증</option><option value="ORDER_DETAILS">주문내역</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="ITEM_PHOTO">물품·사용 사진</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option></select></label>
           {evidenceKind!=="RECEIPT"&&<label className="sm:col-span-2">영수증 미첨부 사유<textarea className={input} name="missing_receipt_reason" rows={3} required placeholder="예: 구매 후 영수증을 분실하여 카드 승인내역과 주문내역을 제출합니다."/></label>}
-          <label className="sm:col-span-2">{evidenceKind==="RECEIPT"?"영수증 파일":"대체증빙 파일"}<input className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required/><span className="text-xs text-slate-600">결제 사실과 업무 사용내용을 확인할 수 있는 자료를 하나의 PDF 또는 이미지로 첨부해줘. 최대 3MB.</span></label>
-          <label className="sm:col-span-2">지연 사유{late?" (필수)":" (지연 신청 시)"}<textarea className={input} name="delay_reason" rows={3} required={late}/></label>
+          {late&&<label className="sm:col-span-2">지연 사유 (필수)<textarea className={input} name="delay_reason" rows={3} required/></label>}
+          {!late&&<input name="delay_reason" type="hidden" value=""/>}
           <p className="text-sm text-slate-600 sm:col-span-2">{!usedPeriod&&!w.policy?"접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.":!usedPeriod&&late?`${usedOn.slice(0,7)} 접수월은 신청과 함께 자동 개설돼. 지연 사유를 입력하면 예외 승인 대상으로 접수해.`:!usedPeriod?`${usedOn.slice(0,7)} 접수월은 신청과 함께 자동 개설돼. 적용된 제출·보완 기한과 자동 개설 이력도 보존해.`:late?"지연 신청이므로 예외 승인이나 장기 지연 검토가 필요해.":"신청일과 승인일은 실제 처리한 시점으로 남겨."}</p>
-          <button className={button} disabled={op.pending||!canAutoOpen}>정산 신청</button>
+          <button className={button} disabled={op.pending||ocrPending||!canAutoOpen}>내용 확인 후 정산 신청</button>
         </form>
       </details>
       <section className={card}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">{w.month.slice(0,7)} 사용분 · {visible.length}건</h2><select aria-label="정산 상태" className="rounded-lg border p-2" value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">전체 상태</option>{Object.entries(reimbursementStatusLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>

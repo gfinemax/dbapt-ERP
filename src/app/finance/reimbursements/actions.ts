@@ -8,6 +8,12 @@ import { reimbursementCookie, requireReimbursementIdentity } from "@/features/fi
 import { reimbursementCommand, reimbursementDb } from "@/features/finance/reimbursement-repository";
 import { getSupabaseServerConfig } from "@/lib/supabase/config";
 import { hasReimbursementPermission } from "@/features/finance/reimbursement-domain";
+import { normalizeEvidenceVendorFields, type EvidenceOcrData } from "@/features/finance/expense-evidence";
+import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-ocr.server";
+import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
+
+const reimbursementEvidenceBucket = "personal-reimbursements";
+const maxReimbursementEvidenceSize = 3 * 1024 * 1024;
 
 function refresh() {
   for (const path of ["/finance/reimbursements","/basic-info/approval","/approval","/finance/quick-expenses","/finance/expense-resolutions"]) revalidatePath(path);
@@ -95,19 +101,16 @@ export async function submitReimbursement(form: FormData) {
   const member = await requireReimbursementIdentity();
   const file = form.get("evidence");
   const id = String(form.get("id") ?? "");
+  const sourceQuickId = String(form.get("source_quick_id") ?? "").trim();
   if (!/^[0-9a-f-]{36}$/i.test(id)) throw new Error("신청 번호가 올바르지 않습니다.");
-  if (!(file instanceof File) || !file.size || file.size > 3*1024*1024) throw new Error("3MB 이하의 영수증 PDF 또는 이미지를 첨부해주세요.");
-  const bytes = Buffer.from(await file.arrayBuffer());
-  const isPdf = bytes.subarray(0,5).toString() === "%PDF-";
-  const isPng = bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
-  const isJpeg = bytes[0]===255 && bytes[1]===216 && bytes[2]===255;
-  const isWebp = bytes.subarray(0,4).toString()==="RIFF" && bytes.subarray(8,12).toString()==="WEBP";
-  const type = isPdf ? "application/pdf" : isPng ? "image/png" : isJpeg ? "image/jpeg" : isWebp ? "image/webp" : null;
-  if (!type) throw new Error("실제 PDF·PNG·JPEG·WebP 파일만 첨부할 수 있습니다.");
+  const evidence = file instanceof File && file.size
+    ? await readReimbursementEvidence(file)
+    : await readLinkedQuickExpenseEvidence(member.organization_id, sourceQuickId);
+  const { bytes, type } = evidence;
   const hash = createHash("sha256").update(bytes).digest("hex");
   const path = `${member.organization_id}/${member.user_id}/${id}/${hash}`;
   const db = reimbursementDb();
-  const upload = await db.storage.from("personal-reimbursements").upload(path,bytes,{contentType:type,upsert:false});
+  const upload = await db.storage.from(reimbursementEvidenceBucket).upload(path,bytes,{contentType:type,upsert:false});
   if (upload.error && !["409","Duplicate"].includes(String(upload.error.statusCode)) && !upload.error.message.includes("already exists")) throw new Error("증빙을 저장하지 못했습니다. 입력 내용은 유지됩니다.");
   const data: Record<string,unknown> = {id,evidence_path:path,evidence_hash:hash};
   for (const key of ["used_on","budget_id","merchant","purpose","delay_reason","source_quick_id","payment_method","evidence_kind","missing_receipt_reason"]) data[key]=String(form.get(key) ?? "").trim();
@@ -117,6 +120,81 @@ export async function submitReimbursement(form: FormData) {
   const { error } = await reimbursementDb().schema("finance").rpc("reimbursement_submit_with_evidence", { p_org: member.organization_id, p_actor: member.user_id, p_data: data });
   if (error) throw new Error(error.message);
   refresh();
+}
+
+export async function analyzeReimbursementEvidence(form: FormData): Promise<{ ocrData: EvidenceOcrData }> {
+  await requireReimbursementIdentity();
+  const file = form.get("evidence");
+  if (!(file instanceof File) || !file.size) throw new Error("자동입력할 영수증 파일을 선택해줘.");
+  await readReimbursementEvidence(file);
+  try {
+    const apiKey = process.env.OPENAI_API_KEY?.trim();
+    const result = apiKey
+      ? await analyzeWithFallback(file, apiKey)
+      : { ...await extractExpenseEvidenceFile(file), processingNote: "OpenAI API 키가 없어 로컬 OCR로 처리됨" };
+    return { ocrData: normalizeEvidenceVendorFields(result) };
+  } catch (error) {
+    console.error(JSON.stringify({
+      error: summarizeEvidenceError(error),
+      fileName: file.name,
+      fileSize: file.size,
+      level: "error",
+      message: "reimbursement evidence OCR failed",
+    }));
+    throw new Error("영수증 자동입력을 완료하지 못했어. 같은 파일로 직접 입력하거나 다시 시도해줘.");
+  }
+}
+
+async function analyzeWithFallback(file: File, apiKey: string): Promise<EvidenceOcrData> {
+  try {
+    return await extractExpenseEvidenceWithOpenAI(file, { apiKey });
+  } catch (openAiError) {
+    const openAiMessage = summarizeEvidenceError(openAiError);
+    return {
+      ...await extractExpenseEvidenceFile(file),
+      processingNote: `OpenAI 자동인식 실패 후 로컬 OCR로 전환됨 (${openAiMessage})`,
+    };
+  }
+}
+
+async function readReimbursementEvidence(file: File) {
+  if (!file.size || file.size > maxReimbursementEvidenceSize) throw new Error("3MB 이하의 영수증 PDF 또는 이미지를 첨부해주세요.");
+  const bytes = Buffer.from(await file.arrayBuffer());
+  return { bytes, type: detectReimbursementEvidenceType(bytes) };
+}
+
+async function readLinkedQuickExpenseEvidence(organizationId: string, sourceQuickId: string) {
+  if (!sourceQuickId) throw new Error("영수증 또는 대체증빙 파일을 첨부해주세요.");
+  const db = reimbursementDb();
+  const { data: link, error: linkError } = await db.schema("finance").from("quick_expense_evidence")
+    .select("ocr_job_id").eq("organization_id", organizationId).eq("quick_expense_id", sourceQuickId)
+    .order("created_at", { ascending: false }).limit(1).maybeSingle();
+  if (linkError) throw new Error("연결한 지출의 증빙을 확인하지 못했습니다.");
+  if (!link?.ocr_job_id) throw new Error("연결한 지출에 재사용할 증빙이 없어. 영수증 또는 대체증빙을 첨부해줘.");
+  const { data: job, error: jobError } = await db.schema("finance").from("expense_evidence_ocr_jobs")
+    .select("storage_bucket,storage_path").eq("organization_id", organizationId).eq("id", link.ocr_job_id).maybeSingle();
+  if (jobError || !job) throw new Error("연결한 지출의 증빙 원본을 찾지 못했습니다.");
+  const { data: blob, error: downloadError } = await db.storage.from(job.storage_bucket).download(job.storage_path);
+  if (downloadError || !blob) throw new Error("연결한 지출의 증빙 원본을 불러오지 못했습니다.");
+  return readReimbursementEvidence(new File([blob], "linked-evidence", { type: blob.type }));
+}
+
+function detectReimbursementEvidenceType(bytes: Buffer) {
+  const isPdf = bytes.subarray(0,5).toString() === "%PDF-";
+  const isPng = bytes.subarray(0,8).equals(Buffer.from([137,80,78,71,13,10,26,10]));
+  const isJpeg = bytes[0]===255 && bytes[1]===216 && bytes[2]===255;
+  const isWebp = bytes.subarray(0,4).toString()==="RIFF" && bytes.subarray(8,12).toString()==="WEBP";
+  const type = isPdf ? "application/pdf" : isPng ? "image/png" : isJpeg ? "image/jpeg" : isWebp ? "image/webp" : null;
+  if (!type) throw new Error("실제 PDF·PNG·JPEG·WebP 파일만 첨부할 수 있습니다.");
+  return type;
+}
+
+function summarizeEvidenceError(error: unknown) {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/Bearer\s+\S+/gi, "Bearer [redacted]")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 300);
 }
 export async function reimbursementEvidence(id: string) {
   const member=await requireReimbursementIdentity();
