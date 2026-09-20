@@ -28,6 +28,7 @@ import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import { recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
 import { ExpenseClassificationEditor } from "./expense-classification-editor";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
+import { ReimbursementEvidencePreview } from "./reimbursement-evidence-preview";
 
 const kinds = {
   RESOLUTION: "지출결의",
@@ -671,6 +672,42 @@ function PersonalReimbursementTools({
   );
 }
 
+function PersonalReimbursementEvidence({
+  record: r,
+}: {
+  record: ExpenseWorkspaceRecord;
+}) {
+  const evidenceHref = `/finance/reimbursements/evidence?id=${encodeURIComponent(r.source_id)}`;
+
+  return (
+    <section
+      aria-label="첨부 증빙"
+      className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4"
+    >
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h3 className="font-bold">첨부 증빙</h3>
+          <p className="mt-1 text-xs text-slate-600">
+            신청 내용과 영수증을 같은 화면에서 비교할 수 있어.
+          </p>
+        </div>
+        <a
+          className={secondary}
+          href={evidenceHref}
+          rel="noreferrer"
+          target="_blank"
+        >
+          원본 새 창에서 열기
+        </a>
+      </div>
+      <ReimbursementEvidencePreview
+        href={evidenceHref}
+        title={r.counterparty || r.title}
+      />
+    </section>
+  );
+}
+
 function personalReimbursementHref(
   r: ExpenseWorkspaceRecord,
   action?: "APPROVE" | "PAY",
@@ -1150,6 +1187,9 @@ function ExpenseDetail({
               </div>
             ))}
           </dl>
+          {r.source_kind === "PERSONAL" && (
+            <PersonalReimbursementEvidence record={r} />
+          )}
           {staff && r.source_kind === "RESOLUTION" && (
             <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
               <h3 className="font-bold">결의서 관리</h3>

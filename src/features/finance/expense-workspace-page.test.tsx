@@ -41,6 +41,15 @@ vi.mock("@/app/finance/expense-resolutions/actions", () => ({
   createExpenseEvidenceDownloadUrlAction: mocks.download,
   getExpenseEvidenceOcrJobAction: mocks.ocr,
 }));
+vi.mock("./reimbursement-evidence-preview", () => ({
+  ReimbursementEvidencePreview: ({
+    href,
+    title,
+  }: {
+    href: string;
+    title: string;
+  }) => <div data-testid="personal-evidence-preview">{`${title}|${href}`}</div>,
+}));
 function fixture(): ExpenseWorkspace {
   const base: ExpenseWorkspaceRecord = {
     source_kind: "RESOLUTION",
@@ -440,6 +449,21 @@ describe("common original expense workspace", () => {
     );
     expect(written.getByText("업무 목적")).toBeInTheDocument();
     expect(written.getByText("안내문 발송 우편요금")).toBeInTheDocument();
+    const evidence = within(
+      screen.getByRole("region", { name: "첨부 증빙" }),
+    );
+    expect(evidence.getByTestId("personal-evidence-preview")).toHaveTextContent(
+      "거래처|/finance/reimbursements/evidence?id=text-id",
+    );
+    expect(
+      evidence.getByRole("link", { name: "원본 새 창에서 열기" }),
+    ).toHaveAttribute(
+      "href",
+      "/finance/reimbursements/evidence?id=text-id",
+    );
+    expect(
+      screen.getAllByRole("region", { name: "첨부 증빙" }),
+    ).toHaveLength(1);
   });
   it("connects the existing source once and reads back the saved transaction without duplicate original rows", async () => {
     const workspace = fixture();
