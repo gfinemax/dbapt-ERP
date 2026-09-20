@@ -64,7 +64,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const [entryMode,setEntryMode]=useState<"OCR"|"SOURCE"|"MANUAL">("OCR");
   const [ocrData,setOcrData]=useState<EvidenceOcrData|null>(null); const [ocrMessage,setOcrMessage]=useState(""); const [ocrPending,startOcr]=useTransition();
   const [fileInputKey,setFileInputKey]=useState(0); const [evidenceFileName,setEvidenceFileName]=useState("");
-  const editedFields=useRef({amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false}); const ocrRequest=useRef(0);
+  const editedFields=useRef({amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false}); const ocrRequest=useRef(0);
   const [status,setStatus]=useState("ALL");
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
   const submissionDeadline=usedPeriod?.submission_deadline ?? (w.policy?autoSubmissionDeadline(usedOn,w.policy.submission_day):null);
@@ -80,7 +80,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
     setEntryMode(mode); setOcrMessage(""); setOcrData(null); setEvidenceFileName(""); setFileInputKey(key=>key+1); ocrRequest.current+=1;
     if(mode!=="SOURCE") {
       setSource("");
-      if(entryMode==="SOURCE") {setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");editedFields.current={amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};}
+      if(entryMode==="SOURCE") {setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");editedFields.current={amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};}
     }
   }
   function analyzeEvidence(file?:File) {
@@ -89,17 +89,18 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
     const request=++ocrRequest.current; const form=new FormData(); form.set("evidence",file);
     startOcr(async()=>{try{
       const result=await analyzeReimbursementEvidence(form); if(request!==ocrRequest.current)return;
-      const draft=buildReimbursementOcrDraft(result.ocrData); const applied:string[]=[];
+      const draft=buildReimbursementOcrDraft(result.ocrData,w.budgets); const applied:string[]=[];
       if(draft.usedOn&&draft.usedOn<=today&&!editedFields.current.usedOn){setUsedOn(draft.usedOn);applied.push("사용일");}
       if(draft.amount&&!editedFields.current.amount){setAmount(draft.amount);applied.push("금액");}
       if(draft.merchant&&!editedFields.current.merchant){setMerchant(draft.merchant);applied.push("사용처");}
       if(draft.purpose&&!editedFields.current.purpose){setPurpose(draft.purpose);applied.push("업무 목적");}
+      if(draft.budgetId&&!editedFields.current.budgetId){setBudgetId(draft.budgetId);applied.push("예산항목");}
       if(draft.evidenceKind&&!editedFields.current.evidenceKind){setEvidenceKind(draft.evidenceKind);applied.push("증빙 종류");}
       setOcrData(result.ocrData); setOcrMessage(applied.length?`${applied.join("·")}을 자동입력했어. 제출 전에 확인해줘.`:"인식 결과를 확인했지만 자동입력할 항목이 없어. 직접 입력해줘.");
     }catch(error){if(request===ocrRequest.current)setOcrMessage(error instanceof Error?error.message:"영수증 자동입력을 완료하지 못했어.");}});
   }
   function resetRequestForm() {
-    setRequestId(crypto.randomUUID());setSource("");setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setEvidenceKind("RECEIPT");setEntryMode("OCR");setOcrData(null);setOcrMessage("");setEvidenceFileName("");setFileInputKey(key=>key+1);editedFields.current={amount:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};
+    setRequestId(crypto.randomUUID());setSource("");setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setEvidenceKind("RECEIPT");setEntryMode("OCR");setOcrData(null);setOcrMessage("");setEvidenceFileName("");setFileInputKey(key=>key+1);editedFields.current={amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};
   }
   return <>
     <header className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">{tab==="budgets"?"예산집행 현황":"대납·선지급 정산"}</h1><p className="mt-2 text-sm text-slate-600">개인 대납은 사용월 예산에 한 번 반영하고 지급일은 실제 출금일로 기록해. 이 화면의 월 마감은 개인 경비 정산 범위야.</p></div><div className="text-sm">{w.member.display_name}<button className={`${secondary} ml-3`} onClick={()=>op.run(reimbursementLogout)} disabled={op.pending}>로그아웃</button></div></div>
@@ -113,7 +114,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
         <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;const data=new FormData(el);op.run(async()=>{await submitReimbursement(data);el.reset();resetRequestForm();},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
           <input type="hidden" name="id" value={requestId}/>
           <fieldset className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-4"><legend className="px-2 font-bold text-blue-950">1. 정산 시작 방법</legend>
-            <p className="mb-3 text-sm text-blue-900">영수증을 먼저 분석하면 날짜·금액·사용처·업무 목적 입력을 도와줘.</p>
+            <p className="mb-3 text-sm text-blue-900">영수증을 먼저 분석하면 날짜·금액·사용처·업무 목적·예산항목 입력을 도와줘.</p>
             <div className="flex flex-wrap gap-2">
               <button aria-pressed={entryMode==="OCR"} className={entryMode==="OCR"?button:secondary} onClick={()=>selectEntryMode("OCR")} type="button">영수증으로 새 정산</button>
               <button aria-pressed={entryMode==="SOURCE"} className={entryMode==="SOURCE"?button:secondary} disabled={!w.sources.length} onClick={()=>selectEntryMode("SOURCE")} type="button">기존 지출 연결</button>
@@ -126,7 +127,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           <p className="sm:col-span-2 font-bold">2. 자동입력 결과 확인·보완</p>
           <label>실제 사용일<input className={input} name="used_on" type="date" required min={`${today.slice(0,4)}-01-01`} max={today} value={usedOn} onChange={e=>{editedFields.current.usedOn=true;setUsedOn(e.target.value);}}/></label>
           <label>예산 귀속월<input className={input} readOnly value={usedOn.slice(0,7)}/></label>
-          <label>예산항목<select className={input} name="budget_id" required value={budgetId} onChange={e=>setBudgetId(e.target.value)}><option value="">예산항목 선택</option>{w.budgets.map(b=><option key={b.id} value={b.id}>{b.budget_item}</option>)}</select></label>
+          <label>예산항목<select className={input} name="budget_id" required value={budgetId} onChange={e=>{editedFields.current.budgetId=true;setBudgetId(e.target.value);}}><option value="">예산항목 선택</option>{w.budgets.map(b=><option key={b.id} value={b.id}>{b.budget_item}</option>)}</select></label>
           <label>개인 결제 금액<input className={input} type="number" name="amount" min="1" step="1" required value={amount} onChange={e=>{editedFields.current.amount=true;setAmount(e.target.value);}}/></label>
           <label>사용처<input className={input} name="merchant" required value={merchant} onChange={e=>{editedFields.current.merchant=true;setMerchant(e.target.value);}}/></label>
           <label>업무 목적<input className={input} name="purpose" required value={purpose} onChange={e=>{editedFields.current.purpose=true;setPurpose(e.target.value);}}/></label>
