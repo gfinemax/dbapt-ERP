@@ -2,8 +2,18 @@
 
 import Link from "next/link";
 import styles from "./expense-workspace.module.css";
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+  type RefObject,
+} from "react";
 import { useRouter } from "next/navigation";
+import { GripHorizontal, PanelLeft, PanelRight, RotateCcw } from "lucide-react";
 import {
   attachQuickExpenseEvidenceAction,
   connectExpenseOriginal,
@@ -76,6 +86,223 @@ const day = (value: string | null) =>
       : new Date(value).toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul" });
 const keyOf = (r: ExpenseWorkspaceRecord) => `${r.source_kind}:${r.source_id}`;
 const noEvidence: NonNullable<ExpenseWorkspaceRecord["evidence_files"]> = [];
+const floatingPanelStorageKey = "expense-workspace-floating-panel-v1";
+
+type FloatingPanelPlacement = "LEFT" | "CENTER" | "RIGHT" | "FREE";
+type FloatingPanelLayout = {
+  height: number;
+  left: number;
+  placement: FloatingPanelPlacement;
+  top: number;
+  width: number;
+};
+
+function defaultFloatingPanelLayout(): FloatingPanelLayout {
+  const viewportWidth = typeof window === "undefined" ? 1440 : window.innerWidth;
+  const viewportHeight = typeof window === "undefined" ? 900 : window.innerHeight;
+  return {
+    height: Math.min(780, Math.max(600, viewportHeight - 152)),
+    left: Math.max(24, viewportWidth - Math.min(920, viewportWidth - 48) - 24),
+    placement: "RIGHT",
+    top: 124,
+    width: Math.min(920, viewportWidth - 48),
+  };
+}
+
+function clampFloatingPanel(layout: FloatingPanelLayout): FloatingPanelLayout {
+  if (typeof window === "undefined") return layout;
+  const margin = 12;
+  const width = Math.min(Math.max(520, layout.width), window.innerWidth - margin * 2);
+  const height = Math.min(
+    Math.max(600, layout.height),
+    window.innerHeight - margin * 2,
+  );
+  const top = Math.min(
+    Math.max(margin, layout.top),
+    Math.max(margin, window.innerHeight - height - margin),
+  );
+  let left = layout.left;
+  if (layout.placement === "LEFT") left = 24;
+  if (layout.placement === "CENTER") left = (window.innerWidth - width) / 2;
+  if (layout.placement === "RIGHT") left = window.innerWidth - width - 24;
+  left = Math.min(
+    Math.max(margin, left),
+    Math.max(margin, window.innerWidth - width - margin),
+  );
+  return { ...layout, height, left, top, width };
+}
+
+function loadFloatingPanelLayout() {
+  const fallback = defaultFloatingPanelLayout();
+  if (typeof window === "undefined") return fallback;
+  try {
+    const saved = JSON.parse(
+      window.localStorage.getItem(floatingPanelStorageKey) ?? "null",
+    ) as Partial<FloatingPanelLayout> | null;
+    if (!saved) return clampFloatingPanel(fallback);
+    return clampFloatingPanel({
+      height: Number(saved.height) || fallback.height,
+      left: Number(saved.left) || fallback.left,
+      placement: ["LEFT", "CENTER", "RIGHT", "FREE"].includes(
+        String(saved.placement),
+      )
+        ? (saved.placement as FloatingPanelPlacement)
+        : fallback.placement,
+      top: Number(saved.top) || fallback.top,
+      width: Number(saved.width) || fallback.width,
+    });
+  } catch {
+    return clampFloatingPanel(fallback);
+  }
+}
+
+function useFloatingExpensePanel(panelRef: RefObject<HTMLElement | null>) {
+  const [layout, setLayout] = useState<FloatingPanelLayout>({
+    height: 780,
+    left: 496,
+    placement: "RIGHT",
+    top: 124,
+    width: 920,
+  });
+  const resizeSaveTimer = useRef<number | null>(null);
+
+  const persist = useCallback((next: FloatingPanelLayout) => {
+    try {
+      window.localStorage.setItem(floatingPanelStorageKey, JSON.stringify(next));
+    } catch {
+      // Position persistence is optional; the window remains usable without it.
+    }
+  }, []);
+
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() =>
+      setLayout(loadFloatingPanelLayout()),
+    );
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
+    const keepInsideViewport = () =>
+      setLayout((current) => {
+        const next = clampFloatingPanel(current);
+        persist(next);
+        return next;
+      });
+    window.addEventListener("resize", keepInsideViewport);
+    return () => window.removeEventListener("resize", keepInsideViewport);
+  }, [persist]);
+
+  useEffect(() => {
+    const panel = panelRef.current;
+    if (!panel || typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver(() => {
+      if (window.innerWidth < 900) return;
+      const rect = panel.getBoundingClientRect();
+      setLayout((current) => {
+        if (
+          Math.abs(current.width - rect.width) < 1 &&
+          Math.abs(current.height - rect.height) < 1
+        )
+          return current;
+        const next = clampFloatingPanel({
+          ...current,
+          height: rect.height,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+        });
+        if (resizeSaveTimer.current)
+          window.clearTimeout(resizeSaveTimer.current);
+        resizeSaveTimer.current = window.setTimeout(() => persist(next), 180);
+        return next;
+      });
+    });
+    observer.observe(panel);
+    return () => {
+      observer.disconnect();
+      if (resizeSaveTimer.current)
+        window.clearTimeout(resizeSaveTimer.current);
+    };
+  }, [panelRef, persist]);
+
+  const place = useCallback(
+    (placement: Exclude<FloatingPanelPlacement, "FREE">) => {
+      setLayout((current) => {
+        const next = clampFloatingPanel({ ...current, placement });
+        persist(next);
+        return next;
+      });
+    },
+    [persist],
+  );
+
+  const reset = useCallback(() => {
+    const next = clampFloatingPanel(defaultFloatingPanelLayout());
+    setLayout(next);
+    persist(next);
+  }, [persist]);
+
+  const startDrag = useCallback(
+    (event: ReactPointerEvent<HTMLElement>) => {
+      if (
+        event.button !== 0 ||
+        window.innerWidth < 900 ||
+        (event.target as HTMLElement).closest(
+          "button, a, input, select, textarea, [data-no-drag]",
+        )
+      )
+        return;
+      const panel = panelRef.current;
+      if (!panel) return;
+      event.preventDefault();
+      const rect = panel.getBoundingClientRect();
+      const startX = event.clientX;
+      const startY = event.clientY;
+      const startLeft = rect.left;
+      const startTop = rect.top;
+      document.body.style.userSelect = "none";
+      setLayout((current) => ({
+        ...current,
+        height: rect.height,
+        left: rect.left,
+        placement: "FREE",
+        top: rect.top,
+        width: rect.width,
+      }));
+
+      const move = (moveEvent: PointerEvent) => {
+        setLayout((current) =>
+          clampFloatingPanel({
+            ...current,
+            left: startLeft + moveEvent.clientX - startX,
+            placement: "FREE",
+            top: startTop + moveEvent.clientY - startY,
+          }),
+        );
+      };
+      const stop = () => {
+        document.body.style.userSelect = "";
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", stop);
+        setLayout((current) => {
+          persist(current);
+          return current;
+        });
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", stop, { once: true });
+    },
+    [panelRef, persist],
+  );
+
+  const style: CSSProperties = {
+    height: layout.height,
+    left: layout.left,
+    top: layout.top,
+    width: layout.width,
+  };
+  return { layout, place, reset, startDrag, style };
+}
 
 async function uploadReceipt(
   formData: FormData,
@@ -1002,8 +1229,12 @@ function ExpenseDetail({
   canApprove,
   expenseDetails,
   onClose,
+  onMoveStart,
   onNext,
+  onPlace,
   onPrevious,
+  onResetPosition,
+  placement,
   permissions,
   record: r,
   staff,
@@ -1011,8 +1242,12 @@ function ExpenseDetail({
   canApprove: boolean;
   expenseDetails: OperatingExpenseDetail[];
   onClose: () => void;
+  onMoveStart: (event: ReactPointerEvent<HTMLElement>) => void;
   onNext?: () => void;
+  onPlace: (placement: "LEFT" | "CENTER" | "RIGHT") => void;
   onPrevious?: () => void;
+  onResetPosition: () => void;
+  placement: FloatingPanelPlacement;
   permissions: ExpenseWorkspace["viewer"]["permissions"];
   record: ExpenseWorkspaceRecord;
   staff: boolean;
@@ -1052,8 +1287,12 @@ function ExpenseDetail({
       aria-label="지출 상세"
       className={`${card} @container/detail ${styles.detailCard}`}
     >
-      <div className={styles.detailHeader}>
-        <div className="flex items-start justify-between gap-3">
+      <div className={styles.detailHeader} onPointerDown={onMoveStart}>
+        <div className={styles.dragHint}>
+          <GripHorizontal aria-hidden="true" size={16} />
+          <span>상단을 끌어 이동 · 모서리를 끌어 크기 조절</span>
+        </div>
+        <div className={styles.detailHeaderRow}>
           <div className="min-w-0">
             <p className="text-sm font-semibold text-blue-700">
               {kinds[r.source_kind]}
@@ -1081,7 +1320,53 @@ function ExpenseDetail({
               </p>
             )}
           </div>
-          <div className="flex shrink-0 gap-2">
+          <div className={styles.headerActions} data-no-drag>
+            <div
+              aria-label="상세창 위치"
+              className={styles.windowTools}
+              data-no-drag
+              role="group"
+            >
+              <button
+                aria-pressed={placement === "LEFT"}
+                className={secondary}
+                onClick={() => onPlace("LEFT")}
+                title="왼쪽에 배치"
+                type="button"
+              >
+                <PanelLeft aria-hidden="true" size={16} />
+                <span className="sr-only">상세창 왼쪽 배치</span>
+              </button>
+              <button
+                aria-pressed={placement === "CENTER"}
+                className={secondary}
+                onClick={() => onPlace("CENTER")}
+                title="가운데에 배치"
+                type="button"
+              >
+                <GripHorizontal aria-hidden="true" size={16} />
+                <span className="sr-only">상세창 가운데 배치</span>
+              </button>
+              <button
+                aria-pressed={placement === "RIGHT"}
+                className={secondary}
+                onClick={() => onPlace("RIGHT")}
+                title="오른쪽에 배치"
+                type="button"
+              >
+                <PanelRight aria-hidden="true" size={16} />
+                <span className="sr-only">상세창 오른쪽 배치</span>
+              </button>
+              <button
+                className={secondary}
+                onClick={onResetPosition}
+                title="위치와 크기 초기화"
+                type="button"
+              >
+                <RotateCcw aria-hidden="true" size={16} />
+                <span className="sr-only">상세창 위치와 크기 초기화</span>
+              </button>
+            </div>
             <button
               aria-label="이전 지출"
               className={secondary}
@@ -1105,7 +1390,7 @@ function ExpenseDetail({
               className={secondary}
               onClick={onClose}
             >
-              목록으로
+              닫기
             </button>
           </div>
         </div>
@@ -1142,6 +1427,8 @@ function ExpenseDetail({
       {tab === "DETAIL" && (
         <div
           aria-labelledby="expense-detail-tab"
+          className={styles.detailPanel}
+          data-personal={r.source_kind === "PERSONAL"}
           id="expense-detail-panel"
           role="tabpanel"
         >
@@ -1188,7 +1475,9 @@ function ExpenseDetail({
             ))}
           </dl>
           {r.source_kind === "PERSONAL" && (
-            <PersonalReimbursementEvidence record={r} />
+            <div className={styles.personalEvidence}>
+              <PersonalReimbursementEvidence record={r} />
+            </div>
           )}
           {staff && r.source_kind === "RESOLUTION" && (
             <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50/40 p-4">
@@ -1395,6 +1684,8 @@ export function ExpenseWorkspacePage({
   initialSourceId?: string;
 }) {
   const panelRef = useRef<HTMLElement>(null);
+  const floatingPanel = useFloatingExpensePanel(panelRef);
+  const detailWasOpen = useRef(false);
   const router = useRouter();
   const [kind, setKind] = useState(
     Object.hasOwn(kinds, initialKind) ? initialKind : "ALL",
@@ -1453,15 +1744,9 @@ export function ExpenseWorkspacePage({
   );
   useEffect(() => {
     const panel = panelRef.current;
-    if (!selected || !panel) return;
-    panel.focus({ preventScroll: true });
-    if (
-      panel.parentElement &&
-      getComputedStyle(panel.parentElement).gridTemplateColumns.split(" ")
-        .length === 1
-    ) {
-      panel.scrollIntoView?.({ block: "start" });
-    }
+    if (selected && panel && !detailWasOpen.current)
+      panel.focus({ preventScroll: true });
+    detailWasOpen.current = !!selected;
   }, [selected]);
   function selectDetail(record: ExpenseWorkspaceRecord) {
     setSelected(keyOf(record));
@@ -1812,8 +2097,12 @@ export function ExpenseWorkspacePage({
             <aside
               ref={panelRef}
               tabIndex={-1}
-              aria-label="선택한 지출 원본 상세 패널"
+              aria-label="선택한 지출 원본 상세창"
+              aria-modal="false"
               className={styles.panel}
+              data-placement={floatingPanel.layout.placement}
+              role="dialog"
+              style={floatingPanel.style}
             >
               {detail ? (
                 <ExpenseDetail
@@ -1823,14 +2112,18 @@ export function ExpenseWorkspacePage({
                   expenseDetails={expenseDetails}
                   key={keyOf(detail)}
                   onClose={closeDetail}
+                  onMoveStart={floatingPanel.startDrag}
                   onNext={
                     selectedRowIndex >= 0 && selectedRowIndex < rows.length - 1
                       ? () => selectAdjacent(1)
                       : undefined
                   }
+                  onPlace={floatingPanel.place}
                   onPrevious={
                     selectedRowIndex > 0 ? () => selectAdjacent(-1) : undefined
                   }
+                  onResetPosition={floatingPanel.reset}
+                  placement={floatingPanel.layout.placement}
                   permissions={workspace.viewer.permissions}
                   record={detail}
                   staff={workspace.viewer.staff}

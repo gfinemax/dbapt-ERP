@@ -102,6 +102,7 @@ const expenseDetails: OperatingExpenseDetail[] = [
 ];
 beforeEach(() => {
   vi.clearAllMocks();
+  window.localStorage.clear();
   mocks.connect.mockResolvedValue({ id: "saved-tx" });
   mocks.update.mockResolvedValue({ id: "same-text-id" });
   mocks.personalUpdate.mockResolvedValue({
@@ -664,10 +665,12 @@ describe("common original expense workspace", () => {
     const source = screen.getByRole("button", { name: "사무용품" });
     fireEvent.click(source);
     expect(source.closest("tr")).toHaveAttribute("aria-selected", "true");
-    const panel = screen.getByRole("complementary", {
-      name: "선택한 지출 원본 상세 패널",
+    const panel = screen.getByRole("dialog", {
+      name: "선택한 지출 원본 상세창",
     });
     expect(panel).toHaveFocus();
+    expect(panel).toHaveAttribute("aria-modal", "false");
+    expect(screen.getByRole("region", { name: "지출 원본 목록" })).toBeVisible();
     expect(
       screen.queryByRole("button", { name: "상세 패널 배경 닫기" }),
     ).not.toBeInTheDocument();
@@ -708,8 +711,8 @@ describe("common original expense workspace", () => {
   it("hides the detail area initially and reveals it only after selecting an expense", () => {
     render(<ExpenseWorkspacePage workspace={fixture()} />);
     expect(
-      screen.queryByRole("complementary", {
-        name: "선택한 지출 원본 상세 패널",
+      screen.queryByRole("dialog", {
+        name: "선택한 지출 원본 상세창",
       }),
     ).not.toBeInTheDocument();
     expect(
@@ -719,8 +722,13 @@ describe("common original expense workspace", () => {
     ).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "사무용품" }));
     expect(
-      screen.getByRole("complementary", { name: "선택한 지출 원본 상세 패널" }),
+      screen.getByRole("dialog", { name: "선택한 지출 원본 상세창" }),
     ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "개인 사용" }));
+    expect(screen.getByRole("heading", { name: "개인 사용" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "선택한 지출 원본 상세창" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "상세창 왼쪽 배치" }));
+    expect(screen.getByRole("dialog", { name: "선택한 지출 원본 상세창" })).toHaveAttribute("data-placement", "LEFT");
   });
   it("shows small expenses as a first-class source and opens their original detail", () => {
     const workspace = fixture();
@@ -759,8 +767,8 @@ describe("common original expense workspace", () => {
     );
     fireEvent.keyDown(window, { key: "Escape" });
     expect(
-      screen.queryByRole("complementary", {
-        name: "선택한 지출 원본 상세 패널",
+      screen.queryByRole("dialog", {
+        name: "선택한 지출 원본 상세창",
       }),
     ).not.toBeInTheDocument();
     expect(mocks.replace).toHaveBeenLastCalledWith(
