@@ -101,6 +101,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const fileInputRef=useRef<HTMLInputElement|null>(null);
   const editedFields=useRef({amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false}); const ocrRequest=useRef(0);
   const [status,setStatus]=useState("ALL");
+  const [listScope,setListScope]=useState<"ACTIVE"|"MONTH"|"CLOSED">(()=>initialRequest&&(initialRequest.status==="PAID"||initialRequest.status==="REJECTED"||initialRequest.status==="CANCELLED")?"CLOSED":"ACTIVE");
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
   const submissionDeadline=usedPeriod?.submission_deadline ?? (w.policy?autoSubmissionDeadline(usedOn,w.policy.submission_day):null);
   const longDelayDays=usedPeriod?.long_delay_days ?? w.policy?.long_delay_days;
@@ -108,7 +109,14 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const canAutoOpen=Boolean(usedPeriod||w.policy);
   const isAdmin=hasReimbursementPermission(w.member,"ADMIN"); const canClose=hasReimbursementPermission(w.member,"CLOSE");
   const names=Object.fromEntries(w.members.map(m=>[m.user_id,m.display_name]));
-  const visible=w.requests.filter(r=>status==="ALL"||r.status===status);
+  const activeRequests=w.requests.filter(r=>r.status==="SUBMITTED"||r.status==="APPROVED");
+  const monthRequests=w.requests.filter(r=>r.budget_month===w.month);
+  const closedMonthRequests=monthRequests.filter(r=>r.status==="PAID"||r.status==="REJECTED"||r.status==="CANCELLED");
+  const scopedRequests=listScope==="ACTIVE"?activeRequests:listScope==="MONTH"?monthRequests:closedMonthRequests;
+  const visible=scopedRequests.filter(r=>status==="ALL"||r.status===status);
+  const scopeTitle=listScope==="ACTIVE"?"처리 중인 신청":listScope==="MONTH"?`${w.month.slice(0,7)} 사용분`:`${w.month.slice(0,7)} 완료·종료`;
+  const offMonthActiveCount=activeRequests.filter(r=>r.budget_month!==w.month).length;
+  function changeListScope(scope:"ACTIVE"|"MONTH"|"CLOSED"){setListScope(scope);setStatus("ALL");}
   function command(command:string,data:Record<string,unknown>){op.run(async()=>{await runReimbursementCommand(command,data);setSelected(null);setAction("");});}
   function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");setOcrData(null);setOcrMessage("기존 지출의 값과 저장된 증빙을 재사용해. 제출 전에 내용을 확인해줘.");}else{setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setOcrMessage("");}}
   function selectEntryMode(mode:"OCR"|"SOURCE"|"MANUAL") {
@@ -192,10 +200,17 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           <button className={button} disabled={op.pending||ocrPending||!canAutoOpen}>내용 확인 후 정산 신청</button>
         </form>
       </details>
-      <section className={card}><div className="mb-4 flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-bold">{w.month.slice(0,7)} 사용분 · {visible.length}건</h2><select aria-label="정산 상태" className="rounded-lg border p-2" value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">전체 상태</option>{Object.entries(reimbursementStatusLabels).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
+      <section className={card}>
+        <div className="mb-4 flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-lg font-bold">{scopeTitle} · {visible.length}건</h2><p className="mt-1 text-sm text-slate-600">처리 중 전체는 사용월과 관계없이 심사 중·지급 대기 신청을 모아 보여줘.</p></div><select aria-label="정산 상태" className="rounded-lg border p-2" value={status} onChange={e=>setStatus(e.target.value)}><option value="ALL">전체 상태</option>{Object.entries(reimbursementStatusLabels).filter(([id])=>scopedRequests.some(r=>r.status===id)).map(([id,label])=><option key={id} value={id}>{label}</option>)}</select></div>
+        <div aria-label="정산 목록 범위" className="mb-4 flex flex-wrap gap-2">
+          <button aria-pressed={listScope==="ACTIVE"} className={listScope==="ACTIVE"?button:secondary} onClick={()=>changeListScope("ACTIVE")} type="button">처리 중 전체 {activeRequests.length}</button>
+          <button aria-pressed={listScope==="MONTH"} className={listScope==="MONTH"?button:secondary} onClick={()=>changeListScope("MONTH")} type="button">{w.month.slice(0,7)} 사용분 {monthRequests.length}</button>
+          <button aria-pressed={listScope==="CLOSED"} className={listScope==="CLOSED"?button:secondary} onClick={()=>changeListScope("CLOSED")} type="button">완료·종료 {closedMonthRequests.length}</button>
+        </div>
+        {listScope!=="ACTIVE"&&offMonthActiveCount>0&&<button className="mb-4 w-full rounded-lg bg-blue-50 p-3 text-left text-sm text-blue-900" onClick={()=>changeListScope("ACTIVE")} type="button">다른 사용월에 처리 중인 신청 {offMonthActiveCount}건이 있어. 전체 보기 →</button>}
         <div className="space-y-4">{visible.map(r=><article id={`reimbursement-request-${r.id}`} key={r.id} className={`rounded-xl border p-4 ${initialRequestId===r.id?"border-blue-400 bg-blue-50/30":""}`}><div className="flex flex-wrap justify-between gap-2"><h3 className="font-bold">{r.merchant} · {money(r.amount)}</h3><span className="text-sm font-semibold">{reimbursementStatusLabels[r.status]}</span></div>
-          <p className="mt-2 text-sm">{r.purpose}</p><p className="mt-2 text-sm text-slate-600">신청자 {names[r.applicant_id]??"등록 사용자"} · 사용일 {r.used_on} · 예산 귀속 {r.budget_month.slice(0,7)}</p>
-          <p className="mt-1 text-xs text-slate-600">신청 {dateTime(r.submitted_at)} · 예산 승인 {dateTime(r.approved_at)} · 실제 지급 {dateTime(r.paid_at)}</p>
+          <p className="mt-2 text-sm">{r.purpose}</p><p className="mt-2 text-sm text-slate-600">신청자 {names[r.applicant_id]??"등록 사용자"} · {r.budget_month.slice(0,7)} 사용 · {koreaDate(new Date(r.submitted_at))} 신청</p>
+          <p className="mt-1 text-xs text-slate-600">실제 사용일 {r.used_on} · 예산 승인 {dateTime(r.approved_at)} · 실제 지급 {dateTime(r.paid_at)}</p>
           {r.delay_reason&&<p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">지연 사유: {r.delay_reason}</p>}
           <p className="mt-2 text-xs text-slate-600">결제수단 {r.payment_method==="PERSONAL_CARD"?"개인카드":r.payment_method==="PERSONAL_TRANSFER"?"개인계좌 이체":"현금"} · 증빙 {r.evidence_kind==="RECEIPT"?"영수증":r.evidence_kind} · {r.evidence_review_status==="READY"?"증빙 확인 가능":r.evidence_review_status==="APPROVED"?"대체증빙 승인 완료":r.evidence_review_status==="SUPPLEMENT_REQUIRED"?"증빙 보완 필요":"대체증빙 승인대기"}</p>
           {r.missing_receipt_reason&&<p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm">영수증 미첨부 사유: {r.missing_receipt_reason}</p>}

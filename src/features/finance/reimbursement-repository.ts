@@ -21,12 +21,15 @@ export async function reimbursementCommand(member: ReimbursementMember, command:
 export async function loadReimbursementWorkspace(member: ReimbursementMember, month: string): Promise<ReimbursementWorkspace> {
   const db = reimbursementDb(); const finance = db.schema("finance"); const org = member.organization_id;
   const staff=member.permissions.length>0;
-  let requests=finance.from("personal_reimbursements").select("id,applicant_id,budget_id,used_on,budget_month,amount,merchant,purpose,delay_reason,source_quick_id,status,needs_exception,needs_senior,exception_approved_at,senior_approved_at,over_budget_approved_at,submitted_at,approved_at,paid_at,bank_transaction_id,payment_method,evidence_kind,missing_receipt_reason,evidence_review_status,evidence_reviewed_at,evidence_review_note,updated_at").eq("organization_id",org).eq("budget_month",month);
-  if(!staff) requests=requests.eq("applicant_id",member.user_id);
+  const requestColumns="id,applicant_id,budget_id,used_on,budget_month,amount,merchant,purpose,delay_reason,source_quick_id,status,needs_exception,needs_senior,exception_approved_at,senior_approved_at,over_budget_approved_at,submitted_at,approved_at,paid_at,bank_transaction_id,payment_method,evidence_kind,missing_receipt_reason,evidence_review_status,evidence_reviewed_at,evidence_review_note,updated_at";
+  let monthRequests=finance.from("personal_reimbursements").select(requestColumns).eq("organization_id",org).eq("budget_month",month);
+  let activeRequests=finance.from("personal_reimbursements").select(requestColumns).eq("organization_id",org).in("status",["SUBMITTED","APPROVED"]);
+  if(!staff) {monthRequests=monthRequests.eq("applicant_id",member.user_id);activeRequests=activeRequests.eq("applicant_id",member.user_id);}
   const results = await Promise.all([
     finance.from("reimbursement_policies").select("submission_day,completion_day,long_delay_days").eq("organization_id",org).maybeSingle(),
     finance.from("reimbursement_periods").select("*").eq("organization_id",org).order("month",{ascending:false}),
-    requests.order("submitted_at",{ascending:false}),
+    monthRequests.order("submitted_at",{ascending:false}),
+    activeRequests.order("submitted_at",{ascending:false}),
     finance.rpc("reimbursement_budget_rows",{p_org:org,p_month:month}),
     staff?finance.from("reimbursement_reports").select("month,revision,created_at,reason,snapshot").eq("organization_id",org).eq("month",month).order("revision",{ascending:false}):Promise.resolve({data:[],error:null}),
     staff?finance.from("reimbursement_members").select("organization_id,user_id,display_name,permissions,active").eq("organization_id",org):Promise.resolve({data:[member],error:null}),
@@ -38,5 +41,6 @@ export async function loadReimbursementWorkspace(member: ReimbursementMember, mo
     staff?db.schema("approval").from("budgets").select("id,budget_item,fiscal_year").eq("organization_id",org):Promise.resolve({data:[],error:null}),
   ]);
   for (const r of results) if (r.error) throw new Error(`정산 자료 조회 실패: ${r.error.message}`);
-  return { member, month, policy: results[0].data as ReimbursementPolicy | null, periods: results[1].data as ReimbursementPeriod[], requests: results[2].data as Reimbursement[], budgets: results[3].data as ReimbursementBudget[], reports: results[4].data as ReimbursementReport[], members: results[5].data as ReimbursementMember[], audits: results[6].data as ReimbursementAudit[], banks: results[7].data as ReimbursementBank[], sources: results[8].data as ReimbursementSource[], allocationSources:results[9].data as BudgetAllocationSource[], budgetEntries:results[10].data as BudgetEntry[], allocationBudgets:results[11].data as {id:string;budget_item:string;fiscal_year:number}[] };
+  const requests=Array.from(new Map([...(results[3].data??[]),...(results[2].data??[])].map(request=>[request.id,request])).values()).sort((a,b)=>Date.parse(b.submitted_at)-Date.parse(a.submitted_at)) as Reimbursement[];
+  return { member, month, policy: results[0].data as ReimbursementPolicy | null, periods: results[1].data as ReimbursementPeriod[], requests, budgets: results[4].data as ReimbursementBudget[], reports: results[5].data as ReimbursementReport[], members: results[6].data as ReimbursementMember[], audits: results[7].data as ReimbursementAudit[], banks: results[8].data as ReimbursementBank[], sources: results[9].data as ReimbursementSource[], allocationSources:results[10].data as BudgetAllocationSource[], budgetEntries:results[11].data as BudgetEntry[], allocationBudgets:results[12].data as {id:string;budget_item:string;fiscal_year:number}[] };
 }

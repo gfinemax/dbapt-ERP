@@ -86,6 +86,24 @@ describe("reimbursement workspace",()=>{
   fireEvent.click(screen.getByText("개인 지출 정산 신청"));
   expect(details).not.toHaveAttribute("open");
  });
+ it("shows pending requests across usage months and separates the selected month from closed requests",()=>{
+  const augustPending={...w.requests[0],id:"august",merchant:"8월 우체국",used_on:"2026-08-15",budget_month:"2026-08-01",status:"SUBMITTED" as const,approved_at:null};
+  const marchPaid={...w.requests[0],id:"paid",merchant:"지급 완료 문구점",status:"PAID" as const,paid_at:"2026-03-20T09:00:00+09:00"};
+  render(<ReimbursementPage workspace={{...w,requests:[w.requests[0],augustPending,marchPaid]}}/>);
+  expect(screen.getByRole("button",{name:"처리 중 전체 2"})).toHaveAttribute("aria-pressed","true");
+  expect(screen.getByText(/8월 우체국/)).toBeInTheDocument();
+  expect(screen.getByText(/문구점 · 80,000원/)).toBeInTheDocument();
+  expect(screen.queryByText(/지급 완료 문구점/)).not.toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button",{name:"2026-03 사용분 2"}));
+  expect(screen.queryByText(/8월 우체국/)).not.toBeInTheDocument();
+  expect(screen.getByText(/지급 완료 문구점/)).toBeInTheDocument();
+  expect(screen.getByRole("button",{name:/다른 사용월에 처리 중인 신청 1건/})).toBeInTheDocument();
+
+  fireEvent.click(screen.getByRole("button",{name:"완료·종료 1"}));
+  expect(screen.getByText(/지급 완료 문구점/)).toBeInTheDocument();
+  expect(screen.queryByText(/^문구점 · 80,000원$/)).not.toBeInTheDocument();
+ });
  it("blocks automatic period creation only when the operating policy is missing",()=>{
   render(<ReimbursementPage workspace={{...w,periods:[],policy:null}}/>);
   expect(screen.getByText("접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.")).toBeInTheDocument();
