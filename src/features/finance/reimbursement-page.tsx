@@ -58,6 +58,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
   const allowedInitialAction=initialRequest&&initialAction&&requestActions(initialRequest,w.member,period).includes(initialAction)?initialAction:"";
   const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [action,setAction]=useState(allowedInitialAction);
+  const [requestFormOpen,setRequestFormOpen]=useState(false);
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
   const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
@@ -107,10 +108,10 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
       <div className="mt-5 flex flex-wrap items-center gap-3"><label>조회 월 <input aria-label="조회 월" className="rounded-lg border p-2" type="month" value={w.month.slice(0,7)} onChange={e=>{if(e.target.value)router.push(`/finance/reimbursements?month=${e.target.value}&tab=${tab}`);}} /></label><span className="rounded-full bg-blue-50 px-3 py-2 text-sm">{period?periodLabel(period,today):"접수월 미개설"}</span>{period&&<span className="text-sm text-slate-600">제출 {period.submission_deadline} · 보완 {period.completion_deadline}</span>}</div>
     </header>
     {w.member.permissions.some(p=>["ADMIN","APPROVE","PAY","CLOSE","SENIOR"].includes(p))&&<div className="flex flex-wrap gap-3"><Link className={secondary} href="/finance/advance-settlements">선지급 사용내역·잔액 정산</Link><Link className={secondary} href="/finance/month-close">전체 회계 월 점검</Link></div>}
-    <nav aria-label="정산 업무" className="flex flex-wrap gap-2">{[["requests","정산 신청·처리"],["budgets","예산·마감 보고서"],["settings","운영 기준·권한"]].map(([id,label])=><button key={id} aria-pressed={tab===id} className={tab===id?button:secondary} onClick={()=>{setTab(id);router.push(`/finance/reimbursements?month=${w.month.slice(0,7)}&tab=${id}`,{scroll:false});}}>{label}</button>)}</nav>
+    <nav aria-label="정산 업무" className="flex flex-wrap gap-2">{[["requests","정산 신청·처리"],["budgets","예산·마감 보고서"],["settings","운영 기준·권한"]].map(([id,label])=><button key={id} aria-pressed={tab===id} className={tab===id?button:secondary} onClick={()=>{setTab(id);if(id==="requests")setRequestFormOpen(true);router.push(`/finance/reimbursements?month=${w.month.slice(0,7)}&tab=${id}`,{scroll:false});}}>{label}</button>)}</nav>
     {op.message&&<p role="status" className="rounded-lg border bg-blue-50 p-4">{op.message}</p>}
     {tab==="requests"&&<>
-      <details className={card}><summary className="cursor-pointer text-lg font-bold">개인 지출 정산 신청</summary>
+      <details className={card} open={requestFormOpen} onToggle={event=>setRequestFormOpen(event.currentTarget.open)}><summary className="cursor-pointer text-lg font-bold">개인 지출 정산 신청</summary>
         <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;const data=new FormData(el);op.run(async()=>{await submitReimbursement(data);el.reset();resetRequestForm();},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
           <input type="hidden" name="id" value={requestId}/>
           <fieldset className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-4"><legend className="px-2 font-bold text-blue-950">1. 정산 시작 방법</legend>

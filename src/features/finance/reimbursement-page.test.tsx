@@ -50,6 +50,15 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByText(/접수월은 신청과 함께 자동 개설돼/)).toBeInTheDocument();
   expect(screen.getByRole("button",{name:"내용 확인 후 정산 신청"})).toBeEnabled();
  });
+ it("opens the personal reimbursement form when the request tab is clicked",()=>{
+  render(<ReimbursementPage workspace={w}/>);
+  const details=screen.getByText("개인 지출 정산 신청").closest("details");
+  expect(details).not.toHaveAttribute("open");
+  fireEvent.click(screen.getByRole("button",{name:"정산 신청·처리"}));
+  expect(details).toHaveAttribute("open");
+  fireEvent.click(screen.getByText("개인 지출 정산 신청"));
+  expect(details).not.toHaveAttribute("open");
+ });
  it("blocks automatic period creation only when the operating policy is missing",()=>{
   render(<ReimbursementPage workspace={{...w,periods:[],policy:null}}/>);
   expect(screen.getByText("접수월 자동 개설에 필요한 운영 기준을 관리자가 먼저 저장해야 해.")).toBeInTheDocument();
