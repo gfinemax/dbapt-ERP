@@ -22,11 +22,7 @@ export function buildReimbursementOcrDraft(
   const itemSummary = itemNames.length
     ? `${itemNames.slice(0, 3).join(", ")}${itemNames.length > 3 ? ` 외 ${itemNames.length - 3}종` : ""}`
     : undefined;
-  const purpose = itemSummary
-    ? `${itemSummary} 구입`
-    : ocr.issuer
-      ? `${ocr.issuer} 업무 지출`
-      : undefined;
+  const purpose = itemSummary ? `${itemSummary} 구입` : undefined;
   const recommendation = recommendExpenseBudget({
     evidenceText: ocr.recognizedText,
     itemName: itemNames.join(" ") || ocr.itemName,

@@ -1,14 +1,17 @@
-import { fireEvent,render,screen,waitFor } from "@testing-library/react";
+import { fireEvent,render,screen,waitFor,within } from "@testing-library/react";
 import { beforeEach,describe,expect,it,vi } from "vitest";
 import { ReimbursementLogin, ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),submit:vi.fn()}));
+const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),createObjectUrl:vi.fn(),evidenceFetch:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),revokeObjectUrl:vi.fn(),submit:vi.fn()}));
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push})}));
 vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
 vi.mock("@/app/finance/expenses/actions",()=>({updatePersonalReimbursementDetailsAction:mocks.personalUpdate}));
+vi.stubGlobal("fetch",mocks.evidenceFetch);
+Object.defineProperty(URL,"createObjectURL",{configurable:true,value:mocks.createObjectUrl});
+Object.defineProperty(URL,"revokeObjectURL",{configurable:true,value:mocks.revokeObjectUrl});
 const w:ReimbursementWorkspace={month:"2026-03-01",member:{user_id:"a",organization_id:"o",display_name:"관리자",permissions:["ADMIN"],active:true},members:[],policy:null,periods:[{month:"2026-03-01",status:"CLOSED",submission_deadline:"2026-04-05",completion_deadline:"2026-04-10",long_delay_days:60,revision:1}],requests:[{id:"r",applicant_id:"b",budget_id:"budget",used_on:"2026-03-15",budget_month:"2026-03-01",amount:80000,merchant:"문구점",purpose:"사무용품",delay_reason:"영수증 누락",source_quick_id:null,status:"APPROVED",needs_exception:true,needs_senior:false,exception_approved_at:"2026-06-01",senior_approved_at:null,over_budget_approved_at:null,submitted_at:"2026-06-01",approved_at:"2026-06-02",paid_at:null,bank_transaction_id:null}],budgets:[],reports:[],audits:[],banks:[{id:"bank",transacted_at:"2026-06-15T12:00:00+09:00",withdrawal_amount:80000,counterparty:"신청자",description:"정산"}],sources:[]};
 describe("reimbursement workspace",()=>{
- beforeEach(()=>vi.clearAllMocks());
+ beforeEach(()=>{vi.clearAllMocks();mocks.createObjectUrl.mockReturnValue("blob:reimbursement-evidence");mocks.evidenceFetch.mockResolvedValue({ok:true,headers:{get:()=>"image/png"},blob:async()=>new Blob(["image"],{type:"image/png"})});});
  it("opens a deep-linked approval only when the current actor may approve it",()=>{
   const request={...w.requests[0],status:"SUBMITTED" as const,needs_exception:false,approved_at:null};
   render(<ReimbursementPage workspace={{...w,requests:[request]}} initialRequestId="r" initialAction="APPROVE"/>);
@@ -51,15 +54,17 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByText(/접수월은 신청과 함께 자동 개설돼/)).toBeInTheDocument();
   expect(screen.getByRole("button",{name:"내용 확인 후 정산 신청"})).toBeEnabled();
  });
- it("shows the request and its evidence together in a detail dialog",()=>{
+ it("shows the request, prominent usage content, and one evidence preview together",async()=>{
   render(<ReimbursementPage workspace={w}/>);
   fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
   const dialog=screen.getByRole("dialog",{name:"문구점 · 80,000원"});
   expect(dialog).toHaveTextContent("신청 내용");
-  expect(dialog).toHaveTextContent("사무용품");
+  expect(within(dialog).getByText("사용내용")).toBeInTheDocument();
+  expect(within(dialog).getByText("사무용품")).toBeInTheDocument();
   expect(dialog).toHaveTextContent("처리 정보");
-  expect(screen.getByTitle("문구점 첨부 증빙")).toHaveAttribute("src","/finance/reimbursements/evidence?id=r");
-  expect(screen.getByRole("link",{name:"새 창에서 열기"})).toHaveAttribute("href","/finance/reimbursements/evidence?id=r");
+  expect(await screen.findByRole("img",{name:"문구점 첨부 증빙"})).toHaveAttribute("src","blob:reimbursement-evidence");
+  expect(screen.queryByTitle("문구점 첨부 증빙")).not.toBeInTheDocument();
+  expect(screen.getByRole("link",{name:"원본 새 창에서 열기"})).toHaveAttribute("href","/finance/reimbursements/evidence?id=r");
   fireEvent.click(screen.getByRole("button",{name:"정산 상세 닫기"}));
   expect(screen.queryByRole("dialog",{name:"문구점 · 80,000원"})).not.toBeInTheDocument();
  });
@@ -68,14 +73,25 @@ describe("reimbursement workspace",()=>{
   const request={...w.requests[0],applicant_id:"a",status:"SUBMITTED" as const,approved_at:null,updated_at:"2026-09-20T00:00:00Z"};
   render(<ReimbursementPage workspace={{...w,requests:[request]}}/>);
   fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
+  const dialog=screen.getByRole("dialog",{name:"문구점 · 80,000원"});
+  await within(dialog).findByRole("img",{name:"문구점 첨부 증빙"});
   fireEvent.click(screen.getByRole("button",{name:"거래처·사용내용 수정"}));
-  fireEvent.change(screen.getByLabelText("거래처"),{target:{value:"새 문구점"}});
-  fireEvent.change(screen.getByLabelText("사용내용"),{target:{value:"복사용지 구매"}});
-  fireEvent.change(screen.getByLabelText("수정 사유"),{target:{value:"OCR 상호 오기"}});
+  fireEvent.change(within(dialog).getByLabelText("거래처"),{target:{value:"새 문구점"}});
+  fireEvent.change(within(dialog).getByLabelText("사용내용"),{target:{value:"복사용지 구매"}});
+  fireEvent.change(within(dialog).getByLabelText("수정 사유"),{target:{value:"OCR 상호 오기"}});
   fireEvent.click(screen.getByRole("button",{name:"수정 저장"}));
   await waitFor(()=>expect(mocks.personalUpdate).toHaveBeenCalledWith({id:"r",merchant:"새 문구점",purpose:"복사용지 구매",reason:"OCR 상호 오기",expectedUpdatedAt:"2026-09-20T00:00:00Z"}));
   expect(mocks.refresh).toHaveBeenCalled();
   expect(screen.queryByRole("dialog",{name:/새 문구점|문구점/})).not.toBeInTheDocument();
+ });
+ it("marks a generic OCR usage sentence for review instead of presenting it as confirmed content",async()=>{
+  const request={...w.requests[0],merchant:"동작대방점(메가MGC커피)",purpose:"동작대방점(메가MGC커피) 업무 지출"};
+  render(<ReimbursementPage workspace={{...w,requests:[request]}}/>);
+  fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
+  const dialog=screen.getByRole("dialog",{name:"동작대방점(메가MGC커피) · 80,000원"});
+  expect(within(dialog).getByText("확인 필요")).toBeInTheDocument();
+  expect(within(dialog).getByText(/실제 품목을 확인하지 못한 자동 문구/)).toBeInTheDocument();
+  await within(dialog).findByRole("img",{name:"동작대방점(메가MGC커피) 첨부 증빙"});
  });
  it("opens the personal reimbursement form when the request tab is clicked",()=>{
   render(<ReimbursementPage workspace={w}/>);
@@ -118,7 +134,7 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByLabelText("실제 사용일")).toHaveValue("2026-03-14");
   expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(1770);
   expect(screen.getByLabelText("사용처")).toHaveValue("우정사업본부(우체국)");
-  expect(screen.getByLabelText("업무 목적")).toHaveValue("우편요금 구입");
+  expect(screen.getByLabelText("사용내용")).toHaveValue("우편요금 구입");
   expect(screen.getByLabelText("예산항목")).toHaveValue("budget");
  });
  it("opens the receipt picker from the receipt mode button",()=>{
@@ -138,10 +154,10 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByRole("status")).toHaveTextContent("자동입력된 값도 아래에서 수정할 수 있어");
   fireEvent.change(screen.getByLabelText("개인 결제 금액"),{target:{value:"1800"}});
   fireEvent.change(screen.getByLabelText("사용처"),{target:{value:"직접 확인한 우체국"}});
-  fireEvent.change(screen.getByLabelText("업무 목적"),{target:{value:"등기우편 발송"}});
+  fireEvent.change(screen.getByLabelText("사용내용"),{target:{value:"등기우편 발송"}});
   expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(1800);
   expect(screen.getByLabelText("사용처")).toHaveValue("직접 확인한 우체국");
-  expect(screen.getByLabelText("업무 목적")).toHaveValue("등기우편 발송");
+  expect(screen.getByLabelText("사용내용")).toHaveValue("등기우편 발송");
   expect(screen.getByLabelText("예산항목")).toHaveValue("printing");
   const form=screen.getByRole("button",{name:"내용 확인 후 정산 신청"}).closest("form");
   expect(form).not.toBeNull();

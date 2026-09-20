@@ -32,6 +32,11 @@ describe("reimbursement OCR draft", () => {
     });
   });
 
+  it("does not turn a merchant name into generic usage content", () => {
+    expect(buildReimbursementOcrDraft({ issuer: "동작대방점(메가MGC커피)", totalAmount: 24000 }))
+      .toMatchObject({ merchant: "동작대방점(메가MGC커피)", purpose: undefined });
+  });
+
   it("maps transfer evidence without inventing a budget item", () => {
     expect(buildReimbursementOcrDraft({ normalizedEvidenceType: "이체확인증", totalAmount: 12000 }))
       .toMatchObject({ amount: "12000", evidenceKind: "BANK_TRANSFER" });
