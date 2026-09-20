@@ -3,6 +3,8 @@
 import { useState } from "react";
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import { ExpensePolicySettingsPanel } from "./expense-policy-settings-panel";
+import type { ExpensePolicyImpactPreview, ExpensePolicyValues, ExpensePolicyWorkspace } from "./expense-policy-settings";
 import {
   defaultExpenseComplianceSettings,
   type ExpenseComplianceSettings,
@@ -12,6 +14,10 @@ export function ExpenseComplianceSettingsPage({
   initialSettings = defaultExpenseComplianceSettings,
   organizationId,
   saveSettings,
+  policyWorkspace = { preview: { delayedReimbursements: 0, longDelayedReimbursements: 0, pendingExpenseResolutions: 0, pendingQuickExpenses: 0, pendingReimbursements: 0, priorYearReimbursements: 0 }, versions: [] },
+  savePolicyDraft,
+  previewPolicy,
+  transitionPolicy,
 }: {
   initialSettings?: ExpenseComplianceSettings;
   organizationId?: string;
@@ -19,6 +25,10 @@ export function ExpenseComplianceSettingsPage({
     organizationId: string,
     settings: ExpenseComplianceSettings,
   ) => Promise<void>;
+  policyWorkspace?: ExpensePolicyWorkspace;
+  savePolicyDraft?: (input: { organizationId: string; id?: string; policy: ExpensePolicyValues; effectiveFrom: string; changeReason: string }) => Promise<void>;
+  previewPolicy?: (input: { organizationId: string; policy: ExpensePolicyValues }) => Promise<ExpensePolicyImpactPreview>;
+  transitionPolicy?: (input: { organizationId: string; id: string; command: "SUBMIT" | "ACTIVATE" | "END" }) => Promise<void>;
 }) {
   const [settings, setSettings] = useState(initialSettings);
   const [message, setMessage] = useState("");
@@ -55,7 +65,9 @@ export function ExpenseComplianceSettingsPage({
           기초정보의 결재 설정에서 관리해. 기존 소액 일괄결의 기준값은 과거 문서
           검증을 위해 데이터에만 보존돼.
         </p>
+        <ExpensePolicySettingsPanel organizationId={organizationId} previewPolicy={previewPolicy} saveDraft={savePolicyDraft} transitionPolicy={transitionPolicy} workspace={policyWorkspace} />
         <section className="mt-6 grid gap-5 rounded-2xl border border-[var(--color-soft-border)] bg-white p-6 md:grid-cols-2">
+          <div className="md:col-span-2"><h2 className="text-xl font-bold">기존 지출결의 옵션</h2><p className="mt-1 text-sm text-slate-600">현재 지출결의 작성과 증빙 검증에 바로 사용하는 세부 옵션이야.</p></div>
           <label className="flex items-center gap-3 rounded-xl border p-4 font-bold md:col-span-2">
             <input
               checked={settings.allowDirectExpense ?? true}
