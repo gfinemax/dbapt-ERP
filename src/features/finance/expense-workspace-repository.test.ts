@@ -1,12 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn(), quickRows: vi.fn(), personalRows: vi.fn(), smallRows: vi.fn() }));
+const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn(), quickRows: vi.fn(), personalRows: vi.fn(), resolutionRows: vi.fn(), smallRows: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: mocks.db }));
 import { loadExpenseWorkspace } from "./expense-workspace-repository";
 const member = { organization_id: "org", user_id: "user", permissions: ["ADMIN"], active: true };
 beforeEach(() => {
-  vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.quickRows.mockResolvedValue({ data: [], error: null }); mocks.personalRows.mockResolvedValue({ data: [], error: null }); mocks.smallRows.mockResolvedValue({ data: [], error: null });
-  mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc, from: (table: string) => { const chain = { select: () => chain, eq: () => chain, is: () => chain, order: () => chain, in: table === "quick_expense_records" ? mocks.quickRows : mocks.personalRows, range: mocks.smallRows }; return chain; } }) });
+  vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.quickRows.mockResolvedValue({ data: [], error: null }); mocks.personalRows.mockResolvedValue({ data: [], error: null }); mocks.resolutionRows.mockResolvedValue({ data: [], error: null }); mocks.smallRows.mockResolvedValue({ data: [], error: null });
+  mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc, from: (table: string) => { const rowLoader = table === "quick_expense_records" ? mocks.quickRows : table === "personal_reimbursements" ? mocks.personalRows : mocks.resolutionRows; const chain = { select: () => chain, eq: () => chain, is: () => chain, order: () => chain, in: rowLoader, range: mocks.smallRows }; return chain; } }) });
   mocks.rpc.mockResolvedValue({ data: { records: [] }, error: null });
 });
 describe("expense original workspace identity and persistence", () => {
@@ -26,7 +26,13 @@ describe("expense original workspace identity and persistence", () => {
   it("marks a submitted personal source editable only for its applicant or an administrator", async () => {
     mocks.rpc.mockResolvedValue({ data: { records: [{ source_kind: "PERSONAL", source_id: "own", approval_status: "SUBMITTED" }] }, error: null });
     mocks.personalRows.mockResolvedValue({ data: [{ id: "own", applicant_id: "user", purpose: "사무용품", updated_at: "2026-09-18T00:00:00Z" }], error: null });
-    const loaded = await loadExpenseWorkspace(); expect(loaded.records[0]).toMatchObject({ personal_purpose: "사무용품", personal_updated_at: "2026-09-18T00:00:00Z", personal_can_edit: true });
+    const loaded = await loadExpenseWorkspace(); expect(loaded.records[0]).toMatchObject({ usage_description: "사무용품", personal_purpose: "사무용품", personal_updated_at: "2026-09-18T00:00:00Z", personal_can_edit: true });
+  });
+  it("loads the original reason and memo for resolution detail reading", async () => {
+    mocks.rpc.mockResolvedValue({ data: { records: [{ source_kind: "RESOLUTION", source_id: "resolution-1" }] }, error: null });
+    mocks.resolutionRows.mockResolvedValue({ data: [{ id: "resolution-1", resolution_data: { reason: "계약 검토 수수료 지급", memo: "담당자 확인 완료" } }], error: null });
+    const loaded = await loadExpenseWorkspace();
+    expect(loaded.records[0]).toMatchObject({ usage_description: "계약 검토 수수료 지급", memo: "담당자 확인 완료" });
   });
   it("denies inactive and unauthenticated access before touching privileged storage", async () => {
     mocks.identity.mockResolvedValueOnce({ ...member, active: false }); await expect(loadExpenseWorkspace()).rejects.toThrow("활성");
@@ -43,6 +49,6 @@ describe("expense original workspace identity and persistence", () => {
     mocks.smallRows.mockResolvedValue({ data: [{ id: "small-1", expense_date: "2026-09-18", partner_name: "문구점", description: "복사용지", amount: "12000", created_at: "2026-09-18T00:00:00Z", updated_at: "2026-09-19T00:00:00Z", review_status: "CONFIRMED", created_by_label: "담당자", quick_record_id: "quick-1" }], error: null });
     const loaded = await loadExpenseWorkspace();
     expect(loaded.records).toHaveLength(1);
-    expect(loaded.records[0]).toMatchObject({ source_kind: "SMALL", source_id: "small-1", transaction_id: "tx-1", approval_status: "CONFIRMED" });
+    expect(loaded.records[0]).toMatchObject({ source_kind: "SMALL", source_id: "small-1", transaction_id: "tx-1", approval_status: "CONFIRMED", usage_description: "복사용지" });
   });
 });

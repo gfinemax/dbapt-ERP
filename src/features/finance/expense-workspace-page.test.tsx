@@ -397,6 +397,50 @@ describe("common original expense workspace", () => {
       detail.getByText(/선택한 유형의 원본 화면으로 이동/),
     ).toBeInTheDocument();
   });
+  it("shows the original written content as a labeled readable section", () => {
+    const data = fixture();
+    data.records[0] = {
+      ...data.records[0],
+      usage_description: "조합 사무실에서 사용할 복사용지 구매",
+      memo: "납품 확인 후 지급",
+    };
+    render(
+      <ExpenseWorkspacePage
+        workspace={data}
+        initialSourceKind="RESOLUTION"
+        initialSourceId="text-id"
+      />,
+    );
+    const detail = within(screen.getByRole("region", { name: "지출 상세" }));
+    const written = within(detail.getByRole("region", { name: "작성 내용" }));
+    expect(written.getByText("지출 사유")).toBeInTheDocument();
+    expect(
+      written.getByText("조합 사무실에서 사용할 복사용지 구매"),
+    ).toBeInTheDocument();
+    expect(written.getByText("메모")).toBeInTheDocument();
+    expect(written.getByText("납품 확인 후 지급")).toBeInTheDocument();
+  });
+  it("labels a personal reimbursement purpose clearly instead of leaving it only in the title", () => {
+    const data = fixture();
+    data.records[0] = {
+      ...data.records[0],
+      source_kind: "PERSONAL",
+      personal_purpose: "안내문 발송 우편요금",
+      usage_description: "안내문 발송 우편요금",
+    };
+    render(
+      <ExpenseWorkspacePage
+        workspace={data}
+        initialSourceKind="PERSONAL"
+        initialSourceId="text-id"
+      />,
+    );
+    const written = within(
+      screen.getByRole("region", { name: "작성 내용" }),
+    );
+    expect(written.getByText("업무 목적")).toBeInTheDocument();
+    expect(written.getByText("안내문 발송 우편요금")).toBeInTheDocument();
+  });
   it("connects the existing source once and reads back the saved transaction without duplicate original rows", async () => {
     const workspace = fixture();
     const rendered = render(

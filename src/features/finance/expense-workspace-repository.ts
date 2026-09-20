@@ -16,6 +16,7 @@ export type ExpenseWorkspaceRecord = {
   evidence_files?: { ocr_job_id: string; file_name: string; content_type: string; storage_path: string; evidence_type: string; status: "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED"; stage: EvidenceOcrJobStage; progress: number; result_data: EvidenceOcrData; error_message: string | null; created_at: string }[];
   evidence_kind?: string; evidence_review_status?: string; missing_evidence_reason?: string; evidence_review_note?: string;
   budget_item?: string; expense_detail_id?: string;
+  usage_description?: string; memo?: string;
   personal_purpose?: string; personal_updated_at?: string; personal_can_edit?: boolean; personal_is_applicant?: boolean;
 };
 export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
@@ -48,19 +49,35 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   const smallRows = isStaff ? await loadSmallExpenseRows(member.organization_id) : [];
   const smallQuickIds = new Set(smallRows.map(row => row.quick_record_id).filter((id): id is string => !!id));
   const quickIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK").map((record: ExpenseWorkspaceRecord) => record.source_id);
-  const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
+  const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,usage_description,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
   if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
   const personalIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "PERSONAL").map((record: ExpenseWorkspaceRecord) => record.source_id);
   const personalMeta = personalIds.length ? await reimbursementDb().schema("finance").from("personal_reimbursements").select("id,applicant_id,purpose,updated_at").eq("organization_id", member.organization_id).in("id", personalIds) : { data: [], error: null };
   if (personalMeta.error) throw new Error(`개인 정산 수정 정보 조회 실패: ${personalMeta.error.message}`);
+  const resolutionIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "RESOLUTION").map((record: ExpenseWorkspaceRecord) => record.source_id);
+  const resolutionMeta = resolutionIds.length ? await reimbursementDb().schema("finance").from("expense_resolutions").select("id,resolution_data").eq("organization_id", member.organization_id).in("id", resolutionIds) : { data: [], error: null };
+  if (resolutionMeta.error) throw new Error(`지출결의 작성 내용 조회 실패: ${resolutionMeta.error.message}`);
   const byId = new Map((quickMeta.data ?? []).map(row => [row.id, row]));
   const personalById = new Map((personalMeta.data ?? []).map(row => [row.id, row]));
+  const resolutionById = new Map((resolutionMeta.data ?? []).map(row => [row.id, row]));
   const isAdmin = member.permissions.includes("ADMIN");
   const rpcRecords: ExpenseWorkspaceRecord[] = data.records.map((record: ExpenseWorkspaceRecord): ExpenseWorkspaceRecord => {
-    if (record.source_kind === "QUICK") return { ...record, ...(byId.get(record.source_id) ?? {}) };
+    if (record.source_kind === "QUICK") {
+      const meta = byId.get(record.source_id);
+      return { ...record, ...meta, usage_description: meta?.usage_description ?? record.title };
+    }
     if (record.source_kind === "PERSONAL") {
       const meta = personalById.get(record.source_id);
-      return { ...record, personal_purpose: meta?.purpose, personal_updated_at: meta?.updated_at, personal_can_edit: record.approval_status === "SUBMITTED" && !!meta && (meta.applicant_id === member.user_id || isAdmin), personal_is_applicant: meta?.applicant_id === member.user_id };
+      return { ...record, usage_description: meta?.purpose, personal_purpose: meta?.purpose, personal_updated_at: meta?.updated_at, personal_can_edit: record.approval_status === "SUBMITTED" && !!meta && (meta.applicant_id === member.user_id || isAdmin), personal_is_applicant: meta?.applicant_id === member.user_id };
+    }
+    if (record.source_kind === "RESOLUTION") {
+      const resolutionData = resolutionById.get(record.source_id)?.resolution_data;
+      const source = resolutionData && typeof resolutionData === "object" ? resolutionData as Record<string, unknown> : {};
+      return {
+        ...record,
+        usage_description: typeof source.reason === "string" ? source.reason : undefined,
+        memo: typeof source.memo === "string" ? source.memo : undefined,
+      };
     }
     return record;
   });
@@ -74,6 +91,7 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
       author_label: row.created_by_label, counterparty: row.partner_name, transaction_id: linked?.transaction_id ?? null,
       can_connect: false, amounts: linked?.amounts ?? null, trust_items: linked?.trust_items ?? [], vouchers: linked?.vouchers ?? [],
       evidence_files: linked?.evidence_files ?? [],
+      usage_description: row.description,
     };
   });
   const records = [...rpcRecords.filter((record: ExpenseWorkspaceRecord) => !(record.source_kind === "QUICK" && smallQuickIds.has(record.source_id))), ...smallRecords]

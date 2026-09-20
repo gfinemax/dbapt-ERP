@@ -747,6 +747,20 @@ function displayPaymentStatus(r: ExpenseWorkspaceRecord) {
   return "별도 지급 없음";
 }
 
+function usageContent(record: ExpenseWorkspaceRecord) {
+  const content =
+    record.usage_description ??
+    record.personal_purpose ??
+    (["QUICK", "SMALL"].includes(record.source_kind) ? record.title : "");
+  return content.trim();
+}
+
+function usageLabel(record: ExpenseWorkspaceRecord) {
+  if (record.source_kind === "PERSONAL") return "업무 목적";
+  if (record.source_kind === "RESOLUTION") return "지출 사유";
+  return "사용내용";
+}
+
 export function filterExpenseRecords(
   records: ExpenseWorkspaceRecord[],
   kind: string,
@@ -970,6 +984,7 @@ function ExpenseDetail({
   const [pending, start] = useTransition();
   const busy = useRef(false);
   const operationKey = useRef<string | null>(null);
+  const writtenContent = usageContent(r);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"DETAIL" | "CONNECTIONS">("DETAIL");
   function connect() {
@@ -1093,6 +1108,28 @@ function ExpenseDetail({
           id="expense-detail-panel"
           role="tabpanel"
         >
+          <section
+            aria-label="작성 내용"
+            className="mt-5 rounded-xl border border-slate-200 bg-slate-50/70 p-4"
+          >
+            <h3 className="font-bold">작성 내용</h3>
+            <dl className="mt-3 space-y-3">
+              <div>
+                <dt className="text-sm text-slate-600">{usageLabel(r)}</dt>
+                <dd className="mt-1 whitespace-pre-wrap break-words font-medium">
+                  {writtenContent || "작성된 내용이 없어."}
+                </dd>
+              </div>
+              {r.memo?.trim() ? (
+                <div className="border-t border-slate-200 pt-3">
+                  <dt className="text-sm text-slate-600">메모</dt>
+                  <dd className="mt-1 whitespace-pre-wrap break-words">
+                    {r.memo}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+          </section>
           <dl className="my-5 grid gap-4 sm:grid-cols-2">
             {[
               [
@@ -1606,6 +1643,9 @@ export function ExpenseWorkspacePage({
           >
             <p className="mb-3">
               전체 원본 {workspace.records.length}건 · 조회 결과 {rows.length}건
+            </p>
+            <p className="mb-3 text-sm text-slate-600">
+              지출 행을 선택하면 작성 내용·증빙·연결 현황을 함께 볼 수 있어.
             </p>
             {rows.some((r) => r.approval_status === "SOURCE_PENDING") && (
               <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
