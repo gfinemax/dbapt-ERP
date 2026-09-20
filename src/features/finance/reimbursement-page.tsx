@@ -64,7 +64,8 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
   const [entryMode,setEntryMode]=useState<"OCR"|"SOURCE"|"MANUAL">("OCR");
   const [ocrData,setOcrData]=useState<EvidenceOcrData|null>(null); const [ocrMessage,setOcrMessage]=useState(""); const [ocrPending,startOcr]=useTransition();
-  const [fileInputKey,setFileInputKey]=useState(0); const [evidenceFileName,setEvidenceFileName]=useState("");
+  const [fileInputKey,setFileInputKey]=useState(0); const [evidenceFile,setEvidenceFile]=useState<File|null>(null); const [evidenceFileName,setEvidenceFileName]=useState(""); const [dragActive,setDragActive]=useState(false);
+  const fileInputRef=useRef<HTMLInputElement|null>(null);
   const editedFields=useRef({amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false}); const ocrRequest=useRef(0);
   const [status,setStatus]=useState("ALL");
   const usedPeriod=w.periods.find(p=>p.month===`${usedOn.slice(0,7)}-01`);
@@ -78,15 +79,28 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   function command(command:string,data:Record<string,unknown>){op.run(async()=>{await runReimbursementCommand(command,data);setSelected(null);setAction("");});}
   function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");setOcrData(null);setOcrMessage("기존 지출의 값과 저장된 증빙을 재사용해. 제출 전에 내용을 확인해줘.");}else{setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setOcrMessage("");}}
   function selectEntryMode(mode:"OCR"|"SOURCE"|"MANUAL") {
-    setEntryMode(mode); setOcrMessage(""); setOcrData(null); setEvidenceFileName(""); setFileInputKey(key=>key+1); ocrRequest.current+=1;
+    setEntryMode(mode); setOcrMessage(""); setOcrData(null); setEvidenceFile(null); setEvidenceFileName(""); setDragActive(false); setFileInputKey(key=>key+1); ocrRequest.current+=1;
+    if(mode==="OCR"){setEvidenceKind("RECEIPT");editedFields.current.evidenceKind=false;}
+    if(mode==="MANUAL"){setEvidenceKind("OTHER_ALTERNATIVE");editedFields.current.evidenceKind=false;}
     if(mode!=="SOURCE") {
       setSource("");
       if(entryMode==="SOURCE") {setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");editedFields.current={amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};}
     }
   }
+  function openReceiptPicker() {
+    if(entryMode==="OCR"){openEvidencePicker();return;}
+    selectEntryMode("OCR");
+    window.setTimeout(openEvidencePicker,0);
+  }
+  function openEvidencePicker() {
+    if(!fileInputRef.current)return;
+    fileInputRef.current.value="";
+    fileInputRef.current.click();
+  }
   function analyzeEvidence(file?:File) {
-    setEvidenceFileName(file?.name??""); setOcrData(null); setOcrMessage("");
-    if(!file||entryMode!=="OCR") return;
+    setEvidenceFile(file??null); setEvidenceFileName(file?.name??""); setOcrData(null); setOcrMessage("");
+    if(!file) return;
+    if(entryMode!=="OCR") {setOcrMessage(entryMode==="MANUAL"?"대체증빙을 선택했어. 지출 내용과 영수증 미첨부 사유를 입력해줘.":"새 증빙을 선택했어. 기존 지출 내용과 함께 제출해.");return;}
     const request=++ocrRequest.current; const form=new FormData(); form.set("evidence",file);
     startOcr(async()=>{try{
       const result=await analyzeReimbursementEvidence(form); if(request!==ocrRequest.current)return;
@@ -97,11 +111,11 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
       if(draft.purpose&&!editedFields.current.purpose){setPurpose(draft.purpose);applied.push("업무 목적");}
       if(draft.budgetId&&!editedFields.current.budgetId){setBudgetId(draft.budgetId);applied.push("예산항목");}
       if(draft.evidenceKind&&!editedFields.current.evidenceKind){setEvidenceKind(draft.evidenceKind);applied.push("증빙 종류");}
-      setOcrData(result.ocrData); setOcrMessage(applied.length?`${applied.join("·")}을 자동입력했어. 제출 전에 확인해줘.`:"인식 결과를 확인했지만 자동입력할 항목이 없어. 직접 입력해줘.");
-    }catch(error){if(request===ocrRequest.current)setOcrMessage(error instanceof Error?error.message:"영수증 자동입력을 완료하지 못했어.");}});
+      setOcrData(result.ocrData); setOcrMessage(applied.length?`${applied.join("·")} 항목을 자동입력했어. 제출 전에 확인해줘.`:"인식 결과를 확인했지만 자동입력할 항목이 없어. 직접 입력해줘.");
+    }catch(error){if(request===ocrRequest.current){const detail=error instanceof Error?error.message:"분석 오류가 발생했어.";setOcrMessage(`OCR 분석을 완료하지 못했어. 영수증은 선택된 상태야. 아래 항목을 직접 입력하거나 다시 선택해줘. ${detail}`);}}});
   }
   function resetRequestForm() {
-    setRequestId(crypto.randomUUID());setSource("");setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setEvidenceKind("RECEIPT");setEntryMode("OCR");setOcrData(null);setOcrMessage("");setEvidenceFileName("");setFileInputKey(key=>key+1);editedFields.current={amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};
+    setRequestId(crypto.randomUUID());setSource("");setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setEvidenceKind("RECEIPT");setEntryMode("OCR");setOcrData(null);setOcrMessage("");setEvidenceFile(null);setEvidenceFileName("");setDragActive(false);setFileInputKey(key=>key+1);editedFields.current={amount:false,budgetId:false,evidenceKind:false,merchant:false,purpose:false,usedOn:false};
   }
   return <>
     <header className={card}><div className="flex flex-wrap items-start justify-between gap-3"><div><h1 className="text-2xl font-bold">{tab==="budgets"?"예산집행 현황":"대납·선지급 정산"}</h1><p className="mt-2 text-sm text-slate-600">개인 대납은 사용월 예산에 한 번 반영하고 지급일은 실제 출금일로 기록해. 이 화면의 월 마감은 개인 경비 정산 범위야.</p></div><div className="text-sm">{w.member.display_name}<button className={`${secondary} ml-3`} onClick={()=>op.run(reimbursementLogout)} disabled={op.pending}>로그아웃</button></div></div>
@@ -112,20 +126,24 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
     {op.message&&<p role="status" className="rounded-lg border bg-blue-50 p-4">{op.message}</p>}
     {tab==="requests"&&<>
       <details className={card} open={requestFormOpen} onToggle={event=>setRequestFormOpen(event.currentTarget.open)}><summary className="cursor-pointer text-lg font-bold">개인 지출 정산 신청</summary>
-        <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;const data=new FormData(el);op.run(async()=>{await submitReimbursement(data);el.reset();resetRequestForm();},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
+        <form className="mt-4 grid gap-4 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const el=e.currentTarget;if(entryMode!=="SOURCE"&&!evidenceFile){setOcrMessage(entryMode==="OCR"?"정산할 영수증을 먼저 선택해줘.":"영수증을 대신할 대체증빙을 선택해줘.");return;}const data=new FormData(el);if(evidenceFile)data.set("evidence",evidenceFile,evidenceFile.name);op.run(async()=>{await submitReimbursement(data);el.reset();resetRequestForm();},"신청했어. 사용월을 선택하면 처리 상태를 확인할 수 있어.");}}>
           <input type="hidden" name="id" value={requestId}/>
           <fieldset className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50/50 p-4"><legend className="px-2 font-bold text-blue-950">1. 정산 시작 방법</legend>
-            <p className="mb-3 text-sm text-blue-900">영수증을 먼저 분석하면 날짜·금액·사용처·업무 목적·예산항목 입력을 도와줘.</p>
+            <p className="mb-3 text-sm text-blue-900">영수증을 분석해 날짜·금액·사용처·업무 목적·예산항목을 채워줘. 자동입력된 값은 모두 수정할 수 있어.</p>
             <div className="flex flex-wrap gap-2">
-              <button aria-pressed={entryMode==="OCR"} className={entryMode==="OCR"?button:secondary} onClick={()=>selectEntryMode("OCR")} type="button">영수증으로 새 정산</button>
-              <button aria-pressed={entryMode==="SOURCE"} className={entryMode==="SOURCE"?button:secondary} disabled={!w.sources.length} onClick={()=>selectEntryMode("SOURCE")} type="button">기존 지출 연결</button>
-              <button aria-pressed={entryMode==="MANUAL"} className={entryMode==="MANUAL"?button:secondary} onClick={()=>selectEntryMode("MANUAL")} type="button">직접 입력</button>
+              <button aria-pressed={entryMode==="OCR"} className={entryMode==="OCR"?button:secondary} onClick={openReceiptPicker} type="button">영수증으로 정산</button>
+              <button aria-pressed={entryMode==="SOURCE"} className={entryMode==="SOURCE"?button:secondary} disabled={!w.sources.length} onClick={()=>selectEntryMode("SOURCE")} type="button">기존 지출 불러오기</button>
+              <button aria-pressed={entryMode==="MANUAL"} className={entryMode==="MANUAL"?button:secondary} onClick={()=>selectEntryMode("MANUAL")} type="button">영수증 없음·예외 접수</button>
             </div>
             {entryMode==="SOURCE"?<label className="mt-4 block">기존 개인 선지출<select aria-label="기존 개인 선지출" className={input} name="source_quick_id" required value={source} onChange={e=>selectSource(e.target.value)}><option value="">연결할 지출 선택</option>{w.sources.map(s=><option key={s.id} value={s.id}>{koreaDate(new Date(s.occurred_at))} · {s.counterparty} · {money(s.amount)}</option>)}</select><span className="text-xs text-slate-600">저장된 값과 증빙을 재사용해서 중복 집계를 막아. 새 파일을 선택하면 그 증빙으로 교체해.</span></label>:<input name="source_quick_id" type="hidden" value=""/>}
-            <label className="mt-4 block">{entryMode==="OCR"?"영수증 파일":entryMode==="SOURCE"?"새 증빙 파일 (선택)":"증빙 파일"}<input aria-label={entryMode==="OCR"?"영수증 파일":entryMode==="SOURCE"?"새 증빙 파일 (선택)":"증빙 파일"} key={fileInputKey} className={input} type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" required={entryMode!=="SOURCE"} onChange={e=>analyzeEvidence(e.target.files?.[0])}/><span className="text-xs text-slate-600">PDF·PNG·JPG·WEBP, 최대 3MB. {entryMode==="OCR"?"선택하면 바로 OCR 자동입력을 시작해.":entryMode==="SOURCE"?"기존 증빙이 없거나 교체할 때만 선택해.":"직접 입력하더라도 결제 사실을 확인할 증빙은 필요해."}</span></label>
-            {(ocrPending||ocrMessage)&&<div aria-live="polite" className={`mt-3 rounded-lg p-3 text-sm ${ocrPending?"bg-white text-blue-900":ocrData?"bg-emerald-50 text-emerald-900":entryMode==="SOURCE"?"bg-white text-blue-900":"bg-amber-50 text-amber-950"}`} role="status"><strong>{ocrPending?"OCR 자동입력 중":ocrData?"OCR 자동입력 완료":entryMode==="SOURCE"?"기존 지출 연결됨":"확인 필요"}</strong><p className="mt-1">{ocrPending?`${evidenceFileName}에서 정보를 읽고 있어. 직접 입력한 값은 덮어쓰지 않아.`:ocrMessage}</p>{ocrData&&<p className="mt-1 text-xs">인식 결과 · {ocrData.documentDate??"날짜 미인식"} · {ocrData.issuer??"사용처 미인식"} · {ocrData.totalAmount===undefined?"금액 미인식":money(ocrData.totalAmount)}</p>}</div>}
+            <input aria-label={entryMode==="OCR"?"영수증 파일":entryMode==="SOURCE"?"새 증빙 파일 (선택)":"대체증빙 파일"} key={fileInputKey} ref={fileInputRef} className="sr-only" type="file" name="evidence" accept="application/pdf,image/png,image/jpeg,image/webp" onChange={e=>analyzeEvidence(e.target.files?.[0])}/>
+            <button aria-label={entryMode==="OCR"?"영수증을 끌어놓거나 클릭해서 선택":entryMode==="SOURCE"?"새 증빙을 끌어놓거나 클릭해서 선택":"대체증빙을 끌어놓거나 클릭해서 선택"} className={`mt-4 w-full rounded-xl border-2 border-dashed px-4 py-6 text-left transition ${dragActive?"border-blue-500 bg-blue-100":"border-blue-200 bg-white hover:border-blue-400"}`} onClick={openEvidencePicker} onDragEnter={event=>{event.preventDefault();setDragActive(true);}} onDragOver={event=>{event.preventDefault();setDragActive(true);}} onDragLeave={()=>setDragActive(false)} onDrop={event=>{event.preventDefault();setDragActive(false);analyzeEvidence(event.dataTransfer.files?.[0]);}} type="button">
+              <strong className="block text-blue-950">{evidenceFileName?evidenceFileName:entryMode==="OCR"?"영수증을 여기에 놓거나 클릭해서 선택":entryMode==="SOURCE"?"교체할 증빙을 여기에 놓거나 클릭해서 선택":"대체증빙을 여기에 놓거나 클릭해서 선택"}</strong>
+              <span className="mt-1 block text-xs text-slate-600">PDF·PNG·JPG·WEBP, 최대 3MB. {entryMode==="OCR"?"파일이 들어오면 바로 OCR 분석을 시작해.":entryMode==="SOURCE"?"기존 증빙이 없거나 교체할 때만 선택해.":"카드 승인내역·주문내역·이체 확인증 등 결제 사실을 확인할 자료가 필요해."}</span>
+            </button>
+            {(ocrPending||ocrMessage)&&<div aria-live="polite" className={`mt-3 rounded-lg p-3 text-sm ${ocrPending?"bg-white text-blue-900":ocrData?"bg-emerald-50 text-emerald-900":entryMode!=="OCR"&&evidenceFile?"bg-white text-blue-900":"bg-amber-50 text-amber-950"}`} role="status"><strong>{ocrPending?"OCR 분석 중":ocrData?"OCR 분석 완료":entryMode==="SOURCE"&&evidenceFile?"새 증빙 선택됨":entryMode==="MANUAL"&&evidenceFile?"대체증빙 선택됨":entryMode==="OCR"&&evidenceFile?"OCR 분석 확인 필요":"확인 필요"}</strong><p className="mt-1">{ocrPending?`${evidenceFileName}에서 정보를 읽고 있어. 직접 입력한 값은 덮어쓰지 않아.`:ocrData?`${ocrMessage} 자동입력된 값도 아래에서 수정할 수 있어.`:ocrMessage}</p>{ocrData&&<p className="mt-1 text-xs">인식 결과 · {ocrData.documentDate??"날짜 미인식"} · {ocrData.issuer??"사용처 미인식"} · {ocrData.totalAmount===undefined?"금액 미인식":money(ocrData.totalAmount)}</p>}</div>}
           </fieldset>
-          <p className="sm:col-span-2 font-bold">2. 자동입력 결과 확인·보완</p>
+          <div className="sm:col-span-2"><p className="font-bold">2. {entryMode==="OCR"?"OCR 자동입력 결과 확인·수정":entryMode==="SOURCE"?"기존 지출 내용 확인·수정":"예외 지출 내용 직접 입력"}</p>{entryMode==="OCR"&&<p className="mt-1 text-sm text-slate-600">OCR 결과는 초안이야. 실제 영수증과 비교해서 모든 항목을 자유롭게 수정해줘.</p>}</div>
           <label>실제 사용일<input className={input} name="used_on" type="date" required min={`${today.slice(0,4)}-01-01`} max={today} value={usedOn} onChange={e=>{editedFields.current.usedOn=true;setUsedOn(e.target.value);}}/></label>
           <label>예산 귀속월<input className={input} readOnly value={usedOn.slice(0,7)}/></label>
           <label>예산항목<select className={input} name="budget_id" required value={budgetId} onChange={e=>{editedFields.current.budgetId=true;setBudgetId(e.target.value);}}><option value="">예산항목 선택</option>{w.budgets.map(b=><option key={b.id} value={b.id}>{b.budget_item}</option>)}</select></label>
@@ -133,7 +151,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           <label>사용처<input className={input} name="merchant" required value={merchant} onChange={e=>{editedFields.current.merchant=true;setMerchant(e.target.value);}}/></label>
           <label>업무 목적<input className={input} name="purpose" required value={purpose} onChange={e=>{editedFields.current.purpose=true;setPurpose(e.target.value);}}/></label>
           <label>개인 결제수단<select className={input} name="payment_method" required defaultValue="PERSONAL_CARD"><option value="PERSONAL_CARD">개인카드</option><option value="PERSONAL_TRANSFER">개인계좌 이체</option><option value="CASH">현금 직접 지급</option></select></label>
-          <label>제출 증빙 종류<select className={input} name="evidence_kind" required value={evidenceKind} onChange={e=>{editedFields.current.evidenceKind=true;setEvidenceKind(e.target.value);}}><option value="RECEIPT">영수증</option><option value="CARD_STATEMENT">개인카드 승인내역</option><option value="BANK_TRANSFER">계좌이체 확인증</option><option value="ORDER_DETAILS">주문내역</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="ITEM_PHOTO">물품·사용 사진</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option></select></label>
+          <label>제출 증빙 종류<select className={input} name="evidence_kind" required value={evidenceKind} onChange={e=>{editedFields.current.evidenceKind=true;setEvidenceKind(e.target.value);}}><option value="RECEIPT" disabled={entryMode==="MANUAL"}>영수증</option><option value="CARD_STATEMENT">개인카드 승인내역</option><option value="BANK_TRANSFER">계좌이체 확인증</option><option value="ORDER_DETAILS">주문내역</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="ITEM_PHOTO">물품·사용 사진</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option></select></label>
           {evidenceKind!=="RECEIPT"&&<label className="sm:col-span-2">영수증 미첨부 사유<textarea className={input} name="missing_receipt_reason" rows={3} required placeholder="예: 구매 후 영수증을 분실하여 카드 승인내역과 주문내역을 제출합니다."/></label>}
           {late&&<label className="sm:col-span-2">지연 사유 (필수)<textarea className={input} name="delay_reason" rows={3} required/></label>}
           {!late&&<input name="delay_reason" type="hidden" value=""/>}

@@ -67,18 +67,54 @@ describe("reimbursement workspace",()=>{
  it("starts with receipt OCR and applies only recognized reimbursement facts",async()=>{
   mocks.analyze.mockResolvedValue({ocrData:{documentDate:"2026-03-14",issuer:"우정사업본부(우체국)",items:[{itemName:"우편요금"}],normalizedEvidenceType:"영수증",totalAmount:1770}});
   render(<ReimbursementPage workspace={{...w,budgets:[{id:"budget",budget_item:"일반운영비>도서인쇄비",approved_amount:1000000,monthly_amount:100000,annual_recorded_amount:0,quick_amount:0,personal_amount:0,unpaid_amount:0,reserved_amount:0}]}}/>);
-  expect(screen.getByRole("button",{name:"영수증으로 새 정산"})).toHaveAttribute("aria-pressed","true");
+  expect(screen.getByRole("button",{name:"영수증으로 정산"})).toHaveAttribute("aria-pressed","true");
   fireEvent.change(screen.getByLabelText(/^영수증 파일/),{target:{files:[new File([new Uint8Array([255,216,255])],"receipt.jpg",{type:"image/jpeg"})]}});
-  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 자동입력 완료"));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 분석 완료"));
   expect(screen.getByLabelText("실제 사용일")).toHaveValue("2026-03-14");
   expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(1770);
   expect(screen.getByLabelText("사용처")).toHaveValue("우정사업본부(우체국)");
   expect(screen.getByLabelText("업무 목적")).toHaveValue("우편요금 구입");
   expect(screen.getByLabelText("예산항목")).toHaveValue("budget");
  });
+ it("opens the receipt picker from the receipt mode button",()=>{
+  render(<ReimbursementPage workspace={w}/>);
+  const fileInput=screen.getByLabelText("영수증 파일");
+  const click=vi.spyOn(fileInput,"click");
+  fireEvent.click(screen.getByRole("button",{name:"영수증으로 정산"}));
+  expect(click).toHaveBeenCalledOnce();
+ });
+ it("accepts a dropped receipt, shows OCR completion, and keeps every OCR field editable",async()=>{
+  mocks.analyze.mockResolvedValue({ocrData:{documentDate:"2026-03-14",issuer:"우정사업본부(우체국)",recognizedText:"우편요금",totalAmount:1770}});
+  const budgets=[{id:"printing",budget_item:"일반운영비>도서인쇄비",approved_amount:1000000,monthly_amount:100000,annual_recorded_amount:0,quick_amount:0,personal_amount:0,unpaid_amount:0,reserved_amount:0}];
+  render(<ReimbursementPage workspace={{...w,budgets}}/>);
+  const file=new File([new Uint8Array([255,216,255])],"postal-receipt.jpg",{type:"image/jpeg"});
+  fireEvent.drop(screen.getByRole("button",{name:"영수증을 끌어놓거나 클릭해서 선택"}),{dataTransfer:{files:[file]}});
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 분석 완료"));
+  expect(screen.getByRole("status")).toHaveTextContent("자동입력된 값도 아래에서 수정할 수 있어");
+  fireEvent.change(screen.getByLabelText("개인 결제 금액"),{target:{value:"1800"}});
+  fireEvent.change(screen.getByLabelText("사용처"),{target:{value:"직접 확인한 우체국"}});
+  fireEvent.change(screen.getByLabelText("업무 목적"),{target:{value:"등기우편 발송"}});
+  expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(1800);
+  expect(screen.getByLabelText("사용처")).toHaveValue("직접 확인한 우체국");
+  expect(screen.getByLabelText("업무 목적")).toHaveValue("등기우편 발송");
+  expect(screen.getByLabelText("예산항목")).toHaveValue("printing");
+  const form=screen.getByRole("button",{name:"내용 확인 후 정산 신청"}).closest("form");
+  expect(form).not.toBeNull();
+  fireEvent.submit(form!);
+  await waitFor(()=>expect(mocks.submit).toHaveBeenCalled());
+  expect((mocks.submit.mock.calls[0][0] as FormData).get("evidence")).toMatchObject({name:"postal-receipt.jpg",type:"image/jpeg",size:3});
+ });
+ it("uses a clearly separated exception path when the receipt is missing",()=>{
+  render(<ReimbursementPage workspace={w}/>);
+  fireEvent.click(screen.getByRole("button",{name:"영수증 없음·예외 접수"}));
+  expect(screen.getByText("2. 예외 지출 내용 직접 입력")).toBeInTheDocument();
+  expect(screen.getByLabelText("제출 증빙 종류")).toHaveValue("OTHER_ALTERNATIVE");
+  expect(screen.getByRole("option",{name:"영수증"})).toBeDisabled();
+  expect(screen.getByLabelText("영수증 미첨부 사유")).toBeRequired();
+ });
  it("makes a replacement file optional when an existing expense is linked",()=>{
   render(<ReimbursementPage workspace={{...w,sources:[{id:"quick",occurred_at:"2026-03-15T12:00:00+09:00",amount:20000,counterparty:"문구점",budget_item:"사무용품",usage_description:"페인트 용품"}]}}/>);
-  fireEvent.click(screen.getByRole("button",{name:"기존 지출 연결"}));
+  fireEvent.click(screen.getByRole("button",{name:"기존 지출 불러오기"}));
   fireEvent.change(screen.getByLabelText(/^기존 개인 선지출/),{target:{value:"quick"}});
   expect(screen.getByLabelText(/^새 증빙 파일 \(선택\)/)).not.toBeRequired();
   expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(20000);
@@ -92,7 +128,7 @@ describe("reimbursement workspace",()=>{
   fireEvent.change(screen.getByLabelText("개인 결제 금액"),{target:{value:"41000"}});
   fireEvent.change(screen.getByLabelText("사용처"),{target:{value:"직접 확인한 상호"}});
   finish({ocrData:{issuer:"OCR 상호",totalAmount:32600}});
-  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 자동입력 완료"));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 분석 완료"));
   expect(screen.getByLabelText("개인 결제 금액")).toHaveValue(41000);
   expect(screen.getByLabelText("사용처")).toHaveValue("직접 확인한 상호");
  });
@@ -107,7 +143,7 @@ describe("reimbursement workspace",()=>{
   fireEvent.change(screen.getByLabelText("영수증 파일"),{target:{files:[new File([new Uint8Array([255,216,255])],"receipt.jpg",{type:"image/jpeg"})]}});
   fireEvent.change(screen.getByLabelText("예산항목"),{target:{value:"supplies"}});
   finish({ocrData:{issuer:"우정사업본부(우체국)",recognizedText:"우편요금",totalAmount:1770}});
-  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 자동입력 완료"));
+  await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("OCR 분석 완료"));
   expect(screen.getByLabelText("예산항목")).toHaveValue("supplies");
  });
  it("shows a specific policy validation error instead of a production server digest",async()=>{
