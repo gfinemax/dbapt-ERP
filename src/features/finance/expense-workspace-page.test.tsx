@@ -430,6 +430,87 @@ describe("common original expense workspace", () => {
     expect(written.getByText("메모")).toBeInTheDocument();
     expect(written.getByText("납품 확인 후 지급")).toBeInTheDocument();
   });
+  it("opens an A4 preview from the floating detail without replacing the expense list", () => {
+    const data = fixture();
+    data.records[0] = {
+      ...data.records[0],
+      usage_description: "조합 사무실에서 사용할 복사용지 구매",
+      evidence_files: [
+        {
+          ocr_job_id: "ocr-1",
+          file_name: "receipt.pdf",
+          content_type: "application/pdf",
+          storage_path: "expenses/receipt.pdf",
+          evidence_type: "영수증",
+          status: "COMPLETED",
+          stage: "COMPLETED",
+          progress: 100,
+          result_data: {},
+          error_message: null,
+          created_at: "2026-09-01",
+        },
+      ],
+    };
+    render(
+      <ExpenseWorkspacePage
+        workspace={data}
+        initialSourceKind="RESOLUTION"
+        initialSourceId="text-id"
+      />,
+    );
+
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "지출 상세" })).getByRole(
+        "button",
+        { name: "인쇄" },
+      ),
+    );
+
+    const preview = screen.getByRole("dialog", {
+      name: "지출 A4 출력 미리보기",
+    });
+    expect(preview).toHaveTextContent("지출결의 원본 확인서 출력 미리보기");
+    expect(preview).toHaveTextContent("조합 사무실에서 사용할 복사용지 구매");
+    expect(preview).toHaveTextContent("receipt.pdf · 영수증 · OCR 완료");
+    expect(
+      within(preview).getByRole("link", { name: "정식 결의서 출력 화면" }),
+    ).toHaveAttribute(
+      "href",
+      "/finance/expense-resolutions?resolutionId=text-id",
+    );
+    expect(screen.getByRole("table")).toBeInTheDocument();
+
+    fireEvent.click(
+      within(preview).getByRole("button", { name: "출력 미리보기 닫기" }),
+    );
+    expect(
+      screen.queryByRole("dialog", { name: "지출 A4 출력 미리보기" }),
+    ).not.toBeInTheDocument();
+  });
+  it("uses the selected expense type and source route in the A4 preview", () => {
+    render(
+      <ExpenseWorkspacePage
+        workspace={fixture()}
+        initialSourceKind="QUICK"
+        initialSourceId="same-text-id"
+      />,
+    );
+
+    fireEvent.click(
+      within(screen.getByRole("region", { name: "지출 상세" })).getByRole(
+        "button",
+        { name: "인쇄" },
+      ),
+    );
+
+    const preview = screen.getByRole("dialog", {
+      name: "지출 A4 출력 미리보기",
+    });
+    expect(preview).toHaveTextContent("간편지출 기록서 출력 미리보기");
+    expect(
+      within(preview).getByRole("link", { name: "원본 화면 열기" }),
+    ).toHaveAttribute("href", "/finance/quick-expenses");
+  });
   it("labels a personal reimbursement purpose clearly instead of leaving it only in the title", () => {
     const data = fixture();
     data.records[0] = {

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import styles from "./expense-workspace.module.css";
+import { createPortal } from "react-dom";
 import {
   useCallback,
   useEffect,
@@ -13,7 +14,14 @@ import {
   type RefObject,
 } from "react";
 import { useRouter } from "next/navigation";
-import { GripHorizontal, PanelLeft, PanelRight, RotateCcw } from "lucide-react";
+import {
+  GripHorizontal,
+  PanelLeft,
+  PanelRight,
+  Printer,
+  RotateCcw,
+  X,
+} from "lucide-react";
 import {
   attachQuickExpenseEvidenceAction,
   connectExpenseOriginal,
@@ -69,6 +77,12 @@ const labels: Record<string, string> = {
 };
 const sourcePendingDescription =
   "법인카드 승인내역이 들어오면 실제 거래와 연결해줘.";
+const evidenceStatusLabels = {
+  PENDING: "대기",
+  PROCESSING: "OCR 처리 중",
+  COMPLETED: "OCR 완료",
+  FAILED: "OCR 실패",
+} as const;
 const card = "rounded-2xl border border-slate-200 bg-white p-5";
 const button =
   "rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
@@ -1225,6 +1239,213 @@ function ExpenseStart({ staff }: { staff: boolean }) {
   );
 }
 
+const printTitles: Record<ExpenseWorkspaceRecord["source_kind"], string> = {
+  RESOLUTION: "지출결의 원본 확인서",
+  SMALL: "소액지출 기록서",
+  QUICK: "간편지출 기록서",
+  PERSONAL: "개인 지출 정산서",
+};
+
+function expenseSourceHref(record: ExpenseWorkspaceRecord) {
+  if (record.source_kind === "RESOLUTION")
+    return expenseResolutionHref({ resolutionId: record.source_id });
+  if (record.source_kind === "SMALL")
+    return `/finance/expenses/small?month=${record.used_at?.slice(0, 7) ?? ""}&id=${encodeURIComponent(record.source_id)}`;
+  if (record.source_kind === "QUICK") return "/finance/quick-expenses";
+  return `/finance/reimbursements${record.budget_month ? `?month=${record.budget_month.slice(0, 7)}&requestId=${encodeURIComponent(record.source_id)}` : `?requestId=${encodeURIComponent(record.source_id)}`}`;
+}
+
+function ExpenseWorkspacePrintModal({
+  onClose,
+  record,
+}: {
+  onClose: () => void;
+  record: ExpenseWorkspaceRecord;
+}) {
+  const writtenContent = usageContent(record);
+  const evidence = record.evidence_files ?? [];
+  const printTitle = printTitles[record.source_kind];
+
+  function print() {
+    const originalTitle = document.title;
+    document.title = `${printTitle}_${record.number ?? record.title}`;
+    const restoreTitle = () => {
+      document.title = originalTitle;
+      window.removeEventListener("afterprint", restoreTitle);
+    };
+    window.addEventListener("afterprint", restoreTitle);
+    window.print();
+    window.setTimeout(restoreTitle, 60_000);
+  }
+
+  return createPortal(
+    <div
+      className="print-modal-shell fixed inset-0 z-[80] flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-8"
+      onClick={onClose}
+      onKeyDown={(event) => {
+        if (event.key !== "Escape") return;
+        event.stopPropagation();
+        onClose();
+      }}
+    >
+      <section
+        aria-label="지출 A4 출력 미리보기"
+        aria-modal="true"
+        className="w-full max-w-4xl overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl"
+        onClick={(event) => event.stopPropagation()}
+        role="dialog"
+      >
+        <header className="expense-resolution-print-modal-header flex items-start justify-between gap-4 border-b border-slate-200 px-6 py-5">
+          <div>
+            <h2 className="text-2xl font-bold">{printTitle} 출력 미리보기</h2>
+            <p className="mt-2 text-sm text-slate-600">
+              선택한 지출의 작성 내용과 처리 현황을 A4 한 장으로 확인해.
+            </p>
+          </div>
+          <button
+            aria-label="출력 미리보기 닫기"
+            className={secondary}
+            onClick={onClose}
+            type="button"
+          >
+            <X aria-hidden="true" size={18} />
+          </button>
+        </header>
+        <div className="print-expense-resolution bg-slate-100 p-6">
+          <article className="erp-print-page expense-resolution-print-page mx-auto rounded-sm bg-white shadow-sm">
+            <header className="expense-resolution-print-header border-b-2 border-slate-950 pb-5">
+              <div className="flex items-end justify-between gap-6">
+                <div>
+                  <p className="mb-2 text-[11px] font-bold text-slate-500">
+                    {kinds[record.source_kind]}
+                    {record.number ? ` · ${record.number}` : ""}
+                  </p>
+                  <h3 className="text-[30px] font-black tracking-[0.08em]">
+                    {printTitle}
+                  </h3>
+                  <p className="mt-2 text-[13px] font-semibold text-slate-500">
+                    대방동 지역주택조합
+                  </p>
+                </div>
+                <div className="min-w-[48mm] border border-slate-800 p-3 text-center text-[11px]">
+                  <p className="font-bold">처리 상태</p>
+                  <p className="mt-2">
+                    {labels[record.approval_status] ?? record.approval_status}
+                  </p>
+                </div>
+              </div>
+            </header>
+            <section className="expense-resolution-print-section mt-6">
+              <h4 className="mb-2 text-[15px] font-bold">지출 기본정보</h4>
+              <dl className="grid grid-cols-2 border-y border-slate-400 text-[11px]">
+                {[
+                  ["제목", record.title],
+                  ["금액", money(record.amount)],
+                  ["실제 사용일", day(record.used_at)],
+                  ["작성일", day(record.created_at)],
+                  ["거래처·사용처", record.counterparty || "미확인"],
+                  ["작성자", record.author_label || "미확인"],
+                  ["회계 귀속일", day(record.accounting_date)],
+                  ["예산 귀속월", record.budget_month?.slice(0, 7) ?? "해당 없음"],
+                ].map(([label, value], index) => (
+                  <div
+                    className={`grid grid-cols-[30mm_1fr] border-b border-slate-300 ${index % 2 === 0 ? "border-r" : ""}`}
+                    key={label}
+                  >
+                    <dt className="bg-slate-100 px-3 py-2 font-bold">{label}</dt>
+                    <dd className="px-3 py-2 font-semibold">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
+            <section className="expense-resolution-print-section mt-6">
+              <h4 className="mb-2 text-[15px] font-bold">작성 내용</h4>
+              <div className="min-h-[30mm] border-y border-slate-400 px-4 py-3">
+                <p className="whitespace-pre-wrap text-[12px] font-semibold leading-6">
+                  {writtenContent || "작성된 내용이 없어."}
+                </p>
+                {record.memo?.trim() ? (
+                  <p className="mt-3 border-t border-slate-200 pt-3 text-[11px]">
+                    메모 · {record.memo}
+                  </p>
+                ) : null}
+              </div>
+            </section>
+            <section className="expense-resolution-print-section mt-6">
+              <h4 className="mb-2 text-[15px] font-bold">처리·증빙 현황</h4>
+              <dl className="grid grid-cols-2 border-y border-slate-400 text-[11px]">
+                {[
+                  ["지급 상태", displayPaymentStatus(record)],
+                  ["업무흐름", record.transaction_id ? "연결됨" : "미연결"],
+                  ["증빙", evidence.length ? `${evidence.length}건 첨부` : "첨부 없음"],
+                  ["출력 구분", "조회·보관용 원본 확인서"],
+                ].map(([label, value], index) => (
+                  <div
+                    className={`grid grid-cols-[30mm_1fr] ${index < 2 ? "border-b border-slate-300" : ""} ${index % 2 === 0 ? "border-r" : ""}`}
+                    key={label}
+                  >
+                    <dt className="bg-slate-100 px-3 py-2 font-bold">{label}</dt>
+                    <dd className="px-3 py-2 font-semibold">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+              {evidence.length ? (
+                <ul className="mt-3 space-y-1 text-[10px] text-slate-600">
+                  {evidence.map((file) => (
+                    <li key={`${file.ocr_job_id}:${file.storage_path}`}>
+                      {file.file_name} · {file.evidence_type} ·{" "}
+                      {evidenceStatusLabels[file.status]}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+            <footer className="mt-auto flex items-end justify-between gap-6 border-t border-slate-300 pt-4 text-[9px] text-slate-500">
+              <div>
+                <p className="text-[11px] font-bold text-slate-900">
+                  대방동 지역주택조합
+                </p>
+                <p className="mt-1">
+                  전자 원본과 첨부 증빙은 시스템에서 함께 보관해.
+                </p>
+              </div>
+              <p>
+                출력일 {new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Seoul" })}
+              </p>
+            </footer>
+          </article>
+        </div>
+        <footer className="expense-resolution-print-actions flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 px-6 py-4">
+          <p className="text-xs text-slate-600">
+            {record.source_kind === "RESOLUTION"
+              ? "공식 결의서·결재 이력·증빙 별첨은 정식 결의서 출력 화면을 이용해."
+              : "첨부 증빙 원본은 해당 지출의 원본 화면에서 확인할 수 있어."}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              className={secondary}
+              href={expenseSourceHref(record)}
+              target="_blank"
+            >
+              {record.source_kind === "RESOLUTION"
+                ? "정식 결의서 출력 화면"
+                : "원본 화면 열기"}
+            </Link>
+            <button className={secondary} onClick={onClose} type="button">
+              닫기
+            </button>
+            <button className={button} onClick={print} type="button">
+              <Printer aria-hidden="true" className="mr-2 inline" size={16} />
+              브라우저 인쇄
+            </button>
+          </div>
+        </footer>
+      </section>
+    </div>,
+    document.body,
+  );
+}
+
 function ExpenseDetail({
   canApprove,
   expenseDetails,
@@ -1259,6 +1480,7 @@ function ExpenseDetail({
   const writtenContent = usageContent(r);
   const [message, setMessage] = useState("");
   const [tab, setTab] = useState<"DETAIL" | "CONNECTIONS">("DETAIL");
+  const [showPrintPreview, setShowPrintPreview] = useState(false);
   function connect() {
     if (busy.current) return;
     busy.current = true;
@@ -1321,6 +1543,14 @@ function ExpenseDetail({
             )}
           </div>
           <div className={styles.headerActions} data-no-drag>
+            <button
+              className={secondary}
+              onClick={() => setShowPrintPreview(true)}
+              type="button"
+            >
+              <Printer aria-hidden="true" className="mr-1.5 inline" size={16} />
+              인쇄
+            </button>
             <div
               aria-label="상세창 위치"
               className={styles.windowTools}
@@ -1658,6 +1888,12 @@ function ExpenseDetail({
           </p>
         </div>
       )}
+      {showPrintPreview ? (
+        <ExpenseWorkspacePrintModal
+          onClose={() => setShowPrintPreview(false)}
+          record={r}
+        />
+      ) : null}
     </section>
   );
 }
