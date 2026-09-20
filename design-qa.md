@@ -40,3 +40,39 @@ final result: authenticated visual verification pending
 - P0/P1/P2 issues: none found.
 
 final result: passed
+
+## Expense floating inspector
+
+- Source visual: `C:\Users\finemax\.codex\generated_images\01a0b6b2-1b1c-78f1-8037-ba25ab843b69\exec-56c9e3e4-6938-4235-9c74-6819cdbfad9a.png`
+- Implementation: `C:\workspace\antigravity\dbapt-erp\src\features\finance\expense-workspace-page.tsx` and `C:\workspace\antigravity\dbapt-erp\src\features\finance\expense-workspace.module.css`
+- Browser target: `http://localhost:3010/design-qa` with representative personal reimbursement and quick-expense records
+- Viewports reviewed: desktop 1440 x 1440 in Chrome; responsive full-screen behavior defined below 900px and covered by the production build
+- Side-by-side comparison: `C:\workspace\antigravity\dbapt-erp\design-comparison.jpg`
+
+## Comparison evidence
+
+- Preserved the selected visual's balanced information/evidence split, compact status header, tab treatment, and single evidence surface.
+- Intentionally removed the blocking overlay so the expense list remains readable and operable behind the inspector.
+- Added a restrained shadow and blue focus edge to separate the inspector without dimming the working context.
+- The inspector stays within the viewport, supports left/center/right placement, and exposes a native corner resize affordance.
+- Narrow desktop headers wrap without overlapping. Below 900px the inspector becomes a non-resizable full-screen detail view.
+
+## Interactions tested
+
+- Opening with an existing selected record.
+- Switching the selected expense while keeping one detail window (component test).
+- Left docking while the expense list remains visible (Chrome).
+- Right/default placement and reset controls (component test and Chrome accessibility tree).
+- Close, Escape, previous/next navigation, URL synchronization, and focus return (component test).
+- Position and size persistence through local storage (implementation review; placement state covered by the component test).
+
+## Verification
+
+- Focused component suite: 28 passed.
+- TypeScript: passed with `npx tsc --noEmit`.
+- ESLint: passed for changed TSX and test files.
+- Production build: passed.
+- Browser console: no application errors. Only unrelated Chrome extension listener warnings and normal Next.js development logs were present.
+- Visual issues rated P0/P1/P2: none remaining.
+
+final result: passed
