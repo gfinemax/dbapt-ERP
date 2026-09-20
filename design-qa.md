@@ -11,6 +11,27 @@
 
 final result: passed
 
+## Expense detail A4 print preview
+
+- Source visual truth: the existing expense floating-inspector target at `C:\Users\finemax\.codex\generated_images\01a0b6b2-1b1c-78f1-8037-ba25ab843b69\exec-56c9e3e4-6938-4235-9c74-6819cdbfad9a.png` and the established A4 document styling in the product.
+- Implementation screenshot: direct CUA production capture of `https://dbapt-erp.vercel.app/finance/expenses?sort=CREATED_DESC&source_kind=QUICK&source_id=075f1e4f-f81c-4c98-b48b-41185cea09fd`; the CUA capture was inspected in-session and does not expose a local filesystem path.
+- Viewport and density: Chrome desktop, 2190 x 1509 screenshot pixels at the browser's current desktop density.
+- State: a selected quick-expense floating inspector with the new `인쇄` action, followed by the `간편지출 기록서 출력 미리보기` overlay.
+- Full-view comparison: passed. The new action fits the existing compact inspector toolbar, the underlying list remains visible, and the print preview uses the established centered A4 hierarchy without clipping.
+- Focused-region comparison: passed. The A4 sheet clearly separates title/status, basic expense fields, written content, processing/evidence state, and archival footer; the source-screen action remains distinct from browser printing.
+- Typography: passed. The preview reuses the product's print font stack, strong document title, compact field labels, and tabular amount hierarchy.
+- Spacing/layout rhythm: passed. The 210mm preview fits within the modal, keeps consistent section gaps and rules, and leaves actions outside the printable sheet.
+- Colors/tokens: passed. White paper, slate rules, cloud background, and dark primary print action match the existing finance print surfaces.
+- Image/asset fidelity: passed. No custom imagery was required; the printer and close affordances use the existing icon library.
+- Copy/content: passed. `조회·보관용 원본 확인서` is explicitly distinguished from the formal expense-resolution output, while quick, small, and personal records route back to their source screens.
+- Interactions tested in production: open preview, preserve the expense list and selected inspector, close preview, and retain the inspector after close.
+- Console review: passed. No application-origin errors were observed; warnings were limited to an unrelated Chrome extension content script.
+- Automated verification: focused component suite 30/30, including source-specific preview titles/routes and browser-print invocation; ESLint and production build passed.
+- Comparison history: first implementation review found no P0/P1/P2 visual issue, so no corrective visual iteration was required.
+- P0/P1/P2 findings: none.
+
+final result: passed
+
 ## Reimbursement detail content and evidence preview
 
 - Source visual truth: the user-provided personal-reimbursement detail screenshot in the implementation conversation, showing the hidden `사용내용` problem and the duplicated native PDF thumbnail/page presentation.

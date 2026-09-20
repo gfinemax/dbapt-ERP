@@ -431,6 +431,7 @@ describe("common original expense workspace", () => {
     expect(written.getByText("납품 확인 후 지급")).toBeInTheDocument();
   });
   it("opens an A4 preview from the floating detail without replacing the expense list", () => {
+    const browserPrint = vi.spyOn(window, "print").mockImplementation(() => {});
     const data = fixture();
     data.records[0] = {
       ...data.records[0],
@@ -479,6 +480,10 @@ describe("common original expense workspace", () => {
       "/finance/expense-resolutions?resolutionId=text-id",
     );
     expect(screen.getByRole("table")).toBeInTheDocument();
+    fireEvent.click(
+      within(preview).getByRole("button", { name: "브라우저 인쇄" }),
+    );
+    expect(browserPrint).toHaveBeenCalledTimes(1);
 
     fireEvent.click(
       within(preview).getByRole("button", { name: "출력 미리보기 닫기" }),
@@ -486,6 +491,7 @@ describe("common original expense workspace", () => {
     expect(
       screen.queryByRole("dialog", { name: "지출 A4 출력 미리보기" }),
     ).not.toBeInTheDocument();
+    browserPrint.mockRestore();
   });
   it("uses the selected expense type and source route in the A4 preview", () => {
     render(
