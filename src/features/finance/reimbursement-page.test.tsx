@@ -2,9 +2,10 @@ import { fireEvent,render,screen,waitFor } from "@testing-library/react";
 import { beforeEach,describe,expect,it,vi } from "vitest";
 import { ReimbursementLogin, ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),submit:vi.fn()}));
+const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),submit:vi.fn()}));
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push})}));
 vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
+vi.mock("@/app/finance/expenses/actions",()=>({updatePersonalReimbursementDetailsAction:mocks.personalUpdate}));
 const w:ReimbursementWorkspace={month:"2026-03-01",member:{user_id:"a",organization_id:"o",display_name:"관리자",permissions:["ADMIN"],active:true},members:[],policy:null,periods:[{month:"2026-03-01",status:"CLOSED",submission_deadline:"2026-04-05",completion_deadline:"2026-04-10",long_delay_days:60,revision:1}],requests:[{id:"r",applicant_id:"b",budget_id:"budget",used_on:"2026-03-15",budget_month:"2026-03-01",amount:80000,merchant:"문구점",purpose:"사무용품",delay_reason:"영수증 누락",source_quick_id:null,status:"APPROVED",needs_exception:true,needs_senior:false,exception_approved_at:"2026-06-01",senior_approved_at:null,over_budget_approved_at:null,submitted_at:"2026-06-01",approved_at:"2026-06-02",paid_at:null,bank_transaction_id:null}],budgets:[],reports:[],audits:[],banks:[{id:"bank",transacted_at:"2026-06-15T12:00:00+09:00",withdrawal_amount:80000,counterparty:"신청자",description:"정산"}],sources:[]};
 describe("reimbursement workspace",()=>{
  beforeEach(()=>vi.clearAllMocks());
@@ -49,6 +50,32 @@ describe("reimbursement workspace",()=>{
   render(<ReimbursementPage workspace={{...w,periods:[],policy:{submission_day:5,completion_day:10,long_delay_days:60}}}/>);
   expect(screen.getByText(/접수월은 신청과 함께 자동 개설돼/)).toBeInTheDocument();
   expect(screen.getByRole("button",{name:"내용 확인 후 정산 신청"})).toBeEnabled();
+ });
+ it("shows the request and its evidence together in a detail dialog",()=>{
+  render(<ReimbursementPage workspace={w}/>);
+  fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
+  const dialog=screen.getByRole("dialog",{name:"문구점 · 80,000원"});
+  expect(dialog).toHaveTextContent("신청 내용");
+  expect(dialog).toHaveTextContent("사무용품");
+  expect(dialog).toHaveTextContent("처리 정보");
+  expect(screen.getByTitle("문구점 첨부 증빙")).toHaveAttribute("src","/finance/reimbursements/evidence?id=r");
+  expect(screen.getByRole("link",{name:"새 창에서 열기"})).toHaveAttribute("href","/finance/reimbursements/evidence?id=r");
+  fireEvent.click(screen.getByRole("button",{name:"정산 상세 닫기"}));
+  expect(screen.queryByRole("dialog",{name:"문구점 · 80,000원"})).not.toBeInTheDocument();
+ });
+ it("edits a submitted request from the detail dialog and records the reason",async()=>{
+  mocks.personalUpdate.mockResolvedValue({ok:true,message:"수정했어."});
+  const request={...w.requests[0],applicant_id:"a",status:"SUBMITTED" as const,approved_at:null,updated_at:"2026-09-20T00:00:00Z"};
+  render(<ReimbursementPage workspace={{...w,requests:[request]}}/>);
+  fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
+  fireEvent.click(screen.getByRole("button",{name:"거래처·사용내용 수정"}));
+  fireEvent.change(screen.getByLabelText("거래처"),{target:{value:"새 문구점"}});
+  fireEvent.change(screen.getByLabelText("사용내용"),{target:{value:"복사용지 구매"}});
+  fireEvent.change(screen.getByLabelText("수정 사유"),{target:{value:"OCR 상호 오기"}});
+  fireEvent.click(screen.getByRole("button",{name:"수정 저장"}));
+  await waitFor(()=>expect(mocks.personalUpdate).toHaveBeenCalledWith({id:"r",merchant:"새 문구점",purpose:"복사용지 구매",reason:"OCR 상호 오기",expectedUpdatedAt:"2026-09-20T00:00:00Z"}));
+  expect(mocks.refresh).toHaveBeenCalled();
+  expect(screen.queryByRole("dialog",{name:/새 문구점|문구점/})).not.toBeInTheDocument();
  });
  it("opens the personal reimbursement form when the request tab is clicked",()=>{
   render(<ReimbursementPage workspace={w}/>);

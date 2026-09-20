@@ -6,6 +6,7 @@ import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { analyzeReimbursementEvidence, changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
+import { updatePersonalReimbursementDetailsAction } from "@/app/finance/expenses/actions";
 import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementReport } from "./reimbursement-domain";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
 import { buildReimbursementOcrDraft } from "./reimbursement-ocr";
@@ -18,6 +19,8 @@ const secondary="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm d
 const money=(n:number)=>Number(n).toLocaleString("ko-KR")+"원";
 const dateTime=(s:string|null)=>s ? new Date(s).toLocaleString("ko-KR",{timeZone:"Asia/Seoul"}) : "—";
 const permissionLabels={ADMIN:"관리자",APPROVE:"정산·지연 승인",SENIOR:"장기 지연·예산 초과 승인",CLOSE:"월 마감·과거 월 수정",PAY:"지급 연결"};
+const paymentMethodLabels={PERSONAL_CARD:"개인카드",PERSONAL_TRANSFER:"개인계좌 이체",CASH:"현금 직접 지급"};
+const evidenceKindLabels={RECEIPT:"영수증",CARD_STATEMENT:"개인카드 승인내역",BANK_TRANSFER:"계좌이체 확인증",ORDER_DETAILS:"주문내역",TRANSACTION_STATEMENT:"거래명세서",ITEM_PHOTO:"물품·사용 사진",OTHER_ALTERNATIVE:"기타 대체증빙"};
 function autoSubmissionDeadline(usedOn:string,submissionDay:number) {
   const [year,month]=usedOn.split("-").map(Number);
   const deadlineYear=month===12?year+1:year;
@@ -52,12 +55,42 @@ function Report({report,previous}:{report:ReimbursementReport;previous?:Reimburs
     <a className="mt-3 inline-block text-sm text-blue-700 underline" href={`/finance/reimbursements/report?month=${report.month}&revision=${report.revision}`} target="_blank" rel="noreferrer">보고서 열기·인쇄</a>
   </details>;
 }
+function ReimbursementDetail({record:r,applicantName,budgetName,canEdit,onClose,onSaved}:{record:Reimbursement;applicantName:string;budgetName:string;canEdit:boolean;onClose:()=>void;onSaved:()=>void}) {
+  const [editing,setEditing]=useState(false); const [merchant,setMerchant]=useState(r.merchant); const [purpose,setPurpose]=useState(r.purpose); const [reason,setReason]=useState(""); const [message,setMessage]=useState(""); const [busy,setBusy]=useState(false);
+  const evidenceHref=`/finance/reimbursements/evidence?id=${encodeURIComponent(r.id)}`;
+  async function save() {
+    if(!r.updated_at){setMessage("원본 수정 시각을 확인할 수 없어. 새로고침 후 다시 시도해줘.");return;}
+    setBusy(true);setMessage("");
+    try {
+      const result=await updatePersonalReimbursementDetailsAction({id:r.id,merchant,purpose,reason,expectedUpdatedAt:r.updated_at});
+      if(!result.ok){setMessage(result.message);return;}
+      onSaved();
+    } catch(error) {setMessage(error instanceof Error?error.message:"개인 정산 원본을 수정하지 못했어.");}
+    finally {setBusy(false);}
+  }
+  return <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/45 p-3 sm:p-6">
+    <section aria-labelledby="reimbursement-detail-title" aria-modal="true" className="flex max-h-[92vh] w-full max-w-6xl flex-col overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xl" role="dialog">
+      <header className="flex items-start justify-between gap-4 border-b px-5 py-4 sm:px-6"><div><p className="text-sm font-semibold text-blue-700">개인 지출 정산 상세</p><h2 className="mt-1 text-xl font-bold" id="reimbursement-detail-title">{r.merchant} · {money(r.amount)}</h2><p className="mt-1 text-sm text-slate-600">{reimbursementStatusLabels[r.status]} · 신청 {dateTime(r.submitted_at)}</p></div><button aria-label="정산 상세 닫기" className={secondary} onClick={onClose} type="button">닫기</button></header>
+      <div className="grid min-h-0 flex-1 overflow-y-auto lg:grid-cols-[minmax(0,0.9fr)_minmax(420px,1.1fr)] lg:overflow-hidden">
+        <div className="space-y-5 p-5 sm:p-6 lg:overflow-y-auto">
+          <section aria-label="신청 내용"><div className="flex flex-wrap items-center justify-between gap-3"><h3 className="font-bold">신청 내용</h3>{canEdit&&<button className={secondary} onClick={()=>{setEditing(value=>!value);setMessage("");}} type="button">{editing?"수정 닫기":"거래처·사용내용 수정"}</button>}</div>
+            {editing?<div className="mt-4 space-y-3"><label className="block">거래처<input className={input} maxLength={200} value={merchant} onChange={event=>setMerchant(event.target.value)}/></label><label className="block">사용내용<input className={input} maxLength={500} value={purpose} onChange={event=>setPurpose(event.target.value)}/></label><label className="block">수정 사유<input className={input} maxLength={500} placeholder="예: 거래처명 오기 수정" value={reason} onChange={event=>setReason(event.target.value)}/></label><button className={button} disabled={busy||!merchant.trim()||!purpose.trim()||!reason.trim()} onClick={()=>void save()} type="button">수정 저장</button></div>:<dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">사용처</dt><dd className="mt-1 font-semibold">{r.merchant}</dd></div><div><dt className="text-slate-500">금액</dt><dd className="mt-1 font-semibold">{money(r.amount)}</dd></div><div className="sm:col-span-2"><dt className="text-slate-500">업무 목적</dt><dd className="mt-1 font-semibold">{r.purpose}</dd></div><div><dt className="text-slate-500">실제 사용일</dt><dd className="mt-1">{r.used_on}</dd></div><div><dt className="text-slate-500">예산 귀속월</dt><dd className="mt-1">{r.budget_month.slice(0,7)}</dd></div><div className="sm:col-span-2"><dt className="text-slate-500">예산항목</dt><dd className="mt-1">{budgetName}</dd></div><div><dt className="text-slate-500">결제수단</dt><dd className="mt-1">{paymentMethodLabels[r.payment_method??"CASH"]}</dd></div><div><dt className="text-slate-500">증빙 종류</dt><dd className="mt-1">{evidenceKindLabels[r.evidence_kind??"OTHER_ALTERNATIVE"]}</dd></div></dl>}
+            {message&&<p aria-live="polite" className="mt-3 text-sm text-red-700" role="status">{message}</p>}
+          </section>
+          <section aria-label="처리 정보" className="border-t pt-5"><h3 className="font-bold">처리 정보</h3><dl className="mt-4 grid gap-4 text-sm sm:grid-cols-2"><div><dt className="text-slate-500">신청자</dt><dd className="mt-1">{applicantName}</dd></div><div><dt className="text-slate-500">처리 상태</dt><dd className="mt-1 font-semibold">{reimbursementStatusLabels[r.status]}</dd></div><div><dt className="text-slate-500">예산 승인</dt><dd className="mt-1">{dateTime(r.approved_at)}</dd></div><div><dt className="text-slate-500">실제 지급</dt><dd className="mt-1">{dateTime(r.paid_at)}</dd></div></dl>{r.missing_receipt_reason&&<p className="mt-4 rounded-lg bg-amber-50 p-3 text-sm">영수증 미첨부 사유: {r.missing_receipt_reason}</p>}{r.delay_reason&&<p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm">지연 사유: {r.delay_reason}</p>}</section>
+          {canEdit&&<p className="rounded-lg bg-blue-50 p-3 text-xs text-blue-900">심사 중에는 거래처와 사용내용을 수정할 수 있어. 금액·사용일·예산·증빙을 바꾸려면 현재 신청을 취소하고 다시 신청해야 해.</p>}
+        </div>
+        <section aria-label="첨부 증빙" className="flex min-h-[520px] flex-col border-t bg-slate-50 p-4 lg:min-h-0 lg:border-l lg:border-t-0"><div className="mb-3 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">첨부 증빙</h3><p className="mt-1 text-xs text-slate-600">신청 내용과 원본을 같은 화면에서 비교해.</p></div><a className={secondary} href={evidenceHref} rel="noreferrer" target="_blank">새 창에서 열기</a></div><iframe className="min-h-[440px] w-full flex-1 rounded-xl border bg-white" src={evidenceHref} title={`${r.merchant} 첨부 증빙`}/></section>
+      </div>
+    </section>
+  </div>;
+}
 export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialAction}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialAction?:"APPROVE"|"PAY"}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
   const period=w.periods.find(p=>p.month===w.month);
   const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
   const allowedInitialAction=initialRequest&&initialAction&&requestActions(initialRequest,w.member,period).includes(initialAction)?initialAction:"";
-  const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [action,setAction]=useState(allowedInitialAction);
+  const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [detail,setDetail]=useState<Reimbursement|null>(null); const [action,setAction]=useState(allowedInitialAction);
   const [requestFormOpen,setRequestFormOpen]=useState(false);
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
@@ -167,7 +200,7 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           <p className="mt-2 text-xs text-slate-600">결제수단 {r.payment_method==="PERSONAL_CARD"?"개인카드":r.payment_method==="PERSONAL_TRANSFER"?"개인계좌 이체":"현금"} · 증빙 {r.evidence_kind==="RECEIPT"?"영수증":r.evidence_kind} · {r.evidence_review_status==="READY"?"증빙 확인 가능":r.evidence_review_status==="APPROVED"?"대체증빙 승인 완료":r.evidence_review_status==="SUPPLEMENT_REQUIRED"?"증빙 보완 필요":"대체증빙 승인대기"}</p>
           {r.missing_receipt_reason&&<p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm">영수증 미첨부 사유: {r.missing_receipt_reason}</p>}
           <div className="my-2 flex flex-wrap gap-3 text-xs">{r.needs_exception&&<span>지연 승인: {r.exception_approved_at?"완료":"대기"}</span>}{r.needs_senior&&<span>장기 지연 승인: {r.senior_approved_at?"완료":"대기"}</span>}{r.over_budget_approved_at&&<span>예산 초과 승인 완료</span>}</div>
-          <div className="flex flex-wrap gap-2"><a className={secondary} href={`/finance/reimbursements/evidence?id=${r.id}`} target="_blank" rel="noreferrer">증빙 보기</a>
+          <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>setDetail(r)} type="button">상세 보기</button><a className={secondary} href={`/finance/reimbursements/evidence?id=${r.id}`} target="_blank" rel="noreferrer">증빙만 보기</a>
             {requestActions(r,w.member,period).map(a=><button key={a} className={secondary} disabled={op.pending} onClick={()=>{setSelected(r);setAction(a);}}>{reimbursementCommandLabels[a]}</button>)}
           </div>
         </article>)}{!visible.length&&<p className="py-6 text-center text-slate-500">이 조건에 해당하는 신청이 없어.</p>}</div>
@@ -211,5 +244,6 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
         {op.message&&<p role="alert" className="text-sm text-red-700">{op.message}</p>}
       </form>
     </section></div>}
+    {detail&&<ReimbursementDetail applicantName={names[detail.applicant_id]??"등록 사용자"} budgetName={w.budgets.find(b=>b.id===detail.budget_id)?.budget_item??"예산항목 확인 필요"} canEdit={detail.status==="SUBMITTED"&&Boolean(detail.updated_at)&&(detail.applicant_id===w.member.user_id||isAdmin)} onClose={()=>setDetail(null)} onSaved={()=>{setDetail(null);router.refresh();}} record={detail}/>}
   </>;
 }

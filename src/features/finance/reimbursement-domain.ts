@@ -16,6 +16,7 @@ export type Reimbursement = {
   evidence_review_status?: "READY" | "REVIEW_REQUIRED" | "SUPPLEMENT_REQUIRED" | "APPROVED";
   evidence_reviewed_at?: string | null;
   evidence_review_note?: string;
+  updated_at?: string;
 };
 export type BudgetEntry = { source_kind: string; source_id: string; title: string; budget_id: string; month: string; amount: number; state: string; paid_at: string | null };
 export type BudgetAllocationLine = { budget_id: string; month: string; amount: number; used_on?: string };
