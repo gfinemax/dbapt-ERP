@@ -21,6 +21,7 @@ MODULES = [
     "06-hr-reports.md",
     "07-roles-status.md",
     "08-troubleshooting.md",
+    "09-expense-policy.md",
 ]
 
 BLUE = "2457C5"
@@ -72,6 +73,13 @@ def keep_row_together(row):
     tr_pr = row._tr.get_or_add_trPr()
     cant_split = OxmlElement("w:cantSplit")
     tr_pr.append(cant_split)
+
+
+def mark_row_as_header(row):
+    tr_pr = row._tr.get_or_add_trPr()
+    header = OxmlElement("w:tblHeader")
+    header.set(qn("w:val"), "true")
+    tr_pr.append(header)
 
 
 def set_table_widths(table, widths):
@@ -273,7 +281,7 @@ def add_cover(doc):
     set_table_widths(table, [2100, 6900])
     rows = [
         ("운영 주소", "https://dbapt-erp.vercel.app/"),
-        ("적용 기준", "2026년 7월 17일 운영 버전"),
+        ("적용 기준", "2026년 9월 20일 운영 버전"),
         ("문서 관리", "docs/user-guide의 기능별 Markdown 원본에서 갱신"),
     ]
     for row, (label, value) in zip(table.rows, rows):
@@ -300,6 +308,7 @@ def add_toc(doc):
         "6. 인사·급여와 보고서",
         "7. 역할별 업무와 상태",
         "8. 문제 해결",
+        "9. 지출·정산 운영기준",
     ]
     toc_num_id = create_numbering(doc)
     for item in items:
@@ -341,17 +350,80 @@ def add_inline_runs(paragraph, text):
             set_font(paragraph.add_run(part), 10.5, False, DARK)
 
 
+def split_table_row(text):
+    value = text.strip()
+    if value.startswith("|"):
+        value = value[1:]
+    if value.endswith("|"):
+        value = value[:-1]
+    return [cell.strip() for cell in value.split("|")]
+
+
+def is_table_separator(text):
+    cells = split_table_row(text)
+    return bool(cells) and all(re.fullmatch(r":?-{3,}:?", cell) for cell in cells)
+
+
+def add_markdown_table(doc, rows):
+    column_count = max(len(row) for row in rows)
+    table = doc.add_table(rows=len(rows), cols=column_count)
+    table.style = "Table Grid"
+    lengths = []
+    for index in range(column_count):
+        longest = max((len(row[index]) if index < len(row) else 0) for row in rows)
+        lengths.append(max(10, min(longest, 34)))
+    total = sum(lengths)
+    widths = [round(9000 * length / total) for length in lengths]
+    widths[-1] += 9000 - sum(widths)
+    set_table_widths(table, widths)
+    for row_index, (word_row, values) in enumerate(zip(table.rows, rows)):
+        keep_row_together(word_row)
+        for column_index, cell in enumerate(word_row.cells):
+            if row_index == 0:
+                set_cell_fill(cell, BLUE)
+                color = "FFFFFF"
+                bold = True
+            else:
+                if row_index % 2 == 0:
+                    set_cell_fill(cell, PALE_GRAY)
+                color = DARK
+                bold = False
+            value = values[column_index] if column_index < len(values) else ""
+            paragraph = cell.paragraphs[0]
+            paragraph.paragraph_format.space_after = Pt(0)
+            paragraph.paragraph_format.line_spacing = 1.1
+            set_font(paragraph.add_run(value), 8.7, bold, color)
+    doc.add_paragraph().paragraph_format.space_after = Pt(2)
+
+
 def append_markdown(doc, path):
     lines = path.read_text(encoding="utf-8").splitlines()
     numbered_id = None
     bullet_id = None
     previous_was_number = False
     previous_was_bullet = False
-    for line in lines:
+    index = 0
+    while index < len(lines):
+        line = lines[index]
         text = line.strip()
+        if (
+            text.startswith("|")
+            and index + 1 < len(lines)
+            and is_table_separator(lines[index + 1].strip())
+        ):
+            rows = [split_table_row(text)]
+            index += 2
+            while index < len(lines) and lines[index].strip().startswith("|"):
+                rows.append(split_table_row(lines[index].strip()))
+                index += 1
+            add_markdown_table(doc, rows)
+            previous_was_number = False
+            previous_was_bullet = False
+            continue
         if not text:
             previous_was_number = False
             previous_was_bullet = False
+            index += 1
             continue
         if text.startswith("# "):
             doc.add_heading(text[2:], level=1)
@@ -364,6 +436,7 @@ def append_markdown(doc, path):
                 numbered_id = create_numbering(doc)
             add_numbered_paragraph(doc, re.sub(r"^\d+\.\s+", "", text), numbered_id)
             previous_was_number = True
+            index += 1
             continue
         elif text.startswith("- "):
             if not previous_was_bullet:
@@ -371,6 +444,7 @@ def append_markdown(doc, path):
             add_numbered_paragraph(doc, text[2:], bullet_id)
             previous_was_bullet = True
             previous_was_number = False
+            index += 1
             continue
         elif text.startswith("주의:") or text.startswith("중요:") or text.startswith("완료 기준:"):
             table = doc.add_table(rows=1, cols=1)
@@ -387,6 +461,7 @@ def append_markdown(doc, path):
             add_inline_runs(p, text)
         previous_was_number = False
         previous_was_bullet = False
+        index += 1
 
 
 def add_maintenance_appendix(doc):
@@ -424,6 +499,9 @@ def build():
     for module in MODULES:
         append_markdown(doc, ROOT / module)
     add_maintenance_appendix(doc)
+    for table in doc.tables:
+        if table.rows:
+            mark_row_as_header(table.rows[0])
     doc.save(OUTPUT)
     print(OUTPUT)
 

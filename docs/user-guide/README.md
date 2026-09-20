@@ -21,6 +21,7 @@
 6. [인사·급여와 보고서](06-hr-reports.md)
 7. [역할별 업무와 상태](07-roles-status.md)
 8. [문제 해결](08-troubleshooting.md)
+9. [지출·정산 운영기준](09-expense-policy.md)
 
 ## 문서 유지 원칙
 
