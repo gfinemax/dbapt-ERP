@@ -50,7 +50,7 @@ describe("ErpShell", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toHaveAttribute(
       "href",
-      "/finance/expense-resolutions?start=advance",
+      "/finance/expense-entry?flow=before",
     );
   });
 

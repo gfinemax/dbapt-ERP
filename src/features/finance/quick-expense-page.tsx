@@ -18,7 +18,8 @@ import type { EvidenceOcrData, EvidenceOcrJobProgress, ExpenseEvidenceAttachment
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
 const paymentMethodOrder: QuickExpensePaymentMethod[] = ["CORPORATE_CARD", "PERSONAL_PREPAID", "CASH", "BANK_TRANSFER", "AUTO_DEBIT"];
-export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceOcrJob, getPrintEvidence, retryEvidenceOcrJob, importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, initialPaymentMethod = "BANK_TRANSFER", initialSourceId = "", persistRecord, uploadEvidence = uploadQuickExpenseEvidence }: {
+export function QuickExpensePage({ attachEvidence, discardEvidence, embedded = false, getEvidenceOcrJob, getPrintEvidence, retryEvidenceOcrJob, importCardTransactions, linkCardTransaction, initialBankTransactions, initialBudgetItems = [], initialExpenseDetails = [], initialCardTransactions, initialRecords, initialPaymentMethod = "BANK_TRANSFER", initialSourceId = "", persistRecord, uploadEvidence = uploadQuickExpenseEvidence }: {
+  embedded?: boolean;
   initialPaymentMethod?: QuickExpensePaymentMethod;
   initialSourceId?: string;
   attachEvidence?: (recordId: string, attachment: ExpenseEvidenceAttachment, operationKey: string) => Promise<unknown>;
@@ -253,7 +254,7 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceO
     });
   }
 
-  return <ErpShell activeDetailLabel="예산 내 간편지출" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리"><div className="mx-auto grid max-w-[1180px] gap-6">
+  const content = <div className="mx-auto grid max-w-[1180px] gap-6">
     <section className="rounded-2xl border border-[var(--color-soft-border)] bg-white p-6"><p className="text-xs font-bold text-[var(--color-deep-cobalt)]">회계/자금 &gt; 전표·증빙관리</p><h1 className="mt-2 text-3xl font-bold">예산 내 간편지출</h1><p className="mt-2 text-sm text-[var(--color-stone)]">정식 지출결의서를 만들지 않고 실제 거래에 사용내용과 예산항목을 기록합니다. 한도초과·계약·예산 외 거래는 자동으로 정식 결의 대상으로 분류합니다.</p></section>
     <section className="grid gap-5 rounded-2xl border border-[var(--color-soft-border)] bg-white p-6">
       <fieldset><legend className="text-sm font-bold">결제수단</legend><div className="mt-3 flex flex-wrap gap-2">{paymentMethodOrder.map((method) => <button aria-pressed={paymentMethod === method} className={`rounded-full border px-4 py-2 text-sm font-bold ${paymentMethod === method ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]" : "border-[var(--color-soft-border)]"}`} key={method} onClick={() => { setPaymentMethod(method); setSourceId(""); setManualCardEntry(false); setExpenseDetailSelection("AUTO"); setExpenseDetailId(""); setBudgetItem(""); setMessage(""); }} type="button">{paymentLabels[method]}</button>)}</div></fieldset>
@@ -277,7 +278,9 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, getEvidenceO
       <div className="mt-4 grid gap-3">{records.length ? records.map((record) => <article className="rounded-xl border p-4" key={record.id}><div className="flex flex-wrap items-center justify-between gap-2"><p className="font-bold">{record.usageDescription}</p><div className="flex flex-wrap items-center gap-2">{record.recordStatus==="SOURCE_PENDING"?<button className="rounded-full bg-amber-100 px-3 py-1 text-xs font-bold text-amber-900" onClick={()=>setLinkingRecordId(record.id)} type="button">카드내역 연결대기</button>:<span className={`rounded-full px-3 py-1 text-xs font-bold ${record.recordStatus === "RECORDED" ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`}>{record.recordStatus === "RECORDED" ? "간편처리 완료" : record.recordStatus === "EVIDENCE_PENDING" ? "증빙 확인대기" : record.recordStatus === "CONVERTED" ? "정산·결의 연결" : "정식결의 필요"}</span>}{record.recordStatus === "NEEDS_RESOLUTION" ? <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-3 py-1 text-xs font-bold text-white" href={expenseResolutionHref({ quickExpenseId: record.id })}>정식 지출결의 작성</Link> : null}{record.linkedResolutionId ? <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1 text-xs font-bold" href={expenseResolutionHref({ resolutionId: record.linkedResolutionId })}>연결된 지출결의 보기</Link> : null}<button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-1 text-xs font-bold" onClick={()=>setPrintTarget({kind:"record",record})} type="button">A4 기록서 출력</button></div></div><p className="mt-2 text-sm text-[var(--color-stone)]">{record.counterparty} · {record.amount.toLocaleString("ko-KR")}원 · {record.budgetItem}</p>{linkingRecordId===record.id?<div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3"><p className="text-sm font-bold">금액·사용일이 일치하는 카드내역</p>{candidates(record).length?candidates(record).map(card=><button className="rounded-lg border bg-white px-3 py-2 text-left text-sm" key={card.id} onClick={()=>connect(record,card.id)} type="button">{card.approvedAt.slice(0,10)} · {card.merchantName} · {card.amount.toLocaleString("ko-KR")}원 · 연결</button>):<p className="text-sm text-[var(--color-stone)]">일치 후보가 없어. 카드내역 파일을 먼저 등록해줘.</p>}</div>:null}</article>) : <p className="text-sm text-[var(--color-stone)]">등록된 간편지출이 없습니다.</p>}</div>
     </section>
     {printTarget ? <QuickExpensePrintModal getPrintEvidence={getPrintEvidence} onClose={()=>setPrintTarget(null)} target={printTarget} /> : null}
-  </div></ErpShell>;
+  </div>;
+  if (embedded) return content;
+  return <ErpShell activeDetailLabel="예산 내 간편지출" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">{content}</ErpShell>;
 }
 
 async function uploadQuickExpenseEvidence(file: File, resolutionNo: string, evidenceType: string): Promise<ExpenseEvidenceUploadResult> {
