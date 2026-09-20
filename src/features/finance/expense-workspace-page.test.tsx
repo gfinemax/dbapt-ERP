@@ -7,7 +7,10 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ExpenseWorkspacePage } from "./expense-workspace-page";
+import {
+  ExpenseWorkspacePage,
+  sortExpenseRecords,
+} from "./expense-workspace-page";
 import type {
   ExpenseWorkspace,
   ExpenseWorkspaceRecord,
@@ -101,6 +104,88 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/finance/expenses?from=home");
 });
 describe("common original expense workspace", () => {
+  it("shows actual-use dates and sorts them newest-first without substituting registration dates", () => {
+    const data = fixture();
+    data.records[0] = {
+      ...data.records[0],
+      title: "이전 사용",
+      used_at: "2026-03-01",
+      created_at: "2026-09-20",
+    };
+    data.records[1] = {
+      ...data.records[1],
+      title: "최근 사용",
+      used_at: "2026-08-15",
+      created_at: "2026-09-01",
+    };
+    data.records.push({
+      ...data.records[0],
+      source_id: "undated",
+      title: "사용일 없는 결의",
+      used_at: null,
+      created_at: "2026-09-21",
+    });
+
+    render(<ExpenseWorkspacePage workspace={data} />);
+
+    expect(
+      screen.getByRole("columnheader", { name: "사용일" }),
+    ).toBeInTheDocument();
+    expect(screen.getAllByText("2026-08-15").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("사용일 미정").length).toBeGreaterThan(0);
+    const rows = within(screen.getByRole("table")).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("최근 사용");
+    expect(rows[2]).toHaveTextContent("이전 사용");
+    expect(rows[3]).toHaveTextContent("사용일 없는 결의");
+  });
+  it("supports registration-date, amount and action-required sorting without mutating records", () => {
+    const records = fixture().records;
+    records[0] = {
+      ...records[0],
+      amount: 1000,
+      created_at: "2026-09-20",
+      approval_status: "승인완료",
+    };
+    records[1] = {
+      ...records[1],
+      amount: 9000,
+      created_at: "2026-09-01",
+      approval_status: "SOURCE_PENDING",
+    };
+    const originalOrder = records.map((record) => record.source_id);
+
+    expect(sortExpenseRecords(records, "CREATED_DESC")[0].source_id).toBe(
+      "text-id",
+    );
+    expect(sortExpenseRecords(records, "AMOUNT_DESC")[0].source_id).toBe(
+      "same-text-id",
+    );
+    expect(sortExpenseRecords(records, "ACTION_REQUIRED")[0].source_id).toBe(
+      "same-text-id",
+    );
+    expect(records.map((record) => record.source_id)).toEqual(originalOrder);
+  });
+  it("changes the visible order and preserves the selected sort in the URL", () => {
+    const data = fixture();
+    data.records[0] = { ...data.records[0], amount: 1000, title: "낮은 금액" };
+    data.records[1] = {
+      ...data.records[1],
+      amount: 9000,
+      title: "높은 금액",
+    };
+    render(<ExpenseWorkspacePage workspace={data} />);
+
+    fireEvent.change(screen.getByLabelText("정렬"), {
+      target: { value: "AMOUNT_DESC" },
+    });
+
+    const rows = within(screen.getByRole("table")).getAllByRole("row");
+    expect(rows[1]).toHaveTextContent("높은 금액");
+    expect(mocks.replace).toHaveBeenLastCalledWith(
+      expect.stringContaining("sort=AMOUNT_DESC"),
+      { scroll: false },
+    );
+  });
   it("keeps drafting and status-filtered resolution management accessible from expenses", () => {
     render(
       <ExpenseWorkspacePage

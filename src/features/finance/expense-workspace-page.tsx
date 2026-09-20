@@ -768,6 +768,70 @@ export function filterExpenseRecords(
   );
 }
 
+export type ExpenseWorkspaceSort =
+  | "USED_DESC"
+  | "CREATED_DESC"
+  | "AMOUNT_DESC"
+  | "ACTION_REQUIRED";
+
+const expenseWorkspaceSorts = new Set<ExpenseWorkspaceSort>([
+  "USED_DESC",
+  "CREATED_DESC",
+  "AMOUNT_DESC",
+  "ACTION_REQUIRED",
+]);
+
+function descendingDate(left: string | null, right: string | null) {
+  if (left && right) return right.localeCompare(left);
+  if (left) return -1;
+  if (right) return 1;
+  return 0;
+}
+
+function actionPriority(record: ExpenseWorkspaceRecord) {
+  if (
+    [
+      "SOURCE_PENDING",
+      "EVIDENCE_PENDING",
+      "NEEDS_RESOLUTION",
+      "RETURNED",
+      "SUPPLEMENT",
+    ].includes(record.approval_status)
+  )
+    return 0;
+  if (
+    ["작성중", "승인대기", "SUBMITTED", "PENDING", "APPROVED"].includes(
+      record.approval_status,
+    )
+  )
+    return 1;
+  if (!record.transaction_id) return 2;
+  return 3;
+}
+
+export function sortExpenseRecords(
+  records: ExpenseWorkspaceRecord[],
+  sort: ExpenseWorkspaceSort,
+) {
+  return [...records].sort((left, right) => {
+    let compared = 0;
+    if (sort === "CREATED_DESC")
+      compared = descendingDate(left.created_at, right.created_at);
+    else if (sort === "AMOUNT_DESC")
+      compared = (right.amount ?? Number.NEGATIVE_INFINITY) -
+        (left.amount ?? Number.NEGATIVE_INFINITY);
+    else if (sort === "ACTION_REQUIRED")
+      compared = actionPriority(left) - actionPriority(right);
+    else compared = descendingDate(left.used_at, right.used_at);
+
+    return (
+      compared ||
+      descendingDate(left.used_at, right.used_at) ||
+      descendingDate(left.created_at, right.created_at)
+    );
+  });
+}
+
 function ExpenseStart({ staff }: { staff: boolean }) {
   const [scenario, setScenario] = useState("");
   return (
@@ -1238,6 +1302,7 @@ export function ExpenseWorkspacePage({
   initialKind = "ALL",
   initialConnection = "ALL",
   initialSearch = "",
+  initialSort = "USED_DESC",
   initialStatus = "",
   initialSourceKind,
   initialSourceId,
@@ -1247,6 +1312,7 @@ export function ExpenseWorkspacePage({
   initialKind?: string;
   initialConnection?: string;
   initialSearch?: string;
+  initialSort?: string;
   initialStatus?: string;
   initialSourceKind?: string;
   initialSourceId?: string;
@@ -1262,22 +1328,30 @@ export function ExpenseWorkspacePage({
       : "ALL",
   );
   const [search, setSearch] = useState(initialSearch);
+  const [sort, setSort] = useState<ExpenseWorkspaceSort>(
+    expenseWorkspaceSorts.has(initialSort as ExpenseWorkspaceSort)
+      ? (initialSort as ExpenseWorkspaceSort)
+      : "USED_DESC",
+  );
   const [selected, setSelected] = useState(
     initialSourceKind && initialSourceId
       ? `${initialSourceKind}:${initialSourceId}`
       : "",
   );
   const [approvalStatus, setApprovalStatus] = useState(initialStatus);
-  const rows = filterExpenseRecords(
-    workspace.records,
-    kind,
-    connection,
-    search,
-  ).filter(
-    (r) =>
-      kind !== "RESOLUTION" ||
-      !approvalStatus ||
-      r.approval_status === approvalStatus,
+  const rows = sortExpenseRecords(
+    filterExpenseRecords(
+      workspace.records,
+      kind,
+      connection,
+      search,
+    ).filter(
+      (r) =>
+        kind !== "RESOLUTION" ||
+        !approvalStatus ||
+        r.approval_status === approvalStatus,
+    ),
+    sort,
   );
   const detail = workspace.records.find((r) => keyOf(r) === selected);
   const selectedRowIndex = rows.findIndex((row) => keyOf(row) === selected);
@@ -1286,6 +1360,7 @@ export function ExpenseWorkspacePage({
       kind?: string;
       connection?: string;
       q?: string;
+      sort?: string;
       status?: string;
       source_kind?: string;
       source_id?: string;
@@ -1502,6 +1577,24 @@ export function ExpenseWorkspacePage({
                 }}
               />
             </label>
+            <label>
+              정렬
+              <select
+                aria-label="정렬"
+                className={field}
+                value={sort}
+                onChange={(event) => {
+                  const next = event.target.value as ExpenseWorkspaceSort;
+                  setSort(next);
+                  navigate({ sort: next === "USED_DESC" ? "" : next });
+                }}
+              >
+                <option value="USED_DESC">사용일 최신순</option>
+                <option value="CREATED_DESC">등록일 최신순</option>
+                <option value="AMOUNT_DESC">금액 높은순</option>
+                <option value="ACTION_REQUIRED">처리 필요순</option>
+              </select>
+            </label>
           </div>
         </div>
       </section>
@@ -1525,6 +1618,7 @@ export function ExpenseWorkspacePage({
                 <colgroup>
                   <col />
                   <col className="w-28" />
+                  <col className="w-28" />
                   <col className="w-48" />
                   <col className="w-36" />
                 </colgroup>
@@ -1532,6 +1626,9 @@ export function ExpenseWorkspacePage({
                   <tr role="row">
                     <th role="columnheader" className="p-2">
                       원본
+                    </th>
+                    <th role="columnheader" className="px-2">
+                      사용일
                     </th>
                     <th role="columnheader" className="px-2 text-right">
                       금액
@@ -1571,6 +1668,18 @@ export function ExpenseWorkspacePage({
                             {kinds[r.source_kind]}
                             {r.number ? ` · ${r.number}` : ""}
                           </p>
+                          <p className={styles.compactDate}>
+                            {r.used_at ? `사용일 ${day(r.used_at)}` : "사용일 미정"}
+                          </p>
+                        </td>
+                        <td role="cell" className="px-2 py-3 whitespace-nowrap">
+                          {r.used_at ? (
+                            <time dateTime={r.used_at.slice(0, 10)}>
+                              {day(r.used_at)}
+                            </time>
+                          ) : (
+                            <span className="text-slate-500">사용일 미정</span>
+                          )}
                         </td>
                         <td
                           role="cell"
