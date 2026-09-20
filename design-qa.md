@@ -22,6 +22,7 @@ final result: passed
 - Accessibility: passed. The mode controls expose pressed/disabled state, form controls have accessible labels, and OCR progress/result messaging uses a live status region.
 - Visual review: passed. The receipt-first panel follows the existing card, spacing, border, and blue action hierarchy; no horizontal clipping or header/sidebar overlap was observed.
 - Console review: passed. No application-origin error was observed; warnings were limited to an unrelated browser extension content script.
+- Budget recommendation: passed. The receipt-first copy now includes budget-item assistance, the existing budget select remains in the same position, and automated coverage verifies available-budget matching, unknown-budget fallback, and protection of a user's manual selection.
 - P0/P1/P2 issues: none found.
 
 final result: passed
