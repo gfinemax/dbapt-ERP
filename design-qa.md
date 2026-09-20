@@ -11,6 +11,20 @@
 
 final result: passed
 
+## Reimbursement detail content and evidence preview
+
+- Source visual truth: the user-provided personal-reimbursement detail screenshot in the implementation conversation, showing the hidden `사용내용` problem and the duplicated native PDF thumbnail/page presentation.
+- Implementation target: production `/finance/reimbursements`, desktop Chrome, reimbursement detail modal for a submitted request with PDF evidence.
+- Automated state coverage: passed. Component tests verify the prominent full-width `사용내용` block, the review warning for generic OCR copy, edit-mode terminology, a single rendered evidence image, loading/error/retry states, image evidence, and multi-page previous/next navigation.
+- Document rendering contract: passed. PDF evidence is fetched from the authenticated same-origin route, converted to page images, and displayed one page at a time; one-page documents do not render a pager.
+- Security and privacy: passed. The evidence route authenticates before proxying, accepts only PDF/image content, keeps the signed storage URL server-side, and responds with private no-store and nosniff headers.
+- Responsive/layout contract: passed by component and build verification. The modal keeps the existing stacked small-screen and split large-screen layout, and the evidence panel has a minimum viewing height without adding a second document representation.
+- Full-view and focused live comparison: pending. The production deployment is Ready, but the reimbursement login session expired immediately after reload, before the submitted request detail could be reopened.
+- Console review: pending with the authenticated live comparison.
+- P0/P1/P2 implementation issues: none found in focused tests, full tests, type checking, lint, or production build.
+
+final result: authenticated visual verification pending
+
 ## Reimbursement receipt-first OCR
 
 - Source visual truth: the user-provided `대납·선지급 정산` screenshot in the implementation conversation.
