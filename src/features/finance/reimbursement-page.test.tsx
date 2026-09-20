@@ -102,6 +102,10 @@ describe("reimbursement workspace",()=>{
   fireEvent.click(screen.getByText("개인 지출 정산 신청"));
   expect(details).not.toHaveAttribute("open");
  });
+ it("can start with the personal reimbursement form open in the unified entry workspace",()=>{
+  render(<ReimbursementPage workspace={w} initialRequestFormOpen/>);
+  expect(screen.getByText("개인 지출 정산 신청").closest("details")).toHaveAttribute("open");
+ });
  it("shows pending requests across usage months and separates the selected month from closed requests",()=>{
   const augustPending={...w.requests[0],id:"august",merchant:"8월 우체국",used_on:"2026-08-15",budget_month:"2026-08-01",status:"SUBMITTED" as const,approved_at:null};
   const marchPaid={...w.requests[0],id:"paid",merchant:"지급 완료 문구점",status:"PAID" as const,paid_at:"2026-03-20T09:00:00+09:00"};

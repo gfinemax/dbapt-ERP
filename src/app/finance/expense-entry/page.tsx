@@ -83,7 +83,7 @@ export default async function ExpenseEntryRoute({
       workspaceError = error instanceof Error ? error.message : "개인 정산 입력 화면을 불러오지 못했어.";
     }
     workspace = reimbursementWorkspace ? (
-      <ReimbursementPage workspace={reimbursementWorkspace} initialTab="requests" />
+      <ReimbursementPage workspace={reimbursementWorkspace} initialTab="requests" initialRequestFormOpen />
     ) : (
       <p role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
         {workspaceError}

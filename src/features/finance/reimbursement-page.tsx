@@ -87,13 +87,13 @@ function ReimbursementDetail({record:r,applicantName,budgetName,canEdit,onClose,
     </section>
   </div>;
 }
-export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialAction}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialAction?:"APPROVE"|"PAY"}) {
+export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialAction,initialRequestFormOpen=false}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialAction?:"APPROVE"|"PAY";initialRequestFormOpen?:boolean}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
   const period=w.periods.find(p=>p.month===w.month);
   const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
   const allowedInitialAction=initialRequest&&initialAction&&requestActions(initialRequest,w.member,period).includes(initialAction)?initialAction:"";
   const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [detail,setDetail]=useState<Reimbursement|null>(null); const [action,setAction]=useState(allowedInitialAction);
-  const [requestFormOpen,setRequestFormOpen]=useState(false);
+  const [requestFormOpen,setRequestFormOpen]=useState(initialRequestFormOpen);
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
   const [evidenceKind,setEvidenceKind]=useState("RECEIPT");
