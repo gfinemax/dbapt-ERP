@@ -2,10 +2,8 @@ import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { koreaDate } from "@/features/finance/reimbursement-domain";
 import { loadReimbursementWorkspace } from "@/features/finance/reimbursement-repository";
-import {
-  ReimbursementLogin,
-  ReimbursementPage,
-} from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
+import { ReimbursementPage } from "@/features/finance/reimbursement-page";
 import { reimbursementLogout } from "./actions";
 
 export const dynamic = "force-dynamic";

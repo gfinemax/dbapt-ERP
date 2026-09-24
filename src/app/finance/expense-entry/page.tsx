@@ -13,7 +13,8 @@ import { QuickExpensePage } from "@/features/finance/quick-expense-page";
 import { listQuickExpenseRecords } from "@/features/finance/quick-expense-record-repository";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { koreaDate } from "@/features/finance/reimbursement-domain";
-import { ReimbursementLogin, ReimbursementPage } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
+import { ReimbursementPage } from "@/features/finance/reimbursement-page";
 import { loadReimbursementWorkspace } from "@/features/finance/reimbursement-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import {

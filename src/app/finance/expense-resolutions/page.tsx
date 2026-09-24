@@ -5,7 +5,7 @@ import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-r
 import { listUnresolvedWithdrawalTransactions } from "@/features/finance/expense-compliance-repository";
 import { getExpenseComplianceSettings } from "@/features/finance/expense-compliance-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";

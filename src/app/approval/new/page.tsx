@@ -1,5 +1,5 @@
 import { requireApprovalActor } from "@/features/approval/approval-authorization";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { ApprovalNewPage } from "@/features/approval/approval-new-page";
 import { listApprovalBudgets } from "@/features/approval/approval-settings-repository";
 import { listBusinessPartnersFromSupabase } from "@/features/basic-info/business-partner-repository";

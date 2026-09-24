@@ -5,7 +5,7 @@ import {
 } from "@/features/finance/expense-authorization";
 import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
 import { ExpenseAuthorizationPage } from "@/features/finance/expense-authorization-page";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 
 export const dynamic = "force-dynamic";
 export default async function Page() {

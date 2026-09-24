@@ -1,6 +1,6 @@
 import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { loadFundTrust } from "@/features/finance/fund-trust-repository";
 import { FundTrustSettingsPage } from "@/features/finance/fund-trust-settings-page";
 import { reimbursementLogout } from "../reimbursements/actions";

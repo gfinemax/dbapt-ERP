@@ -2,7 +2,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { MonthClosePage } from "@/features/finance/month-close-page";
 import { loadMonthClose } from "@/features/finance/month-close-repository";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { reimbursementLogout } from "../reimbursements/actions";
 
 export const dynamic = "force-dynamic";

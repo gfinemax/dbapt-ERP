@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { ErpShell } from "@/components/erp-shell";
 import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { koreaDate } from "@/features/finance/reimbursement-domain";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "./reimbursement-auth";
 import { koreaDate } from "./reimbursement-domain";
-import { ReimbursementLogin } from "./reimbursement-page";
+import { ReimbursementLogin } from "./reimbursement-login";
 import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
 import { loadFinanceReview, reviewMonth, reviewPage, reviewPageSize, reviewEvidenceSource, type ReviewKind, type ReviewResult } from "./finance-review-repository";
 

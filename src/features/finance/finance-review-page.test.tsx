@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), load: vi.fn() }));
 vi.mock("@/components/erp-shell", () => ({ ErpShell: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("./reimbursement-auth", () => ({ reimbursementIdentity: mocks.identity }));
-vi.mock("./reimbursement-page", () => ({ ReimbursementLogin: ({ title, description }: { title?: string; description?: string }) => <section aria-label={title}><p>로그인 필요</p><p>{description}</p></section> }));
+vi.mock("./reimbursement-login", () => ({ ReimbursementLogin: ({ title, description }: { title?: string; description?: string }) => <section aria-label={title}><p>로그인 필요</p><p>{description}</p></section> }));
 vi.mock("@/app/finance/reimbursements/actions", () => ({ reimbursementLogout: vi.fn() }));
 vi.mock("./finance-review-repository", async importOriginal => ({ ...await importOriginal<object>(), loadFinanceReview: mocks.load }));
 import { FinanceReviewPage } from "./finance-review-page";

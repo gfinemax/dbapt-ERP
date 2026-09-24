@@ -1,6 +1,6 @@
 import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { loadFinanceTaskWorkspace } from "@/features/finance/finance-workspace-repository";
 import { FinanceWorkspacePage } from "@/features/finance/finance-workspace-page";
 import { reimbursementLogout } from "../reimbursements/actions";

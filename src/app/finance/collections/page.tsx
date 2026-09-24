@@ -2,7 +2,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { CollectionLedgerPage } from "@/features/finance/collection-ledger-page";
 import { loadCollectionLedger } from "@/features/finance/collection-ledger-repository";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { reimbursementLogout } from "../reimbursements/actions";
 
 export const dynamic = "force-dynamic";

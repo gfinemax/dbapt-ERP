@@ -2,7 +2,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { approvalDb, requireApprovalActor } from "@/features/approval/approval-authorization";
 import { ApprovalAuthorizationPage } from "@/features/approval/approval-authorization-page";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 
 export const dynamic = "force-dynamic";
 export default async function Page() {

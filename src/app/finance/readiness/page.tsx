@@ -2,7 +2,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { FinanceReadinessPage } from "@/features/finance/finance-readiness-page";
 import { loadFinanceReadiness } from "@/features/finance/finance-readiness";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { reimbursementLogout } from "../reimbursements/actions";
 
 export const dynamic = "force-dynamic";

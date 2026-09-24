@@ -1,6 +1,6 @@
 import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { loadAdvanceSettlements } from "@/features/finance/advance-settlement-repository";
 import { AdvanceSettlementPage } from "@/features/finance/advance-settlement-page";
 import { reimbursementLogout } from "../reimbursements/actions";

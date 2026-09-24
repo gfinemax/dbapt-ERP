@@ -9,7 +9,7 @@ import { getQuickExpensePrintEvidenceAction, importCorporateCardTransactionsActi
 import { attachQuickExpenseEvidenceAction } from "@/app/finance/expenses/actions";
 import { discardUnlinkedExpenseEvidenceAction, getExpenseEvidenceOcrJobAction, retryExpenseEvidenceOcrJobAction } from "@/app/finance/expense-resolutions/actions";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { parseQuickExpenseEntry } from "@/features/finance/quick-expense-entry";
 
 export const dynamic = "force-dynamic";

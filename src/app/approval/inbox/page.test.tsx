@@ -5,7 +5,7 @@ import Page from "./page";
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), documents: vi.fn(), resolutions: vi.fn(), small: vi.fn(), workspace: vi.fn() }));
 vi.mock("@/components/erp-shell", () => ({ ErpShell: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/features/finance/reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
-vi.mock("@/features/finance/reimbursement-page", () => ({ ReimbursementLogin: () => <p>로그인 필요</p> }));
+vi.mock("@/features/finance/reimbursement-login", () => ({ ReimbursementLogin: () => <p>로그인 필요</p> }));
 vi.mock("@/features/approval/approval-repository", () => ({ listApprovalDocuments: mocks.documents }));
 vi.mock("@/features/finance/expense-resolution-repository", () => ({ listExpenseResolutionsFromSupabase: mocks.resolutions }));
 vi.mock("@/features/approval/small-expense-repository", () => ({ loadSmallExpenseWorkspace: mocks.workspace }));

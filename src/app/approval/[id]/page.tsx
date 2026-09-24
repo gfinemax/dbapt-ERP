@@ -1,5 +1,5 @@
 import { requireApprovalActor } from "@/features/approval/approval-authorization";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { notFound } from "next/navigation";
 import { ApprovalDetailPage } from "@/features/approval/approval-detail-page";
 import { getApprovalDocument } from "@/features/approval/approval-repository";

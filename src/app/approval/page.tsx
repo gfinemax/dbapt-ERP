@@ -1,5 +1,5 @@
 import { requireApprovalActor } from "@/features/approval/approval-authorization";
-import { ReimbursementLogin } from "@/features/finance/reimbursement-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { ApprovalListPage } from "@/features/approval/approval-list-page";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
 export const dynamic = "force-dynamic";

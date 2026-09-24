@@ -6,7 +6,7 @@ import { UnifiedBudgetTable } from "./unified-budget-table";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { analyzeReimbursementEvidence, changeReimbursementPassword, reimbursementLogin, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
+import { analyzeReimbursementEvidence, changeReimbursementPassword, reimbursementLogout, runReimbursementCommand, saveReimbursementMember, saveReimbursementPolicy, submitReimbursement } from "@/app/finance/reimbursements/actions";
 import { updatePersonalReimbursementDetailsAction } from "@/app/finance/expenses/actions";
 import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbursementCommandLabels, reimbursementPermissions, reimbursementStatusLabels, requestActions, type Reimbursement, type ReimbursementReport } from "./reimbursement-domain";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
@@ -43,18 +43,6 @@ function useOperation() {
     setMessage(""); start(async()=>{try{await fn();setMessage(success);router.refresh();}catch(e){setMessage(e instanceof Error?e.message:"처리하지 못했어. 다시 확인해줘.");}});
   }
   return {run,message,pending};
-}
-export function ReimbursementLogin({error,title="개인 지출 정산·월 마감",description="사용월의 예산과 실제 지급일을 구분해서 관리해. 마감과 승인 이력을 남기기 위해 본인 계정으로 로그인해줘."}:{error?:string;title?:string;description?:string}) {
-  const op=useOperation();
-  return <section className={`${card} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">{title}</h1>
-    <p className="my-4 text-sm text-slate-600">{description}</p>
-    <form className="space-y-4" onSubmit={e=>{e.preventDefault();const form=new FormData(e.currentTarget);op.run(async()=>{const result=await reimbursementLogin(form);if(!result.ok)throw new Error(result.message);},"로그인했어.");}}>
-      <label className="block">이메일<input className={input} name="email" type="email" autoComplete="username" required /></label>
-      <label className="block">비밀번호<input className={input} name="password" type="password" autoComplete="current-password" required /></label>
-      <button className={button} disabled={op.pending}>로그인</button>
-    </form><p role="status" className="mt-4 text-sm">{op.message || error}</p>
-    <p className="mt-3 text-sm text-slate-600">계정이 없으면 정산 관리자에게 계정과 권한 등록을 요청해줘.</p>
-  </section>;
 }
 function Report({report,previous}:{report:ReimbursementReport;previous?:ReimbursementReport}) {
   return <details className="rounded-lg border p-4"><summary className="cursor-pointer font-semibold">{report.month.slice(0,7)} · {report.revision===1?"최초 마감":`수정 ${report.revision-1}차`} · {dateTime(report.created_at)}</summary>
