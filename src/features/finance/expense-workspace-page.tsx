@@ -6,7 +6,9 @@ import styles from "./expense-workspace.module.css";
 import { createPortal } from "react-dom";
 import {
   useCallback,
+  useDeferredValue,
   useEffect,
+  useMemo,
   useRef,
   useState,
   useTransition,
@@ -109,6 +111,7 @@ const day = (value: string | null) =>
 const keyOf = (r: ExpenseWorkspaceRecord) => `${r.source_kind}:${r.source_id}`;
 const noEvidence: NonNullable<ExpenseWorkspaceRecord["evidence_files"]> = [];
 const floatingPanelStorageKey = "expense-workspace-floating-panel-v1";
+const expenseWorkspacePageSize = 50;
 
 type FloatingPanelPlacement = "LEFT" | "CENTER" | "RIGHT" | "FREE";
 type FloatingPanelLayout = {
@@ -1914,6 +1917,7 @@ export function ExpenseWorkspacePage({
   initialSearch = "",
   initialSort = "USED_DESC",
   initialStatus = "",
+  initialPage = "",
   initialSourceKind,
   initialSourceId,
 }: {
@@ -1924,13 +1928,13 @@ export function ExpenseWorkspacePage({
   initialSearch?: string;
   initialSort?: string;
   initialStatus?: string;
+  initialPage?: string;
   initialSourceKind?: string;
   initialSourceId?: string;
 }) {
   const panelRef = useRef<HTMLElement>(null);
   const floatingPanel = useFloatingExpensePanel(panelRef);
   const detailWasOpen = useRef(false);
-  const router = useRouter();
   const [kind, setKind] = useState(
     Object.hasOwn(kinds, initialKind) ? initialKind : "ALL",
   );
@@ -1951,22 +1955,50 @@ export function ExpenseWorkspacePage({
       : "",
   );
   const [approvalStatus, setApprovalStatus] = useState(initialStatus);
-  const rows = sortExpenseRecords(
-    filterExpenseRecords(
-      workspace.records,
-      kind,
-      connection,
-      search,
-    ).filter(
-      (r) =>
-        kind !== "RESOLUTION" ||
-        !approvalStatus ||
-        r.approval_status === approvalStatus,
-    ),
-    sort,
+  const deferredSearch = useDeferredValue(search);
+  const rows = useMemo(
+    () =>
+      sortExpenseRecords(
+        filterExpenseRecords(
+          workspace.records,
+          kind,
+          connection,
+          deferredSearch,
+        ).filter(
+          (r) =>
+            kind !== "RESOLUTION" ||
+            !approvalStatus ||
+            r.approval_status === approvalStatus,
+        ),
+        sort,
+      ),
+    [approvalStatus, connection, deferredSearch, kind, sort, workspace.records],
   );
+  const kindCounts = useMemo(() => {
+    const counts: Record<string, number> = { ALL: workspace.records.length };
+    for (const record of workspace.records)
+      counts[record.source_kind] = (counts[record.source_kind] ?? 0) + 1;
+    return counts;
+  }, [workspace.records]);
   const detail = workspace.records.find((r) => keyOf(r) === selected);
   const selectedRowIndex = rows.findIndex((row) => keyOf(row) === selected);
+  const [page, setPage] = useState(() => {
+    const value = Number.parseInt(initialPage, 10);
+    if (Number.isSafeInteger(value) && value > 0) return value;
+    return selectedRowIndex >= 0
+      ? Math.floor(selectedRowIndex / expenseWorkspacePageSize) + 1
+      : 1;
+  });
+  const pageCount = Math.max(1, Math.ceil(rows.length / expenseWorkspacePageSize));
+  const visiblePage = Math.min(page, pageCount);
+  const visibleRows = useMemo(
+    () =>
+      rows.slice(
+        (visiblePage - 1) * expenseWorkspacePageSize,
+        visiblePage * expenseWorkspacePageSize,
+      ),
+    [rows, visiblePage],
+  );
   const navigate = useCallback(
     (next: {
       kind?: string;
@@ -1974,6 +2006,7 @@ export function ExpenseWorkspacePage({
       q?: string;
       sort?: string;
       status?: string;
+      page?: string;
       source_kind?: string;
       source_id?: string;
     }) => {
@@ -1982,9 +2015,22 @@ export function ExpenseWorkspacePage({
         if (value) params.set(key, value);
         else params.delete(key);
       }
-      router.replace(`/finance/expenses?${params}`, { scroll: false });
+      const query = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        "",
+        query ? `/finance/expenses?${query}` : "/finance/expenses",
+      );
     },
-    [router],
+    [],
+  );
+  const moveToPage = useCallback(
+    (nextPage: number) => {
+      const bounded = Math.min(Math.max(1, nextPage), pageCount);
+      setPage(bounded);
+      navigate({ page: bounded > 1 ? String(bounded) : "" });
+    },
+    [navigate, pageCount],
   );
   useEffect(() => {
     const panel = panelRef.current;
@@ -2000,21 +2046,28 @@ export function ExpenseWorkspacePage({
     (offset: -1 | 1) => {
       const target = rows[selectedRowIndex + offset];
       if (!target) return;
+      const targetPage = Math.floor((selectedRowIndex + offset) / expenseWorkspacePageSize) + 1;
+      if (targetPage !== visiblePage) moveToPage(targetPage);
       setSelected(keyOf(target));
       navigate({
         source_kind: target.source_kind,
         source_id: target.source_id,
       });
     },
-    [navigate, rows, selectedRowIndex],
+    [moveToPage, navigate, rows, selectedRowIndex, visiblePage],
   );
   const closeDetail = useCallback(() => {
     const previous = detail;
+    const returnPage = selectedRowIndex >= 0
+      ? Math.floor(selectedRowIndex / expenseWorkspacePageSize) + 1
+      : visiblePage;
+    setPage(returnPage);
     setSelected("");
-    const params = new URLSearchParams(window.location.search);
-    params.delete("source_kind");
-    params.delete("source_id");
-    router.replace(`/finance/expenses?${params}`, { scroll: false });
+    navigate({
+      page: returnPage > 1 ? String(returnPage) : "",
+      source_kind: "",
+      source_id: "",
+    });
     window.requestAnimationFrame(() => {
       if (previous)
         document
@@ -2023,7 +2076,7 @@ export function ExpenseWorkspacePage({
           )
           ?.focus();
     });
-  }, [detail, router]);
+  }, [detail, navigate, selectedRowIndex, visiblePage]);
   useEffect(() => {
     if (!detail) return;
     const close = (event: KeyboardEvent) => {
@@ -2111,8 +2164,10 @@ export function ExpenseWorkspacePage({
                   setKind(value);
                   setApprovalStatus("");
                   setSelected("");
+                  setPage(1);
                   navigate({
                     kind: value,
+                    page: "",
                     status: "",
                     source_kind: "",
                     source_id: "",
@@ -2121,9 +2176,7 @@ export function ExpenseWorkspacePage({
               >
                 {label}{" "}
                 {
-                  workspace.records.filter(
-                    (r) => value === "ALL" || r.source_kind === value,
-                  ).length
+                  kindCounts[value] ?? 0
                 }
               </button>
             ))}
@@ -2137,7 +2190,8 @@ export function ExpenseWorkspacePage({
                 value={approvalStatus}
                 onChange={(e) => {
                   setApprovalStatus(e.target.value);
-                  navigate({ status: e.target.value });
+                  setPage(1);
+                  navigate({ page: "", status: e.target.value });
                 }}
               >
                 <option value="">전체</option>
@@ -2163,7 +2217,8 @@ export function ExpenseWorkspacePage({
                 value={connection}
                 onChange={(e) => {
                   setConnection(e.target.value);
-                  navigate({ connection: e.target.value });
+                  setPage(1);
+                  navigate({ connection: e.target.value, page: "" });
                 }}
               >
                 <option value="ALL">전체</option>
@@ -2179,7 +2234,8 @@ export function ExpenseWorkspacePage({
                 placeholder="제목·문서번호·거래처"
                 onChange={(e) => {
                   setSearch(e.target.value);
-                  navigate({ q: e.target.value });
+                  setPage(1);
+                  navigate({ page: "", q: e.target.value });
                 }}
               />
             </label>
@@ -2192,7 +2248,11 @@ export function ExpenseWorkspacePage({
                 onChange={(event) => {
                   const next = event.target.value as ExpenseWorkspaceSort;
                   setSort(next);
-                  navigate({ sort: next === "USED_DESC" ? "" : next });
+                  setPage(1);
+                  navigate({
+                    page: "",
+                    sort: next === "USED_DESC" ? "" : next,
+                  });
                 }}
               >
                 <option value="USED_DESC">사용일 최신순</option>
@@ -2208,6 +2268,7 @@ export function ExpenseWorkspacePage({
         <div className={styles.layout} data-selected={!!selected}>
           <section
             aria-label="지출 원본 목록"
+            aria-busy={search !== deferredSearch}
             className={`${card} ${styles.list}`}
           >
             <p className="mb-3">
@@ -2251,7 +2312,7 @@ export function ExpenseWorkspacePage({
                   </tr>
                 </thead>
                 <tbody role="rowgroup">
-                  {rows.map((r) => {
+                  {visibleRows.map((r) => {
                     const active = selected === keyOf(r);
                     return (
                       <tr
@@ -2333,6 +2394,32 @@ export function ExpenseWorkspacePage({
                 </tbody>
               </table>
             </div>
+            {pageCount > 1 && (
+              <nav
+                aria-label="지출 목록 페이지"
+                className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 pt-4"
+              >
+                <button
+                  className={secondary}
+                  disabled={visiblePage === 1}
+                  onClick={() => moveToPage(visiblePage - 1)}
+                  type="button"
+                >
+                  이전 페이지
+                </button>
+                <p className="text-sm text-slate-600" aria-live="polite">
+                  {visiblePage} / {pageCount}페이지 · {Math.min((visiblePage - 1) * expenseWorkspacePageSize + 1, rows.length)}–{Math.min(visiblePage * expenseWorkspacePageSize, rows.length)}건 표시
+                </p>
+                <button
+                  className={secondary}
+                  disabled={visiblePage === pageCount}
+                  onClick={() => moveToPage(visiblePage + 1)}
+                  type="button"
+                >
+                  다음 페이지
+                </button>
+              </nav>
+            )}
             {!rows.length && (
               <p className="py-6 text-center">조건에 맞는 지출 원본이 없어.</p>
             )}

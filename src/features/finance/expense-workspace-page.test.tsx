@@ -191,10 +191,55 @@ describe("common original expense workspace", () => {
 
     const rows = within(screen.getByRole("table")).getAllByRole("row");
     expect(rows[1]).toHaveTextContent("높은 금액");
-    expect(mocks.replace).toHaveBeenLastCalledWith(
-      expect.stringContaining("sort=AMOUNT_DESC"),
-      { scroll: false },
+    expect(new URL(window.location.href).searchParams.get("sort")).toBe(
+      "AMOUNT_DESC",
     );
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+  it("renders large workspaces in 50-row pages without a server navigation", () => {
+    const data = fixture();
+    const base = data.records[0];
+    data.records = Array.from({ length: 125 }, (_, index) => ({
+      ...base,
+      source_id: `expense-${String(index + 1).padStart(3, "0")}`,
+      title: `지출 ${index + 1}`,
+    }));
+
+    render(<ExpenseWorkspacePage workspace={data} />);
+
+    expect(within(screen.getByRole("table")).getAllByRole("row")).toHaveLength(51);
+    expect(screen.getByText("1 / 3페이지 · 1–50건 표시")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "지출 51" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+
+    expect(screen.getByText("2 / 3페이지 · 51–100건 표시")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "지출 51" })).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get("page")).toBe("2");
+    expect(mocks.replace).not.toHaveBeenCalled();
+  });
+  it("opens a deep-linked expense on its containing page and returns there", () => {
+    const data = fixture();
+    const base = data.records[0];
+    data.records = Array.from({ length: 125 }, (_, index) => ({
+      ...base,
+      source_id: `expense-${String(index + 1).padStart(3, "0")}`,
+      title: `지출 ${index + 1}`,
+    }));
+
+    render(
+      <ExpenseWorkspacePage
+        workspace={data}
+        initialSourceKind="RESOLUTION"
+        initialSourceId="expense-075"
+      />,
+    );
+
+    expect(screen.getByText("2 / 3페이지 · 51–100건 표시")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "지출 75" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "지출 상세 닫기" }));
+    expect(screen.getByRole("button", { name: "지출 75" })).toBeInTheDocument();
+    expect(new URL(window.location.href).searchParams.get("page")).toBe("2");
   });
   it("keeps drafting and status-filtered resolution management accessible from expenses", () => {
     render(
@@ -222,9 +267,8 @@ describe("common original expense workspace", () => {
     expect(
       screen.getByText("전체 원본 2건 · 조회 결과 0건"),
     ).toBeInTheDocument();
-    expect(mocks.replace).toHaveBeenLastCalledWith(
-      expect.stringContaining("status="),
-      { scroll: false },
+    expect(new URL(window.location.href).searchParams.get("status")).toBe(
+      "반려",
     );
   });
   it("links an eligible approver directly to the personal reimbursement review", () => {
@@ -350,10 +394,9 @@ describe("common original expense workspace", () => {
     expect(
       screen.getByText("전체 원본 2건 · 조회 결과 1건"),
     ).toBeInTheDocument();
-    expect(mocks.replace).toHaveBeenLastCalledWith(
-      expect.stringContaining("from=home"),
-      { scroll: false },
-    );
+    const params = new URL(window.location.href).searchParams;
+    expect(params.get("from")).toBe("home");
+    expect(params.get("q")).toBe("지결-2026-1");
   });
   it("explains a pending card source without exposing the internal status code", () => {
     const data = fixture();
@@ -761,16 +804,14 @@ describe("common original expense workspace", () => {
     expect(
       screen.queryByRole("button", { name: "상세 패널 배경 닫기" }),
     ).not.toBeInTheDocument();
-    expect(mocks.replace).toHaveBeenLastCalledWith(
-      expect.stringContaining("source_kind=RESOLUTION"),
-      { scroll: false },
+    expect(new URL(window.location.href).searchParams.get("source_kind")).toBe(
+      "RESOLUTION",
     );
     fireEvent.click(screen.getByRole("button", { name: "지출 상세 닫기" }));
     await waitFor(() => expect(source).toHaveFocus());
     expect(source.closest("tr")).toHaveAttribute("aria-selected", "false");
-    expect(mocks.replace).toHaveBeenLastCalledWith(
+    expect(window.location.pathname + window.location.search).toBe(
       "/finance/expenses?from=home",
-      { scroll: false },
     );
   });
   it("moves through the filtered list without closing the detail panel", () => {
@@ -786,9 +827,8 @@ describe("common original expense workspace", () => {
     expect(
       screen.getByRole("heading", { name: "개인 사용" }),
     ).toBeInTheDocument();
-    expect(mocks.replace).toHaveBeenLastCalledWith(
-      expect.stringContaining("source_kind=QUICK"),
-      { scroll: false },
+    expect(new URL(window.location.href).searchParams.get("source_kind")).toBe(
+      "QUICK",
     );
     fireEvent.keyDown(window, { altKey: true, key: "ArrowLeft" });
     expect(
@@ -858,9 +898,8 @@ describe("common original expense workspace", () => {
         name: "선택한 지출 원본 상세창",
       }),
     ).not.toBeInTheDocument();
-    expect(mocks.replace).toHaveBeenLastCalledWith(
+    expect(window.location.pathname + window.location.search).toBe(
       "/finance/expenses?from=home",
-      { scroll: false },
     );
   });
   it("reviews saved receipt OCR before updating quick-expense text and preserves the original amount", async () => {
