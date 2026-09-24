@@ -3,13 +3,13 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { AccountingWorkspacePage } from "./accounting-workspace-page";
 import type { AccountingWorkspace } from "./accounting-workspace-repository";
 
-const mocks = vi.hoisted(() => ({ save: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
+const mocks = vi.hoisted(() => ({ confirm: vi.fn(), save: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }));
-vi.mock("@/app/finance/accounting-actions", () => ({ saveAccountingDraft: mocks.save }));
+vi.mock("@/app/finance/accounting-actions", () => ({ confirmAccountingDraftBatch: mocks.confirm, saveAccountingDraft: mocks.save }));
 
 function fixture(): AccountingWorkspace {
   return {
-    viewer: { permissions: ["ADMIN"] }, policy: { confirmation_enabled: false },
+    viewer: { permissions: ["ADMIN"] }, policy: { confirmation_enabled: true },
     accounts: [{ id: "expense", code: "501", name: "운영비", subject_type: "지출", normal_balance: "차변", is_active: true },
       { id: "old", code: "102", name: "기존 예금", subject_type: "자산", normal_balance: "차변", is_active: false }],
     sources: [{ kind: "RECOGNITION", id: "tx1", number: "지결-2026-15", title: "사무실 임차료", amount: 1000, occurred_at: "2026-03-15", signature: "source-v1", existing_voucher_id: "draft" },
@@ -22,7 +22,7 @@ function fixture(): AccountingWorkspace {
 }
 function openDraft() { fireEvent.click(screen.getByRole("button", { name: "연결 초안 수정" })); }
 function submit() { fireEvent.submit(screen.getByRole("button", { name: "초안 저장" }).closest("form")!); }
-beforeEach(() => { vi.resetAllMocks(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); });
+beforeEach(() => { vi.resetAllMocks(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); mocks.confirm.mockResolvedValue({ confirmed_count: 1, confirmed_ids: ["draft"] }); });
 
 describe("accounting drafts and original records", () => {
   it("shows an invalid source for review without treating unknown amounts as zero or allowing draft creation", () => {
@@ -135,5 +135,30 @@ describe("accounting drafts and original records", () => {
     fireEvent.click(screen.getByRole("button", { name: "편집 닫기" })); openDraft(); submit();
     await waitFor(() => expect(mocks.save).toHaveBeenCalledOnce());
     expect(mocks.save.mock.calls[0][1]).toMatchObject(change === "voucher" ? { lock_version: 4 } : { source_signature: "source-v2" });
+  });
+
+  it("batch-confirms only complete, balanced, source-current managed drafts", async () => {
+    const workspace = fixture();
+    workspace.accounts.push({ id: "cash", code: "101", name: "보통예금", subject_type: "자산", normal_balance: "차변", is_active: true });
+    workspace.vouchers[1].lines = [
+      { id: "line1", account_subject_id: "expense", description: "임차료 발생", debit_amount: 1000, credit_amount: 0, sort_order: 1 },
+      { id: "line2", account_subject_id: "cash", description: "미지급금", debit_amount: 0, credit_amount: 1000, sort_order: 2 },
+    ];
+    render(<AccountingWorkspacePage workspace={workspace} />);
+    fireEvent.click(screen.getByLabelText("전표-2026-001 일괄 확정 선택"));
+    expect(screen.getByRole("button", { name: "선택 1건 전표 확정" })).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("일괄 확인 근거"), { target: { value: "9월 원본 대조 완료" } });
+    fireEvent.click(screen.getByRole("button", { name: "선택 1건 전표 확정" }));
+    await waitFor(() => expect(mocks.confirm).toHaveBeenCalledOnce());
+    expect(mocks.confirm.mock.calls[0][0]).toEqual({ items: [{ id: "draft", lock_version: 3 }], reason: "9월 원본 대조 완료" });
+    expect(await screen.findByText("1건의 전표를 일괄 확인·확정했어.")).toBeInTheDocument();
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("excludes incomplete drafts from batch confirmation and explains why", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} />);
+    expect(screen.getByLabelText("전표-2026-001 일괄 확정 선택")).toBeDisabled();
+    expect(screen.getByText(/확정 제외 · 활성 계정과목이 지정되지 않은 분개/)).toBeInTheDocument();
+    expect(mocks.confirm).not.toHaveBeenCalled();
   });
 });

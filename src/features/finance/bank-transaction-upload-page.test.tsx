@@ -65,7 +65,7 @@ describe("BankTransactionUploadPage", () => {
   });
 
   it("sends preview rows to the save action without creating vouchers", async () => {
-    const createBankTransactions = vi.fn().mockResolvedValue([{ id: "bank-transaction-1", isWithdrawal: true }]);
+    const createBankTransactions = vi.fn().mockResolvedValue({ duplicateCount: 0, importedCount: 1, transactions: [{ id: "bank-transaction-1", isWithdrawal: true }] });
     render(<BankTransactionUploadPage createBankTransactions={createBankTransactions} initialBankAccounts={testBankAccounts} />);
 
     fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
@@ -85,19 +85,29 @@ describe("BankTransactionUploadPage", () => {
         uploadedMajorCategory: "운영비",
       }),
     ]);
-    expect(await screen.findByText("1건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.")).toBeInTheDocument();
+    expect(await screen.findByText("신규 1건을 저장했고 중복 0건을 제외했습니다. 전표 생성·확정은 별도 검토 단계에서 처리합니다.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "1번 출금거래 사후결의 초안 작성" })).toHaveAttribute("href", "/finance/exp?bankTransactionId=bank-transaction-1");
     expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
 });
 
 it("shows ambiguous bank amounts as unresolved and never offers an expense link", async () => {
- const save = vi.fn().mockResolvedValue([{id:"ambiguous",isWithdrawal:false}]);
+ const save = vi.fn().mockResolvedValue({duplicateCount:0,importedCount:1,transactions:[{id:"ambiguous",isWithdrawal:false}]});
  render(<BankTransactionUploadPage initialBankAccounts={testBankAccounts} createBankTransactions={save} />);
  fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"),{target:{value:"거래일자\t입금\t출금\t적요\n2026/09/08\t100\t100\t모호거래"}});
  fireEvent.click(screen.getByRole("button",{name:"미리보기 생성"}));
  expect(await screen.findByText("미확정")).toBeInTheDocument();
  fireEvent.click(screen.getByRole("button",{name:"거래내역 저장"}));
- expect(await screen.findByText(/1건 저장 준비가 완료/)).toBeInTheDocument();
+ expect(await screen.findByText(/신규 1건을 저장했고 중복 0건/)).toBeInTheDocument();
+ expect(screen.queryByRole("link",{name:/사후결의 초안 작성/})).not.toBeInTheDocument();
+});
+
+it("reports duplicate rows separately and only offers actions for newly saved withdrawals", async () => {
+ const save = vi.fn().mockResolvedValue({duplicateCount:2,importedCount:0,transactions:[]});
+ render(<BankTransactionUploadPage initialBankAccounts={testBankAccounts} createBankTransactions={save} />);
+ fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"),{target:{value:"거래일자\t출금\t적요\n2026/09/08\t100\t기존거래\n2026/09/08\t100\t기존거래"}});
+ fireEvent.click(screen.getByRole("button",{name:"미리보기 생성"}));
+ fireEvent.click(screen.getByRole("button",{name:"거래내역 저장"}));
+ expect(await screen.findByText(/신규 0건을 저장했고 중복 2건을 제외/)).toBeInTheDocument();
  expect(screen.queryByRole("link",{name:/사후결의 초안 작성/})).not.toBeInTheDocument();
 });

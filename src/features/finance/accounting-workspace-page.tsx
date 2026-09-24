@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { saveAccountingDraft } from "@/app/finance/accounting-actions";
+import { confirmAccountingDraftBatch, saveAccountingDraft } from "@/app/finance/accounting-actions";
 import type { AccountingWorkspace } from "./accounting-workspace-repository";
 
 const card = "rounded-2xl border border-slate-200 bg-white p-5";
@@ -15,6 +15,22 @@ const sourceLabels = { RECOGNITION: "거래 발생", PAYMENT: "실제 지급·�
 type Voucher = AccountingWorkspace["vouchers"][number];
 type Source = AccountingWorkspace["sources"][number];
 type LineInput = { key: string; account_subject_id: string | null; description: string; debit_amount: number; credit_amount: number };
+
+function confirmationBlockReason(voucher: Voucher, workspace: AccountingWorkspace) {
+  if (!voucher.managed || voucher.approval_status !== "승인대기" || !voucher.lock_version) return "확정 대상 초안이 아니야.";
+  if (voucher.source_stale) return "원본이 변경돼 다시 검토해야 해.";
+  const source = workspace.sources.find(item => item.kind === voucher.source_kind && item.id === voucher.source_id);
+  if (!source || source.amount === null) return "연결 원본의 금액을 확인해야 해.";
+  if (voucher.lines.length < 2) return "차변·대변 분개가 모두 필요해.";
+  const activeAccounts = new Set(workspace.accounts.filter(account => account.is_active).map(account => account.id));
+  if (voucher.lines.some(line => !line.account_subject_id || !activeAccounts.has(line.account_subject_id))) return "활성 계정과목이 지정되지 않은 분개가 있어.";
+  if (voucher.lines.some(line => (Number(line.debit_amount) > 0) === (Number(line.credit_amount) > 0))) return "각 분개행은 차변 또는 대변 한쪽에 금액이 있어야 해.";
+  const debit = voucher.lines.reduce((total, line) => total + Number(line.debit_amount), 0);
+  const credit = voucher.lines.reduce((total, line) => total + Number(line.credit_amount), 0);
+  if (debit <= 0 || debit !== credit) return "차변과 대변 합계가 일치하지 않아.";
+  if (debit !== Number(source.amount)) return "분개 합계와 원본 금액이 일치하지 않아.";
+  return null;
+}
 
 function DraftEditor({ workspace, voucher, initialSource, onSaved, onClose }: { workspace: AccountingWorkspace; voucher?: Voucher; initialSource?: Source; onSaved: (id: string) => void; onClose: () => void }) {
   const router = useRouter();
@@ -63,14 +79,52 @@ export function AccountingWorkspacePage({ workspace, initialVoucherId = "" }: { 
   const [newSource, setNewSource] = useState<Source | undefined>();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("ALL");
+  const [confirmationReason, setConfirmationReason] = useState("");
+  const [confirmationError, setConfirmationError] = useState("");
+  const [confirmationMessage, setConfirmationMessage] = useState("");
+  const [selectedForConfirmation, setSelectedForConfirmation] = useState<string[]>([]);
+  const [confirmationPending, startConfirmation] = useTransition();
+  const confirmationKeys = useRef(new Map<string, string>());
+  const confirmationBusy = useRef(false);
   const canDraft = workspace.viewer.permissions.some(p => p === "ADMIN" || p === "APPROVE");
+  const canConfirm = canDraft && workspace.policy.confirmation_enabled;
   const selected = workspace.vouchers.find(v => v.id === selectedId);
   const visible = workspace.vouchers.filter(v => `${v.voucher_no} ${v.memo ?? ""}`.toLocaleLowerCase().includes(search.toLocaleLowerCase()) && (filter === "ALL" || (filter === "MANAGED" ? v.managed : filter === "LEGACY" ? !v.managed : v.source_stale)));
   function choose(id: string) { setSelectedId(id); router.replace(`/finance?voucherId=${encodeURIComponent(id)}`, { scroll: false }); }
+  function toggleConfirmation(id: string) { setSelectedForConfirmation(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]); }
+  function submitConfirmation() {
+    if (confirmationBusy.current || !canConfirm || !confirmationReason.trim() || selectedForConfirmation.length === 0) return;
+    const items = selectedForConfirmation.map(id => {
+      const voucher = workspace.vouchers.find(candidate => candidate.id === id);
+      return { id, lock_version: voucher?.lock_version ?? 0 };
+    });
+    const input = { items, reason: confirmationReason.trim() };
+    const signature = JSON.stringify(input);
+    const key = confirmationKeys.current.get(signature) ?? crypto.randomUUID();
+    confirmationKeys.current.set(signature, key);
+    confirmationBusy.current = true;
+    setConfirmationError("");
+    setConfirmationMessage("");
+    startConfirmation(async () => {
+      try {
+        const result = await confirmAccountingDraftBatch(input, key);
+        setSelectedForConfirmation([]);
+        setConfirmationReason("");
+        setConfirmationMessage(`${result.confirmed_count}건의 전표를 일괄 확인·확정했어.`);
+        router.refresh();
+      } catch (cause) {
+        setConfirmationError(cause instanceof Error ? cause.message : "전표 일괄 확정에 실패했어.");
+      } finally {
+        confirmationBusy.current = false;
+      }
+    });
+  }
   return <div className="space-y-5"><header className={card}><h1 className="text-3xl font-bold">수입·지출 전표관리</h1><p className="mt-2 text-slate-600">실제 저장된 차변·대변 전표와 연결 원본을 확인해. 거래 발생과 실제 지급은 각각 구분해 기록해.</p><div className="mt-3 flex flex-wrap gap-3"><Link className={secondary} href="/finance/expenses">지출 등록·조회</Link><Link className={secondary} href="/finance/payments">실제 지급 내역</Link><Link className={secondary} href="/basic-info?section=account-subjects">계정과목 관리</Link>{canDraft && <button className={primary} onClick={() => { setNewSource(undefined); setEditing(`new:${crypto.randomUUID()}`); }}>원본 연결 초안 작성</button>}</div></header>
-    <p className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm">회계 확정·정정 권한과 처리 정책을 확인 중이야. 현재 연결 초안은 저장·검토할 수 있고 확정 실적에는 포함되지 않아. 기존 전표의 번호·분개·승인 상태는 보존돼.</p>
+    <p className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm">완성된 초안만 담당자가 선택해 일괄 확정할 수 있어. 계정 미지정, 차대 불일치, 원본 변경 건은 확정 대상에서 자동 제외돼.</p>
     {editing && canDraft && <DraftEditor key={editing} workspace={workspace} voucher={workspace.vouchers.find(v => v.id === editing)} initialSource={newSource} onClose={() => setEditing(null)} onSaved={id => { setEditing(null); choose(id); }} />}
-    <section className={card}><div className="grid gap-3 sm:grid-cols-2"><label>전표 검색<input className={field} value={search} onChange={e => setSearch(e.target.value)} placeholder="전표번호·검토 메모" /></label><label>조회 구분<select className={field} value={filter} onChange={e => setFilter(e.target.value)}><option value="ALL">전체</option><option value="MANAGED">연결 전표</option><option value="LEGACY">기존 전표</option><option value="STALE">원본 변경 확인 필요</option></select></label></div><h2 className="my-4 font-bold">전표 {visible.length}건</h2><div className="space-y-2">{visible.map(v => <button className={`w-full rounded-xl border p-4 text-left ${v.id === selectedId ? "border-blue-500 bg-blue-50" : ""}`} key={v.id} aria-pressed={v.id === selectedId} onClick={() => choose(v.id)}><span className="flex flex-wrap justify-between gap-2"><strong>{v.voucher_no}</strong><span>{v.voucher_date} · {v.approval_status}</span></span><span className="mt-2 block text-sm">{v.memo || "메모 없음"} · {v.managed ? "원본 연결" : "기존 기록"}{v.source_stale ? " · 원본 변경 확인 필요" : ""}</span></button>)}{!visible.length && <p className="py-4">해당 조건의 전표가 없어.</p>}</div></section>
+    <section className={card}><div className="grid gap-3 sm:grid-cols-2"><label>전표 검색<input className={field} value={search} onChange={e => setSearch(e.target.value)} placeholder="전표번호·검토 메모" /></label><label>조회 구분<select className={field} value={filter} onChange={e => setFilter(e.target.value)}><option value="ALL">전체</option><option value="MANAGED">연결 전표</option><option value="LEGACY">기존 전표</option><option value="STALE">원본 변경 확인 필요</option></select></label></div>
+      {canConfirm ? <div className="mt-4 rounded-xl border border-blue-200 bg-blue-50/60 p-4"><div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end"><label className="text-sm font-semibold">일괄 확인 근거<input className={field} value={confirmationReason} onChange={event => setConfirmationReason(event.target.value)} placeholder="예: 9월 은행거래 및 증빙 대조 완료" /></label><button className={primary} disabled={confirmationPending || selectedForConfirmation.length === 0 || confirmationReason.trim().length < 2} onClick={submitConfirmation} type="button">{confirmationPending ? "확정 처리 중..." : `선택 ${selectedForConfirmation.length}건 전표 확정`}</button></div><p className="mt-2 text-xs text-slate-600">선택한 전표는 한 번에 검증하며, 한 건이라도 조건이 맞지 않으면 전체 확정을 취소해.</p>{confirmationMessage ? <p className="mt-2 text-sm font-semibold text-green-800" role="status">{confirmationMessage}</p> : null}{confirmationError ? <p className="mt-2 text-sm font-semibold text-red-700" role="alert">{confirmationError}</p> : null}</div> : null}
+      <h2 className="my-4 font-bold">전표 {visible.length}건</h2><div className="space-y-2">{visible.map(v => { const blocked = confirmationBlockReason(v, workspace); return <div className={`flex items-start gap-3 rounded-xl border p-4 ${v.id === selectedId ? "border-blue-500 bg-blue-50" : ""}`} key={v.id}>{canConfirm ? <input aria-label={`${v.voucher_no} 일괄 확정 선택`} checked={selectedForConfirmation.includes(v.id)} className="mt-1 size-4" disabled={Boolean(blocked) || confirmationPending} onChange={() => toggleConfirmation(v.id)} type="checkbox" /> : null}<button className="min-w-0 flex-1 text-left" aria-pressed={v.id === selectedId} onClick={() => choose(v.id)}><span className="flex flex-wrap justify-between gap-2"><strong>{v.voucher_no}</strong><span>{v.voucher_date} · {v.approval_status}</span></span><span className="mt-2 block text-sm">{v.memo || "메모 없음"} · {v.managed ? "원본 연결" : "기존 기록"}{v.source_stale ? " · 원본 변경 확인 필요" : ""}</span>{canConfirm && blocked && v.managed && v.approval_status === "승인대기" ? <span className="mt-1 block text-xs font-semibold text-amber-800">확정 제외 · {blocked}</span> : null}</button></div>; })}{!visible.length && <p className="py-4">해당 조건의 전표가 없어.</p>}</div></section>
     {selected && <section className={`${card} space-y-3`} aria-label="전표 상세"><div className="flex flex-wrap justify-between gap-3"><h2 className="text-lg font-bold">{selected.voucher_no}</h2>{canDraft && selected.managed && selected.approval_status === "승인대기" && <button className={secondary} onClick={() => { setNewSource(undefined); setEditing(selected.id); }}>연결 초안 수정</button>}</div><p>{selected.source_kind ? sourceLabels[selected.source_kind] : "기존 원본 연결·회계 분류 확인 필요"} · {selected.memo}</p><div className="overflow-x-auto"><table className="w-full min-w-[500px] text-left text-sm"><thead><tr><th className="p-2">계정</th><th>적요</th><th>차변</th><th>대변</th></tr></thead><tbody>{selected.lines.map(l => <tr className="border-t" key={l.id}><td className="p-2">{workspace.accounts.find(a => a.id === l.account_subject_id)?.name ?? "계정 확인 필요"}</td><td>{l.description}</td><td>{money(l.debit_amount)}</td><td>{money(l.credit_amount)}</td></tr>)}</tbody></table></div></section>}
     <section className={card}><h2 className="text-lg font-bold">회계 연결할 원본</h2><p className="my-3 text-sm text-slate-600">이미 연결된 원본은 기존 전표로 이동해. 지급과 계좌이체의 실제 금액을 사용하고 계정을 자동 분류하지 않아.</p><div className="space-y-2">{workspace.sources.map(s => <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border p-3" key={`${s.kind}:${s.id}`}><p>{sourceLabels[s.kind]} · {s.number} · {s.title} · {money(s.amount)}</p>{s.existing_voucher_id ? <button className={secondary} onClick={() => choose(s.existing_voucher_id!)}>연결 전표 확인</button> : s.blocked_reason ? <p role="status" className="text-sm text-amber-800">{s.blocked_reason}</p> : canDraft && <button className={secondary} onClick={() => { setNewSource(s); setEditing(`new:${crypto.randomUUID()}`); }}>이 원본으로 초안 작성</button>}</div>)}</div></section>
   </div>;

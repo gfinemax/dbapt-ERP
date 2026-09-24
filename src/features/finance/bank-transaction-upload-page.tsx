@@ -22,7 +22,11 @@ const statusClasses: Record<string, string> = {
 };
 
 type BankTransactionUploadPageProps = {
-  createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<Array<{ id: string; isWithdrawal?: boolean }>>;
+  createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<{
+    duplicateCount: number;
+    importedCount: number;
+    transactions: Array<{ id: string; isWithdrawal?: boolean }>;
+  }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
 };
@@ -123,7 +127,9 @@ export function BankTransactionUploadPage({
     try {
       if (createBankTransactions) {
         const saved = await createBankTransactions(previewRows);
-        setSavedTransactionIds(saved.filter((transaction) => transaction.isWithdrawal === true).map((transaction) => transaction.id));
+        setSavedTransactionIds(saved.transactions.filter((transaction) => transaction.isWithdrawal === true).map((transaction) => transaction.id));
+        setSaveMessage(`신규 ${saved.importedCount}건을 저장했고 중복 ${saved.duplicateCount}건을 제외했습니다. 전표 생성·확정은 별도 검토 단계에서 처리합니다.`);
+        return;
       }
 
       setSaveMessage(`${previewRows.length}건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.`);

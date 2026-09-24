@@ -3,7 +3,7 @@ import type { ReimbursementMember } from "./reimbursement-domain";
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: mocks.db }));
-import { assertLegacyVoucherEditable, loadAccountingWorkspace, runAccountingCommand, type AccountingCommand } from "./accounting-workspace-repository";
+import { assertLegacyVoucherEditable, confirmAccountingDrafts, loadAccountingWorkspace, runAccountingCommand, type AccountingCommand } from "./accounting-workspace-repository";
 const member: ReimbursementMember = { organization_id: "verified-org", user_id: "verified-user", display_name: "담당자", permissions: ["APPROVE"], active: true };
 const input = { source_kind: "RECOGNITION", source_id: "tx", source_signature: "snapshot-signature", voucher_date: "2026-03-01", lines: [] };
 beforeEach(() => { vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc }) }); mocks.rpc.mockResolvedValue({ data: { id: "voucher", lock_version: 1 }, error: null }); });
@@ -59,8 +59,20 @@ describe("accounting draft service boundary", () => {
     const result = await loadAccountingWorkspace();
     expect(result.vouchers).toEqual(data.vouchers);
     expect(result.viewer.permissions).toEqual(["APPROVE"]);
-    expect(result.policy.confirmation_enabled).toBe(false);
+    expect(result.policy.confirmation_enabled).toBe(true);
     expect(mocks.rpc).toHaveBeenCalledWith("accounting_workspace", { p_org: member.organization_id, p_actor: member.user_id });
+  });
+  it("confirms a validated batch with the verified actor and organization", async () => {
+    mocks.rpc.mockResolvedValue({ data: { confirmed_count: 1, confirmed_ids: ["voucher"] }, error: null });
+    const confirmation = { items: [{ id: "voucher", lock_version: 2 }], reason: "원본과 분개 대조 완료" };
+    await expect(confirmAccountingDrafts(confirmation, "confirm-key")).resolves.toEqual({ confirmed_count: 1, confirmed_ids: ["voucher"] });
+    expect(mocks.rpc).toHaveBeenCalledWith("accounting_batch_confirm", { p_org: "verified-org", p_actor: "verified-user", p_data: confirmation, p_key: "confirm-key" });
+  });
+  it("rejects invalid batch confirmation before privileged DB access", async () => {
+    await expect(confirmAccountingDrafts({ items: [], reason: "확인" }, "key")).rejects.toThrow("1건 이상");
+    await expect(confirmAccountingDrafts({ items: [{ id: "voucher", lock_version: 1 }], reason: " " }, "key")).rejects.toThrow("확인 근거");
+    await expect(confirmAccountingDrafts({ items: [{ id: "voucher", lock_version: 1 }, { id: "voucher", lock_version: 1 }], reason: "확인 완료" }, "key")).rejects.toThrow("버전");
+    expect(mocks.db).not.toHaveBeenCalled();
   });
   it("does not turn DB failure into an empty ledger or accept incomplete results", async () => {
     mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: "schema unavailable" } });

@@ -72,12 +72,16 @@ export async function createBankTransactionsInSupabase(rows: ParsedBankTransacti
   const { data, error } = await supabase
     .schema(bankTransactionRepositorySchema)
     .from("bank_transactions")
-    .insert(rows.map((row) => ({ ...mapBankTransactionToInsert(row), organization_id: organization.organization_id })))
+    .upsert(rows.map((row) => ({ ...mapBankTransactionToInsert(row), organization_id: organization.organization_id })), {
+      ignoreDuplicates: true,
+      onConflict: "bank_transaction_uid",
+    })
     .select(bankTransactionSelect);
 
   if (error) {
-    throw new Error(error.code === "23505" ? "이미 업로드된 은행거래가 포함되어 있습니다." : `Failed to create bank transactions: ${error.message}`);
+    throw new Error(`Failed to create bank transactions: ${error.message}`);
   }
 
-  return data as SupabaseBankTransactionRow[];
+  const transactions = data as SupabaseBankTransactionRow[];
+  return { duplicateCount: rows.length - transactions.length, transactions };
 }
