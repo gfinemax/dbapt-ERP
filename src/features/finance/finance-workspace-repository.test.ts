@@ -1,24 +1,33 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { loadFinanceTaskWorkspace } from "./finance-workspace-repository";
-const mock = vi.hoisted(() => ({ identity: vi.fn(), expenses: vi.fn(), payments: vi.fn(), trust: vi.fn(), accounting: vi.fn(), sourceTasks: vi.fn() }));
-vi.mock("./finance-task-sources-repository", () => ({ loadFinanceTaskSources: mock.sourceTasks }));
+const mock = vi.hoisted(() => ({ identity: vi.fn(), dashboardTasks: vi.fn(), expenses: vi.fn(), payments: vi.fn(), trust: vi.fn(), accounting: vi.fn(), sourceTasks: vi.fn() }));
+vi.mock("./finance-task-sources-repository", () => ({ loadFinanceDashboardTasks: mock.dashboardTasks, loadFinanceTaskSources: mock.sourceTasks }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mock.identity }));
 vi.mock("./expense-workspace-repository", () => ({ loadExpenseWorkspace: mock.expenses }));
 vi.mock("./fund-payment-repository", () => ({ loadPaymentWorkspace: mock.payments }));
 vi.mock("./fund-trust-repository", () => ({ loadFundTrust: mock.trust }));
 vi.mock("./accounting-workspace-repository", () => ({ loadAccountingWorkspace: mock.accounting }));
 beforeEach(() => {
-  vi.clearAllMocks(); mock.sourceTasks.mockResolvedValue([]); mock.identity.mockResolvedValue({ active: true, permissions: ["ADMIN"] });
+  vi.clearAllMocks(); mock.dashboardTasks.mockResolvedValue([]); mock.sourceTasks.mockResolvedValue([]); mock.identity.mockResolvedValue({ active: true, permissions: ["ADMIN"] });
   mock.expenses.mockResolvedValue({ records: [] }); mock.payments.mockResolvedValue({ transactions: [], eligibility: [] });
   mock.trust.mockResolvedValue({ requests: [], items: [] }); mock.accounting.mockResolvedValue({ vouchers: [], sources: [] });
 });
 describe("task dashboard scoped reads", () => {
-  it("does not call staff sources for an ordinary applicant", async () => {
+  it("uses the consolidated task read without loading detailed workspaces", async () => {
+    const task = { id: "one", kind: "PAYABLE", title: "지급", detail: "100원", href: "/finance/payments?tab=READY" };
+    mock.dashboardTasks.mockResolvedValue([task]);
+    expect(await loadFinanceTaskWorkspace()).toEqual({ staff: true, tasks: [task], unavailable: [] });
+    expect(mock.dashboardTasks).toHaveBeenCalledOnce();
+    expect(mock.sourceTasks).not.toHaveBeenCalled(); expect(mock.expenses).not.toHaveBeenCalled();
+    expect(mock.payments).not.toHaveBeenCalled(); expect(mock.trust).not.toHaveBeenCalled(); expect(mock.accounting).not.toHaveBeenCalled();
+  });
+  it("uses the same consolidated task read for an ordinary applicant", async () => {
     mock.identity.mockResolvedValue({ active: true, permissions: [] });
     expect(await loadFinanceTaskWorkspace()).toEqual({ staff: false, tasks: [], unavailable: [] });
-    expect(mock.expenses).toHaveBeenCalledOnce(); expect(mock.payments).not.toHaveBeenCalled(); expect(mock.trust).not.toHaveBeenCalled(); expect(mock.accounting).not.toHaveBeenCalled();
+    expect(mock.dashboardTasks).toHaveBeenCalledOnce(); expect(mock.expenses).not.toHaveBeenCalled(); expect(mock.payments).not.toHaveBeenCalled(); expect(mock.trust).not.toHaveBeenCalled(); expect(mock.accounting).not.toHaveBeenCalled();
   });
-  it("keeps independent results when one source fails and does not expose backend errors", async () => {
+  it("falls back to independent reads and does not expose backend errors", async () => {
+    mock.dashboardTasks.mockRejectedValue(new Error("new RPC unavailable"));
     mock.accounting.mockRejectedValue(new Error("private backend detail"));
     mock.expenses.mockResolvedValue({ records: [{ source_kind: "PERSONAL", source_id: "id", title: "대납", approval_status: "SUBMITTED", transaction_id: "tx", can_connect: false }] });
     const data = await loadFinanceTaskWorkspace();
@@ -31,6 +40,7 @@ describe("task dashboard scoped reads", () => {
     await expect(loadFinanceTaskWorkspace()).rejects.toThrow("활성"); expect(mock.expenses).not.toHaveBeenCalled();
   });
   it("counts supplement requests once even with multiple items and uses actual payment eligibility", async () => {
+    mock.dashboardTasks.mockRejectedValue(new Error("new RPC unavailable"));
     mock.trust.mockResolvedValue({ requests: [{ id: "request", request_no: "신탁1", title: "요청" }], items: [{ request_id: "request", status: "SUPPLEMENT" }, { request_id: "request", needs_review: true }] });
     mock.payments.mockResolvedValue({ transactions: [{ id: "tx", title: "지출", amounts: { paid: 0, payment_review_required: false, remaining: 1000 } }], eligibility: [{ transaction_id: "tx", available: 0 }] });
     const data = await loadFinanceTaskWorkspace();

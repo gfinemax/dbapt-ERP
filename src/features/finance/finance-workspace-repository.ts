@@ -3,7 +3,7 @@ import { loadExpenseWorkspace } from "./expense-workspace-repository";
 import { loadPaymentWorkspace } from "./fund-payment-repository";
 import { loadFundTrust } from "./fund-trust-repository";
 import { loadAccountingWorkspace } from "./accounting-workspace-repository";
-import { loadFinanceTaskSources } from "./finance-task-sources-repository";
+import { loadFinanceDashboardTasks, loadFinanceTaskSources } from "./finance-task-sources-repository";
 
 import { financeTasks, type FinanceTaskKind, type FinanceTaskWorkspace, type FinanceTaskInputs } from "./finance-workspace-domain";
 
@@ -11,6 +11,14 @@ export async function loadFinanceTaskWorkspace(): Promise<FinanceTaskWorkspace> 
   const member = await requireReimbursementIdentity();
   if (!member.active) throw new Error("활성 조직 권한이 필요합니다.");
   const staff = member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p));
+  try {
+    return { tasks: await loadFinanceDashboardTasks(), unavailable: [], staff };
+  } catch {
+    return loadLegacyFinanceTaskWorkspace(staff);
+  }
+}
+
+async function loadLegacyFinanceTaskWorkspace(staff: boolean): Promise<FinanceTaskWorkspace> {
   const sections = [
     { key: "sourceTasks" as const, kinds: (staff ? ["MY_APPROVAL", "TRUST_READY", "SETTLEMENT_OVERDUE", "EVIDENCE_REVIEW", "BANK_UNMATCHED"] : ["MY_APPROVAL"]) as FinanceTaskKind[], load: loadFinanceTaskSources },
     { key: "expenses" as const, kinds: ["UNCONNECTED", "APPROVAL"] as FinanceTaskKind[], load: loadExpenseWorkspace },
