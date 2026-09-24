@@ -1932,6 +1932,9 @@ export function ExpenseWorkspacePage({
   initialSourceKind?: string;
   initialSourceId?: string;
 }) {
+  const router = useRouter();
+  const [navigationPending, startNavigation] = useTransition();
+  const navigationSearchRef = useRef<string | null>(null);
   const panelRef = useRef<HTMLElement>(null);
   const floatingPanel = useFloatingExpensePanel(panelRef);
   const detailWasOpen = useRef(false);
@@ -1956,48 +1959,57 @@ export function ExpenseWorkspacePage({
   );
   const [approvalStatus, setApprovalStatus] = useState(initialStatus);
   const deferredSearch = useDeferredValue(search);
+  const serverPagination = workspace.pagination;
   const rows = useMemo(
-    () =>
-      sortExpenseRecords(
-        filterExpenseRecords(
-          workspace.records,
-          kind,
-          connection,
-          deferredSearch,
-        ).filter(
-          (r) =>
-            kind !== "RESOLUTION" ||
-            !approvalStatus ||
-            r.approval_status === approvalStatus,
+    () => serverPagination
+      ? workspace.records
+      : sortExpenseRecords(
+          filterExpenseRecords(
+            workspace.records,
+            kind,
+            connection,
+            deferredSearch,
+          ).filter(
+            (r) =>
+              kind !== "RESOLUTION" ||
+              !approvalStatus ||
+              r.approval_status === approvalStatus,
+          ),
+          sort,
         ),
-        sort,
-      ),
-    [approvalStatus, connection, deferredSearch, kind, sort, workspace.records],
+    [approvalStatus, connection, deferredSearch, kind, serverPagination, sort, workspace.records],
   );
-  const kindCounts = useMemo(() => {
+  const kindCounts = useMemo<Record<string, number>>(() => {
+    if (serverPagination) return serverPagination.kindCounts;
     const counts: Record<string, number> = { ALL: workspace.records.length };
     for (const record of workspace.records)
       counts[record.source_kind] = (counts[record.source_kind] ?? 0) + 1;
     return counts;
-  }, [workspace.records]);
-  const detail = workspace.records.find((r) => keyOf(r) === selected);
+  }, [serverPagination, workspace.records]);
+  const detail = workspace.records.find((r) => keyOf(r) === selected) ??
+    (workspace.selectedRecord && keyOf(workspace.selectedRecord) === selected
+      ? workspace.selectedRecord
+      : undefined);
   const selectedRowIndex = rows.findIndex((row) => keyOf(row) === selected);
   const [page, setPage] = useState(() => {
+    if (serverPagination) return serverPagination.page;
     const value = Number.parseInt(initialPage, 10);
     if (Number.isSafeInteger(value) && value > 0) return value;
     return selectedRowIndex >= 0
       ? Math.floor(selectedRowIndex / expenseWorkspacePageSize) + 1
       : 1;
   });
-  const pageCount = Math.max(1, Math.ceil(rows.length / expenseWorkspacePageSize));
+  const pageCount = serverPagination?.pageCount ??
+    Math.max(1, Math.ceil(rows.length / expenseWorkspacePageSize));
   const visiblePage = Math.min(page, pageCount);
   const visibleRows = useMemo(
-    () =>
-      rows.slice(
-        (visiblePage - 1) * expenseWorkspacePageSize,
-        visiblePage * expenseWorkspacePageSize,
-      ),
-    [rows, visiblePage],
+    () => serverPagination
+      ? rows
+      : rows.slice(
+          (visiblePage - 1) * expenseWorkspacePageSize,
+          visiblePage * expenseWorkspacePageSize,
+        ),
+    [rows, serverPagination, visiblePage],
   );
   const navigate = useCallback(
     (next: {
@@ -2009,26 +2021,34 @@ export function ExpenseWorkspacePage({
       page?: string;
       source_kind?: string;
       source_id?: string;
-    }) => {
-      const params = new URLSearchParams(window.location.search);
+    }, reload = false) => {
+      const params = new URLSearchParams(
+        navigationSearchRef.current ?? window.location.search,
+      );
       for (const [key, value] of Object.entries(next)) {
         if (value) params.set(key, value);
         else params.delete(key);
       }
       const query = params.toString();
-      window.history.replaceState(
-        window.history.state,
-        "",
-        query ? `/finance/expenses?${query}` : "/finance/expenses",
-      );
+      navigationSearchRef.current = query ? `?${query}` : "";
+      const href = query ? `/finance/expenses?${query}` : "/finance/expenses";
+      if (reload && serverPagination) {
+        startNavigation(() => router.replace(href, { scroll: false }));
+      } else {
+        window.history.replaceState(window.history.state, "", href);
+      }
     },
-    [],
+    [router, serverPagination],
   );
+  useEffect(() => {
+    if (!serverPagination || deferredSearch === initialSearch) return;
+    navigate({ page: "", q: deferredSearch }, true);
+  }, [deferredSearch, initialSearch, navigate, serverPagination]);
   const moveToPage = useCallback(
     (nextPage: number) => {
       const bounded = Math.min(Math.max(1, nextPage), pageCount);
       setPage(bounded);
-      navigate({ page: bounded > 1 ? String(bounded) : "" });
+      navigate({ page: bounded > 1 ? String(bounded) : "" }, true);
     },
     [navigate, pageCount],
   );
@@ -2171,7 +2191,7 @@ export function ExpenseWorkspacePage({
                     status: "",
                     source_kind: "",
                     source_id: "",
-                  });
+                  }, true);
                 }}
               >
                 {label}{" "}
@@ -2191,7 +2211,7 @@ export function ExpenseWorkspacePage({
                 onChange={(e) => {
                   setApprovalStatus(e.target.value);
                   setPage(1);
-                  navigate({ page: "", status: e.target.value });
+                  navigate({ page: "", status: e.target.value }, true);
                 }}
               >
                 <option value="">전체</option>
@@ -2218,7 +2238,7 @@ export function ExpenseWorkspacePage({
                 onChange={(e) => {
                   setConnection(e.target.value);
                   setPage(1);
-                  navigate({ connection: e.target.value, page: "" });
+                  navigate({ connection: e.target.value, page: "" }, true);
                 }}
               >
                 <option value="ALL">전체</option>
@@ -2235,7 +2255,8 @@ export function ExpenseWorkspacePage({
                 onChange={(e) => {
                   setSearch(e.target.value);
                   setPage(1);
-                  navigate({ page: "", q: e.target.value });
+                  if (!serverPagination)
+                    navigate({ page: "", q: e.target.value });
                 }}
               />
             </label>
@@ -2252,7 +2273,7 @@ export function ExpenseWorkspacePage({
                   navigate({
                     page: "",
                     sort: next === "USED_DESC" ? "" : next,
-                  });
+                  }, true);
                 }}
               >
                 <option value="USED_DESC">사용일 최신순</option>
@@ -2268,11 +2289,11 @@ export function ExpenseWorkspacePage({
         <div className={styles.layout} data-selected={!!selected}>
           <section
             aria-label="지출 원본 목록"
-            aria-busy={search !== deferredSearch}
+            aria-busy={search !== deferredSearch || navigationPending}
             className={`${card} ${styles.list}`}
           >
             <p className="mb-3">
-              전체 원본 {workspace.records.length}건 · 조회 결과 {rows.length}건
+              전체 원본 {serverPagination?.totalCount ?? workspace.records.length}건 · 조회 결과 {serverPagination?.filteredCount ?? rows.length}건
             </p>
             <p className="mb-3 text-sm text-slate-600">
               지출 행을 선택하면 작성 내용·증빙·연결 현황을 함께 볼 수 있어.
@@ -2408,7 +2429,7 @@ export function ExpenseWorkspacePage({
                   이전 페이지
                 </button>
                 <p className="text-sm text-slate-600" aria-live="polite">
-                  {visiblePage} / {pageCount}페이지 · {Math.min((visiblePage - 1) * expenseWorkspacePageSize + 1, rows.length)}–{Math.min(visiblePage * expenseWorkspacePageSize, rows.length)}건 표시
+                  {visiblePage} / {pageCount}페이지 · {Math.min((visiblePage - 1) * (serverPagination?.pageSize ?? expenseWorkspacePageSize) + 1, serverPagination?.filteredCount ?? rows.length)}–{Math.min(visiblePage * (serverPagination?.pageSize ?? expenseWorkspacePageSize), serverPagination?.filteredCount ?? rows.length)}건 표시
                 </p>
                 <button
                   className={secondary}

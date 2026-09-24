@@ -114,6 +114,55 @@ beforeEach(() => {
   window.history.replaceState(null, "", "/finance/expenses?from=home");
 });
 describe("common original expense workspace", () => {
+  it("uses server totals and requests the next page without loading every record", () => {
+    const data = fixture();
+    data.pagination = {
+      totalCount: 120,
+      filteredCount: 51,
+      kindCounts: { ALL: 120, RESOLUTION: 30, SMALL: 20, QUICK: 20, PERSONAL: 50 },
+      page: 1,
+      pageSize: 50,
+      pageCount: 2,
+    };
+
+    render(<ExpenseWorkspacePage workspace={data} />);
+
+    expect(screen.getByText("전체 원본 120건 · 조회 결과 51건")).toBeInTheDocument();
+    expect(screen.getByText("1 / 2페이지 · 1–50건 표시")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다음 페이지" }));
+    expect(mocks.replace).toHaveBeenCalledWith(
+      "/finance/expenses?from=home&page=2",
+      { scroll: false },
+    );
+  });
+
+  it("keeps an authorized deep-linked detail available when it is outside the current server page", () => {
+    const data = fixture();
+    data.pagination = {
+      totalCount: 120,
+      filteredCount: 120,
+      kindCounts: { ALL: 120, RESOLUTION: 30, SMALL: 20, QUICK: 20, PERSONAL: 50 },
+      page: 1,
+      pageSize: 50,
+      pageCount: 3,
+    };
+    data.selectedRecord = {
+      ...data.records[0],
+      source_id: "outside-page",
+      title: "현재 페이지 밖 상세",
+    };
+
+    render(
+      <ExpenseWorkspacePage
+        workspace={data}
+        initialSourceKind="RESOLUTION"
+        initialSourceId="outside-page"
+      />,
+    );
+
+    expect(screen.getByRole("dialog", { name: "선택한 지출 원본 상세창" })).toHaveTextContent("현재 페이지 밖 상세");
+  });
+
   it("shows actual-use dates and sorts them newest-first without substituting registration dates", () => {
     const data = fixture();
     data.records[0] = {

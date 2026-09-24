@@ -19,7 +19,30 @@ export type ExpenseWorkspaceRecord = {
   usage_description?: string; memo?: string;
   personal_purpose?: string; personal_updated_at?: string; personal_can_edit?: boolean; personal_is_applicant?: boolean;
 };
-export type ExpenseWorkspace = { records: ExpenseWorkspaceRecord[]; viewer: { staff: boolean; permissions: ReimbursementPermission[] } };
+export type ExpenseWorkspacePagination = {
+  totalCount: number;
+  filteredCount: number;
+  kindCounts: Record<ExpenseSourceKind | "ALL", number>;
+  page: number;
+  pageSize: number;
+  pageCount: number;
+};
+export type ExpenseWorkspace = {
+  records: ExpenseWorkspaceRecord[];
+  selectedRecord?: ExpenseWorkspaceRecord | null;
+  pagination?: ExpenseWorkspacePagination;
+  viewer: { staff: boolean; permissions: ReimbursementPermission[] };
+};
+export type ExpenseWorkspaceQuery = {
+  kind?: string;
+  connection?: string;
+  page?: string;
+  q?: string;
+  sort?: string;
+  status?: string;
+  source_kind?: string;
+  source_id?: string;
+};
 
 type SmallExpenseRow = {
   id: string; expense_date: string; partner_name: string; description: string; amount: number | string;
@@ -99,4 +122,68 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   const records = [...rpcRecords.filter((record: ExpenseWorkspaceRecord) => !(record.source_kind === "QUICK" && smallQuickIds.has(record.source_id))), ...smallRecords]
     .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at) || a.source_kind.localeCompare(b.source_kind) || a.source_id.localeCompare(b.source_id));
   return { records, viewer: { staff: isStaff, permissions: [...member.permissions] } };
+}
+
+function positiveInteger(value: string | undefined, fallback: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function finiteCount(value: unknown) {
+  const count = Number(value);
+  return Number.isSafeInteger(count) && count >= 0 ? count : 0;
+}
+
+export async function loadExpenseWorkspacePage(
+  query: ExpenseWorkspaceQuery = {},
+): Promise<ExpenseWorkspace> {
+  const member = await requireReimbursementIdentity();
+  if (!member.active) throw new Error("활성 조직 권한이 필요합니다.");
+
+  const page = positiveInteger(query.page, 1);
+  const { data, error } = await reimbursementDb()
+    .schema("finance")
+    .rpc("expense_workspace_page", {
+      p_org: member.organization_id,
+      p_actor: member.user_id,
+      p_page: page,
+      p_page_size: 50,
+      p_kind: query.kind ?? "ALL",
+      p_connection: query.connection ?? "ALL",
+      p_search: query.q ?? "",
+      p_sort: query.sort ?? "USED_DESC",
+      p_status: query.status ?? "",
+      p_source_kind: query.source_kind ?? null,
+      p_source_id: query.source_id ?? null,
+    });
+  if (error) throw new Error(`지출 자료 조회 실패: ${error.message}`);
+  if (!data || !Array.isArray(data.records))
+    throw new Error("지출 자료 조회 결과를 확인해주세요.");
+
+  const isStaff = member.permissions.some((permission) =>
+    ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(permission),
+  );
+  const rawKindCounts = data.kind_counts && typeof data.kind_counts === "object"
+    ? data.kind_counts as Record<string, unknown>
+    : {};
+  const kindCounts = Object.fromEntries(
+    ["ALL", "RESOLUTION", "SMALL", "QUICK", "PERSONAL"].map((kind) => [
+      kind,
+      finiteCount(rawKindCounts[kind]),
+    ]),
+  ) as ExpenseWorkspacePagination["kindCounts"];
+
+  return {
+    records: data.records as ExpenseWorkspaceRecord[],
+    selectedRecord: data.selected_record as ExpenseWorkspaceRecord | null,
+    pagination: {
+      totalCount: finiteCount(data.total_count),
+      filteredCount: finiteCount(data.filtered_count),
+      kindCounts,
+      page: positiveInteger(String(data.page ?? ""), page),
+      pageSize: positiveInteger(String(data.page_size ?? ""), 50),
+      pageCount: positiveInteger(String(data.page_count ?? ""), 1),
+    },
+    viewer: { staff: isStaff, permissions: [...member.permissions] },
+  };
 }
