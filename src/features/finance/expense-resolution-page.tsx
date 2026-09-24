@@ -38,7 +38,6 @@ import { transitionExpenseApproval, type ApprovalTransitionRequest, type Approva
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
-import { readExpenseResolutionImportFile } from "./expense-resolution-file";
 import {
   buildExpenseResolutionImportTemplateCsv,
   parseExpenseResolutionImportRows,
@@ -2789,6 +2788,7 @@ export function ExpenseResolutionPage({
     setBatchImportFileName(file.name);
     setBatchImportError("");
     try {
+      const { readExpenseResolutionImportFile } = await import("./expense-resolution-file");
       const result = parseExpenseResolutionImportRows(await readExpenseResolutionImportFile(file));
       setBatchImportResult(result);
       if (result.importedRows.length) {

@@ -46,17 +46,19 @@ export async function loadExpenseWorkspace(): Promise<ExpenseWorkspace> {
   if (error) throw new Error(`지출 자료 조회 실패: ${error.message}`);
   if (!data || !Array.isArray(data.records)) throw new Error("지출 자료 조회 결과를 확인해주세요.");
   const isStaff = member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p));
-  const smallRows = isStaff ? await loadSmallExpenseRows(member.organization_id) : [];
-  const smallQuickIds = new Set(smallRows.map(row => row.quick_record_id).filter((id): id is string => !!id));
   const quickIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "QUICK").map((record: ExpenseWorkspaceRecord) => record.source_id);
-  const quickMeta = quickIds.length ? await reimbursementDb().schema("finance").from("quick_expense_records").select("id,usage_description,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : { data: [], error: null };
-  if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
   const personalIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "PERSONAL").map((record: ExpenseWorkspaceRecord) => record.source_id);
-  const personalMeta = personalIds.length ? await reimbursementDb().schema("finance").from("personal_reimbursements").select("id,applicant_id,purpose,updated_at").eq("organization_id", member.organization_id).in("id", personalIds) : { data: [], error: null };
-  if (personalMeta.error) throw new Error(`개인 정산 수정 정보 조회 실패: ${personalMeta.error.message}`);
   const resolutionIds = data.records.filter((record: ExpenseWorkspaceRecord) => record.source_kind === "RESOLUTION").map((record: ExpenseWorkspaceRecord) => record.source_id);
-  const resolutionMeta = resolutionIds.length ? await reimbursementDb().schema("finance").from("expense_resolutions").select("id,resolution_data").eq("organization_id", member.organization_id).in("id", resolutionIds) : { data: [], error: null };
+  const [smallRows, quickMeta, personalMeta, resolutionMeta] = await Promise.all([
+    isStaff ? loadSmallExpenseRows(member.organization_id) : Promise.resolve([]),
+    quickIds.length ? reimbursementDb().schema("finance").from("quick_expense_records").select("id,usage_description,budget_item,expense_detail_id,evidence_kind,evidence_review_status,missing_evidence_reason,evidence_review_note").eq("organization_id", member.organization_id).in("id", quickIds) : Promise.resolve({ data: [], error: null }),
+    personalIds.length ? reimbursementDb().schema("finance").from("personal_reimbursements").select("id,applicant_id,purpose,updated_at").eq("organization_id", member.organization_id).in("id", personalIds) : Promise.resolve({ data: [], error: null }),
+    resolutionIds.length ? reimbursementDb().schema("finance").from("expense_resolutions").select("id,resolution_data").eq("organization_id", member.organization_id).in("id", resolutionIds) : Promise.resolve({ data: [], error: null }),
+  ]);
+  if (quickMeta.error) throw new Error(`간편지출 증빙 상태 조회 실패: ${quickMeta.error.message}`);
+  if (personalMeta.error) throw new Error(`개인 정산 수정 정보 조회 실패: ${personalMeta.error.message}`);
   if (resolutionMeta.error) throw new Error(`지출결의 작성 내용 조회 실패: ${resolutionMeta.error.message}`);
+  const smallQuickIds = new Set(smallRows.map(row => row.quick_record_id).filter((id): id is string => !!id));
   const byId = new Map((quickMeta.data ?? []).map(row => [row.id, row]));
   const personalById = new Map((personalMeta.data ?? []).map(row => [row.id, row]));
   const resolutionById = new Map((resolutionMeta.data ?? []).map(row => [row.id, row]));

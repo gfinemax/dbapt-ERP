@@ -212,6 +212,24 @@ type ErpShellProps = {
   onQuickMenuSelect?: (label: string) => void;
 };
 
+let financeBadgesRequest: Promise<Record<string, number>> | null = null;
+
+function requestFinanceBadges() {
+  if (!financeBadgesRequest) {
+    financeBadgesRequest = loadFinanceNavigationBadgesAction().then(
+      (badges) => {
+        financeBadgesRequest = null;
+        return badges;
+      },
+      (error) => {
+        financeBadgesRequest = null;
+        throw error;
+      },
+    );
+  }
+  return financeBadgesRequest;
+}
+
 export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "관리자", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -220,8 +238,9 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
   useEffect(() => {
+    if (selectedMenu !== "회계/자금") return;
     let active = true;
-    void loadFinanceNavigationBadgesAction().then((badges) => { if (active) setFinanceBadges(badges); }).catch(() => { /* Navigation remains usable when counts cannot be refreshed. */ });
+    void requestFinanceBadges().then((badges) => { if (active) setFinanceBadges(badges); }).catch(() => { /* Navigation remains usable when counts cannot be refreshed. */ });
     return () => { active = false; };
   }, [selectedMenu]);
   const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];

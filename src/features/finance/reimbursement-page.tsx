@@ -1,4 +1,5 @@
 "use client";
+import dynamic from "next/dynamic";
 
 import { BudgetAllocationPanel } from "./budget-allocation-panel";
 import { UnifiedBudgetTable } from "./unified-budget-table";
@@ -11,7 +12,14 @@ import { budgetUsed, hasReimbursementPermission, koreaDate, periodLabel, reimbur
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
 import { buildReimbursementOcrDraft } from "./reimbursement-ocr";
 import type { EvidenceOcrData } from "./expense-evidence";
-import { ReimbursementEvidencePreview } from "./reimbursement-evidence-preview";
+
+const ReimbursementEvidencePreview = dynamic(
+  () => import("./reimbursement-evidence-preview").then((module) => module.ReimbursementEvidencePreview),
+  {
+    loading: () => <div aria-live="polite" className="flex min-h-[440px] flex-1 items-center justify-center rounded-xl border bg-white p-6 text-sm text-slate-600" role="status">첨부 증빙 미리보기를 불러오고 있어.</div>,
+    ssr: false,
+  },
+);
 
 const card="rounded-2xl border border-[var(--color-soft-border)] bg-white p-5";
 const input="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";

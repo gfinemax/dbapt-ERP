@@ -22,6 +22,7 @@ describe("ErpShell", () => {
     expect(
       within(detailMenu).getByRole("link", { name: "기안 목록" }),
     ).not.toHaveAttribute("aria-current");
+    expect(navigation.badges).not.toHaveBeenCalled();
   });
 
   it("renders the grouped finance workflow in order and preserves workspace categories", () => {

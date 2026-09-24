@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import styles from "./expense-workspace.module.css";
 import { createPortal } from "react-dom";
 import {
@@ -46,7 +47,14 @@ import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import { recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
 import { ExpenseClassificationEditor } from "./expense-classification-editor";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
-import { ReimbursementEvidencePreview } from "./reimbursement-evidence-preview";
+
+const ReimbursementEvidencePreview = dynamic(
+  () => import("./reimbursement-evidence-preview").then((module) => module.ReimbursementEvidencePreview),
+  {
+    loading: () => <div aria-live="polite" className="flex min-h-[440px] flex-1 items-center justify-center rounded-xl border bg-white p-6 text-sm text-slate-600" role="status">첨부 증빙 미리보기를 불러오고 있어.</div>,
+    ssr: false,
+  },
+);
 
 const kinds = {
   RESOLUTION: "지출결의",

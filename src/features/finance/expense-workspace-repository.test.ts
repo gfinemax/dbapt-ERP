@@ -34,6 +34,30 @@ describe("expense original workspace identity and persistence", () => {
     const loaded = await loadExpenseWorkspace();
     expect(loaded.records[0]).toMatchObject({ usage_description: "계약 검토 수수료 지급", memo: "담당자 확인 완료" });
   });
+  it("starts independent source metadata requests without waiting for the small-expense pages", async () => {
+    let finishSmallRows!: (value: { data: never[]; error: null }) => void;
+    mocks.smallRows.mockReturnValue(new Promise((resolve) => { finishSmallRows = resolve; }));
+    mocks.rpc.mockResolvedValue({
+      data: {
+        records: [
+          { source_kind: "QUICK", source_id: "quick-1", created_at: "2026-09-20T00:00:00Z" },
+          { source_kind: "PERSONAL", source_id: "personal-1", created_at: "2026-09-19T00:00:00Z" },
+          { source_kind: "RESOLUTION", source_id: "resolution-1", created_at: "2026-09-18T00:00:00Z" },
+        ],
+      },
+      error: null,
+    });
+
+    const loading = loadExpenseWorkspace();
+    await vi.waitFor(() => {
+      expect(mocks.quickRows).toHaveBeenCalledWith("id", ["quick-1"]);
+      expect(mocks.personalRows).toHaveBeenCalledWith("id", ["personal-1"]);
+      expect(mocks.resolutionRows).toHaveBeenCalledWith("id", ["resolution-1"]);
+    });
+
+    finishSmallRows({ data: [], error: null });
+    await expect(loading).resolves.toMatchObject({ records: expect.any(Array) });
+  });
   it("denies inactive and unauthenticated access before touching privileged storage", async () => {
     mocks.identity.mockResolvedValueOnce({ ...member, active: false }); await expect(loadExpenseWorkspace()).rejects.toThrow("활성");
     mocks.identity.mockRejectedValueOnce(new Error("로그인 필요")); await expect(loadExpenseWorkspace()).rejects.toThrow("로그인");

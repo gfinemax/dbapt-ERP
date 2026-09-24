@@ -29,47 +29,45 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let directExpenseSettings = defaultExpenseComplianceSettings;
   let initialBudgetProfiles = {};
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
-  try {
-    initialResolutions = (await listExpenseResolutionsFromSupabase()) ?? [];
-  } catch (error) {
-    console.warn(`[expense-resolutions] Supabase data unavailable: ${error instanceof Error ? error.message : String(error)}`);
+  const organizationId = viewer.organization_id;
+  const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
+    listExpenseResolutionsFromSupabase(),
+    entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
+    listApprovalDocuments(organizationId),
+    getExpenseComplianceSettings(organizationId),
+    listUnresolvedWithdrawalTransactions(organizationId),
+    listUnresolvedCorporateCardTransactions(organizationId),
+    listExpenseBudgetProfiles(organizationId),
+    listOperatingExpenseDetails(organizationId),
+  ] as const);
+
+  if (resolutionResult.status === "fulfilled") initialResolutions = resolutionResult.value ?? [];
+  else {
+    console.warn(`[expense-resolutions] Supabase data unavailable: ${resolutionResult.reason instanceof Error ? resolutionResult.reason.message : String(resolutionResult.reason)}`);
     dataLoadError = "지출결의 저장소에 연결하지 못했습니다. 목록이 최신 상태가 아닐 수 있습니다. 잠시 후 새로고침해주세요.";
   }
-  if (entry.quickExpenseId) {
-    try {
-      const draft = await loadQuickExpenseConversionDraft(entry.quickExpenseId);
-      if (draft.linkedResolutionId) initialResolutionId = draft.linkedResolutionId;
-      else if (draft.recordStatus === "NEEDS_RESOLUTION") initialQuickExpense = draft;
-      else dataLoadError = "이 간편지출은 현재 정식 지출결의 전환 대상이 아닙니다. 간편지출 목록에서 처리 상태를 확인해주세요.";
-    } catch (error) {
-      dataLoadError = error instanceof Error ? error.message : "간편지출 전환 원본을 불러오지 못했습니다.";
-    }
+
+  if (quickResult.status === "fulfilled" && quickResult.value) {
+    const draft = quickResult.value;
+    if (draft.linkedResolutionId) initialResolutionId = draft.linkedResolutionId;
+    else if (draft.recordStatus === "NEEDS_RESOLUTION") initialQuickExpense = draft;
+    else dataLoadError = "이 간편지출은 현재 정식 지출결의 전환 대상이 아닙니다. 간편지출 목록에서 처리 상태를 확인해주세요.";
+  } else if (quickResult.status === "rejected") {
+    dataLoadError = quickResult.reason instanceof Error ? quickResult.reason.message : "간편지출 전환 원본을 불러오지 못했습니다.";
   }
-  try {
-    initialApprovalDocuments = (await listApprovalDocuments(viewer.organization_id)).filter((document) => document.approvalStatus === "APPROVED");
-    const organizationId = viewer.organization_id;
-    if (organizationId) directExpenseSettings = (await getExpenseComplianceSettings(organizationId)) ?? directExpenseSettings;
-  } catch (error) {
-    console.warn(`[expense-resolutions] Approval policy data unavailable: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  try {
-    const [bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
-      listUnresolvedWithdrawalTransactions(viewer.organization_id),
-      listUnresolvedCorporateCardTransactions(viewer.organization_id),
-      listExpenseBudgetProfiles(viewer.organization_id),
-      listOperatingExpenseDetails(viewer.organization_id),
-    ]);
-    if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
-    else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
-    if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
-    else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
-    if (budgetResult.status === "fulfilled") initialBudgetProfiles = budgetResult.value;
-    else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
-    if (detailResult.status === "fulfilled") initialExpenseDetails = detailResult.value;
-    else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
-  } catch (error) {
-    console.warn(`[expense-resolutions] Bank/card transaction data unavailable: ${error instanceof Error ? error.message : String(error)}`);
-  }
+
+  if (approvalResult.status === "fulfilled") initialApprovalDocuments = approvalResult.value.filter((document) => document.approvalStatus === "APPROVED");
+  else console.warn(`[expense-resolutions] Approval data unavailable: ${approvalResult.reason instanceof Error ? approvalResult.reason.message : String(approvalResult.reason)}`);
+  if (settingsResult.status === "fulfilled") directExpenseSettings = settingsResult.value ?? directExpenseSettings;
+  else console.warn(`[expense-resolutions] Approval policy data unavailable: ${settingsResult.reason instanceof Error ? settingsResult.reason.message : String(settingsResult.reason)}`);
+  if (bankResult.status === "fulfilled") initialBankTransactions = bankResult.value;
+  else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
+  if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
+  else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
+  if (budgetResult.status === "fulfilled") initialBudgetProfiles = budgetResult.value;
+  else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
+  if (detailResult.status === "fulfilled") initialExpenseDetails = detailResult.value;
+  else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
   return (
     <ExpenseResolutionPage
       key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}`}

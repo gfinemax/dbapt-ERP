@@ -5,15 +5,23 @@ import Link from "next/link";
 import { expenseResolutionHref } from "./expense-entry";
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
+import dynamic from "next/dynamic";
 import type { BankTransactionResolutionCandidate } from "./expense-compliance-repository";
 import type { CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import type { QuickExpensePrintEvidence, QuickExpenseRecord, QuickExpenseRecordInput, QuickExpensePaymentMethod } from "./quick-expense-record";
-import { QuickExpensePrintModal, type QuickExpensePrintTarget } from "./quick-expense-print";
+import type { QuickExpensePrintTarget } from "./quick-expense-print";
 import type { CorporateCardTransactionImportRow } from "./corporate-card-transaction-import";
 import { parseCorporateCardTransactionText } from "./corporate-card-transaction-import";
-import { readBankTransactionFile } from "./bank-transaction-file";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import { recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
+
+const QuickExpensePrintModal = dynamic(
+  () => import("./quick-expense-print").then((module) => module.QuickExpensePrintModal),
+  {
+    loading: () => <p aria-live="polite" className="rounded-xl border bg-white p-4 text-sm" role="status">출력 미리보기를 준비하고 있어.</p>,
+    ssr: false,
+  },
+);
 import type { EvidenceOcrData, EvidenceOcrJobProgress, ExpenseEvidenceAttachment, ExpenseEvidenceUploadResult } from "./expense-evidence";
 
 const paymentLabels: Record<QuickExpensePaymentMethod, string> = { AUTO_DEBIT: "자동이체", BANK_TRANSFER: "계좌이체", CASH: "현금", CORPORATE_CARD: "법인카드", PERSONAL_PREPAID: "개인 선결제" };
@@ -224,6 +232,7 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, embedded = f
   async function uploadCardFile(file: File) {
     if (!importCardTransactions) return setMessage("카드내역 저장소가 연결되지 않았어.");
     try {
+      const { readBankTransactionFile } = await import("./bank-transaction-file");
       const text = await readBankTransactionFile(file);
       const rows = parseCorporateCardTransactionText(text);
       if (!rows.length) throw new Error("등록할 카드 이용내역이 없어.");

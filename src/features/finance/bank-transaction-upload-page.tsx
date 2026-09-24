@@ -12,7 +12,6 @@ import { registeredBankAccounts } from "@/features/basic-info/business-partner-d
 import { formatKrw } from "./finance-data";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
-import { readBankTransactionFile } from "./bank-transaction-file";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -106,6 +105,7 @@ export function BankTransactionUploadPage({
     }
 
     try {
+      const { readBankTransactionFile } = await import("./bank-transaction-file");
       const text = await readBankTransactionFile(file);
       setTableText(text);
       createPreview(text);
