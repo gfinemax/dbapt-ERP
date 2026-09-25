@@ -5,6 +5,15 @@ import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
+async function getExpenseResolutionDialog(name: "간편지출을 정식결의로 전환" | "지출결의서 수정" | "지출결의서 작성") {
+  await act(async () => {
+    await import("./expense-resolution-create-modal");
+    if (vi.isFakeTimers()) await vi.runOnlyPendingTimersAsync();
+    else await new Promise((resolve) => window.setTimeout(resolve, 0));
+  });
+  return screen.getByRole("dialog", { name });
+}
+
 describe("ExpenseResolutionPage", () => {
   it("turns stale Server Action errors into a refresh instruction", () => {
     expect(getEvidenceUploadErrorMessage(new Error("An error occurred in the Server Components render. A digest property is included.")))
@@ -48,7 +57,7 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
   });
 
-  it("routes new small expenses away from resolutions and keeps legacy batches read-only", () => {
+  it("routes new small expenses away from resolutions and keeps legacy batches read-only", async () => {
     const legacy = expenseResolutionFixture({
       approvalLine: [],
       approvalStatus: "작성중",
@@ -79,7 +88,7 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByRole("button", { name: "기존 소액 일괄결의 1건" })).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const createDialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(createDialog).queryByText("소액경비 일괄결의", { selector: "button" })).not.toBeInTheDocument();
     expect(within(createDialog).queryByRole("option", { name: "소액경비 일괄결의" })).not.toBeInTheDocument();
     fireEvent.click(within(createDialog).getByRole("button", { name: "취소" }));
@@ -98,11 +107,11 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByRole("heading", { name: "지출결의서 관리" })).toBeInTheDocument();
   });
 
-  it("opens the real creation modal and saves the first draft", () => {
+  it("opens the real creation modal and saves the first draft", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
 
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(dialog).getByLabelText("결의서번호")).toHaveValue("지결-2026-0001");
     expect(within(dialog).getByLabelText("작성자")).toHaveValue("오학동 사무장");
 
@@ -124,7 +133,7 @@ describe("ExpenseResolutionPage", () => {
     const convertQuickExpense = vi.fn(async (_sourceId, resolution) => resolution);
     const persistResolution = vi.fn(async (resolution) => resolution);
     render(<ExpenseResolutionPage convertQuickExpense={convertQuickExpense} initialQuickExpense={source} initialResolutions={[]} persistResolution={persistResolution} />);
-    const dialog = screen.getByRole("dialog", { name: "간편지출을 정식결의로 전환" });
+    const dialog = await getExpenseResolutionDialog("간편지출을 정식결의로 전환");
     expect(within(dialog).getByLabelText("건명 (필수)")).toHaveValue("Paint supplies");
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     expect(within(dialog).getByLabelText("거래처명")).toHaveValue("Paint vendor");
@@ -144,7 +153,7 @@ describe("ExpenseResolutionPage", () => {
     const expenseDetails = [{ id: "detail-communications", code: "PUBLIC-COMM", groupName: "공공요금·수수료", name: "통신비", budgetItem: "제세공과금>통신비", status: "CONFIRMED" as const, quickExpenseEligible: true }];
     render(<ExpenseResolutionPage initialExpenseDetails={expenseDetails} initialResolutions={[]} persistResolution={persistResolution} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.change(within(dialog).getByLabelText("건명 (필수)"), { target: { value: "조합 사무실 인터넷 요금" } });
     await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 10)); });
     fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
@@ -156,7 +165,7 @@ describe("ExpenseResolutionPage", () => {
     const persistResolution = vi.fn(async (resolution) => resolution);
     const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const createDialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.change(within(createDialog).getByLabelText("건명 (필수)"), { target: { value: "통신 구입" } });
     fireEvent.click(within(createDialog).getByRole("button", { name: "임시저장" }));
 
@@ -170,7 +179,7 @@ describe("ExpenseResolutionPage", () => {
     const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
     fireEvent.click(within(detailDialog).getByRole("button", { name: "수정 후 재요청" }));
 
-    const editDialog = screen.getByRole("dialog", { name: "지출결의서 수정" });
+    const editDialog = await getExpenseResolutionDialog("지출결의서 수정");
     expect(within(editDialog).getByLabelText("건명 (필수)")).toHaveValue("통신 구입");
     expect(within(editDialog).getByText(/승인대기 문서는 저장 시 결재 상태를 다시 시작합니다/)).toBeInTheDocument();
     fireEvent.change(within(editDialog).getByLabelText("건명 (필수)"), { target: { value: "우편 발송비" } });
@@ -187,7 +196,7 @@ describe("ExpenseResolutionPage", () => {
     const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
 
-    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const createDialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.change(within(createDialog).getByLabelText("지급은행"), { target: { value: "기업은행" } });
     fireEvent.change(within(createDialog).getByLabelText("지급계좌번호"), { target: { value: "222-028736-02-019" } });
     fireEvent.change(within(createDialog).getByLabelText("예금주"), { target: { value: "오학동" } });
@@ -212,7 +221,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 상세" })).getByRole("button", { name: "수정" }));
 
-    const editDialog = screen.getByRole("dialog", { name: "지출결의서 수정" });
+    const editDialog = await getExpenseResolutionDialog("지출결의서 수정");
     expect(within(editDialog).getByLabelText("지급대상")).toHaveValue("manual");
     expect(within(editDialog).getByLabelText("지급은행")).toHaveValue("기업은행");
     expect(within(editDialog).getByLabelText("지급계좌번호")).toHaveValue("222-028736-02-019");
@@ -224,7 +233,7 @@ describe("ExpenseResolutionPage", () => {
     const persistResolution = vi.fn(async (resolution) => resolution);
     const firstRender = render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 작성" })).getByRole("button", { name: "임시저장" }));
+    fireEvent.click(within(await getExpenseResolutionDialog("지출결의서 작성")).getByRole("button", { name: "임시저장" }));
 
     await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
     const draft = persistResolution.mock.calls[0][0];
@@ -244,10 +253,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(resolutionRow!).queryByText("오학동 사무장")).not.toBeInTheDocument();
   });
 
-  it("shows a pending budget selection instead of a false budget overrun", () => {
+  it("shows a pending budget selection instead of a false budget overrun", async () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
 
@@ -255,11 +264,11 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).queryByText("예산초과")).not.toBeInTheDocument();
   });
 
-  it("restores local drafts only in the standalone form without a server source", () => {
+  it("restores local drafts only in the standalone form without a server source", async () => {
     const firstRender = render(<ExpenseResolutionPage />);
     act(() => vi.runOnlyPendingTimers());
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 작성" })).getByRole("button", { name: "임시저장" }));
+    fireEvent.click(within(await getExpenseResolutionDialog("지출결의서 작성")).getByRole("button", { name: "임시저장" }));
     expect(localStorage.getItem("dbapt-erp:finance:expense-resolutions")).toContain("지결-2026-0001");
     firstRender.unmount();
 
@@ -269,11 +278,11 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();
   });
 
-  it("guides the author through payment, evidence, and approval review steps", () => {
+  it("guides the author through payment, evidence, and approval review steps", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
 
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(dialog).getByText("지출내역을 어떤 방식으로 작성하시겠습니까?")).toBeInTheDocument();
     expect(within(dialog).getByText("이번 지출은 언제 신청하는 건가요?")).toBeInTheDocument();
     expect(within(dialog).getByText("지출내역을 어떻게 등록하시겠습니까?")).toBeInTheDocument();
@@ -295,22 +304,22 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("button", { name: "승인요청" })).toBeInTheDocument();
   });
 
-  it("opens the evidence file picker immediately when automatic input is selected", () => {
+  it("opens the evidence file picker immediately when automatic input is selected", async () => {
     const inputClick = vi.spyOn(HTMLInputElement.prototype, "click");
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
 
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "증빙자료 자동입력" }));
 
     expect(inputClick).toHaveBeenCalledTimes(1);
     expect(within(dialog).getByLabelText("증빙자료 자동입력 파일 선택")).toBeInTheDocument();
   });
 
-  it("provides a corporate-card quick entry flow with missing-receipt reasons", () => {
+  it("provides a corporate-card quick entry flow with missing-receipt reasons", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
     expect(within(dialog).getByRole("heading", { name: "예산 내 간편지출" })).toBeInTheDocument();
@@ -334,7 +343,7 @@ describe("ExpenseResolutionPage", () => {
     const persistResolution = vi.fn(async (resolution) => resolution);
     render(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persistResolution} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "카드 사용 임시등록" }));
@@ -349,7 +358,7 @@ describe("ExpenseResolutionPage", () => {
     });
   });
 
-  it("creates a taxi expense draft from an unresolved corporate-card transaction", () => {
+  it("creates a taxi expense draft from an unresolved corporate-card transaction", async () => {
     render(<ExpenseResolutionPage initialCardTransactions={[{
       amount: 18500,
       approvalNo: "48392011",
@@ -361,7 +370,7 @@ describe("ExpenseResolutionPage", () => {
       merchantName: "카카오T",
     }]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
     fireEvent.change(within(dialog).getByLabelText("법인카드 승인내역"), { target: { value: "card-tx-1" } });
@@ -376,7 +385,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
   });
 
-  it("connects a bank withdrawal through the budget-direct quick expense flow", () => {
+  it("connects a bank withdrawal through the budget-direct quick expense flow", async () => {
     render(<ExpenseResolutionPage initialBankTransactions={[{
       counterparty: "KT",
       description: "사무실 인터넷 요금",
@@ -386,7 +395,7 @@ describe("ExpenseResolutionPage", () => {
       withdrawalAmount: 55000,
     }]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "계좌이체" }));
@@ -401,10 +410,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(55000);
   });
 
-  it("shows fields that match the selected expense timing", () => {
+  it("shows fields that match the selected expense timing", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
 
     expect(within(dialog).getByLabelText("집행방식")).toHaveValue("VENDOR_DIRECT");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
@@ -419,10 +428,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("정산일")).toBeInTheDocument();
   });
 
-  it("calculates multiple single items and validates account allocations", () => {
+  it("calculates multiple single items and validates account allocations", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
 
     fireEvent.change(within(dialog).getByLabelText("품목명 1"), { target: { value: "복사용지" } });
@@ -443,10 +452,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByText("계정과목 분할금액 합계를 총지급액과 일치시켜주세요.")).toBeInTheDocument();
   });
 
-  it("opens the existing resolution in edit mode from a print validation warning", () => {
+  it("opens the existing resolution in edit mode from a print validation warning", async () => {
     render(<ExpenseResolutionPage />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    fireEvent.click(within(screen.getByRole("dialog", { name: "지출결의서 작성" })).getByRole("button", { name: "임시저장" }));
+    fireEvent.click(within(await getExpenseResolutionDialog("지출결의서 작성")).getByRole("button", { name: "임시저장" }));
 
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
     const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
@@ -457,7 +466,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(warningDialog).getByText(/거래처가 입력되지 않았습니다/)).toBeInTheDocument();
     fireEvent.click(within(warningDialog).getByRole("button", { name: "수정하기" }));
 
-    const editDialog = screen.getByRole("dialog", { name: "지출결의서 수정" });
+    const editDialog = await getExpenseResolutionDialog("지출결의서 수정");
     expect(within(editDialog).getByLabelText("결의서번호")).toHaveValue("지결-2026-0001");
     fireEvent.change(within(editDialog).getByLabelText("거래처명"), { target: { value: "테스트 거래처" } });
     fireEvent.click(within(editDialog).getByRole("button", { name: "수정사항 저장" }));
@@ -466,10 +475,10 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText("테스트 거래처")).toBeInTheDocument();
   });
 
-  it("prints project identity and the detailed expense rows for a batch resolution", () => {
+  it("prints project identity and the detailed expense rows for a batch resolution", async () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const createDialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const createDialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(createDialog).getByRole("button", { name: "프로젝트 일괄 지출결의" }));
     expect(within(createDialog).getByRole("button", { name: "엑셀 일괄등록" })).toBeInTheDocument();
     fireEvent.change(within(createDialog).getByLabelText("프로젝트/사업과제"), { target: { value: "사무국 비품 구입" } });
@@ -553,7 +562,7 @@ describe("ExpenseResolutionPage", () => {
     vi.useRealTimers();
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "엑셀 가져오기" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(dialog).getByRole("button", { name: "엑셀 일괄등록" })).toHaveAttribute("aria-pressed", "true");
 
     const csv = [
@@ -592,7 +601,7 @@ describe("ExpenseResolutionPage", () => {
     });
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     expect(within(dialog).getByRole("button", { name: "증빙자료 자동입력" })).toHaveAttribute("aria-pressed", "true");
 
@@ -643,7 +652,7 @@ describe("ExpenseResolutionPage", () => {
     });
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
 
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), {
@@ -680,7 +689,7 @@ describe("ExpenseResolutionPage", () => {
     }), { headers: { "Content-Type": "application/json" }, status: 201 }));
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "우편영수증.png", { type: "image/png" })] } });
 
@@ -710,7 +719,7 @@ describe("ExpenseResolutionPage", () => {
     });
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "증빙자료 자동입력" }));
     const file = new File(["합계 33,000원"], "카드영수증.png", { type: "image/png" });
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
@@ -720,10 +729,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("부가세 1")).toHaveValue(0);
   });
 
-  it("selects evidence OCR automatically for settlement expenses", () => {
+  it("selects evidence OCR automatically for settlement expenses", async () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이전에 받은 금액을 정산합니다" }));
 
     expect(within(dialog).getByRole("button", { name: "증빙자료 자동입력" })).toHaveAttribute("aria-pressed", "true");
@@ -735,7 +744,7 @@ describe("ExpenseResolutionPage", () => {
     const uploadEvidence = vi.fn(() => new Promise<ExpenseEvidenceAttachment>((resolve) => { finishUpload = resolve; }));
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     const file = new File(["pdf"], "카드영수증.pdf", { type: "application/pdf" });
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
@@ -762,7 +771,7 @@ describe("ExpenseResolutionPage", () => {
     const uploadEvidence = vi.fn().mockRejectedValue(new Error("PDF 업로드 요청이 실패했습니다."));
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     const file = new File(["pdf"], "실패영수증.pdf", { type: "application/pdf" });
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
@@ -777,7 +786,7 @@ describe("ExpenseResolutionPage", () => {
     const uploadEvidence = vi.fn().mockRejectedValue(new Error("An error occurred in the Server Components render. A digest property is included."));
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "영수증.png", { type: "image/png" })] } });
 
@@ -795,7 +804,7 @@ describe("ExpenseResolutionPage", () => {
     });
     render(<ExpenseResolutionPage initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     const file = new File(["image"], "실패영수증.jpg", { type: "image/jpeg" });
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [file] } });
@@ -804,10 +813,10 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("alert")).not.toHaveTextContent("Server Components render");
   });
 
-  it("moves to the matching field when a missing-field validation message is clicked", () => {
+  it("moves to the matching field when a missing-field validation message is clicked", async () => {
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.change(within(dialog).getByLabelText("기안 생략 사유"), { target: { value: "승인 예산 내 일상 지출" } });
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
@@ -845,7 +854,7 @@ describe("ExpenseResolutionPage", () => {
     });
     render(<ExpenseResolutionPage getEvidenceOcrJob={getEvidenceOcrJob} initialResolutions={[]} uploadEvidence={uploadEvidence} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
-    const dialog = screen.getByRole("dialog", { name: "지출결의서 작성" });
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     fireEvent.click(within(dialog).getByRole("button", { name: "이미 결제한 비용을 신청합니다" }));
     fireEvent.change(within(dialog).getByLabelText("증빙자료 파일 선택"), { target: { files: [new File(["image"], "봉투구매.jpg", { type: "image/jpeg" })] } });
 

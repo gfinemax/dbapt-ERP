@@ -5,6 +5,15 @@ import { ExpenseResolutionPage, type ManagedExpenseResolution } from "./expense-
 
 beforeEach(() => localStorage.clear());
 
+async function getExpenseResolutionDialog(name: "지출결의서 작성" | "지출결의서 상세" = "지출결의서 작성") {
+  await act(async () => {
+    await import("./expense-resolution-create-modal");
+    await new Promise(resolve => window.setTimeout(resolve, 0));
+  });
+
+  return within(screen.getByRole("dialog", { name }));
+}
+
 describe("expense entry and server-authoritative saves", () => {
   it("accepts only supported starts and gives exact original IDs precedence", () => {
     expect(parseExpenseEntry({ start: "reimbursement" })).toEqual({ start: "reimbursement", resolutionId: undefined });
@@ -14,10 +23,10 @@ describe("expense entry and server-authoritative saves", () => {
     expect(expenseResolutionHref({ resolutionId: "text/id & 1" })).toBe("/finance/expense-resolutions?resolutionId=text%2Fid+%26+1");
   });
 
-  it.each(["advance", "reimbursement"] as const)("opens %s without inventing actual dates or creating a row", start => {
+  it.each(["advance", "reimbursement"] as const)("opens %s without inventing actual dates or creating a row", async start => {
     const persist = vi.fn();
     render(<ExpenseResolutionPage initialResolutions={[]} initialEntryStart={start} persistResolution={persist} />);
-    const dialog = within(screen.getByRole("dialog", { name: "지출결의서 작성" }));
+    const dialog = await getExpenseResolutionDialog();
     expect(dialog.getByRole("button", { name: start === "advance" ? "구매·집행 전에 승인을 받습니다" : "이미 결제한 비용을 신청합니다" })).toHaveAttribute("aria-pressed", "true");
     expect(dialog.getByLabelText("실제 지출일")).toHaveValue("");
     expect(persist).not.toHaveBeenCalled();
@@ -38,7 +47,7 @@ describe("expense entry and server-authoritative saves", () => {
       .mockRejectedValueOnce(new Error("권한 확인 실패"))
       .mockImplementation(row => new Promise(done => { resolve = () => done(row); }));
     const view = render(<ExpenseResolutionPage initialResolutions={[]} initialEntryStart="reimbursement" persistResolution={persist} />);
-    let dialog = within(screen.getByRole("dialog", { name: "지출결의서 작성" }));
+    let dialog = await getExpenseResolutionDialog();
     fireEvent.change(dialog.getByLabelText("건명 (필수)"), { target: { value: "3월 사용분 정산" } });
     fireEvent.click(dialog.getByRole("button", { name: "임시저장" }));
     await screen.findByText(/저장하지 못했습니다/);
@@ -58,7 +67,7 @@ describe("expense entry and server-authoritative saves", () => {
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();
     view.unmount();
     render(<ExpenseResolutionPage initialResolutions={[saved]} initialResolutionId={saved.id} initialEntryStart="advance" persistResolution={persist} />);
-    dialog = within(screen.getByRole("dialog", { name: "지출결의서 상세" }));
+    dialog = await getExpenseResolutionDialog("지출결의서 상세");
     expect(dialog.getAllByText("3월 사용분 정산").length).toBeGreaterThan(0);
     expect(screen.queryByRole("dialog", { name: "지출결의서 작성" })).not.toBeInTheDocument();
     expect(persist).toHaveBeenCalledTimes(2);
@@ -67,7 +76,7 @@ describe("expense entry and server-authoritative saves", () => {
   it("replaces a previously displayed list with an empty server refresh", async () => {
     const persist = vi.fn(async (row: ManagedExpenseResolution) => row);
     const view = render(<ExpenseResolutionPage initialResolutions={[]} initialEntryStart="advance" persistResolution={persist} />);
-    fireEvent.click(within(screen.getByRole("dialog")).getByRole("button", { name: "임시저장" }));
+    fireEvent.click((await getExpenseResolutionDialog()).getByRole("button", { name: "임시저장" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument());
     view.rerender(<ExpenseResolutionPage initialResolutions={[]} persistResolution={persist} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "전체 0" })).toBeInTheDocument());
