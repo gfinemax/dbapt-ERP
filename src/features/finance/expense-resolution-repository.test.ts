@@ -68,6 +68,27 @@ describe("expense resolution repository", () => {
     )[0]).toMatchObject({ singleItems: [item], accountAllocations: [allocation] });
   });
 
+  it("groups interleaved child rows by resolution while retaining item order", () => {
+    const first = expenseResolutionFixture({ id: "resolution-1", expenseItems: [], singleItems: [] });
+    const second = expenseResolutionFixture({ id: "resolution-2", expenseItems: [], singleItems: [] });
+    const firstLaterItem = { id: "first-2", itemName: "토너", memo: "", quantity: "1", unitPrice: "20000", supplyAmount: 20000, taxCategory: "TAXABLE" as const, vatAmount: 2000, totalAmount: 22000 };
+    const firstEarlierItem = { ...firstLaterItem, id: "first-1", itemName: "복사용지" };
+    const secondItem = { ...firstLaterItem, id: "second-1", itemName: "봉투" };
+
+    const hydrated = hydrateExpenseResolutionChildren(
+      [first, second],
+      [
+        { resolution_id: first.id, item_kind: "SINGLE", item_no: 2, item_data: firstLaterItem },
+        { resolution_id: second.id, item_kind: "SINGLE", item_no: 1, item_data: secondItem },
+        { resolution_id: first.id, item_kind: "SINGLE", item_no: 1, item_data: firstEarlierItem },
+      ],
+      [],
+    );
+
+    expect(hydrated[0].singleItems?.map((item) => item.id)).toEqual(["first-1", "first-2"]);
+    expect(hydrated[1].singleItems?.map((item) => item.id)).toEqual(["second-1"]);
+  });
+
   it("maps private evidence metadata without exposing a public URL", () => {
     const resolution = {
       id: "expense-resolution-1",

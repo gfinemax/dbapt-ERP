@@ -4,6 +4,7 @@ import type { ExpenseAuthorization } from "./expense-authorization";
 import type { AccountAllocation, BatchExpenseItem, ManagedExpenseResolution, SingleExpenseItem } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
+import type { ReimbursementMember } from "./reimbursement-domain";
 
 export const expenseResolutionRepositorySchema = "finance";
 
@@ -158,17 +159,18 @@ export function hydrateExpenseResolutionChildren(
   allocationRows: ExpenseAccountAllocationRow[],
   evidenceRows: ExpenseEvidenceRow[] = [],
 ) {
+  const itemRowsByResolution = groupRowsByResolution(itemRows);
+  const allocationRowsByResolution = groupRowsByResolution(allocationRows);
+  const evidenceRowsByResolution = groupRowsByResolution(evidenceRows);
+
   return resolutions.map((resolution) => {
-    const matchingItems = itemRows
-      .filter((row) => row.resolution_id === resolution.id)
+    const matchingItems = (itemRowsByResolution.get(resolution.id) ?? [])
       .sort((first, second) => first.item_no - second.item_no);
     const batchItems = matchingItems.filter((row) => row.item_kind === "BATCH").map((row) => row.item_data as BatchExpenseItem);
     const singleItems = matchingItems.filter((row) => row.item_kind === "SINGLE").map((row) => row.item_data as SingleExpenseItem);
-    const accountAllocations = allocationRows
-      .filter((row) => row.resolution_id === resolution.id)
+    const accountAllocations = (allocationRowsByResolution.get(resolution.id) ?? [])
       .map((row) => row.allocation_data);
-    const evidenceFiles = evidenceRows
-      .filter((row) => row.resolution_id === resolution.id)
+    const evidenceFiles = (evidenceRowsByResolution.get(resolution.id) ?? [])
       .map((row) => ({
         contentType: row.content_type,
         evidenceType: row.evidence_type,
@@ -196,8 +198,18 @@ export function hydrateExpenseResolutionChildren(
   });
 }
 
-export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpenseResolution[] | null> {
-  const actor = await requireExpenseActor();
+function groupRowsByResolution<Row extends { resolution_id: string }>(rows: Row[]) {
+  const groupedRows = new Map<string, Row[]>();
+  for (const row of rows) {
+    const matchingRows = groupedRows.get(row.resolution_id);
+    if (matchingRows) matchingRows.push(row);
+    else groupedRows.set(row.resolution_id, [row]);
+  }
+  return groupedRows;
+}
+
+export async function listExpenseResolutionsFromSupabase(verifiedActor?: ReimbursementMember): Promise<ManagedExpenseResolution[] | null> {
+  const actor = verifiedActor ?? await requireExpenseActor();
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
 
@@ -212,15 +224,17 @@ export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpen
   if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
   const sourceRows = (data ?? []) as ExpenseResolutionRow[];
   if (!sourceRows.length) return [];
-  const { data: bindingRows, error: bindingError } = await supabase.schema("finance").from("expense_authorization_bindings")
-    .select("resolution_id,author_user_id,steps,version").eq("organization_id", actor.organization_id).in("resolution_id", sourceRows.map(row => row.resolution_data.id));
-  if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
-  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
-  const resolutions = sourceRows.map(row => ({ ...row.resolution_data, authorization: bindingMap.get(row.resolution_data.id) ?? null }));
-  if (!resolutions.length) return [];
-
-  const resolutionIds = resolutions.map((resolution) => resolution.id);
-  const [{ data: itemData, error: itemError }, { data: allocationData, error: allocationError }, { data: evidenceData, error: evidenceError }] = await Promise.all([
+  const resolutionIds = sourceRows.map((row) => row.resolution_data.id);
+  const [
+    { data: bindingRows, error: bindingError },
+    { data: itemData, error: itemError },
+    { data: allocationData, error: allocationError },
+    { data: evidenceData, error: evidenceError },
+  ] = await Promise.all([
+    supabase.schema("finance").from("expense_authorization_bindings")
+      .select("resolution_id,author_user_id,steps,version")
+      .eq("organization_id", actor.organization_id)
+      .in("resolution_id", resolutionIds),
     supabase
       .schema(expenseResolutionRepositorySchema)
       .from("expense_resolution_items")
@@ -240,9 +254,12 @@ export async function listExpenseResolutionsFromSupabase(): Promise<ManagedExpen
       .in("resolution_id", resolutionIds)
       .order("uploaded_at", { ascending: true }),
   ]);
+  if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
   if (itemError) throw new Error(`Failed to list expense resolution items: ${itemError.message}`);
   if (allocationError) throw new Error(`Failed to list expense account allocations: ${allocationError.message}`);
   if (evidenceError) throw new Error(`Failed to list expense evidence: ${evidenceError.message}`);
+  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
+  const resolutions = sourceRows.map(row => ({ ...row.resolution_data, authorization: bindingMap.get(row.resolution_data.id) ?? null }));
   return hydrateExpenseResolutionChildren(
     resolutions,
     (itemData ?? []) as ExpenseResolutionItemRow[],

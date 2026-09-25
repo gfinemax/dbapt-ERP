@@ -31,7 +31,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   const organizationId = viewer.organization_id;
   const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
-    listExpenseResolutionsFromSupabase(),
+    listExpenseResolutionsFromSupabase(viewer),
     entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
     listApprovalDocuments(organizationId),
     getExpenseComplianceSettings(organizationId),

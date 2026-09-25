@@ -26,7 +26,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const canReadDocuments = viewer.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p));
   const results = await Promise.allSettled([
     canReadDocuments && ["all", "general"].includes(type) ? listApprovalDocuments(viewer.organization_id) : Promise.resolve([]),
-    canReadDocuments && ["all", "expense"].includes(type) ? listExpenseResolutionsFromSupabase().then(rows => { if (!rows) throw new Error("지출결의 저장소 연결이 필요해."); return rows; }) : Promise.resolve([]),
+    canReadDocuments && ["all", "expense"].includes(type) ? listExpenseResolutionsFromSupabase(viewer).then(rows => { if (!rows) throw new Error("지출결의 저장소 연결이 필요해."); return rows; }) : Promise.resolve([]),
     type === "all" ? loadSmallExpenseInbox(viewer) : Promise.resolve([]),
     type === "small" ? loadSmallExpenseWorkspace(viewer, month) : Promise.resolve(null),
   ]);

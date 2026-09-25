@@ -32,7 +32,7 @@ export default async function Page() {
   }[] = [];
   let message = "";
   try {
-    records = (await listExpenseResolutionsFromSupabase()) ?? [];
+    records = (await listExpenseResolutionsFromSupabase(actor)) ?? [];
     const { data, error } = await expenseDb()
       .schema("finance")
       .from("reimbursement_members")
