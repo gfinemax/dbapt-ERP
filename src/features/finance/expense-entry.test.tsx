@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { expenseResolutionHref, parseExpenseEntry } from "./expense-entry";
 import { ExpenseResolutionPage, type ManagedExpenseResolution } from "./expense-resolution-page";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
+
 beforeEach(() => localStorage.clear());
 
 async function getExpenseResolutionDialog(name: "지출결의서 작성" | "지출결의서 상세" = "지출결의서 작성") {

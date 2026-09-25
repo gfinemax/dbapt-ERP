@@ -5,6 +5,9 @@ import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
+const navigation = vi.hoisted(() => ({ push: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push: navigation.push }) }));
+
 async function getExpenseResolutionDialog(name: "간편지출을 정식결의로 전환" | "지출결의서 수정" | "지출결의서 작성") {
   await act(async () => {
     await import("./expense-resolution-create-modal");
@@ -32,6 +35,7 @@ describe("ExpenseResolutionPage", () => {
   });
   beforeEach(() => {
     localStorage.clear();
+    navigation.push.mockReset();
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-07-03T09:00:00+09:00"));
   });
@@ -55,6 +59,30 @@ describe("ExpenseResolutionPage", () => {
     expect(within(listTable).queryByRole("columnheader", { name: "증빙" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "작성 양식" })).not.toBeInTheDocument();
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
+  });
+
+  it("shows the server total and navigates between result pages", () => {
+    render(<ExpenseResolutionPage
+      initialListPage={{ page: 2, pageSize: 50, query: "", total: 120, totalPages: 3 }}
+      initialResolutions={[expenseResolutionFixture({ id: "page-2", resolutionNo: "지결-2026-0051" })]}
+    />);
+
+    expect(screen.getByRole("button", { name: "전체 120" })).toBeInTheDocument();
+    expect(screen.getByText(/전체 120건 · 2\/3 페이지/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다음" }));
+    expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?page=3");
+  });
+
+  it("uses the server-wide next number when creating from a paginated result", async () => {
+    render(<ExpenseResolutionPage
+      initialListPage={{ page: 2, pageSize: 50, query: "", total: 120, totalPages: 3 }}
+      initialNextResolutionNo="지결-2026-0121"
+      initialResolutions={[expenseResolutionFixture({ id: "page-2", resolutionNo: "지결-2026-0051" })]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
+    expect(within(dialog).getByLabelText("결의서번호")).toHaveValue("지결-2026-0121");
   });
 
   it("routes new small expenses away from resolutions and keeps legacy batches read-only", async () => {

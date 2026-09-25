@@ -1,7 +1,8 @@
 import { ExpenseResolutionPage } from "@/features/finance/expense-resolution-page";
 import { parseExpenseEntry } from "@/features/finance/expense-entry";
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
-import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
+import { listExpenseResolutionPageFromSupabase } from "@/features/finance/expense-resolution-repository";
+import { parseExpenseResolutionListRequest, type ExpenseResolutionListPage } from "@/features/finance/expense-resolution-list";
 import { listUnresolvedWithdrawalTransactions } from "@/features/finance/expense-compliance-repository";
 import { getExpenseComplianceSettings } from "@/features/finance/expense-compliance-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
@@ -16,13 +17,17 @@ import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAc
 
 export const dynamic = "force-dynamic";
 export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
-  const entry = parseExpenseEntry(await searchParams ?? {});
+  const params = await searchParams ?? {};
+  const entry = parseExpenseEntry(params);
+  const listRequest = parseExpenseResolutionListRequest(params);
   let viewer;
   try { viewer = await requireExpenseActor(); } catch (error) { return <ReimbursementLogin title="지출결의" description="본인 계정으로 로그인해서 지출결의 권한을 확인해줘." error={error instanceof Error ? error.message : "로그인이 필요합니다."} />; }
   let dataLoadError: string | undefined;
   let initialQuickExpense: QuickExpenseConversionDraft | undefined;
   let initialResolutionId = entry.resolutionId;
   let initialResolutions: ManagedExpenseResolution[] = [];
+  let initialListPage: ExpenseResolutionListPage | undefined;
+  let initialNextResolutionNo: string | undefined;
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
   let initialCardTransactions: Awaited<ReturnType<typeof listUnresolvedCorporateCardTransactions>> = [];
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovalDocuments>> = [];
@@ -31,7 +36,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   const organizationId = viewer.organization_id;
   const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
-    listExpenseResolutionsFromSupabase(viewer),
+    listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer),
     entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
     listApprovalDocuments(organizationId),
     getExpenseComplianceSettings(organizationId),
@@ -41,7 +46,11 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     listOperatingExpenseDetails(organizationId),
   ] as const);
 
-  if (resolutionResult.status === "fulfilled") initialResolutions = resolutionResult.value ?? [];
+  if (resolutionResult.status === "fulfilled") {
+    initialResolutions = resolutionResult.value?.items ?? [];
+    initialListPage = resolutionResult.value?.pagination;
+    initialNextResolutionNo = resolutionResult.value?.nextResolutionNo;
+  }
   else {
     console.warn(`[expense-resolutions] Supabase data unavailable: ${resolutionResult.reason instanceof Error ? resolutionResult.reason.message : String(resolutionResult.reason)}`);
     dataLoadError = "지출결의 저장소에 연결하지 못했습니다. 목록이 최신 상태가 아닐 수 있습니다. 잠시 후 새로고침해주세요.";
@@ -70,7 +79,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
   return (
     <ExpenseResolutionPage
-      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}`}
+      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}`}
       viewer={viewer}
       initialEntryStart={entry.start}
       initialResolutionId={initialResolutionId}
@@ -83,6 +92,8 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       ensureBusinessPartnerFromOcr={ensureBusinessPartnerFromOcrAction}
       getEvidenceOcrJob={getExpenseEvidenceOcrJobAction}
       initialResolutions={initialResolutions}
+      initialListPage={initialListPage}
+      initialNextResolutionNo={initialNextResolutionNo}
       initialBankTransactions={initialBankTransactions}
       initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}

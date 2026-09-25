@@ -1,14 +1,16 @@
 "use client";
 
 import { CheckCircle2, ChevronDown, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
-import type { ReactNode } from "react";
-import { createContext, useEffectEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { createContext, useDeferredValue, useEffectEvent, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
+import { expenseResolutionListHref, type ExpenseResolutionListPage } from "./expense-resolution-list";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
@@ -1687,6 +1689,11 @@ function getNextResolutionNo(resolutions: ManagedExpenseResolution[], currentDat
   return `${prefix}-${year}-${String(maxSequence + 1).padStart(4, "0")}`;
 }
 
+function getNextResolutionNoForLoadedPage(resolutions: ManagedExpenseResolution[], serverSuggestion?: string) {
+  const localSuggestion = getNextResolutionNo(resolutions);
+  return serverSuggestion && serverSuggestion > localSuggestion ? serverSuggestion : localSuggestion;
+}
+
 function getDisplayApprovalLine(resolution: ManagedExpenseResolution) {
   return resolution.approvalLine.map((step) =>
     getApproverLabel(step) === resolution.currentApprover && step.status === "대기"
@@ -2148,6 +2155,8 @@ export function ExpenseResolutionPage({
   ensureBusinessPartnerFromOcr,
   getEvidenceOcrJob,
   initialResolutions,
+  initialListPage,
+  initialNextResolutionNo,
   initialBankTransactions = [],
   initialCardTransactions = [],
   initialApprovalDocuments = [],
@@ -2177,6 +2186,8 @@ export function ExpenseResolutionPage({
   ensureBusinessPartnerFromOcr?: (input: BusinessPartnerOcrInput) => Promise<BusinessPartnerRegistrationResult>;
   getEvidenceOcrJob?: (id: string) => Promise<EvidenceOcrJobProgress>;
   initialResolutions?: ManagedExpenseResolution[];
+  initialListPage?: ExpenseResolutionListPage;
+  initialNextResolutionNo?: string;
   initialBankTransactions?: BankTransactionResolutionCandidate[];
   initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocument[];
@@ -2198,6 +2209,7 @@ export function ExpenseResolutionPage({
   transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
   uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult>;
 } = {}) {
+  const router = useRouter();
   const currentUserName = viewer?.display_name ?? `${currentUser.name} ${currentUser.title}`;
   const uploadEvidenceRequest = uploadEvidence ?? uploadExpenseEvidenceViaRoute;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
@@ -2216,7 +2228,9 @@ export function ExpenseResolutionPage({
   const [isEvidenceUploading, setIsEvidenceUploading] = useState(false);
   const [evidenceOcrProgress, setEvidenceOcrProgress] = useState<Record<string, EvidenceOcrJobProgress>>({});
   const [activeTab, setActiveTab] = useState<ResolutionTabKey>("all");
-  const [searchQuery, setSearchQuery] = useState("");
+  const [searchQuery, setSearchQuery] = useState(initialListPage?.query ?? "");
+  const deferredSearchQuery = useDeferredValue(searchQuery);
+  const [isListNavigationPending, startListNavigation] = useTransition();
   const [approvalFilter, setApprovalFilter] = useState("");
   const [paymentFilter, setPaymentFilter] = useState("");
   const [expenseKindFilter, setExpenseKindFilter] = useState("");
@@ -2240,9 +2254,9 @@ export function ExpenseResolutionPage({
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
-    if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNo(resolutions)), author: currentUserName, settlementManager: currentUserName };
-    if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNo(resolutions), currentUserName);
-    const form = createFormState(getNextResolutionNo(resolutions), undefined, currentUserName);
+    if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo)), author: currentUserName, settlementManager: currentUserName };
+    if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), currentUserName);
+    const form = createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName);
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
   const [quickConversionSourceId, setQuickConversionSourceId] = useState<string | null>(initialQuickExpense?.sourceId ?? null);
@@ -2279,9 +2293,10 @@ export function ExpenseResolutionPage({
   const effectiveFormTotalAmount = formState.resolutionType === "BATCH" ? formBatchSummary.totalAmount : formTotalAmount;
   const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod, initialBudgetProfiles);
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
-  const tabItems = getResolutionTabItems(resolutions, viewer);
+  const tabItems = useMemo(() => getResolutionTabItems(resolutions, viewer), [resolutions, viewer]);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
-  const visibleResolutions = filterExpenseResolutions(activeTabItem.resolutions, {
+  const clientSearchQuery = initialListPage && deferredSearchQuery === initialListPage.query ? "" : deferredSearchQuery;
+  const visibleResolutions = useMemo(() => filterExpenseResolutions(activeTabItem.resolutions, {
     approvalStatus: approvalFilter,
     dateFrom: dateFromFilter,
     dateTo: dateToFilter,
@@ -2295,11 +2310,11 @@ export function ExpenseResolutionPage({
     accountTitle: accountTitleFilter,
     vendor: vendorFilter,
     pettyCashBatch: pettyCashBatchFilter,
-    query: searchQuery,
-  });
-  const dashboard = getExpenseResolutionDashboard(resolutions, getCurrentDateIso());
-  const repeatedMissingEvidenceSpenders = new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender));
-  const workflowAlerts = buildExpenseResolutionAlerts(resolutions, getCurrentDateIso());
+    query: clientSearchQuery,
+  }), [accountTitleFilter, activeTabItem.resolutions, approvalFilter, bankLinkedFilter, clientSearchQuery, dateFromFilter, dateToFilter, evidenceStatusFilter, expenseKindFilter, overdueOnly, paymentFilter, pettyCashBatchFilter, postApprovalFilter, spenderFilter, vendorFilter]);
+  const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
+  const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
+  const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
   const pendingEvidenceJobIds = formState.evidenceFiles
     .filter((file) => file.ocrJobId && file.ocrStatus === "REVIEW_REQUIRED")
     .map((file) => file.ocrJobId)
@@ -2378,7 +2393,7 @@ export function ExpenseResolutionPage({
     setVendorRegistrationNotice("");
     setEditingResolutionId(null);
     expenseDetailSelectionRef.current = "AUTO";
-    setFormState(createFormState(getNextResolutionNo(resolutions), undefined, currentUserName));
+    setFormState(createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName));
     setIsCreateModalOpen(true);
   }
 
@@ -2391,7 +2406,7 @@ export function ExpenseResolutionPage({
     setBatchImportError("");
     setEvidenceUploadError("");
     setFormState({
-      ...createFormState(getNextResolutionNo(resolutions), undefined, currentUserName),
+      ...createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName),
       inputMethod: "EXCEL",
       resolutionMode: "PROJECT_BULK",
       resolutionType: "BATCH",
@@ -3570,6 +3585,16 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
   }
 
+  function navigateList(page: number, query = initialListPage?.query ?? "") {
+    if (!initialListPage) return;
+    startListNavigation(() => router.push(expenseResolutionListHref(page, query)));
+  }
+
+  function submitListSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (initialListPage) navigateList(1, searchQuery);
+  }
+
   return (
     <BudgetProfilesContext.Provider value={initialBudgetProfiles}>
     <ErpShell
@@ -3667,10 +3692,14 @@ export function ExpenseResolutionPage({
         <section className="flex flex-col gap-6">
           <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <label className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[420px]">
-                <Search className="size-4 shrink-0" />
-                <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-[var(--color-midnight-ink)] outline-none" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 거래처명 검색" value={searchQuery} />
-              </label>
+              <form className="flex min-w-0 gap-2 xl:w-[520px]" onSubmit={submitListSearch}>
+                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)]">
+                  <Search className="size-4 shrink-0" />
+                  <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-[var(--color-midnight-ink)] outline-none" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 프로젝트, 작성자 검색" value={searchQuery} />
+                </label>
+                {initialListPage ? <button className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={isListNavigationPending} type="submit">검색</button> : null}
+                {initialListPage?.query ? <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, ""); }} type="button">초기화</button> : null}
+              </form>
               <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
                 현재 사용자: {currentUserName}
               </div>
@@ -3716,21 +3745,25 @@ export function ExpenseResolutionPage({
                   onClick={() => setActiveTab(item.key)}
                   type="button"
                 >
-                  {item.label} {item.resolutions.length}
+                  {item.label} {item.key === "all" && initialListPage ? initialListPage.total : item.resolutions.length}
                 </button>
               ))}
             </div>
+            {initialListPage ? <p className="mt-3 text-xs text-[var(--color-stone)]">전체 건수는 서버 조회 기준이며, 상태별 건수와 요약은 현재 페이지 기준입니다.</p> : null}
           </section>
 
           <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
               <div>
                 <h2 className="text-lg font-bold">지출결의서 목록</h2>
-                <p className="mt-1 text-sm text-[var(--color-stone)]">{activeTabItem.label} 기준 {visibleResolutions.length}건</p>
+                <p className="mt-1 text-sm text-[var(--color-stone)]">
+                  {activeTabItem.label} 기준 {visibleResolutions.length}건
+                  {initialListPage ? ` · 전체 ${initialListPage.total}건 · ${initialListPage.page}/${initialListPage.totalPages} 페이지` : ""}
+                </p>
               </div>
               <Button className="rounded-full" onClick={exportAllExpenseResolutions} size="sm" variant="outline">
                 <FileSpreadsheet className="size-4" />
-                엑셀
+                {initialListPage ? "현재 페이지 엑셀" : "엑셀"}
               </Button>
             </div>
             <div className="overflow-x-auto">
@@ -3901,6 +3934,13 @@ export function ExpenseResolutionPage({
                 </tfoot>
               </table>
             </div>
+            {initialListPage && initialListPage.totalPages > 1 ? (
+              <nav aria-label="지출결의서 페이지" className="flex items-center justify-center gap-3 border-t border-[var(--color-soft-border)] p-4">
+                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40" disabled={isListNavigationPending || initialListPage.page <= 1} onClick={() => navigateList(initialListPage.page - 1)} type="button">이전</button>
+                <span className="text-sm font-semibold text-[var(--color-stone)]">{initialListPage.page} / {initialListPage.totalPages}</span>
+                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40" disabled={isListNavigationPending || initialListPage.page >= initialListPage.totalPages} onClick={() => navigateList(initialListPage.page + 1)} type="button">다음</button>
+              </nav>
+            ) : null}
           </section>
         </section>
       </div>

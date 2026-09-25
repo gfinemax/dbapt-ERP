@@ -32,6 +32,8 @@ export function filterExpenseResolutions(resolutions: ManagedExpenseResolution[]
       resolution.resolutionNo,
       resolution.subject,
       resolution.projectName,
+      resolution.author,
+      resolution.currentApprover,
       resolution.representativeVendorName,
       resolution.representativeAccountTitle,
       resolution.expenseType,

@@ -4,6 +4,7 @@ import type { ExpenseAuthorization } from "./expense-authorization";
 import type { AccountAllocation, BatchExpenseItem, ManagedExpenseResolution, SingleExpenseItem } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
+import { getExpenseResolutionSearchPattern, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
 import type { ReimbursementMember } from "./reimbursement-domain";
 
 export const expenseResolutionRepositorySchema = "finance";
@@ -224,6 +225,91 @@ export async function listExpenseResolutionsFromSupabase(verifiedActor?: Reimbur
   if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
   const sourceRows = (data ?? []) as ExpenseResolutionRow[];
   if (!sourceRows.length) return [];
+  return hydrateExpenseResolutionRows(supabase, actor, sourceRows);
+}
+
+export async function listExpenseResolutionPageFromSupabase(
+  request: ExpenseResolutionListRequest & { includeId?: string },
+  verifiedActor?: ReimbursementMember,
+): Promise<{ items: ManagedExpenseResolution[]; nextResolutionNo: string; pagination: ExpenseResolutionListPage } | null> {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+
+  const offset = (request.page - 1) * request.pageSize;
+  let query = supabase
+    .schema(expenseResolutionRepositorySchema)
+    .from("expense_resolutions")
+    .select(expenseResolutionSelect, { count: "exact" })
+    .eq("organization_id", actor.organization_id)
+    .is("deleted_at", null);
+  const searchPattern = getExpenseResolutionSearchPattern(request.query);
+  if (searchPattern) {
+    const pattern = `%${searchPattern}%`;
+    query = query.or([
+      `resolution_no.ilike.${pattern}`,
+      `subject.ilike.${pattern}`,
+      `project_name.ilike.${pattern}`,
+      `author_label.ilike.${pattern}`,
+      `current_approver_label.ilike.${pattern}`,
+    ].join(","));
+  }
+  const [pageResult, nextResolutionNo] = await Promise.all([
+    query.order("updated_at", { ascending: false }).range(offset, offset + request.pageSize - 1),
+    getNextExpenseResolutionNo(supabase, actor.organization_id),
+  ]);
+  const { data, error, count } = pageResult;
+  if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
+
+  const sourceRows = (data ?? []) as ExpenseResolutionRow[];
+  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionRows(supabase, actor, sourceRows) : [];
+  let items: ManagedExpenseResolution[] = hydratedItems;
+  if (request.includeId && !items.some((item) => item.id === request.includeId)) {
+    try {
+      items = [await getExpenseResolutionSnapshotFromSupabase(request.includeId, actor), ...items];
+    } catch {
+      // The page renders its existing not-found guidance for missing or unauthorized deep links.
+    }
+  }
+  const total = count ?? 0;
+  return {
+    items,
+    nextResolutionNo,
+    pagination: {
+      page: request.page,
+      pageSize: request.pageSize,
+      query: request.query,
+      total,
+      totalPages: Math.max(1, Math.ceil(total / request.pageSize)),
+    },
+  };
+}
+
+async function getNextExpenseResolutionNo(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  organizationId: string,
+) {
+  const year = new Intl.DateTimeFormat("en", { timeZone: "Asia/Seoul", year: "numeric" }).format(new Date());
+  const prefix = `지결-${year}-`;
+  const { data, error } = await supabase
+    .schema(expenseResolutionRepositorySchema)
+    .from("expense_resolutions")
+    .select("resolution_no")
+    .eq("organization_id", organizationId)
+    .like("resolution_no", `${prefix}%`)
+    .order("resolution_no", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`Failed to determine the next expense resolution number: ${error.message}`);
+  const latestSequence = Number(data?.resolution_no?.slice(prefix.length));
+  return `${prefix}${String(Number.isSafeInteger(latestSequence) ? latestSequence + 1 : 1).padStart(4, "0")}`;
+}
+
+async function hydrateExpenseResolutionRows(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  actor: ReimbursementMember,
+  sourceRows: ExpenseResolutionRow[],
+) {
   const resolutionIds = sourceRows.map((row) => row.resolution_data.id);
   const [
     { data: bindingRows, error: bindingError },
@@ -268,8 +354,8 @@ export async function listExpenseResolutionsFromSupabase(verifiedActor?: Reimbur
   );
 }
 
-export async function getExpenseResolutionSnapshotFromSupabase(id: string) {
-  const { resolution, binding } = await requireExpenseRecord(id);
+export async function getExpenseResolutionSnapshotFromSupabase(id: string, verifiedActor?: ReimbursementMember) {
+  const { resolution, binding } = await requireExpenseRecord(id, false, verifiedActor);
   return { ...resolution, authorization: binding };
 }
 
