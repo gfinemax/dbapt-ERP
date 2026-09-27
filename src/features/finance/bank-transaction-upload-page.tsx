@@ -1,6 +1,7 @@
 "use client";
 
 import { FileSpreadsheet, Upload } from "lucide-react";
+import Link from "next/link";
 import { type ChangeEvent, useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
@@ -21,6 +22,7 @@ const statusClasses: Record<string, string> = {
 };
 
 type BankTransactionUploadPageProps = {
+  accessError?: string;
   confirmBankTransactionSubjects?: (assignments: BankTransactionSubjectAssignment[]) => Promise<Array<{ account_subject_id: string; transaction_id: string }>>;
   createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<{
     duplicateCount: number;
@@ -33,13 +35,14 @@ type BankTransactionUploadPageProps = {
 };
 
 export function BankTransactionUploadPage({
+  accessError,
   confirmBankTransactionSubjects,
   createBankTransactions,
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
   initialReviewTransactions = [],
 }: BankTransactionUploadPageProps = {}) {
-  const bankAccounts = initialBankAccounts.length > 0 ? initialBankAccounts : registeredBankAccounts;
+  const bankAccounts = initialBankAccounts;
   const accountSubjects = initialAccountSubjects;
   const [selectedAccountId, setSelectedAccountId] = useState(bankAccounts[1]?.id ?? bankAccounts[0]?.id ?? "");
   const [tableText, setTableText] = useState("");
@@ -62,6 +65,18 @@ export function BankTransactionUploadPage({
     }),
     [previewRows],
   );
+
+  if (accessError) {
+    return (
+      <ErpShell activeDetailLabel="은행 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드">
+        <section className="mx-auto max-w-[1480px] rounded-2xl border border-[var(--color-butter-soft)] bg-[var(--color-butter-soft)] p-6" role="alert">
+          <h1 className="text-2xl font-bold">은행거래 관리 로그인이 필요해</h1>
+          <p className="mt-2 text-sm text-[var(--color-stone)]">{accessError}</p>
+          <Link className="mt-4 inline-block rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance">정산 업무 로그인</Link>
+        </section>
+      </ErpShell>
+    );
+  }
 
   function createPreview(nextText = tableText) {
     const lines = nextText

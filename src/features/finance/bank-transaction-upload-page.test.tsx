@@ -31,6 +31,13 @@ const testBankAccounts = [
 ];
 
 describe("BankTransactionUploadPage", () => {
+  it("shows a login handoff without sample bank data when access is unavailable", () => {
+    render(<BankTransactionUploadPage accessError="정산 업무 로그인이 필요합니다." initialAccountSubjects={[]} initialBankAccounts={[]} />);
+    expect(screen.getByRole("alert")).toHaveTextContent("정산 업무 로그인이 필요합니다.");
+    expect(screen.getByRole("link", { name: "정산 업무 로그인" })).toHaveAttribute("href", "/finance");
+    expect(screen.queryByText("국민은행 운영계좌")).not.toBeInTheDocument();
+  });
+
   it("previews pasted bank transactions and prioritizes uploaded 항 and 목 for account matching", async () => {
     render(<BankTransactionUploadPage initialAccountSubjects={registeredAccountSubjects} initialBankAccounts={testBankAccounts} />);
 
