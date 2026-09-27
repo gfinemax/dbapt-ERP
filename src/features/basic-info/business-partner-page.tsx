@@ -7,10 +7,13 @@ import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import {
   buildAccountSubjectFromRecommendation,
+  accountSubjectRecommendations,
   getAccountSubjectSummary,
   getSelectableAccountSubjectRecommendations,
   registeredAccountSubjects,
+  type AccountSubjectRegistrationInput,
   type AccountSubjectRecommendation,
+  type OperatingAccountSubjectCandidate,
   type RegisteredAccountSubject,
 } from "./account-subject-data";
 import {
@@ -34,7 +37,8 @@ export type BasicInfoSection = "partners" | "items" | "bank-accounts" | "cards" 
 type ModalType = "partner" | "item" | "bank-account" | "card" | null;
 type CreateBankAccount = (input: BankAccountInput) => Promise<RegisteredBankAccount>;
 type UpdateBankAccount = (id: string, input: BankAccountInput) => Promise<RegisteredBankAccount>;
-type CreateAccountSubjects = (input: RegisteredAccountSubject[]) => Promise<RegisteredAccountSubject[]>;
+type CreateAccountSubjects = (input: AccountSubjectRegistrationInput[]) => Promise<RegisteredAccountSubject[]>;
+type DisplayAccountSubjectRecommendation = AccountSubjectRecommendation & Partial<Pick<OperatingAccountSubjectCandidate, "budgetIds" | "mappingNote" | "mappingStatus">>;
 type CreateBusinessPartner = (input: BusinessPartnerInput) => Promise<BusinessPartner>;
 type UpdateBusinessPartner = (id: string, input: BusinessPartnerInput) => Promise<BusinessPartner>;
 type CreateItem = (input: ItemInput) => Promise<RegisteredItem>;
@@ -86,6 +90,7 @@ export function BusinessPartnerPage({
   createItem,
   businessPartnerLoadError,
   initialAccountSubjects,
+  initialAccountSubjectCandidates,
   initialBankAccounts,
   initialBusinessPartners,
   initialCreditCards,
@@ -101,6 +106,7 @@ export function BusinessPartnerPage({
   createItem?: CreateItem;
   businessPartnerLoadError?: string;
   initialAccountSubjects?: RegisteredAccountSubject[];
+  initialAccountSubjectCandidates?: OperatingAccountSubjectCandidate[];
   initialBankAccounts?: RegisteredBankAccount[];
   initialBusinessPartners?: BusinessPartner[];
   initialCreditCards?: RegisteredCreditCard[];
@@ -155,9 +161,14 @@ export function BusinessPartnerPage({
           <AccountSubjectSection
             onRegister={async (recommendations) => {
               const subjects = recommendations.map(buildAccountSubjectFromRecommendation);
-              const savedSubjects = createAccountSubjects ? await createAccountSubjects(subjects) : subjects;
+              const registrationInputs = recommendations.map((recommendation) => ({
+                ...buildAccountSubjectFromRecommendation(recommendation),
+                budgetIds: recommendation.budgetIds ?? [],
+              }));
+              const savedSubjects = createAccountSubjects ? await createAccountSubjects(registrationInputs) : subjects;
               setAccountSubjects((current) => mergeAccountSubjects(current, savedSubjects));
             }}
+            operatingCandidates={initialAccountSubjectCandidates}
             subjects={accountSubjects}
           />
         ) : null}
@@ -364,15 +375,24 @@ function ItemSection({ items, onAdd }: { items: RegisteredItem[]; onAdd: () => v
 
 function AccountSubjectSection({
   onRegister,
+  operatingCandidates,
   subjects,
 }: {
-  onRegister: (recommendations: AccountSubjectRecommendation[]) => Promise<void>;
+  onRegister: (recommendations: DisplayAccountSubjectRecommendation[]) => Promise<void>;
+  operatingCandidates?: OperatingAccountSubjectCandidate[];
   subjects: RegisteredAccountSubject[];
 }) {
   const [selectedCodes, setSelectedCodes] = useState<string[]>([]);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
-  const selectableRecommendations = getSelectableAccountSubjectRecommendations(subjects);
+  const fallbackRecommendations = getSelectableAccountSubjectRecommendations(subjects);
+  const registeredNames = new Set(subjects.map((subject) => subject.name));
+  const selectableRecommendations: DisplayAccountSubjectRecommendation[] = operatingCandidates === undefined
+    ? fallbackRecommendations
+    : [
+      ...operatingCandidates.filter((recommendation) => !registeredNames.has(recommendation.name)),
+      ...accountSubjectRecommendations.filter((recommendation) => recommendation.source === "수지분석표" && !registeredNames.has(recommendation.name)),
+    ];
   const selectedRecommendations = selectableRecommendations.filter((item) => selectedCodes.includes(item.code));
   const operatingRecommendations = selectableRecommendations.filter((item) => item.source === "운영비 예산안");
   const feasibilityRecommendations = selectableRecommendations.filter((item) => item.source === "수지분석표");
@@ -409,14 +429,10 @@ function AccountSubjectSection({
           </p>
           <h1 className="text-3xl font-bold tracking-normal">계정과목 등록</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
-            운영비 예산안과 수지분석표 기준 추천 계정과목을 선택해 등록합니다.
+            업로드한 운영비 예산을 기준으로 생성된 후보를 관리자가 확인해 등록합니다. 수지분석표 항목은 별도 후보로 제공합니다.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button className="rounded-full" size="lg" variant="outline">
-            <Upload className="size-4" />
-            엑셀 가져오기
-          </Button>
           <Button
             className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]"
             disabled={selectedRecommendations.length === 0 || isSaving}
@@ -442,7 +458,7 @@ function AccountSubjectSection({
           description="급여, 임대료, 통신비처럼 매월 운영비 예산과 연결되는 계정과목입니다."
           recommendations={operatingRecommendations}
           selectedCodes={selectedCodes}
-          title="운영비 예산안 기준"
+          title="업로드한 운영비 예산 기준"
           onToggle={toggleRecommendation}
         />
         <RecommendationPanel
@@ -513,7 +529,7 @@ function RecommendationPanel({
 }: {
   description: string;
   onToggle: (code: string) => void;
-  recommendations: AccountSubjectRecommendation[];
+  recommendations: DisplayAccountSubjectRecommendation[];
   selectedCodes: string[];
   title: string;
 }) {
@@ -549,8 +565,14 @@ function RecommendationPanel({
                   <span className="font-semibold">{recommendation.name}</span>
                   <span className="rounded-full bg-[var(--color-cloud-veil)] px-2 py-0.5 text-xs font-semibold text-[var(--color-stone)]">{recommendation.code}</span>
                   <span className="rounded-full bg-[var(--color-butter-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-mustard)]">{recommendation.businessCategory}</span>
+                  {"mappingStatus" in recommendation && recommendation.mappingStatus === "POLICY_REVIEW" ? (
+                    <span className="rounded-full bg-[var(--color-sunset-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-tangerine)]">정책 확인 필요</span>
+                  ) : null}
                 </span>
                 <span className="mt-1 block text-sm leading-6 text-[var(--color-stone)]">{recommendation.description}</span>
+                {"mappingNote" in recommendation && recommendation.mappingNote ? (
+                  <span className="mt-1 block text-xs leading-5 text-[var(--color-tangerine)]">{recommendation.mappingNote}</span>
+                ) : null}
               </span>
             </label>
           );

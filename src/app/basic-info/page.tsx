@@ -1,10 +1,11 @@
 import { BusinessPartnerPage, type BasicInfoSection } from "@/features/basic-info/business-partner-page";
-import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
+import { listAccountSubjectsFromSupabase, listOperatingAccountSubjectCandidates } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
 import { listBusinessPartnersFromSupabase } from "@/features/basic-info/business-partner-repository";
 import { listCreditCardsFromSupabase } from "@/features/basic-info/credit-card-repository";
 import { listItemsFromSupabase } from "@/features/basic-info/item-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
+import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { createAccountSubjectsAction, createBankAccountAction, createCreditCardAction, createItemAction, createManualBusinessPartnerAction, updateBankAccountAction, updateBusinessPartnerAction } from "./actions";
 
 type BasicInfoRouteProps = {
@@ -35,7 +36,13 @@ export function shouldEnableBasicInfoRemoteCreate(
 export default async function BasicInfoRoute({ searchParams }: BasicInfoRouteProps) {
   const params = await searchParams;
   const initialSection = parseBasicInfoSection(params?.section);
-  const initialAccountSubjects = initialSection === "account-subjects" ? await listAccountSubjectsFromSupabase() : null;
+  const accountSubjectActor = initialSection === "account-subjects" ? await requireExpenseActor("READ") : null;
+  const [initialAccountSubjects, initialAccountSubjectCandidates] = accountSubjectActor
+    ? await Promise.all([
+      listAccountSubjectsFromSupabase(accountSubjectActor.organization_id),
+      listOperatingAccountSubjectCandidates(accountSubjectActor.organization_id),
+    ])
+    : [null, null];
   const initialBankAccounts = initialSection === "bank-accounts" ? await listBankAccountsFromSupabase() : null;
   const initialBusinessPartners = initialSection === "partners" ? await listBusinessPartnersFromSupabase() : null;
   const businessPartnerLoadError = initialSection === "partners" && initialBusinessPartners === null
@@ -62,6 +69,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       createCreditCard={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "cards", initialCreditCards) ? createCreditCardAction : undefined}
       createItem={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "items", initialItems) ? createItemAction : undefined}
       initialAccountSubjects={initialAccountSubjects ?? undefined}
+      initialAccountSubjectCandidates={initialAccountSubjectCandidates ?? undefined}
       initialBankAccounts={initialBankAccounts ?? undefined}
       initialBusinessPartners={initialSection === "partners" ? initialBusinessPartners ?? [] : undefined}
       initialCreditCards={initialCreditCards ?? undefined}

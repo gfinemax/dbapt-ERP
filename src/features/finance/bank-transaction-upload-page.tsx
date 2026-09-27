@@ -6,12 +6,12 @@ import { type ChangeEvent, useMemo, useState } from "react";
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
-import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
 import { registeredBankAccounts } from "@/features/basic-info/business-partner-data";
 import { formatKrw } from "./finance-data";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
+import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -21,6 +21,7 @@ const statusClasses: Record<string, string> = {
 };
 
 type BankTransactionUploadPageProps = {
+  confirmBankTransactionSubjects?: (assignments: BankTransactionSubjectAssignment[]) => Promise<Array<{ account_subject_id: string; transaction_id: string }>>;
   createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<{
     duplicateCount: number;
     importedCount: number;
@@ -28,15 +29,18 @@ type BankTransactionUploadPageProps = {
   }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
+  initialReviewTransactions?: BankTransactionReviewRow[];
 };
 
 export function BankTransactionUploadPage({
+  confirmBankTransactionSubjects,
   createBankTransactions,
-  initialAccountSubjects = registeredAccountSubjects,
+  initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
+  initialReviewTransactions = [],
 }: BankTransactionUploadPageProps = {}) {
   const bankAccounts = initialBankAccounts.length > 0 ? initialBankAccounts : registeredBankAccounts;
-  const accountSubjects = initialAccountSubjects.length > 0 ? initialAccountSubjects : registeredAccountSubjects;
+  const accountSubjects = initialAccountSubjects;
   const [selectedAccountId, setSelectedAccountId] = useState(bankAccounts[1]?.id ?? bankAccounts[0]?.id ?? "");
   const [tableText, setTableText] = useState("");
   const [previewRows, setPreviewRows] = useState<ParsedBankTransactionRow[]>([]);
@@ -276,8 +280,109 @@ export function BankTransactionUploadPage({
             </table>
           </div>
         </section>
+
+        <BankTransactionSubjectReview
+          accountSubjects={accountSubjects}
+          confirmAssignments={confirmBankTransactionSubjects}
+          initialTransactions={initialReviewTransactions}
+        />
       </div>
     </ErpShell>
+  );
+}
+
+function BankTransactionSubjectReview({
+  accountSubjects,
+  confirmAssignments,
+  initialTransactions,
+}: {
+  accountSubjects: RegisteredAccountSubject[];
+  confirmAssignments?: BankTransactionUploadPageProps["confirmBankTransactionSubjects"];
+  initialTransactions: BankTransactionReviewRow[];
+}) {
+  const [transactions, setTransactions] = useState(initialTransactions);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, string>>(() => Object.fromEntries(
+    initialTransactions.map((transaction) => [transaction.id, transaction.recommendedAccountSubjectId ?? ""]),
+  ));
+  const [isConfirming, setIsConfirming] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const activeSubjects = accountSubjects.filter((subject) => subject.isActive);
+  const confirmableIds = selectedIds.filter((id) => assignments[id]);
+
+  function toggle(id: string) {
+    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function selectRecommended() {
+    setSelectedIds(transactions.filter((transaction) => assignments[transaction.id]).map((transaction) => transaction.id));
+  }
+
+  async function confirmSelected() {
+    if (!confirmAssignments || !confirmableIds.length) return;
+    setIsConfirming(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const confirmed = await confirmAssignments(confirmableIds.map((transactionId) => ({
+        accountSubjectId: assignments[transactionId],
+        transactionId,
+      })));
+      const confirmedIds = new Set(confirmed.map((item) => item.transaction_id));
+      setTransactions((current) => current.filter((transaction) => !confirmedIds.has(transaction.id)));
+      setSelectedIds([]);
+      setMessage(`${confirmed.length}건의 계정과목을 관리자 확정했어.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "계정과목 일괄 확정에 실패했어.");
+    } finally {
+      setIsConfirming(false);
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
+        <div>
+          <h2 className="text-lg font-bold">계정과목 관리자 일괄 확인</h2>
+          <p className="mt-1 text-sm text-[var(--color-stone)]">추천 결과를 그대로 확정하거나 내부 계정과목으로 바꾼 뒤 선택한 거래를 한 번에 확정합니다.</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={selectRecommended} size="sm" type="button" variant="outline">추천값 전체 선택</Button>
+          <Button disabled={!confirmAssignments || !confirmableIds.length || isConfirming} onClick={confirmSelected} size="sm" type="button">
+            {isConfirming ? "확정 중..." : `선택 ${confirmableIds.length}건 확정`}
+          </Button>
+        </div>
+      </div>
+      {message ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{message}</p> : null}
+      {error ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{error}</p> : null}
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+          <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
+            <tr><th className="px-4 py-3 text-center">선택</th><th className="px-4 py-3 text-center">거래일</th><th className="px-4 py-3 text-center">입출금</th><th className="px-4 py-3 text-center">적요/거래처</th><th className="px-4 py-3 text-center">금액</th><th className="px-4 py-3 text-center">추천</th><th className="px-4 py-3 text-center">확정 계정과목</th></tr>
+          </thead>
+          <tbody className="divide-y divide-[var(--color-soft-border)]">
+            {!transactions.length ? <tr><td className="px-4 py-8 text-center text-[var(--color-stone)]" colSpan={7}>확인할 은행거래가 없습니다.</td></tr> : transactions.map((transaction) => (
+              <tr className="bg-white/70" key={transaction.id}>
+                <td className="px-4 py-4 text-center"><input aria-label={`${transaction.description} 거래 선택`} checked={selectedIds.includes(transaction.id)} onChange={() => toggle(transaction.id)} type="checkbox" /></td>
+                <td className="px-4 py-4">{transaction.transactedAt.slice(0, 10)}</td>
+                <td className="px-4 py-4">{transaction.transactionKind ?? "미확정"}</td>
+                <td className="px-4 py-4"><p className="font-semibold">{transaction.description}</p><p className="text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p></td>
+                <td className="px-4 py-4 text-right font-semibold">{formatKrw(transaction.amount)}</td>
+                <td className="px-4 py-4"><p className="font-semibold">{transaction.recommendedAccountSubjectName ?? "추천 없음"}</p><p className="text-xs text-[var(--color-stone)]">{transaction.recommendationReason ?? "관리자 지정 필요"}</p></td>
+                <td className="px-4 py-4">
+                  <select aria-label={`${transaction.description} 확정 계정과목`} className="h-10 w-full rounded-md border bg-white px-3" onChange={(event) => setAssignments((current) => ({ ...current, [transaction.id]: event.target.value }))} value={assignments[transaction.id] ?? ""}>
+                    <option value="">계정과목 선택</option>
+                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} · {subject.name}</option>)}
+                  </select>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
   );
 }
 

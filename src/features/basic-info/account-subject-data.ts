@@ -33,6 +33,16 @@ export type RegisteredAccountSubject = {
 
 export type AccountSubjectRecommendation = Omit<RegisteredAccountSubject, "id" | "isActive" | "parentId" | "normalBalance" | "source" | "subjectType"> & { normalBalance: AccountSubjectNormalBalance; source: AccountSubjectSource; subjectType: AccountSubjectType };
 
+export type AccountSubjectRegistrationInput = Omit<RegisteredAccountSubject, "id"> & {
+  budgetIds: string[];
+};
+
+export type OperatingAccountSubjectCandidate = AccountSubjectRecommendation & {
+  budgetIds: string[];
+  mappingNote: string;
+  mappingStatus: "CONFIRMED" | "POLICY_REVIEW";
+};
+
 export const registeredAccountSubjects: RegisteredAccountSubject[] = [
   {
     aliases: ["분담금", "조합원 납입금"],

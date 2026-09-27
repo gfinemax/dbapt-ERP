@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
 import { BankTransactionUploadPage } from "./bank-transaction-upload-page";
 
 const testBankAccounts = [
@@ -31,7 +32,7 @@ const testBankAccounts = [
 
 describe("BankTransactionUploadPage", () => {
   it("previews pasted bank transactions and prioritizes uploaded 항 and 목 for account matching", async () => {
-    render(<BankTransactionUploadPage initialBankAccounts={testBankAccounts} />);
+    render(<BankTransactionUploadPage initialAccountSubjects={registeredAccountSubjects} initialBankAccounts={testBankAccounts} />);
 
     expect(screen.getByRole("heading", { name: "은행 거래내역 업로드" })).toBeInTheDocument();
     expect(screen.getByLabelText("업로드 대상 계좌")).toBeInTheDocument();
@@ -66,7 +67,7 @@ describe("BankTransactionUploadPage", () => {
 
   it("sends preview rows to the save action without creating vouchers", async () => {
     const createBankTransactions = vi.fn().mockResolvedValue({ duplicateCount: 0, importedCount: 1, transactions: [{ id: "bank-transaction-1", isWithdrawal: true }] });
-    render(<BankTransactionUploadPage createBankTransactions={createBankTransactions} initialBankAccounts={testBankAccounts} />);
+    render(<BankTransactionUploadPage createBankTransactions={createBankTransactions} initialAccountSubjects={registeredAccountSubjects} initialBankAccounts={testBankAccounts} />);
 
     fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
       target: {
@@ -89,6 +90,51 @@ describe("BankTransactionUploadPage", () => {
     expect(screen.getByRole("link", { name: "1번 출금거래 사후결의 초안 작성" })).toHaveAttribute("href", "/finance/exp?bankTransactionId=bank-transaction-1");
     expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
+
+  it("lets an administrator bulk-confirm recommended account subjects", async () => {
+    const confirmBankTransactionSubjects = vi.fn().mockResolvedValue([
+      { account_subject_id: registeredAccountSubjects[0].id, transaction_id: "transaction-1" },
+    ]);
+    render(
+      <BankTransactionUploadPage
+        confirmBankTransactionSubjects={confirmBankTransactionSubjects}
+        initialAccountSubjects={registeredAccountSubjects}
+        initialBankAccounts={testBankAccounts}
+        initialReviewTransactions={[{
+          amount: 55000,
+          bankAccountId: "bank-002",
+          classificationStatus: "RECOMMENDED",
+          counterparty: "KT",
+          description: "인터넷 요금",
+          id: "transaction-1",
+          recommendedAccountSubjectId: registeredAccountSubjects[0].id,
+          recommendedAccountSubjectName: registeredAccountSubjects[0].name,
+          recommendationReason: "거래 적요 키워드로 추천함",
+          transactedAt: "2026-09-27T09:00:00+09:00",
+          transactionKind: "출금",
+        }]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "추천값 전체 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 1건 확정" }));
+    expect(confirmBankTransactionSubjects).toHaveBeenCalledWith([{
+      accountSubjectId: registeredAccountSubjects[0].id,
+      transactionId: "transaction-1",
+    }]);
+    expect(await screen.findByText("1건의 계정과목을 관리자 확정했어.")).toBeInTheDocument();
+    expect(screen.getByText("확인할 은행거래가 없습니다.")).toBeInTheDocument();
+  });
+});
+
+it("does not fabricate account subjects when the internal master is empty", async () => {
+  render(<BankTransactionUploadPage initialAccountSubjects={[]} initialBankAccounts={testBankAccounts} />);
+  fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
+    target: { value: "거래일자\t출금\t적요\t목\n2026/09/08\t10000\t세무대리 수수료\t세무비" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "미리보기 생성" }));
+  expect(await screen.findByText("신규후보")).toBeInTheDocument();
+  expect(screen.queryByText("업로드분류")).not.toBeInTheDocument();
 });
 
 it("shows ambiguous bank amounts as unresolved and never offers an expense link", async () => {

@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { createAccountSubjectsInSupabase } from "@/features/basic-info/account-subject-repository";
-import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
+import type { AccountSubjectRegistrationInput } from "@/features/basic-info/account-subject-data";
 import { createBankAccountInSupabase, updateBankAccountInSupabase } from "@/features/basic-info/bank-account-repository";
 import type { BankAccountInput } from "@/features/basic-info/business-partner-data";
 import type { BusinessPartnerOcrInput } from "@/features/basic-info/business-partner-data";
@@ -12,6 +12,7 @@ import { createBusinessPartnerInSupabase, updateBusinessPartnerInSupabase } from
 import type { BusinessPartnerInput, CreditCardInput, ItemInput } from "@/features/basic-info/business-partner-data";
 import { createCreditCardInSupabase } from "@/features/basic-info/credit-card-repository";
 import { createItemInSupabase } from "@/features/basic-info/item-repository";
+import { requireExpenseActor } from "@/features/finance/expense-authorization";
 
 export async function createBusinessPartnerAction(input: BusinessPartnerOcrInput) {
   const result = await ensureBusinessPartnerFromOcrInSupabase(input);
@@ -59,8 +60,9 @@ export async function updateBankAccountAction(id: string, input: BankAccountInpu
   return account;
 }
 
-export async function createAccountSubjectsAction(input: RegisteredAccountSubject[]) {
-  const subjects = await createAccountSubjectsInSupabase(input);
+export async function createAccountSubjectsAction(input: AccountSubjectRegistrationInput[]) {
+  const actor = await requireExpenseActor("ADMIN");
+  const subjects = await createAccountSubjectsInSupabase(input, actor.organization_id, actor.user_id);
 
   revalidatePath("/basic-info");
 

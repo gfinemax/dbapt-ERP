@@ -58,18 +58,20 @@ export function mapBankAccountToUpdate(input: BankAccountInput): SupabaseBankAcc
   };
 }
 
-export async function listBankAccountsFromSupabase() {
+export async function listBankAccountsFromSupabase(organizationId?: string) {
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
     return null;
   }
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema(bankAccountRepositorySchema)
     .from("bank_accounts")
     .select("id, bank_name, account_name, account_no, account_type, usage_status, created_at, last_synced_at, sync_status, unmatched_count")
     .order("created_at", { ascending: true });
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query;
 
   if (error) {
     return null;

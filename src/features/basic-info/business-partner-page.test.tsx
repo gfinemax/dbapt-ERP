@@ -248,8 +248,8 @@ describe("BusinessPartnerPage", () => {
     render(<BusinessPartnerPage initialAccountSubjects={[]} initialSection="account-subjects" />);
 
     expect(screen.getByRole("heading", { name: "계정과목 등록" })).toBeInTheDocument();
-    expect(screen.getByText("운영비 예산안과 수지분석표 기준 추천 계정과목을 선택해 등록합니다.")).toBeInTheDocument();
-    expect(screen.getByText("운영비 예산안 기준")).toBeInTheDocument();
+    expect(screen.getByText("업로드한 운영비 예산을 기준으로 생성된 후보를 관리자가 확인해 등록합니다. 수지분석표 항목은 별도 후보로 제공합니다.")).toBeInTheDocument();
+    expect(screen.getByText("업로드한 운영비 예산 기준")).toBeInTheDocument();
     expect(screen.getByText("수지분석표 기준")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "계정과목" })).toBeInTheDocument();
     expect(screen.getByLabelText("추천 계정과목 임대료 선택")).toBeInTheDocument();
@@ -260,6 +260,40 @@ describe("BusinessPartnerPage", () => {
     expect(await screen.findByText("OP-310")).toBeInTheDocument();
     expect(screen.getAllByText("임대료").length).toBeGreaterThan(0);
     expect(screen.getByText("사무실 임차료 등")).toBeInTheDocument();
+  });
+
+  it("shows live operating-budget candidates and sends their budget link for administrator confirmation", async () => {
+    const createAccountSubjects = vi.fn(async (inputs) => inputs.map((input, index) => ({ ...input, id: `saved-${index}` })));
+    render(
+      <BusinessPartnerPage
+        createAccountSubjects={createAccountSubjects}
+        initialAccountSubjectCandidates={[{
+          aliases: ["AI 구독료"],
+          budgetIds: ["budget-comm"],
+          businessCategory: "운영비",
+          code: "OPERATING-COMM",
+          description: "전화·팩스·인터넷 등",
+          mappingNote: "AI 구독료의 예산 분류 확인 필요",
+          mappingStatus: "POLICY_REVIEW",
+          name: "통신비",
+          normalBalance: "차변",
+          sortOrder: 100,
+          source: "운영비 예산안",
+          subjectType: "지출",
+        }]}
+        initialAccountSubjects={[]}
+        initialSection="account-subjects"
+      />,
+    );
+
+    expect(screen.getByText("정책 확인 필요")).toBeInTheDocument();
+    expect(screen.getByText("AI 구독료의 예산 분류 확인 필요")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "엑셀 가져오기" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("추천 계정과목 통신비 선택"));
+    fireEvent.click(screen.getByRole("button", { name: "선택 항목 등록" }));
+    expect(createAccountSubjects).toHaveBeenCalledWith([
+      expect.objectContaining({ budgetIds: ["budget-comm"], code: "OPERATING-COMM", name: "통신비" }),
+    ]);
   });
 });
 
