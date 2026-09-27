@@ -36,7 +36,15 @@ export function shouldEnableBasicInfoRemoteCreate(
 export default async function BasicInfoRoute({ searchParams }: BasicInfoRouteProps) {
   const params = await searchParams;
   const initialSection = parseBasicInfoSection(params?.section);
-  const accountSubjectActor = initialSection === "account-subjects" ? await requireExpenseActor("READ") : null;
+  let accountSubjectActor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
+  let accountSubjectAccessError: string | undefined;
+  if (initialSection === "account-subjects") {
+    try {
+      accountSubjectActor = await requireExpenseActor("READ");
+    } catch (error) {
+      accountSubjectAccessError = error instanceof Error ? error.message : "계정과목 조회 권한을 확인하지 못했어.";
+    }
+  }
   const [initialAccountSubjects, initialAccountSubjectCandidates] = accountSubjectActor
     ? await Promise.all([
       listAccountSubjectsFromSupabase(accountSubjectActor.organization_id),
@@ -55,6 +63,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
   return (
     <BusinessPartnerPage
       businessPartnerLoadError={businessPartnerLoadError}
+      accountSubjectAccessError={accountSubjectAccessError}
       createAccountSubjects={
         shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "account-subjects", initialAccountSubjects)
           ? createAccountSubjectsAction
@@ -68,8 +77,8 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       createBusinessPartner={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "partners", initialBusinessPartners) ? createManualBusinessPartnerAction : undefined}
       createCreditCard={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "cards", initialCreditCards) ? createCreditCardAction : undefined}
       createItem={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "items", initialItems) ? createItemAction : undefined}
-      initialAccountSubjects={initialAccountSubjects ?? undefined}
-      initialAccountSubjectCandidates={initialAccountSubjectCandidates ?? undefined}
+      initialAccountSubjects={initialSection === "account-subjects" ? initialAccountSubjects ?? [] : undefined}
+      initialAccountSubjectCandidates={initialSection === "account-subjects" ? initialAccountSubjectCandidates ?? [] : undefined}
       initialBankAccounts={initialBankAccounts ?? undefined}
       initialBusinessPartners={initialSection === "partners" ? initialBusinessPartners ?? [] : undefined}
       initialCreditCards={initialCreditCards ?? undefined}

@@ -1,6 +1,7 @@
 "use client";
 
 import { Download, FileSpreadsheet, Pencil, Plus, Search, Upload, X } from "lucide-react";
+import Link from "next/link";
 import { type FormEvent, type ReactNode, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
@@ -83,6 +84,7 @@ function maskCardNo(cardNo: string) {
 }
 
 export function BusinessPartnerPage({
+  accountSubjectAccessError,
   createAccountSubjects,
   createBankAccount,
   createBusinessPartner,
@@ -99,6 +101,7 @@ export function BusinessPartnerPage({
   updateBusinessPartner,
   updateBankAccount,
 }: {
+  accountSubjectAccessError?: string;
   createAccountSubjects?: CreateAccountSubjects;
   createBankAccount?: CreateBankAccount;
   createBusinessPartner?: CreateBusinessPartner;
@@ -159,6 +162,7 @@ export function BusinessPartnerPage({
           <CreditCardSection cards={creditCards} onAdd={() => setModalType("card")} />
         ) : activeSection === "account-subjects" ? (
           <AccountSubjectSection
+            accessError={accountSubjectAccessError}
             onRegister={async (recommendations) => {
               const subjects = recommendations.map(buildAccountSubjectFromRecommendation);
               const registrationInputs = recommendations.map((recommendation) => ({
@@ -374,10 +378,12 @@ function ItemSection({ items, onAdd }: { items: RegisteredItem[]; onAdd: () => v
 }
 
 function AccountSubjectSection({
+  accessError,
   onRegister,
   operatingCandidates,
   subjects,
 }: {
+  accessError?: string;
   onRegister: (recommendations: DisplayAccountSubjectRecommendation[]) => Promise<void>;
   operatingCandidates?: OperatingAccountSubjectCandidate[];
   subjects: RegisteredAccountSubject[];
@@ -387,7 +393,7 @@ function AccountSubjectSection({
   const [isSaving, setIsSaving] = useState(false);
   const fallbackRecommendations = getSelectableAccountSubjectRecommendations(subjects);
   const registeredNames = new Set(subjects.map((subject) => subject.name));
-  const selectableRecommendations: DisplayAccountSubjectRecommendation[] = operatingCandidates === undefined
+  const selectableRecommendations: DisplayAccountSubjectRecommendation[] = accessError ? [] : operatingCandidates === undefined
     ? fallbackRecommendations
     : [
       ...operatingCandidates.filter((recommendation) => !registeredNames.has(recommendation.name)),
@@ -453,7 +459,15 @@ function AccountSubjectSection({
         <SummaryTile label="수지분석 연계" value={`${summary.valueOnReadySubjects}개`} />
       </section>
 
-      <section className="grid gap-4 xl:grid-cols-2">
+      {accessError ? (
+        <section className="rounded-2xl border border-[var(--color-butter-soft)] bg-[var(--color-butter-soft)] p-5" role="alert">
+          <h2 className="font-bold">계정과목 관리 로그인이 필요해</h2>
+          <p className="mt-2 text-sm text-[var(--color-stone)]">{accessError}</p>
+          <Link className="mt-3 inline-block rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance">정산 업무 로그인</Link>
+        </section>
+      ) : null}
+
+      {!accessError ? <section className="grid gap-4 xl:grid-cols-2">
         <RecommendationPanel
           description="급여, 임대료, 통신비처럼 매월 운영비 예산과 연결되는 계정과목입니다."
           recommendations={operatingRecommendations}
@@ -468,7 +482,7 @@ function AccountSubjectSection({
           title="수지분석표 기준"
           onToggle={toggleRecommendation}
         />
-      </section>
+      </section> : null}
 
       {saveError ? <p className="rounded-xl bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
 

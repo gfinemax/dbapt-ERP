@@ -295,6 +295,13 @@ describe("BusinessPartnerPage", () => {
       expect.objectContaining({ budgetIds: ["budget-comm"], code: "OPERATING-COMM", name: "통신비" }),
     ]);
   });
+
+  it("shows a login handoff instead of sample account subjects when access is unavailable", () => {
+    render(<BusinessPartnerPage accountSubjectAccessError="정산 업무 로그인이 필요합니다." initialAccountSubjectCandidates={[]} initialAccountSubjects={[]} initialSection="account-subjects" />);
+    expect(screen.getByRole("alert")).toHaveTextContent("정산 업무 로그인이 필요합니다.");
+    expect(screen.getByRole("link", { name: "정산 업무 로그인" })).toHaveAttribute("href", "/finance");
+    expect(screen.queryByLabelText("추천 계정과목 임대료 선택")).not.toBeInTheDocument();
+  });
 });
 
 it("shows unresolved account metadata without assigning historical classifications", () => {
