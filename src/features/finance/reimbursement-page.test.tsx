@@ -224,6 +224,12 @@ describe("reimbursement workspace",()=>{
 });
 describe("reimbursement login",()=>{
  beforeEach(()=>vi.clearAllMocks());
+ it("keeps an authenticated user out of the credential form when authorization lookup is temporarily unavailable",()=>{
+  render(<ReimbursementLogin error="정산 권한을 확인하지 못했습니다." title="지출 등록·신청"/>);
+  expect(screen.getByRole("alert")).toHaveTextContent("로그인 상태는 유지되고 있어.");
+  expect(screen.getByRole("alert")).toHaveTextContent("정산 권한을 확인하지 못했습니다.");
+  expect(screen.queryByLabelText("비밀번호")).not.toBeInTheDocument();
+ });
  it("shows the safe authentication result instead of a production server digest",async()=>{
   mocks.login.mockResolvedValue({ok:false,message:"이메일 또는 비밀번호가 올바르지 않아."});
   render(<ReimbursementLogin/>);

@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { configureSmallExpenseRoles, createSmallExpenseAction, reviewSmallExpenses } from "@/app/approval/small-expense/actions";
-import { reimbursementLogin } from "@/app/finance/reimbursements/actions";
 import { SmallExpenseForm } from "./small-expense-form";
 import { canConfirmSmallExpense, smallExpenseStatusLabels, summarizeSmallExpenses, type SmallExpense } from "./small-expense-domain";
 import type { SmallExpenseWorkspace } from "./small-expense-repository";
@@ -14,16 +13,6 @@ const input = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
 const button = "rounded-full bg-[var(--color-deep-cobalt)] px-5 py-2 text-sm font-bold text-white disabled:opacity-40";
 const money = (n: number) => `${n.toLocaleString("ko-KR")}원`;
 const dateTime = (s: string) => new Date(s).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
-
-export function SmallExpenseLogin({ error }: { error?: string }) {
-  const router = useRouter(); const [pending, start] = useTransition(); const [message, setMessage] = useState("");
-  return <section className={`${box} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">소액지출 로그인</h1><p className="my-4 text-sm">사무국장은 등록하고 조합장은 확인·확정합니다. 개인 지출 정산과 같은 계정을 사용합니다.</p>
-    <form className="grid gap-4" onSubmit={e => { e.preventDefault(); const data = new FormData(e.currentTarget); start(async () => { try { await reimbursementLogin(data); router.refresh(); } catch (error) { setMessage(error instanceof Error ? error.message : "로그인하지 못했습니다."); } }); }}>
-      <label>이메일<input className={`${input} w-full`} name="email" type="email" autoComplete="username" required /></label>
-      <label>비밀번호<input className={`${input} w-full`} name="password" type="password" autoComplete="current-password" required /></label>
-      <button className={button} disabled={pending}>로그인</button>
-    </form><p role="alert" className="mt-3 text-sm">{message || error}</p></section>;
-}
 
 export function SmallExpensePage({ workspace: w, mode = "register", initialId }: { workspace: SmallExpenseWorkspace; mode?: "register" | "review"; initialId?: string }) {
   const router = useRouter(); const [pending, start] = useTransition(); const [message, setMessage] = useState("");

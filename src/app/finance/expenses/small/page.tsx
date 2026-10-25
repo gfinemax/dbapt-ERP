@@ -3,7 +3,8 @@ import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
 import { koreaDate } from "@/features/finance/reimbursement-domain";
 import { loadSmallExpenseWorkspace } from "@/features/approval/small-expense-repository";
-import { SmallExpenseLogin, SmallExpensePage } from "@/features/approval/small-expense-page";
+import { SmallExpensePage } from "@/features/approval/small-expense-page";
+import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 
 export const dynamic = "force-dynamic";
 export default async function Page({ searchParams }: { searchParams: Promise<{ month?: string; id?: string }> }) {
@@ -14,5 +15,5 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
     const member = await reimbursementIdentity();
     workspace = member ? await loadSmallExpenseWorkspace(member, month) : null;
   } catch (error) { message = error instanceof Error ? error.message : "소액지출을 불러오지 못했습니다."; }
-  return <ErpShell userLabel={workspace?.member.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="지출 등록·신청"><main className="mx-auto max-w-7xl space-y-5">{workspace ? <SmallExpensePage key={`${month}:${query.id ?? ""}:${workspace.rows.map(r => `${r.id}:${r.revision}`).join(",")}:${workspace.roles?.director_id}:${workspace.roles?.chair_id}`} workspace={workspace} mode="register" initialId={query.id} /> : <SmallExpenseLogin error={message} />}</main></ErpShell>;
+  return <ErpShell userLabel={workspace?.member.display_name ?? "로그인 필요"} logoutAction={reimbursementLogout} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리" activeDetailLabel="지출 등록·신청"><main className="mx-auto max-w-7xl space-y-5">{workspace ? <SmallExpensePage key={`${month}:${query.id ?? ""}:${workspace.rows.map(r => `${r.id}:${r.revision}`).join(",")}:${workspace.roles?.director_id}:${workspace.roles?.chair_id}`} workspace={workspace} mode="register" initialId={query.id} /> : <ReimbursementLogin error={message} title="지출 등록·신청" description="소액지출 등록과 확인에 같은 회계·자금 계정을 사용해." />}</main></ErpShell>;
 }

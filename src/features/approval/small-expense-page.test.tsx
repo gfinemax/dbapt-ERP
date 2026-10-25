@@ -6,7 +6,6 @@ import type { SmallExpenseWorkspace } from "./small-expense-repository";
 const { review, refresh } = vi.hoisted(() => ({ review: vi.fn().mockResolvedValue(undefined), refresh: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh }) }));
 vi.mock("@/app/approval/small-expense/actions", () => ({ reviewSmallExpenses: review, createSmallExpenseAction: vi.fn(), configureSmallExpenseRoles: vi.fn() }));
-vi.mock("@/app/finance/reimbursements/actions", () => ({ reimbursementLogin: vi.fn() }));
 const row: SmallExpense = { id:"one", expenseDate:"2026-09-07",partnerName:"문구점",description:"복사용지 구입",projectName:"",accountSubjectName:"소모품비",amount:15000,payerLabel:"사무국장",memo:"",reviewStatus:"PENDING",registeredBy:"director",spenderId:"director",confirmedLabel:null,confirmedAt:null,reviewReason:"",revision:1,budgetId:"budget",paymentMethod:"CASH",bankTransactionId:null,cardTransactionId:null,hasEvidence:true };
 const workspace: SmallExpenseWorkspace = { member:{organization_id:"org",user_id:"chair",display_name:"조합장",permissions:[],active:true},roles:{director_id:"director",chair_id:"chair"},members:[],rows:[row,{...row,id:"self",description:"조합장 사용",spenderId:"chair"}],budgets:[],sources:[],month:"2026-09",limit:50000,audits:[] };
 

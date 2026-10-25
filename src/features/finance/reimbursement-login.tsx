@@ -8,6 +8,10 @@ const card = "rounded-2xl border border-[var(--color-soft-border)] bg-white p-5"
 const input = "w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm";
 const button = "rounded-lg bg-[var(--color-deep-cobalt)] px-4 py-2 text-sm font-semibold text-white disabled:opacity-40";
 
+function needsCredentials(error?: string) {
+  return !error || error.includes("로그인");
+}
+
 export function ReimbursementLogin({
   error,
   title = "개인 지출 정산·월 마감",
@@ -20,6 +24,16 @@ export function ReimbursementLogin({
   const router = useRouter();
   const [message, setMessage] = useState("");
   const [pending, startTransition] = useTransition();
+
+  if (!needsCredentials(error)) {
+    return <section className={`${card} mx-auto max-w-lg`}><h1 className="text-2xl font-bold">{title}</h1>
+      <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4" role="alert">
+        <p className="font-semibold">로그인 상태는 유지되고 있어.</p>
+        <p className="mt-2 text-sm">{error}</p>
+        <p className="mt-2 text-sm text-slate-600">잠시 후 새로고침해줘. 계속되면 관리자에게 알려줘.</p>
+      </div>
+    </section>;
+  }
 
   function submit(form: FormData) {
     setMessage("");

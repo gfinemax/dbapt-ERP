@@ -1,0 +1,4 @@
+project_id = "dbapt-erp"
+
+[api]
+schemas = ["public", "graphql_public", "finance", "approval"]
