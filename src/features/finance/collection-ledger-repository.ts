@@ -2,6 +2,7 @@ import { requireReimbursementIdentity } from "./reimbursement-auth";
 import { reimbursementDb } from "./reimbursement-repository";
 import { hasReimbursementPermission, type ReimbursementPermission } from "./reimbursement-domain";
 import type { CollectionAssessmentImportInput } from "./collection-assessment-csv";
+import { loadLedgerContributionSyncStatus, type LedgerContributionSyncStatus } from "./ledger-contribution-sync";
 
 export const collectionLedgerCommands = [
   "ASSESSMENT_SAVE",
@@ -25,6 +26,8 @@ export type CollectionAssessment = {
   allocated_amount: number;
   status: "ACTIVE" | "CANCELLED";
   lock_version: number;
+  source_system?: string | null;
+  source_assessment_id?: string | null;
 };
 export type CollectionAllocation = {
   id: string;
@@ -68,6 +71,7 @@ export type CollectionLedgerWorkspace = {
   deposit_candidates: CollectionBankCandidate[];
   withdrawal_candidates: CollectionBankCandidate[];
   import_batches: CollectionAssessmentImportSummary[];
+  ledger_sync?: LedgerContributionSyncStatus;
   viewer: { user_id: string; permissions: ReimbursementPermission[] };
 };
 export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
@@ -178,24 +182,29 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
   if (!member.active || !staffPermissions.some((permission) => hasReimbursementPermission(member, permission)))
     throw new Error("수납·환급 원장 조회 권한이 필요합니다.");
   const canImport = ["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission));
-  const [ledgerResponse, historyResponse] = await Promise.all([
+  const [ledgerResponse, historyResponse, syncStatus] = await Promise.all([
     reimbursementDb().schema("finance").rpc("collection_ledger_read", { p_org: member.organization_id, p_actor: member.user_id }),
     canImport
       ? reimbursementDb().schema("finance").rpc("collection_assessment_import_history", { p_org: member.organization_id, p_actor: member.user_id, p_batch: null })
       : Promise.resolve({ data: { batches: [], selected: null }, error: null }),
+    loadLedgerContributionSyncStatus(),
   ]);
   const { data, error } = ledgerResponse;
   if (error) throw new Error(error.message);
   if (historyResponse.error) throw new Error(historyResponse.error.message);
   const keys = ["assessments", "allocations", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
   if (!record(data) || keys.some((key) => !Array.isArray(data[key]))) throw new Error("수납·환급 원장 조회 결과를 확인해주세요.");
+  const sourceById = new Map(syncStatus.sources.map((source) => [source.id, source]));
   return {
-    assessments: data.assessments as CollectionAssessment[],
+    assessments: (data.assessments as CollectionAssessment[]).map((assessment) => ({
+      ...assessment, ...sourceById.get(assessment.id),
+    })),
     allocations: data.allocations as CollectionAllocation[],
     refunds: data.refunds as CollectionRefund[],
     deposit_candidates: data.deposit_candidates as CollectionBankCandidate[],
     withdrawal_candidates: data.withdrawal_candidates as CollectionBankCandidate[],
     import_batches: importHistory(historyResponse.data).batches,
+    ledger_sync: syncStatus,
     viewer: { user_id: member.user_id, permissions: [...member.permissions] },
   };
 }

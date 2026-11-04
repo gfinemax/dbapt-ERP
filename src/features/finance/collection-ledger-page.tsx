@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { executeCollectionLedger } from "@/app/finance/collections/actions";
+import { executeCollectionLedger, syncLedgerContributions } from "@/app/finance/collections/actions";
 import type { CollectionLedgerCommand, CollectionLedgerWorkspace } from "./collection-ledger-repository";
 import { CollectionAssessmentImport } from "./collection-assessment-import";
 
@@ -33,6 +33,17 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
     });
   };
   const activeAllocations = workspace.allocations.filter((allocation) => !allocation.reversed);
+  const ledgerSync = workspace.ledger_sync ?? { state: null, unresolved_issues: [], sources: [] };
+  const sync = () => {
+    setMessage("");
+    startTransition(async () => {
+      try {
+        const result = await syncLedgerContributions();
+        setMessage(`ledger 분담금 ${result.received_count}건을 확인해 ${result.applied_count}건 반영했어. 검토 필요 ${result.issue_count}건.`);
+        router.refresh();
+      } catch (error) { setMessage(error instanceof Error ? error.message : "ledger 분담금을 가져오지 못했어."); }
+    });
+  };
 
   return <main className="space-y-5">
     <header className={card}>
@@ -43,6 +54,11 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
     </header>
 
     {mode === "collections" ? <>
+      {canDecide ? <section className={card} aria-label="ledger 분담금 연동">
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">ledger 분담금 가져오기</h2><p className="mt-1 text-sm text-slate-600">ledger의 부과 원본을 고유 ID로만 동기화해. ERP에서는 수납 배분과 보고를 담당해.</p></div><button className={primary} disabled={pending} onClick={sync}>ledger 변경 가져오기</button></div>
+        <p className="mt-3 text-xs text-slate-500">마지막 커서 {ledgerSync.state?.last_cursor ?? 0} · 마지막 동기화 {ledgerSync.state?.last_synced_at?.slice(0, 19).replace("T", " ") ?? "아직 안 함"} · 미해결 검토 {ledgerSync.unresolved_issues.length}건</p>
+        {ledgerSync.unresolved_issues.length ? <ul className="mt-3 space-y-1 text-sm text-amber-800">{ledgerSync.unresolved_issues.slice(0, 5).map((issue) => <li key={issue.id}>{issue.source_assessment_id} · {issue.issue_detail}</li>)}</ul> : null}
+      </section> : null}
       <section className="grid gap-3 sm:grid-cols-3">
         <article className={card}><p className="text-sm text-slate-500">부과 원본</p><strong className="mt-1 block text-2xl">{workspace.assessments.length}건</strong></article>
         <article className={card}><p className="text-sm text-slate-500">실제 수납 배분</p><strong className="mt-1 block text-2xl">{activeAllocations.length}건</strong></article>
@@ -68,8 +84,8 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
           const allocations = workspace.allocations.filter((allocation) => allocation.assessment_id === assessment.id);
           const hasActiveAllocation = allocations.some((allocation) => !allocation.reversed);
           return <article className={card} key={assessment.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-blue-700">{assessment.external_member_id}{assessment.member_no ? ` · ${assessment.member_no}` : ""}</p><h2 className="mt-1 text-lg font-bold">{assessment.member_name_snapshot} · {assessment.assessment_code}</h2><p className="mt-1 text-sm">부과 {money(assessment.assessed_amount)} · 수납 {money(assessment.allocated_amount)} · 잔액 {money(remaining)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${assessment.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : remaining === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>{assessment.status === "CANCELLED" ? "부과 취소" : remaining === 0 ? "완납" : "수납 진행"}</span></div>
-            {canDecide && assessment.status === "ACTIVE" && !hasActiveAllocation ? <form className="mt-3 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("ASSESSMENT_CANCEL", { id: assessment.id, lock_version: assessment.lock_version, reason: data.get("reason") }); }}><input className={`${input} max-w-sm`} name="reason" aria-label={`${assessment.member_name_snapshot} 부과 취소 사유`} placeholder="부과 취소 사유" required /><button className={secondary} disabled={pending}>부과 원본 취소</button></form> : null}
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-blue-700">{assessment.external_member_id}{assessment.member_no ? ` · ${assessment.member_no}` : ""}{assessment.source_system ? " · ledger 연동" : ""}</p><h2 className="mt-1 text-lg font-bold">{assessment.member_name_snapshot} · {assessment.assessment_code}</h2><p className="mt-1 text-sm">부과 {money(assessment.assessed_amount)} · 수납 {money(assessment.allocated_amount)} · 잔액 {money(remaining)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${assessment.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : remaining === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>{assessment.status === "CANCELLED" ? "부과 취소" : remaining === 0 ? "완납" : "수납 진행"}</span></div>
+            {canDecide && !assessment.source_system && assessment.status === "ACTIVE" && !hasActiveAllocation ? <form className="mt-3 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("ASSESSMENT_CANCEL", { id: assessment.id, lock_version: assessment.lock_version, reason: data.get("reason") }); }}><input className={`${input} max-w-sm`} name="reason" aria-label={`${assessment.member_name_snapshot} 부과 취소 사유`} placeholder="부과 취소 사유" required /><button className={secondary} disabled={pending}>부과 원본 취소</button></form> : null}
             {canPay && assessment.status === "ACTIVE" && remaining > 0 && workspace.deposit_candidates.length ? <form className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-3 md:grid-cols-[1fr_140px_1fr_auto]" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("RECEIPT_ALLOCATE", { ...Object.fromEntries(data), assessment_id: assessment.id }); }}>
               <select aria-label={`${assessment.member_name_snapshot} 입금 원본`} className={input} name="bank_transaction_id" required><option value="">실제 입금 선택</option>{workspace.deposit_candidates.map((bank) => <option key={bank.id} value={bank.id}>{bank.transacted_at.slice(0,10)} · {bank.counterparty || bank.description} · 가용 {money(bank.available_amount ?? bank.amount)}</option>)}</select>
               <input aria-label={`${assessment.member_name_snapshot} 수납 배분액`} className={input} name="amount" type="number" min="1" max={remaining} placeholder="배분액" required />

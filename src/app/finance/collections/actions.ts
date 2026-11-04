@@ -4,6 +4,13 @@ import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { parseCollectionAssessmentCsv } from "@/features/finance/collection-assessment-csv";
 import { applyCollectionAssessmentImport, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
+import { syncLedgerContributionAssessments } from "@/features/finance/ledger-contribution-sync";
+
+export async function syncLedgerContributions() {
+  const result = await syncLedgerContributionAssessments();
+  for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace", "/reports"]) revalidatePath(path);
+  return result;
+}
 
 export async function executeCollectionLedger(command: CollectionLedgerCommand, input: Record<string, unknown>, operationKey: string) {
   const result = await runCollectionLedger(command, input, operationKey);

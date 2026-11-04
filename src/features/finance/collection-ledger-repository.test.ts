@@ -8,6 +8,8 @@ beforeEach(() => {
   mocks.identity.mockReset().mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["ADMIN"] });
   mocks.rpc.mockReset().mockImplementation(async (name: string) => name === "collection_assessment_import_history"
     ? { data: { batches: [], selected: null }, error: null }
+    : name === "ledger_contribution_sync_status"
+      ? { data: { state: null, unresolved_issues: [], sources: [] }, error: null }
     : { data: { assessments: [], allocations: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
 });
 describe("collection ledger repository", () => {

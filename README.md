@@ -34,3 +34,11 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Ledger contribution sync
+
+Set `LEDGER_INTEGRATION_URL` and the shared `LEDGER_INTEGRATION_SECRET` on the server.
+The collections page pulls immutable contribution assessment events from dbapt-ledger with
+timestamped HMAC SHA-256 requests. ERP stores the ledger assessment ID and PeopleON member ID,
+keeps unresolved identity links in a review queue, and remains authoritative for bank receipts,
+allocation, evidence, and reports.
