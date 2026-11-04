@@ -6,14 +6,25 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { LedgerBankBackfillPanel } from "@/features/finance/ledger-bank-backfill-panel";
 import { emptyLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-backfill-shared";
-import { loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
+import { LedgerBankTransactionDetail } from "@/features/finance/ledger-bank-transaction-detail";
+import {
+  loadLedgerBankBackfillStatus,
+  loadLedgerBankImportedTransactions,
+} from "@/features/finance/ledger-bank-transaction-backfill";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import {
   setLedgerBankAccountMappingAction,
   syncLedgerBankTransactionsAction,
 } from "../bank-transactions/actions";
 
-export default async function FinanceBankAccountLinksRoute() {
+export default async function FinanceBankAccountLinksRoute({
+  searchParams,
+}: {
+  searchParams: Promise<{ ledgerAccountId?: string; page?: string }>;
+}) {
+  const query = await searchParams;
+  const selectedLedgerAccountId = query.ledgerAccountId?.trim() ?? "";
+  const requestedPage = Number.parseInt(query.page ?? "1", 10);
   let actor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
   let accessError: string | undefined;
 
@@ -33,10 +44,26 @@ export default async function FinanceBankAccountLinksRoute() {
       error: actor ? "Ledger 연동 환경설정을 확인해줘." : "계좌 연동 설정은 로그인 후 사용할 수 있어.",
       status: emptyLedgerBankBackfillStatus,
     });
-  const [bankAccounts, initialLedgerBackfill] = actor ? await Promise.all([
+  const ledgerDetail = actor && remoteEnabled && selectedLedgerAccountId
+    ? loadLedgerBankImportedTransactions(selectedLedgerAccountId, requestedPage).then((detail) => ({ detail, error: undefined })).catch(() => ({
+      detail: undefined,
+      error: "선택한 Ledger 계좌의 이관 내역을 불러오지 못했어. 잠시 후 다시 확인해줘.",
+    }))
+    : Promise.resolve({ detail: undefined, error: undefined });
+  const [bankAccounts, initialLedgerBackfill, initialLedgerDetail] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
     ledgerBackfill,
-  ]) : [[], await ledgerBackfill];
+    ledgerDetail,
+  ]) : [[], await ledgerBackfill, await ledgerDetail];
+  const selectedLedgerAccount = initialLedgerBackfill.status.accounts.find(
+    (account) => account.ledger_account_id === selectedLedgerAccountId,
+  );
+  const selectedErpAccount = selectedLedgerAccount?.erp_bank_account_id
+    ? (bankAccounts ?? []).find((account) => account.id === selectedLedgerAccount.erp_bank_account_id)
+    : undefined;
+  const detailError = selectedLedgerAccountId && !selectedLedgerAccount
+    ? "조회 권한이 있는 Ledger 계좌를 찾지 못했어."
+    : initialLedgerDetail.error;
 
   return (
     <ErpShell
@@ -73,6 +100,20 @@ export default async function FinanceBankAccountLinksRoute() {
           mapAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
           syncTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
         />
+        {selectedLedgerAccountId ? (
+          selectedLedgerAccount && initialLedgerDetail.detail ? (
+            <LedgerBankTransactionDetail
+              account={selectedLedgerAccount}
+              detail={initialLedgerDetail.detail}
+              erpBankAccount={selectedErpAccount}
+            />
+          ) : (
+            <section className="rounded-2xl border border-[var(--color-butter-soft)] bg-white p-5" id="ledger-account-detail" role="alert">
+              <h2 className="text-xl font-bold">이관 내역을 확인하지 못했어</h2>
+              <p className="mt-2 text-sm text-[var(--color-stone)]">{detailError}</p>
+            </section>
+          )
+        ) : null}
       </div>
     </ErpShell>
   );

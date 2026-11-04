@@ -65,6 +65,10 @@ describe("LedgerBankBackfillPanel", () => {
     await waitFor(() => expect(mapAccount).toHaveBeenCalledWith({ bankAccountId: "bank-erp", ledgerAccountId: "7" }));
     expect(await screen.findByText("계좌 ID 7 매핑을 저장했고 3건이 ERP 원장에 반영됐어.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: "연결 확정됨" })).toBeDisabled());
+    expect(screen.getByRole("link", { name: "Ledger 계좌 7 이관 3건 상세보기" })).toHaveAttribute(
+      "href",
+      "/finance/bank-account-links?ledgerAccountId=7#ledger-account-detail",
+    );
   });
 
   it("shows bounded cursor continuation instead of pretending a large backfill is complete", async () => {

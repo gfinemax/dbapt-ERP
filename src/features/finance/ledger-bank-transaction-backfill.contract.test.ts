@@ -25,6 +25,15 @@ describe("ledger bank transaction backfill contracts", () => {
     expect(repository).toContain("if (!page.source_frozen)");
   });
 
+  it("keeps imported-transaction detail reads inside the verified organization and source account", () => {
+    expect(repository).toContain('from("ledger_bank_transaction_sources")');
+    expect(repository).toContain('.eq("organization_id", actor.organization_id)');
+    expect(repository).toContain('.eq("source_system", sourceSystem)');
+    expect(repository).toContain('.eq("ledger_account_id", normalizedAccountId)');
+    expect(repository).toContain('.eq("import_status", "IMPORTED")');
+    expect(repository).toContain("source_transaction_id,payload_hash,payload,bank_transaction_id,imported_at");
+  });
+
   it("records the authenticated finance actor without violating the legacy core-profile foreign key", () => {
     expect(auditActorMigration).toContain("auth_actor_id uuid references auth.users(id)");
     expect(auditActorMigration).toContain("normalize_ledger_bank_auth_actor");

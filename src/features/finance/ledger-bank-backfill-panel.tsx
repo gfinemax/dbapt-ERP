@@ -129,7 +129,15 @@ export function LedgerBankBackfillPanel({
               <p className="mt-1 font-bold">{account.account_name}</p>
               <p className="mt-1 text-sm text-[var(--color-stone)]">{[account.bank_name, maskAccountNumber(account.account_number_last4)].filter(Boolean).join(" · ") || "은행 정보 없음"}</p>
               <p className="mt-2 text-xs font-semibold text-[var(--color-stone)]">
-                대기 {account.pending_count}건 · 이관 {account.imported_count}건 · 확인 {account.invalid_count + account.conflict_count}건
+                대기 {account.pending_count}건 · {account.imported_count > 0 ? (
+                  <Link
+                    aria-label={`Ledger 계좌 ${account.ledger_account_id} 이관 ${account.imported_count}건 상세보기`}
+                    className="text-[var(--color-deep-cobalt)] underline decoration-2 underline-offset-2"
+                    href={`/finance/bank-account-links?ledgerAccountId=${encodeURIComponent(account.ledger_account_id)}#ledger-account-detail`}
+                  >
+                    이관 {account.imported_count}건
+                  </Link>
+                ) : `이관 ${account.imported_count}건`} · 확인 {account.invalid_count + account.conflict_count}건
               </p>
             </div>
             <label className="grid gap-2 text-sm font-semibold">

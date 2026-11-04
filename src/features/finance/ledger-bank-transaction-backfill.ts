@@ -4,13 +4,19 @@ import { randomUUID } from "node:crypto";
 
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { requireReimbursementIdentity } from "./reimbursement-auth";
-import type { LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
+import type {
+  LedgerBankBackfillStatus,
+  LedgerBankImportedTransaction,
+  LedgerBankImportedTransactionDetail,
+} from "./ledger-bank-backfill-shared";
 import { signLedgerRequest } from "./ledger-contribution-signature";
 
 const sourceSystem = "dbapt-ledger";
 const path = "/api/integrations/erp/bank-transactions";
 const pageSize = 200;
 const maxPagesPerRun = 5;
+const detailPageSize = 50;
+const detailReadBatchSize = 1_000;
 
 type LedgerBankPage = {
   has_more: boolean;
@@ -46,6 +52,46 @@ function parseStatus(value: unknown): LedgerBankBackfillStatus {
   return value as LedgerBankBackfillStatus;
 }
 
+function stringValue(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+function numberValue(payload: Record<string, unknown>, key: string) {
+  const value = Number(payload[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function mapImportedTransaction(row: Record<string, unknown>): LedgerBankImportedTransaction {
+  const payload = isRecord(row.payload) ? row.payload : {};
+  const depositAmount = numberValue(payload, "deposit_amount");
+  const withdrawalAmount = numberValue(payload, "withdrawal_amount");
+  const balanceValue = payload.balance_amount;
+  const balanceAmount = balanceValue === null || balanceValue === undefined || balanceValue === ""
+    ? null
+    : Number(balanceValue);
+  return {
+    balance_amount: balanceAmount !== null && Number.isFinite(balanceAmount) ? balanceAmount : null,
+    bank_transaction_id: String(row.bank_transaction_id ?? ""),
+    category_group: stringValue(payload, "category_group"),
+    category_name: stringValue(payload, "category_name"),
+    deposit_amount: depositAmount,
+    description: stringValue(payload, "description") ?? "적요 없음",
+    imported_at: String(row.imported_at ?? ""),
+    management_memo: stringValue(payload, "management_memo") ?? stringValue(payload, "memo"),
+    payload_hash: String(row.payload_hash ?? ""),
+    source_transaction_id: String(row.source_transaction_id ?? ""),
+    transaction_date: stringValue(payload, "transaction_date") ?? "",
+    transaction_kind: depositAmount > 0 ? "입금" : withdrawalAmount > 0 ? "출금" : "금액 없음",
+    transaction_time: stringValue(payload, "transaction_time"),
+    withdrawal_amount: withdrawalAmount,
+  };
+}
+
+function transactionSortKey(row: LedgerBankImportedTransaction) {
+  return `${row.transaction_date}T${row.transaction_time ?? "00:00:00"}|${row.source_transaction_id}`;
+}
+
 export async function loadLedgerBankBackfillStatus(): Promise<LedgerBankBackfillStatus> {
   const actor = await requireBackfillActor();
   const { data, error } = await database().schema("finance").rpc("ledger_bank_backfill_status", {
@@ -54,6 +100,51 @@ export async function loadLedgerBankBackfillStatus(): Promise<LedgerBankBackfill
   });
   if (error) throw new Error(`Ledger 거래 이관 상태를 불러오지 못했어: ${error.message}`);
   return parseStatus(data);
+}
+
+export async function loadLedgerBankImportedTransactions(
+  ledgerAccountId: string,
+  requestedPage = 1,
+): Promise<LedgerBankImportedTransactionDetail> {
+  const actor = await requireBackfillActor();
+  const normalizedAccountId = ledgerAccountId.trim();
+  if (!normalizedAccountId || normalizedAccountId.length > 100) throw new Error("Ledger 계좌 ID를 확인해줘.");
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  const rows: LedgerBankImportedTransaction[] = [];
+  let offset = 0;
+
+  while (true) {
+    const { data, error } = await database().schema("finance").from("ledger_bank_transaction_sources")
+      .select("source_transaction_id,payload_hash,payload,bank_transaction_id,imported_at")
+      .eq("organization_id", actor.organization_id)
+      .eq("source_system", sourceSystem)
+      .eq("ledger_account_id", normalizedAccountId)
+      .eq("import_status", "IMPORTED")
+      .order("source_transaction_id", { ascending: true })
+      .range(offset, offset + detailReadBatchSize - 1);
+    if (error) throw new Error(`Ledger 이관 거래를 불러오지 못했어: ${error.message}`);
+    const batch = (data ?? []) as Record<string, unknown>[];
+    rows.push(...batch.map(mapImportedTransaction));
+    if (batch.length < detailReadBatchSize) break;
+    offset += detailReadBatchSize;
+  }
+
+  rows.sort((left, right) => transactionSortKey(right).localeCompare(transactionSortKey(left)));
+  const transactionDates = rows.map((row) => row.transaction_date).filter(Boolean).sort();
+  const totalPages = Math.max(1, Math.ceil(rows.length / detailPageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * detailPageSize;
+  return {
+    deposit_total: rows.reduce((total, row) => total + row.deposit_amount, 0),
+    first_transaction_date: transactionDates[0] ?? null,
+    last_transaction_date: transactionDates.at(-1) ?? null,
+    page: currentPage,
+    page_size: detailPageSize,
+    rows: rows.slice(pageStart, pageStart + detailPageSize),
+    total_count: rows.length,
+    total_pages: totalPages,
+    withdrawal_total: rows.reduce((total, row) => total + row.withdrawal_amount, 0),
+  };
 }
 
 export async function syncLedgerBankTransactions() {
