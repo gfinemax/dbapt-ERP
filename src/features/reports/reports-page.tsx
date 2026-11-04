@@ -3,6 +3,8 @@
 import { Download, FileSpreadsheet, FileText, RefreshCw, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
+import { useTransition } from "react";
+import { generateCurrentFinancialReports } from "@/app/finance/reports/actions";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -20,6 +22,7 @@ import {
   type StatutoryFundReportDocument,
   type StatutoryFundReportDocumentKey,
 } from "./report-data";
+import type { FinancialReportRun, FinancialReportWorkspace } from "./financial-report-repository";
 
 const detailLabels: Record<ReportSection, string> = {
   overview: "보고서 목록",
@@ -28,37 +31,45 @@ const detailLabels: Record<ReportSection, string> = {
   budget: "운영비 예산",
 };
 
-export function ReportsPage({ initialSection = "overview" }: { initialSection?: ReportSection }) {
+export function ReportsPage({ initialSection = "overview", workspace, loadError }: {
+  initialSection?: ReportSection; workspace?: FinancialReportWorkspace; loadError?: string;
+}) {
   const activeDetailLabel = detailLabels[initialSection];
 
   return (
     <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="보고서">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6" style={{ fontFamily: reportFontFamily }}>
         {initialSection === "performance" ? (
-          <PerformanceSection />
+          <PerformanceSection workspace={workspace} />
         ) : initialSection === "cash-flow" ? (
-          <CashFlowSection />
+          <CashFlowSection workspace={workspace} />
         ) : initialSection === "budget" ? (
           <BudgetSection />
         ) : (
-          <ReportOverviewSection />
+          <ReportOverviewSection workspace={workspace} loadError={loadError} />
         )}
       </div>
     </ErpShell>
   );
 }
 
-function ReportOverviewSection() {
-  const summary = getReportSummary();
+function ReportOverviewSection({ workspace, loadError }: { workspace?: FinancialReportWorkspace; loadError?: string }) {
+  const fallback = getReportSummary();
+  const summary = workspace ? {
+    cashFlowClosingBalance: formatMoney(workspace.live.monthly.closing_balance),
+    monthlyOperatingExpense: formatMoney(workspace.live.monthly.withdrawal_total),
+  } : fallback;
   const [activePrintDocumentKey, setActivePrintDocumentKey] = useState<StatutoryFundReportDocumentKey | null>(null);
-  const activePrintDocument = statutoryFundReportDocuments.find((document) => document.key === activePrintDocumentKey);
+  const [message,setMessage] = useState(""); const [pending,startTransition] = useTransition();
+  const printDocuments = workspace ? buildActualReportDocuments(workspace) : statutoryFundReportDocuments;
+  const activePrintDocument = printDocuments.find((document) => document.key === activePrintDocumentKey);
 
   return (
     <>
       <ReportHero
         actions={
           <>
-            <Button className="rounded-full" size="lg" variant="outline">
+            <Button className="rounded-full" disabled={pending || !workspace} onClick={() => startTransition(async()=>{try{const result=await generateCurrentFinancialReports();setMessage(`ERP 실데이터 보고서 ${result.reports.length}종을 확인했어.`);window.location.reload();}catch(error){setMessage(error instanceof Error?error.message:"보고서를 생성하지 못했어.");}})} size="lg" variant="outline">
               <RefreshCw className="size-4" />
               자동 생성 확인
             </Button>
@@ -74,10 +85,12 @@ function ReportOverviewSection() {
         subtitle="홈페이지/정보몽땅 공개"
         title="보고서 목록"
       />
+      {loadError ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">{loadError} · 아래 샘플 양식은 참고용으로만 표시해.</p> : null}
+      {message ? <p className="rounded-xl border bg-white p-3 text-sm" role="status">{message}</p> : null}
 
       <section className="grid gap-4 lg:grid-cols-4">
-        <SummaryTile label="수정필요" value={`${generatedReportRuns.filter((report) => report.status === "수정필요").length}건`} />
-        <SummaryTile label="공개대기" value={`${generatedReportRuns.filter((report) => report.publicationStatus === "공개대기").length}건`} />
+        <SummaryTile label="미분류 거래" value={workspace ? `${workspace.live.monthly.unclassified_count}건` : `${generatedReportRuns.filter((report) => report.status === "수정필요").length}건`} />
+        <SummaryTile label="보고서 보관본" value={workspace ? `${workspace.history.length}건` : `${generatedReportRuns.filter((report) => report.publicationStatus === "공개대기").length}건`} />
         <SummaryTile label="분기말 잔액" value={summary.cashFlowClosingBalance} />
         <SummaryTile label="월 운영비 집행" value={summary.monthlyOperatingExpense} />
       </section>
@@ -102,7 +115,7 @@ function ReportOverviewSection() {
           <span className="rounded-full bg-[var(--color-cloud-veil)] px-3 py-1 text-xs font-bold text-[var(--color-stone)]">내부 보관 / 감사 대응</span>
         </div>
         <div className="grid gap-4 lg:grid-cols-3">
-          {statutoryFundReportDocuments.map((document) => (
+          {printDocuments.map((document) => (
             <div className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4" key={document.key}>
               <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">{document.dialogLabel}</p>
               <h3 className="mt-2 text-xl font-bold">{document.title}</h3>
@@ -129,7 +142,7 @@ function ReportOverviewSection() {
             <span className="rounded-full bg-[var(--color-sprout)] px-3 py-1">공개완료</span>
           </div>
         </div>
-        <ReportRunTable />
+        <ReportRunTable actualRuns={workspace?.history} />
       </section>
 
       {activePrintDocument ? <StatutoryFundReportPrintModal document={activePrintDocument} onClose={() => setActivePrintDocumentKey(null)} /> : null}
@@ -137,7 +150,7 @@ function ReportOverviewSection() {
   );
 }
 
-function PerformanceSection() {
+function PerformanceSection({ workspace }: { workspace?: FinancialReportWorkspace }) {
   const summary = getReportSummary();
 
   return (
@@ -163,9 +176,9 @@ function PerformanceSection() {
       />
 
       <section className="grid gap-4 lg:grid-cols-4">
-        <SummaryTile label="조합원 합계" value={summary.memberTotal} />
-        <SummaryTile label="분기 수입/지출" value="20,728천원" />
-        <SummaryTile label="분기말 잔액" value={summary.cashFlowClosingBalance} />
+        <SummaryTile label="연동 조합원" value={workspace ? `${workspace.live.quarterly.active_member_count}명` : summary.memberTotal} />
+        <SummaryTile label="분기 수입/지출" value={workspace ? `${formatMoney(workspace.live.quarterly.deposit_total)} / ${formatMoney(workspace.live.quarterly.withdrawal_total)}` : "20,728천원"} />
+        <SummaryTile label="분기말 잔액" value={workspace ? formatMoney(workspace.live.quarterly.closing_balance) : summary.cashFlowClosingBalance} />
         <SummaryTile label="월 운영비 집행" value={summary.monthlyOperatingExpense} />
       </section>
 
@@ -178,7 +191,21 @@ function PerformanceSection() {
   );
 }
 
-function CashFlowSection() {
+function CashFlowSection({ workspace }: { workspace?: FinancialReportWorkspace }) {
+  const monthly = workspace?.live.monthly;
+  const rows = monthly ? [
+    ["구분","항목","금액"],
+    ["수입","전월말 현금예금 잔액",formatMoney(monthly.opening_balance)],
+    ...monthly.categories.filter(row=>Number(row.deposit_amount)>0).map(row=>["수입",row.category,formatMoney(row.deposit_amount)]),
+    ["수입","당월 수입 합계",formatMoney(monthly.deposit_total)],
+    ...monthly.categories.filter(row=>Number(row.withdrawal_amount)>0).map(row=>["지출",row.category,formatMoney(row.withdrawal_amount)]),
+    ["지출","당월 지출 합계",formatMoney(monthly.withdrawal_total)],
+    ["잔액","월말 현금예금 잔액",formatMoney(monthly.closing_balance)],
+  ] : cashFlowStatement.rows;
+  const details = monthly ? [["No","거래일","계정항목","적요","입금","출금","분류상태"],...monthly.transactions.map((row,index)=>[
+    String(index+1),row.date.slice(0,10),row.category,row.counterparty||row.description,
+    row.deposit_amount?formatMoney(row.deposit_amount):"-",row.withdrawal_amount?formatMoney(row.withdrawal_amount):"-",row.classification_status,
+  ])] : cashFlowStatement.detailRows;
   return (
     <>
       <ReportHero
@@ -198,21 +225,21 @@ function CashFlowSection() {
         description="월별 자금 입출금명세서와 운영비 세부내역을 같은 화면에서 확인합니다."
         route="회계/자금 > 보고서 > 자금입출금명세서"
         subtitle={cashFlowStatement.unit}
-        title={cashFlowStatement.title}
+        title={monthly ? `${monthly.period_start.slice(0,7)} 자금 입출금명세서` : cashFlowStatement.title}
       />
 
       <section className="grid gap-4 lg:grid-cols-3">
-        <SummaryTile label="작성월" value={cashFlowStatement.month} />
-        <SummaryTile label="당월 수입/지출 합계" value="20,728,000원" />
-        <SummaryTile label="운영비 세부 합계" value="8,266,110원" />
+        <SummaryTile label="작성월" value={monthly?.period_start.slice(0,7) ?? cashFlowStatement.month} />
+        <SummaryTile label="당월 수입/지출" value={monthly ? `${formatMoney(monthly.deposit_total)} / ${formatMoney(monthly.withdrawal_total)}` : "20,728,000원"} />
+        <SummaryTile label="미분류" value={monthly ? `${monthly.unclassified_count}건` : "8,266,110원"} />
       </section>
 
-      <SimpleTable ariaLabel="월별 자금 입출금명세서" rows={cashFlowStatement.rows} />
+      <SimpleTable ariaLabel="월별 자금 입출금명세서" rows={rows} />
 
       <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-        <h2 className="text-lg font-bold">3월 운영비 세부내역</h2>
+        <h2 className="text-lg font-bold">{monthly ? "ERP 통장거래 세부내역" : "3월 운영비 세부내역"}</h2>
         <div className="mt-4">
-          <SimpleTable ariaLabel="3월 운영비 세부내역" rows={cashFlowStatement.detailRows} />
+          <SimpleTable ariaLabel="3월 운영비 세부내역" rows={details} />
         </div>
       </section>
     </>
@@ -327,6 +354,36 @@ function StatutoryFundReportPrintModal({
   );
 }
 
+function formatMoney(value: number) { return `${Number(value).toLocaleString("ko-KR")}원`; }
+
+function buildActualReportDocuments(workspace: FinancialReportWorkspace): StatutoryFundReportDocument[] {
+  const monthly=workspace.live.monthly,quarterly=workspace.live.quarterly;
+  const cashRows=[["구분","항목","금액"],["수입","전월말 현금예금 잔액",formatMoney(monthly.opening_balance)],
+    ...monthly.categories.filter(row=>Number(row.deposit_amount)>0).map(row=>["수입",row.category,formatMoney(row.deposit_amount)]),
+    ["수입","당월 수입 합계",formatMoney(monthly.deposit_total)],
+    ...monthly.categories.filter(row=>Number(row.withdrawal_amount)>0).map(row=>["지출",row.category,formatMoney(row.withdrawal_amount)]),
+    ["지출","당월 지출 합계",formatMoney(monthly.withdrawal_total)],
+    ["잔액","월말 현금예금 잔액",formatMoney(monthly.closing_balance)]];
+  const detailRows=[["No","거래일","계정항목","적요","입금","출금","분류상태"],...monthly.transactions.map((row,index)=>[
+    String(index+1),row.date.slice(0,10),row.category,row.counterparty||row.description,
+    row.deposit_amount?formatMoney(row.deposit_amount):"-",row.withdrawal_amount?formatMoney(row.withdrawal_amount):"-",row.classification_status])];
+  return statutoryFundReportDocuments.map(document=>{
+    if(document.key==="monthly-cash-flow") return {...document,period:`${monthly.period_start} ~ ${monthly.period_end}`,
+      title:`${monthly.period_start.slice(0,7)} 월별 자금 입출금 명세서`,summary:[
+        {label:"작성월",value:monthly.period_start.slice(0,7)},{label:"당월 수입 합계",value:formatMoney(monthly.deposit_total)},
+        {label:"당월 지출 합계",value:formatMoney(monthly.withdrawal_total)},{label:"월말 현금예금 잔액",value:formatMoney(monthly.closing_balance)}],
+      sections:[{title:"자금 입출금 요약",rows:cashRows},{title:"통장거래 세부내역",rows:detailRows}]};
+    if(document.key==="quarterly-business-performance") return {...document,period:`${quarterly.period_start} ~ ${quarterly.period_end}`,
+      title:`${quarterly.period_start.slice(0,4)}년 ${Math.ceil(Number(quarterly.period_start.slice(5,7))/3)}분기 사업실적보고서`,summary:[
+        {label:"보고분기",value:`${quarterly.period_start} ~ ${quarterly.period_end}`},{label:"연동 조합원",value:`${quarterly.active_member_count}명`},
+        {label:"분기 수입 / 지출",value:`${formatMoney(quarterly.deposit_total)} / ${formatMoney(quarterly.withdrawal_total)}`},{label:"분기말 잔액",value:formatMoney(quarterly.closing_balance)}],
+      sections:[...document.sections.filter(section=>section.title!=="지급 및 증빙관리"),{title:"지급 및 증빙관리",rows:[
+        ["구분","금액/건수","확인상태"],["분담금 부과",formatMoney(quarterly.assessment_total),"ledger 연동"],
+        ["수납 배분",formatMoney(quarterly.receipt_total),"ERP 확정"],["미분류 통장거래",`${monthly.unclassified_count}건`,monthly.unclassified_count?"보완 필요":"확인 완료"]]}]};
+    return document;
+  });
+}
+
 function statusClassName(status: string) {
   if (status === "수정필요") {
     return "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]";
@@ -343,7 +400,8 @@ function statusClassName(status: string) {
   return "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]";
 }
 
-function ReportRunTable() {
+function ReportRunTable({ actualRuns }: { actualRuns?: FinancialReportRun[] }) {
+  if (actualRuns) return <div className="overflow-x-auto rounded-xl border border-[var(--color-soft-border)]"><table aria-label="자동 생성 보고서 목록" className="min-w-full border-collapse bg-white text-sm"><thead className="bg-[var(--color-cloud-veil)]"><tr>{["보고서","대상기간","생성일","버전","상태","생성 근거"].map(header=><th className="px-4 py-3 text-center" key={header}>{header}</th>)}</tr></thead><tbody>{actualRuns.map(run=><tr className="border-t" key={run.id}><td className="px-4 py-3 font-bold">{run.report_type==="MONTHLY_CASH"?"월별 자금입출금명세서":"분기별 실적보고서"}</td><td className="px-4 py-3">{run.period_start} ~ {run.period_end}</td><td className="px-4 py-3 text-center">{run.created_at.slice(0,10)}</td><td className="px-4 py-3 text-center">v{run.version}</td><td className="px-4 py-3 text-center">{run.status}</td><td className="px-4 py-3">{run.reason}</td></tr>)}{!actualRuns.length?<tr><td className="px-4 py-6 text-center" colSpan={6}>아직 보관된 보고서가 없어. 자동 생성 확인을 눌러줘.</td></tr>:null}</tbody></table></div>;
   return (
     <div className="overflow-x-auto rounded-xl border border-[var(--color-soft-border)]">
       <table aria-label="자동 생성 보고서 목록" className="min-w-full border-collapse bg-white text-sm">

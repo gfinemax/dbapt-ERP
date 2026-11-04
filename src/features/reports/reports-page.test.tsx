@@ -3,6 +3,19 @@ import { describe, expect, it } from "vitest";
 import { ReportsPage } from "./reports-page";
 
 describe("ReportsPage", () => {
+  it("renders ERP bank and collection values when the server supplies live report data", () => {
+    const workspace = { live: { generated_at: "2026-11-04T00:00:00Z", source: "ERP", monthly: {
+      period_start: "2026-10-01", period_end: "2026-10-31", opening_balance: 1000, deposit_total: 100000,
+      withdrawal_total: 20000, closing_balance: 81000, unclassified_count: 1,
+      categories: [{ category: "조합원 분담금", deposit_amount: 100000, withdrawal_amount: 0, transaction_count: 1 }],
+      transactions: [{ id: "tx", date: "2026-10-01T00:00:00Z", description: "분담금", counterparty: "홍길동", deposit_amount: 100000, withdrawal_amount: 0, category: "조합원 분담금", classification_status: "CONFIRMED" }],
+    }, quarterly: { period_start: "2026-10-01", period_end: "2026-12-31", deposit_total: 100000,
+      withdrawal_total: 20000, closing_balance: 81000, assessment_total: 200000, receipt_total: 50000, active_member_count: 1 } }, history: [] };
+    render(<ReportsPage initialSection="cash-flow" workspace={workspace} />);
+    expect(screen.getByRole("heading", { name: "2026-10 자금 입출금명세서" })).toBeInTheDocument();
+    expect(screen.getByText("81,000원")).toBeInTheDocument();
+    expect(screen.getAllByText("조합원 분담금").length).toBeGreaterThan(0);
+  });
   it("renders a managed report list with automatic generation and publication status", () => {
     render(<ReportsPage initialSection="overview" />);
 

@@ -43,3 +43,12 @@ create table finance.collection_receipt_reversals(
   allocation_id uuid not null, reason text not null,
   created_by uuid not null references auth.users(id), created_at timestamptz not null default now()
 );
+create table finance.account_subjects(id uuid primary key default gen_random_uuid(),name text not null);
+create table finance.bank_transactions(
+  id uuid primary key default gen_random_uuid(), organization_id uuid not null,
+  transacted_at timestamptz not null, description text not null, counterparty text,
+  deposit_amount numeric(16,0) not null default 0, withdrawal_amount numeric(16,0) not null default 0,
+  recommended_account_subject_name text, uploaded_account_title text,
+  confirmed_account_subject_id uuid references finance.account_subjects(id),
+  classification_status text not null default 'UNREVIEWED', deleted_at timestamptz
+);

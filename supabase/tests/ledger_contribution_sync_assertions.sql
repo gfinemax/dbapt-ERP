@@ -2,6 +2,11 @@ insert into auth.users(id) values('10000000-0000-0000-0000-000000000001');
 insert into core.organizations(id) values('20000000-0000-0000-0000-000000000001');
 insert into finance.reimbursement_members(organization_id,user_id,permissions) values(
   '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',array['ADMIN']);
+insert into finance.account_subjects(id,name) values('40000000-0000-0000-0000-000000000001','조합원 분담금');
+insert into finance.bank_transactions(organization_id,transacted_at,description,counterparty,deposit_amount,withdrawal_amount,
+  confirmed_account_subject_id,classification_status) values
+('20000000-0000-0000-0000-000000000001','2026-10-01T09:00:00Z','분담금 입금','홍길동',100000,0,'40000000-0000-0000-0000-000000000001','CONFIRMED'),
+('20000000-0000-0000-0000-000000000001','2026-10-02T09:00:00Z','임대료','IFC',0,20000,null,'UNREVIEWED');
 
 select finance.sync_ledger_contribution_assessments(
   '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
@@ -18,6 +23,19 @@ do $$ begin
   exception when raise_exception then
     if sqlerrm not like 'ledger에서%' then raise; end if;
   end;
+end $$;
+do $$ declare live jsonb; generated jsonb; begin
+  live:=finance.financial_report_live('20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001');
+  if (live#>>'{monthly,deposit_total}')::numeric<>100000 or (live#>>'{monthly,withdrawal_total}')::numeric<>20000 then
+    raise exception 'live financial report totals mismatch';
+  end if;
+  if (live#>>'{monthly,unclassified_count}')::integer<>1 then raise exception 'unclassified count mismatch'; end if;
+  generated:=finance.generate_financial_reports('20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','test generation',array['MONTHLY_CASH','QUARTERLY_PERFORMANCE']);
+  if jsonb_array_length(generated->'reports')<>2 or (select count(*) from finance.financial_report_runs)<>2 then
+    raise exception 'financial report snapshots mismatch';
+  end if;
+  perform finance.generate_financial_reports('20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001','same source rerun',array['MONTHLY_CASH','QUARTERLY_PERFORMANCE']);
+  if (select count(*) from finance.financial_report_runs)<>2 then raise exception 'unchanged source created duplicate report versions'; end if;
 end $$;
 
 insert into finance.collection_receipt_allocations(
