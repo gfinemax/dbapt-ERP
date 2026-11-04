@@ -145,6 +145,11 @@ create table if not exists finance.bank_accounts (
   account_name text not null,
   account_no text not null,
   account_type text not null check (account_type in ('신탁계좌', '운영계좌', '토지비계좌')),
+  account_purpose text not null default '',
+  opened_at date not null,
+  closed_at date,
+  verified_at date,
+  current_balance numeric(16,0),
   usage_status text not null default '사용' check (usage_status in ('사용', '사용안함')),
   last_synced_at timestamptz,
   sync_status text not null default '확인필요' check (sync_status in ('정상', '확인필요')),
@@ -194,7 +199,12 @@ grant select, insert, update on finance.items, finance.credit_cards to service_r
 
 alter table finance.bank_accounts
   add column if not exists organization_id uuid references core.organizations(id),
-  add column if not exists deleted_at timestamptz;
+  add column if not exists deleted_at timestamptz,
+  add column if not exists account_purpose text not null default '',
+  add column if not exists opened_at date,
+  add column if not exists closed_at date,
+  add column if not exists verified_at date,
+  add column if not exists current_balance numeric(16,0);
 
 create table if not exists finance.account_subjects (
   id uuid primary key default gen_random_uuid(),

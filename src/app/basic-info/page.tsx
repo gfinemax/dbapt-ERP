@@ -37,6 +37,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
   const params = await searchParams;
   const initialSection = parseBasicInfoSection(params?.section);
   let accountSubjectActor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
+  let bankAccountActor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
   let accountSubjectAccessError: string | undefined;
   if (initialSection === "account-subjects") {
     try {
@@ -45,13 +46,20 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       accountSubjectAccessError = error instanceof Error ? error.message : "계정과목 조회 권한을 확인하지 못했어.";
     }
   }
+  if (initialSection === "bank-accounts") {
+    try {
+      bankAccountActor = await requireExpenseActor("READ");
+    } catch {
+      bankAccountActor = null;
+    }
+  }
   const [initialAccountSubjects, initialAccountSubjectCandidates] = accountSubjectActor
     ? await Promise.all([
       listAccountSubjectsFromSupabase(accountSubjectActor.organization_id),
       listOperatingAccountSubjectCandidates(accountSubjectActor.organization_id),
     ])
     : [null, null];
-  const initialBankAccounts = initialSection === "bank-accounts" ? await listBankAccountsFromSupabase() : null;
+  const initialBankAccounts = bankAccountActor ? await listBankAccountsFromSupabase(bankAccountActor.organization_id) : null;
   const initialBusinessPartners = initialSection === "partners" ? await listBusinessPartnersFromSupabase() : null;
   const businessPartnerLoadError = initialSection === "partners" && initialBusinessPartners === null
     ? "거래처 정보를 불러오지 못했습니다. Supabase 연결과 finance.business_partners 테이블을 확인해 주세요."
@@ -79,7 +87,7 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       createItem={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "items", initialItems) ? createItemAction : undefined}
       initialAccountSubjects={initialSection === "account-subjects" ? initialAccountSubjects ?? [] : undefined}
       initialAccountSubjectCandidates={initialSection === "account-subjects" ? initialAccountSubjectCandidates ?? [] : undefined}
-      initialBankAccounts={initialBankAccounts ?? undefined}
+      initialBankAccounts={initialSection === "bank-accounts" ? initialBankAccounts ?? [] : undefined}
       initialBusinessPartners={initialSection === "partners" ? initialBusinessPartners ?? [] : undefined}
       initialCreditCards={initialCreditCards ?? undefined}
       initialItems={initialItems ?? undefined}

@@ -5,46 +5,80 @@ import type { BankAccountInput, RegisteredBankAccount } from "./business-partner
 export const bankAccountRepositorySchema = "finance";
 
 export type SupabaseBankAccountRow = {
+  account_purpose?: string | null;
   account_name: string;
   account_no: string;
   account_type: RegisteredBankAccount["accountType"];
   bank_name: string;
+  closed_at?: string | null;
   created_at: string;
+  current_balance?: number | string | null;
   id: string;
   last_synced_at: string | null;
+  opened_at?: string | null;
+  organization_id?: string | null;
   sync_status: RegisteredBankAccount["status"];
   unmatched_count: number;
   usage_status: RegisteredBankAccount["usageStatus"];
+  verified_at?: string | null;
 };
 
-export type SupabaseBankAccountInsert = Omit<SupabaseBankAccountRow, "id" | "last_synced_at">;
-export type SupabaseBankAccountUpdate = Pick<SupabaseBankAccountRow, "account_name" | "account_no" | "account_type" | "bank_name" | "created_at">;
+export type SupabaseBankAccountInsert = {
+  account_name: string;
+  account_no: string;
+  account_purpose: string;
+  account_type: RegisteredBankAccount["accountType"];
+  bank_name: string;
+  closed_at: string | null;
+  current_balance: number | null;
+  opened_at: string;
+  organization_id?: string;
+  sync_status: RegisteredBankAccount["status"];
+  unmatched_count: number;
+  usage_status: RegisteredBankAccount["usageStatus"];
+  verified_at: string | null;
+};
+export type SupabaseBankAccountUpdate = Pick<
+  SupabaseBankAccountInsert,
+  "account_name" | "account_no" | "account_purpose" | "account_type" | "bank_name" | "closed_at" | "current_balance" | "opened_at" | "verified_at"
+>;
+
+const bankAccountSelect = "id, organization_id, bank_name, account_name, account_no, account_type, account_purpose, opened_at, closed_at, verified_at, current_balance, usage_status, created_at, last_synced_at, sync_status, unmatched_count";
 
 export function mapBankAccountFromRow(row: SupabaseBankAccountRow): RegisteredBankAccount {
   return {
+    accountPurpose: row.account_purpose ?? "",
     accountName: row.account_name,
     accountNo: row.account_no,
     accountType: row.account_type,
     bankName: row.bank_name,
-    createdAt: formatDate(row.created_at),
+    closedAt: row.closed_at ?? "",
+    createdAt: row.opened_at ?? formatDate(row.created_at),
+    currentBalance: row.current_balance === null || row.current_balance === undefined ? null : Number(row.current_balance),
     id: row.id,
     lastSyncedAt: row.last_synced_at ? formatSyncedAt(row.last_synced_at) : "미연동",
     status: row.sync_status,
     unmatchedCount: row.unmatched_count,
     usageStatus: row.usage_status,
+    verifiedAt: row.verified_at ?? "",
   };
 }
 
-export function mapBankAccountToInsert(input: BankAccountInput): SupabaseBankAccountInsert {
+export function mapBankAccountToInsert(input: BankAccountInput, organizationId?: string): SupabaseBankAccountInsert {
   return {
     account_name: input.accountName,
     account_no: input.accountNo,
+    account_purpose: input.accountPurpose?.trim() ?? "",
     account_type: input.accountType,
     bank_name: input.bankName,
-    created_at: `${input.createdAt}T00:00:00.000+09:00`,
+    closed_at: input.closedAt || null,
+    current_balance: input.currentBalance ?? null,
+    opened_at: input.createdAt,
+    ...(organizationId ? { organization_id: organizationId } : {}),
     sync_status: "확인필요",
     unmatched_count: 0,
     usage_status: "사용",
+    verified_at: input.verifiedAt || null,
   };
 }
 
@@ -52,9 +86,13 @@ export function mapBankAccountToUpdate(input: BankAccountInput): SupabaseBankAcc
   return {
     account_name: input.accountName,
     account_no: input.accountNo,
+    account_purpose: input.accountPurpose?.trim() ?? "",
     account_type: input.accountType,
     bank_name: input.bankName,
-    created_at: `${input.createdAt}T00:00:00.000+09:00`,
+    closed_at: input.closedAt || null,
+    current_balance: input.currentBalance ?? null,
+    opened_at: input.createdAt,
+    verified_at: input.verifiedAt || null,
   };
 }
 
@@ -68,8 +106,8 @@ export async function listBankAccountsFromSupabase(organizationId?: string) {
   let query = supabase
     .schema(bankAccountRepositorySchema)
     .from("bank_accounts")
-    .select("id, bank_name, account_name, account_no, account_type, usage_status, created_at, last_synced_at, sync_status, unmatched_count")
-    .order("created_at", { ascending: true });
+    .select(bankAccountSelect)
+    .order("opened_at", { ascending: true });
   if (organizationId) query = query.eq("organization_id", organizationId);
   const { data, error } = await query;
 
@@ -80,7 +118,7 @@ export async function listBankAccountsFromSupabase(organizationId?: string) {
   return (data as SupabaseBankAccountRow[]).map(mapBankAccountFromRow);
 }
 
-export async function createBankAccountInSupabase(input: BankAccountInput) {
+export async function createBankAccountInSupabase(input: BankAccountInput, organizationId?: string) {
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
@@ -91,8 +129,8 @@ export async function createBankAccountInSupabase(input: BankAccountInput) {
   const { data, error } = await supabase
     .schema(bankAccountRepositorySchema)
     .from("bank_accounts")
-    .insert(mapBankAccountToInsert(input))
-    .select("id, bank_name, account_name, account_no, account_type, usage_status, created_at, last_synced_at, sync_status, unmatched_count")
+    .insert(mapBankAccountToInsert(input, organizationId))
+    .select(bankAccountSelect)
     .single();
 
   if (error) {
@@ -102,7 +140,7 @@ export async function createBankAccountInSupabase(input: BankAccountInput) {
   return mapBankAccountFromRow(data as SupabaseBankAccountRow);
 }
 
-export async function updateBankAccountInSupabase(id: string, input: BankAccountInput) {
+export async function updateBankAccountInSupabase(id: string, input: BankAccountInput, organizationId?: string) {
   const supabase = getSupabaseServerClient();
 
   if (!supabase) {
@@ -110,12 +148,14 @@ export async function updateBankAccountInSupabase(id: string, input: BankAccount
   }
   validateBankAccountInput(input);
 
-  const { data, error } = await supabase
+  let query = supabase
     .schema(bankAccountRepositorySchema)
     .from("bank_accounts")
     .update(mapBankAccountToUpdate(input))
-    .eq("id", id)
-    .select("id, bank_name, account_name, account_no, account_type, usage_status, created_at, last_synced_at, sync_status, unmatched_count")
+    .eq("id", id);
+  if (organizationId) query = query.eq("organization_id", organizationId);
+  const { data, error } = await query
+    .select(bankAccountSelect)
     .single();
 
   if (error) {
@@ -137,6 +177,8 @@ function formatBankAccountSaveError(message: string) {
 function validateBankAccountInput(input: BankAccountInput) {
   if (!input.bankName.trim() || !input.accountName.trim() || !input.accountNo.replace(/\D/g, "")) throw new Error("은행명, 계좌명, 계좌번호를 모두 입력해 주세요.");
   if (!input.createdAt) throw new Error("개설일을 입력해 주세요.");
+  if (input.closedAt && input.closedAt < input.createdAt) throw new Error("해지일자는 개설일자보다 빠를 수 없습니다.");
+  if (input.currentBalance !== null && input.currentBalance !== undefined && !Number.isSafeInteger(input.currentBalance)) throw new Error("현재잔액을 원 단위 정수로 입력해 주세요.");
 }
 
 function formatSyncedAt(value: string) {

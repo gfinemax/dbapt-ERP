@@ -39,16 +39,20 @@ describe("bank account repository mappers", () => {
         usage_status: "사용",
       }),
     ).toEqual({
+      accountPurpose: "",
       accountName: "우리은행 운영계좌",
       accountNo: "1002-000-123456",
       accountType: "운영계좌",
       bankName: "우리은행",
+      closedAt: "",
       createdAt: "2026-06-07",
+      currentBalance: null,
       id: "bank-db-001",
       lastSyncedAt: "2026-06-07 10:10",
       status: "정상",
       unmatchedCount: 2,
       usageStatus: "사용",
+      verifiedAt: "",
     });
   });
 
@@ -64,12 +68,16 @@ describe("bank account repository mappers", () => {
     ).toEqual({
       account_name: "신규 운영계좌",
       account_no: "111-222-333333",
+      account_purpose: "",
       account_type: "운영계좌",
       bank_name: "우리은행",
-      created_at: "2026-06-07T00:00:00.000+09:00",
+      closed_at: null,
+      current_balance: null,
+      opened_at: "2026-06-07",
       sync_status: "확인필요",
       unmatched_count: 0,
       usage_status: "사용",
+      verified_at: null,
     });
   });
 
@@ -85,9 +93,13 @@ describe("bank account repository mappers", () => {
     ).toEqual({
       account_name: "수정 운영계좌",
       account_no: "111-222-333333",
+      account_purpose: "",
       account_type: "신탁계좌",
       bank_name: "하나은행",
-      created_at: "2026-06-08T00:00:00.000+09:00",
+      closed_at: null,
+      current_balance: null,
+      opened_at: "2026-06-08",
+      verified_at: null,
     });
   });
 
@@ -150,24 +162,32 @@ describe("bank account repository mappers", () => {
         createdAt: "2026-06-08",
       }),
     ).resolves.toEqual({
+      accountPurpose: "",
       accountName: "수정 운영계좌",
       accountNo: "111-222-333333",
       accountType: "운영계좌",
       bankName: "우리은행",
+      closedAt: "",
       createdAt: "2026-06-08",
+      currentBalance: null,
       id: "bank-db-001",
       lastSyncedAt: "미연동",
       status: "확인필요",
       unmatchedCount: 0,
       usageStatus: "사용",
+      verifiedAt: "",
     });
 
     expect(update).toHaveBeenCalledWith({
       account_name: "수정 운영계좌",
       account_no: "111-222-333333",
+      account_purpose: "",
       account_type: "운영계좌",
       bank_name: "우리은행",
-      created_at: "2026-06-08T00:00:00.000+09:00",
+      closed_at: null,
+      current_balance: null,
+      opened_at: "2026-06-08",
+      verified_at: null,
     });
     expect(eq).toHaveBeenCalledWith("id", "bank-db-001");
   });

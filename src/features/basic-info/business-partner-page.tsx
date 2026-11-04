@@ -616,14 +616,19 @@ function BankAccountSection({
 
       <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1720px] border-collapse text-left text-sm">
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
-                <th className="px-4 py-3 text-center">은행명</th>
-                <th className="px-4 py-3 text-center">계좌명</th>
+                <th className="px-4 py-3 text-center">연번</th>
+                <th className="px-4 py-3 text-center">통장명의</th>
+                <th className="px-4 py-3 text-center">금융기관명</th>
                 <th className="px-4 py-3 text-center">계좌번호</th>
+                <th className="px-4 py-3 text-center">개설목적</th>
                 <th className="px-4 py-3 text-center">계좌구분</th>
-                <th className="px-4 py-3 text-center">개설일</th>
+                <th className="px-4 py-3 text-center">개설일자</th>
+                <th className="px-4 py-3 text-center">해지일자</th>
+                <th className="px-4 py-3 text-center">확인일자</th>
+                <th className="px-4 py-3 text-center">현재잔액</th>
                 <th className="px-4 py-3 text-center">사용여부</th>
                 <th className="px-4 py-3 text-center">최근 동기화</th>
                 <th className="px-4 py-3 text-center">연동상태</th>
@@ -634,18 +639,23 @@ function BankAccountSection({
             <tbody className="divide-y divide-[var(--color-soft-border)]">
               {accounts.length === 0 ? (
                 <tr className="bg-white/70">
-                  <td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={10}>
+                  <td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={15}>
                     등록된 은행통장이 없습니다.
                   </td>
                 </tr>
               ) : (
-                accounts.map((account) => (
+                accounts.map((account, index) => (
                   <tr className="bg-white/70" key={account.id}>
-                    <td className="px-4 py-4 text-[var(--color-stone)]">{account.bankName}</td>
+                    <td className="px-4 py-4 text-center text-[var(--color-stone)]">{index + 1}</td>
                     <td className="px-4 py-4 font-semibold">{account.accountName}</td>
+                    <td className="px-4 py-4 text-[var(--color-stone)]">{account.bankName}</td>
                     <td className="px-4 py-4">{account.accountNo}</td>
+                    <td className="px-4 py-4">{account.accountPurpose || "-"}</td>
                     <td className="px-4 py-4">{account.accountType}</td>
                     <td className="px-4 py-4 text-[var(--color-stone)]">{account.createdAt}</td>
+                    <td className="px-4 py-4 text-[var(--color-stone)]">{account.closedAt || "-"}</td>
+                    <td className="px-4 py-4 text-[var(--color-stone)]">{account.verifiedAt || "-"}</td>
+                    <td className="px-4 py-4 text-right font-semibold">{account.currentBalance === null || account.currentBalance === undefined ? "-" : formatKrw(account.currentBalance)}</td>
                     <td className="px-4 py-4">
                       <Badge value={account.usageStatus} />
                     </td>
@@ -772,11 +782,15 @@ function BankAccountModal({
 }) {
   const isEditMode = Boolean(initialAccount);
   const [form, setForm] = useState({
+    accountPurpose: initialAccount?.accountPurpose ?? "",
     accountName: initialAccount?.accountName ?? "",
     accountNo: initialAccount?.accountNo ?? "",
     accountType: initialAccount?.accountType ?? ("운영계좌" as RegisteredBankAccount["accountType"]),
     bankName: initialAccount?.bankName ?? "우리은행",
+    closedAt: initialAccount?.closedAt ?? "",
     createdAt: initialAccount?.createdAt ?? getTodayDate(),
+    currentBalance: initialAccount?.currentBalance === null || initialAccount?.currentBalance === undefined ? "" : String(initialAccount.currentBalance),
+    verifiedAt: initialAccount?.verifiedAt ?? "",
   });
 
   async function submit(event: FormEvent<HTMLFormElement>) {
@@ -785,19 +799,27 @@ function BankAccountModal({
     await onSave({
       accountName: form.accountName,
       accountNo: form.accountNo,
+      accountPurpose: form.accountPurpose,
       accountType: form.accountType,
       bankName: form.bankName,
+      closedAt: form.closedAt,
       createdAt: form.createdAt || getTodayDate(),
+      currentBalance: form.currentBalance.trim() ? Number(form.currentBalance) : null,
+      verifiedAt: form.verifiedAt,
     });
   }
 
   return (
     <ModalFrame onClose={onClose} title={isEditMode ? "은행통장 수정" : "은행통장 등록"}>
-      <form className="grid gap-4" onSubmit={submit}>
-        <FormInput label="은행명" onChange={(value) => setForm((current) => ({ ...current, bankName: value }))} value={form.bankName} />
-        <FormInput label="계좌명" onChange={(value) => setForm((current) => ({ ...current, accountName: value }))} value={form.accountName} />
+      <form className="grid gap-4 sm:grid-cols-2" onSubmit={submit}>
+        <FormInput label="통장명의" onChange={(value) => setForm((current) => ({ ...current, accountName: value }))} value={form.accountName} />
+        <FormInput label="금융기관명" onChange={(value) => setForm((current) => ({ ...current, bankName: value }))} value={form.bankName} />
         <FormInput label="계좌번호" onChange={(value) => setForm((current) => ({ ...current, accountNo: value }))} value={form.accountNo} />
-        <FormInput label="개설일" onChange={(value) => setForm((current) => ({ ...current, createdAt: value }))} type="date" value={form.createdAt} />
+        <FormInput label="개설목적" onChange={(value) => setForm((current) => ({ ...current, accountPurpose: value }))} value={form.accountPurpose} />
+        <FormInput label="개설일자" onChange={(value) => setForm((current) => ({ ...current, createdAt: value }))} type="date" value={form.createdAt} />
+        <FormInput label="해지일자" onChange={(value) => setForm((current) => ({ ...current, closedAt: value }))} type="date" value={form.closedAt} />
+        <FormInput label="확인일자" onChange={(value) => setForm((current) => ({ ...current, verifiedAt: value }))} type="date" value={form.verifiedAt} />
+        <FormInput label="현재잔액" onChange={(value) => setForm((current) => ({ ...current, currentBalance: value }))} type="number" value={form.currentBalance} />
         <label className="grid gap-1.5 text-sm font-semibold">
           계좌구분
           <select
@@ -810,8 +832,8 @@ function BankAccountModal({
             <option>토지비계좌</option>
           </select>
         </label>
-        {saveError ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{saveError}</p> : null}
-        <ModalActions onClose={onClose} />
+        {saveError ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)] sm:col-span-2">{saveError}</p> : null}
+        <div className="sm:col-span-2"><ModalActions onClose={onClose} /></div>
       </form>
     </ModalFrame>
   );

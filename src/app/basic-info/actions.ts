@@ -45,7 +45,8 @@ export async function createCreditCardAction(input: CreditCardInput) {
 }
 
 export async function createBankAccountAction(input: BankAccountInput) {
-  const account = await createBankAccountInSupabase(input);
+  const actor = await requireExpenseActor("ADMIN");
+  const account = await createBankAccountInSupabase(input, actor.organization_id);
 
   revalidatePath("/basic-info");
 
@@ -53,7 +54,8 @@ export async function createBankAccountAction(input: BankAccountInput) {
 }
 
 export async function updateBankAccountAction(id: string, input: BankAccountInput) {
-  const account = await updateBankAccountInSupabase(id, input);
+  const actor = await requireExpenseActor("ADMIN");
+  const account = await updateBankAccountInSupabase(id, input, actor.organization_id);
 
   revalidatePath("/basic-info");
 

@@ -92,7 +92,10 @@ describe("BusinessPartnerPage", () => {
     render(<BusinessPartnerPage initialSection="bank-accounts" />);
 
     expect(screen.getByRole("heading", { name: "은행통장 등록" })).toBeInTheDocument();
-    expect(screen.getByRole("columnheader", { name: "개설일" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "개설일자" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "개설목적" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "확인일자" })).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "현재잔액" })).toBeInTheDocument();
     expect(screen.queryByText("국민은행 신탁계좌")).not.toBeInTheDocument();
     expect(screen.queryByText("국민은행 운영계좌")).not.toBeInTheDocument();
     expect(screen.getAllByText("안동연(대방동지주택)")).toHaveLength(2);
@@ -104,8 +107,8 @@ describe("BusinessPartnerPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "은행통장 추가" }));
 
     expect(screen.getByRole("dialog", { name: "은행통장 등록" })).toBeInTheDocument();
-    fireEvent.change(screen.getByLabelText("개설일"), { target: { value: "2026-06-07" } });
-    fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "추가 운영계좌" } });
+    fireEvent.change(screen.getByLabelText("개설일자"), { target: { value: "2026-06-07" } });
+    fireEvent.change(screen.getByLabelText("통장명의"), { target: { value: "추가 운영계좌" } });
     fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "111-222-333333" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
@@ -138,8 +141,8 @@ describe("BusinessPartnerPage", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "은행통장 추가" }));
-    fireEvent.change(screen.getByLabelText("개설일"), { target: { value: "2026-06-07" } });
-    fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "Supabase 운영계좌" } });
+    fireEvent.change(screen.getByLabelText("개설일자"), { target: { value: "2026-06-07" } });
+    fireEvent.change(screen.getByLabelText("통장명의"), { target: { value: "Supabase 운영계좌" } });
     fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "222-333-444444" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
@@ -157,14 +160,15 @@ describe("BusinessPartnerPage", () => {
     fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "수정" }));
 
     expect(screen.getByRole("dialog", { name: "은행통장 수정" })).toBeInTheDocument();
-    expect(screen.getByLabelText("은행명")).toHaveValue("우리은행");
-    expect(screen.getByLabelText("계좌명")).toHaveValue("안동연(대방동지주택)");
+    expect(screen.getByLabelText("금융기관명")).toHaveValue("우리은행");
+    expect(screen.getByLabelText("통장명의")).toHaveValue("안동연(대방동지주택)");
     expect(screen.getByLabelText("계좌번호")).toHaveValue("1006-901-293047");
-    expect(screen.getByLabelText("개설일")).toHaveValue("2008-07-09");
+    expect(screen.getByLabelText("개설일자")).toHaveValue("2008-07-09");
+    expect(screen.getByLabelText("현재잔액")).toHaveValue(1479);
     expect(screen.getByLabelText("계좌구분")).toHaveValue("운영계좌");
 
-    fireEvent.change(screen.getByLabelText("은행명"), { target: { value: "우리은행" } });
-    fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "안동연(대방동지주택)-수정" } });
+    fireEvent.change(screen.getByLabelText("금융기관명"), { target: { value: "우리은행" } });
+    fireEvent.change(screen.getByLabelText("통장명의"), { target: { value: "안동연(대방동지주택)-수정" } });
     fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "1006-901-293047-1" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
@@ -172,7 +176,7 @@ describe("BusinessPartnerPage", () => {
     expect(screen.getByText("안동연(대방동지주택)-수정")).toBeInTheDocument();
     expect(screen.getByText("1006-901-293047-1")).toBeInTheDocument();
     expect(screen.queryByText("1006-901-293047")).not.toBeInTheDocument();
-    expect(screen.getAllByRole("row")).toHaveLength(10);
+    expect(screen.getAllByRole("row")).toHaveLength(12);
   });
 
   it("uses the server bank account updater when Supabase persistence is configured", async () => {
@@ -208,16 +212,20 @@ describe("BusinessPartnerPage", () => {
 
     const row = screen.getByText("111-222").closest("tr");
     fireEvent.click(within(row as HTMLTableRowElement).getByRole("button", { name: "수정" }));
-    fireEvent.change(screen.getByLabelText("계좌명"), { target: { value: "수정 후 계좌" } });
+    fireEvent.change(screen.getByLabelText("통장명의"), { target: { value: "수정 후 계좌" } });
     fireEvent.change(screen.getByLabelText("계좌번호"), { target: { value: "333-444" } });
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
 
     expect(updateBankAccount).toHaveBeenCalledWith("bank-db-001", {
       accountName: "수정 후 계좌",
       accountNo: "333-444",
+      accountPurpose: "",
       accountType: "운영계좌",
       bankName: "우리은행",
+      closedAt: "",
       createdAt: "2026-06-01",
+      currentBalance: null,
+      verifiedAt: "",
     });
     expect(await screen.findByText("수정 후 계좌")).toBeInTheDocument();
     expect(screen.getByText("333-444")).toBeInTheDocument();
