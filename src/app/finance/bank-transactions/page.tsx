@@ -3,7 +3,8 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionUploadPage } from "@/features/finance/bank-transaction-upload-page";
 import { listBankTransactionsForSubjectReview } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
-import { emptyLedgerBankBackfillStatus, loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
+import { emptyLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-backfill-shared";
+import { loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import {
   confirmBankTransactionSubjectsAction,

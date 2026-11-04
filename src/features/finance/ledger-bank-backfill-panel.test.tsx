@@ -2,7 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
-import type { LedgerBankBackfillStatus } from "./ledger-bank-transaction-backfill";
+import type { LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
 
 const status: LedgerBankBackfillStatus = {
   accounts: [{

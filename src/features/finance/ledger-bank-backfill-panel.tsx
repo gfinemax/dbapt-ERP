@@ -4,7 +4,7 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
-import type { LedgerBankBackfillStatus } from "./ledger-bank-transaction-backfill";
+import type { LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
 
 type SyncResult = {
   complete: boolean;

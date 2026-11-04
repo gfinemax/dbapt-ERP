@@ -14,7 +14,7 @@ import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
 import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
 import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
-import { emptyLedgerBankBackfillStatus, type LedgerBankBackfillStatus } from "./ledger-bank-transaction-backfill";
+import { emptyLedgerBankBackfillStatus, type LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
