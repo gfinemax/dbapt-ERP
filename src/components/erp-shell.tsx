@@ -21,6 +21,7 @@ import {
   Users,
   Wallet,
 } from "lucide-react";
+import Link from "next/link";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useState } from "react";
 import { ErpQuickMenu } from "./erp-quick-menu";
@@ -393,9 +394,18 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
               >
                 <Bell className="size-4" />
               </button>
-              <div className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white">
-                {userLabel}
-              </div>
+              {userLabel === "로그인 필요" ? (
+                <Link
+                  className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white hover:bg-[var(--color-deep-cobalt)] focus-visible:outline-2 focus-visible:outline-offset-2"
+                  href="/"
+                >
+                  {userLabel}
+                </Link>
+              ) : (
+                <div className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white">
+                  {userLabel}
+                </div>
+              )}
               {logoutAction ? <form action={logoutAction}><button aria-label="로그아웃" type="submit" className="flex size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)]"><LogOut className="size-4"/></button></form> : <a aria-label="로그아웃" className="hidden size-9 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] text-[var(--color-stone)] lg:flex" href="#">
                 <LogOut className="size-4" />
               </a>}

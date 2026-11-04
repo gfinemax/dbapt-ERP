@@ -6,6 +6,12 @@ import { ErpShell } from "./erp-shell";
 
 describe("ErpShell", () => {
   beforeEach(() => navigation.badges.mockReset().mockResolvedValue({}));
+
+  it("links the logged-out user label to the ERP login screen", () => {
+    render(<ErpShell><p>로그인 전 화면</p></ErpShell>);
+    expect(screen.getByRole("link", { name: "로그인 필요" })).toHaveAttribute("href", "/");
+  });
+
   it("highlights the explicitly selected approval detail menu", () => {
     render(
       <ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재">
