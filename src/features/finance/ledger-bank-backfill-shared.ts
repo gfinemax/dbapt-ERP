@@ -28,6 +28,19 @@ export type LedgerBankBackfillStatus = {
   };
 };
 
+export type LedgerBankSyncResult = {
+  complete: boolean;
+  imported_count: number;
+  invalid_count: number;
+  next_cursor: number;
+  received_count: number;
+  status: LedgerBankBackfillStatus;
+};
+
+export type LedgerBankActionResult<T> =
+  | { data: T; ok: true }
+  | { error: string; ok: false };
+
 export const emptyLedgerBankBackfillStatus: LedgerBankBackfillStatus = {
   accounts: [],
   state: null,

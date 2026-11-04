@@ -27,13 +27,16 @@ export default async function FinanceBankTransactionsRoute() {
       error: "Ledger 거래 이관 상태를 불러오지 못했어. 관리자에게 데이터베이스 반영 상태를 확인해줘.",
       status: emptyLedgerBankBackfillStatus,
     }))
-    : Promise.resolve({ error: undefined, status: emptyLedgerBankBackfillStatus });
+    : Promise.resolve({
+      error: actor ? "Ledger 연동 환경설정을 확인해줘." : "Ledger 거래 이관은 로그인 후 사용할 수 있어.",
+      status: emptyLedgerBankBackfillStatus,
+    });
   const [initialAccountSubjects, initialBankAccounts, initialReviewTransactions, initialLedgerBackfill] = actor ? await Promise.all([
     listAccountSubjectsFromSupabase(actor.organization_id),
     listBankAccountsFromSupabase(actor.organization_id),
     listBankTransactionsForSubjectReview(actor.organization_id),
     ledgerBackfill,
-  ]) : [[], [], [], { error: undefined, status: emptyLedgerBankBackfillStatus }];
+  ]) : [[], [], [], await ledgerBackfill];
 
   return (
     <BankTransactionUploadPage
@@ -45,8 +48,8 @@ export default async function FinanceBankTransactionsRoute() {
       initialLedgerBackfillStatus={initialLedgerBackfill.status}
       ledgerBackfillError={initialLedgerBackfill.error}
       initialReviewTransactions={initialReviewTransactions}
-      mapLedgerBankAccount={remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
-      syncLedgerBankTransactions={remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
+      mapLedgerBankAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
+      syncLedgerBankTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
     />
   );
 }

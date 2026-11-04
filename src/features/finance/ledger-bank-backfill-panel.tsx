@@ -4,23 +4,14 @@ import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
-import type { LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
-
-type SyncResult = {
-  complete: boolean;
-  imported_count: number;
-  invalid_count: number;
-  next_cursor: number;
-  received_count: number;
-  status: LedgerBankBackfillStatus;
-};
+import type { LedgerBankActionResult, LedgerBankBackfillStatus, LedgerBankSyncResult } from "./ledger-bank-backfill-shared";
 
 type LedgerBankBackfillPanelProps = {
   bankAccounts: RegisteredBankAccount[];
   initialStatus: LedgerBankBackfillStatus;
   loadError?: string;
-  mapAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankBackfillStatus>;
-  syncTransactions?: () => Promise<SyncResult>;
+  mapAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
+  syncTransactions?: () => Promise<LedgerBankActionResult<LedgerBankSyncResult>>;
 };
 
 export function LedgerBankBackfillPanel({
@@ -44,7 +35,12 @@ export function LedgerBankBackfillPanel({
     setMessage(null);
     startTransition(async () => {
       try {
-        const result = await syncTransactions();
+        const response = await syncTransactions();
+        if (!response.ok) {
+          setError(response.error);
+          return;
+        }
+        const result = response.data;
         setStatus(result.status);
         setMessage(result.complete
           ? `Ledger 원본 ${result.received_count}건을 확인했어. 계좌 매핑이 끝난 거래 ${result.imported_count}건을 ERP에 이관했어.`
@@ -66,7 +62,12 @@ export function LedgerBankBackfillPanel({
     setMessage(null);
     startTransition(async () => {
       try {
-        const next = await mapAccount({ bankAccountId, ledgerAccountId });
+        const response = await mapAccount({ bankAccountId, ledgerAccountId });
+        if (!response.ok) {
+          setError(response.error);
+          return;
+        }
+        const next = response.data;
         setStatus(next);
         const account = next.accounts.find((item) => item.ledger_account_id === ledgerAccountId);
         setMessage(`계좌 ID ${ledgerAccountId} 매핑을 저장했고 ${account?.imported_count ?? 0}건이 ERP 원장에 반영됐어.`);

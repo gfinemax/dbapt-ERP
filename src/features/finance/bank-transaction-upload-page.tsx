@@ -14,7 +14,7 @@ import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
 import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
 import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
-import { emptyLedgerBankBackfillStatus, type LedgerBankBackfillStatus } from "./ledger-bank-backfill-shared";
+import { emptyLedgerBankBackfillStatus, type LedgerBankActionResult, type LedgerBankBackfillStatus, type LedgerBankSyncResult } from "./ledger-bank-backfill-shared";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -36,15 +36,8 @@ type BankTransactionUploadPageProps = {
   initialLedgerBackfillStatus?: LedgerBankBackfillStatus;
   initialReviewTransactions?: BankTransactionReviewRow[];
   ledgerBackfillError?: string;
-  mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankBackfillStatus>;
-  syncLedgerBankTransactions?: () => Promise<{
-    complete: boolean;
-    imported_count: number;
-    invalid_count: number;
-    next_cursor: number;
-    received_count: number;
-    status: LedgerBankBackfillStatus;
-  }>;
+  mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
+  syncLedgerBankTransactions?: () => Promise<LedgerBankActionResult<LedgerBankSyncResult>>;
 };
 
 export function BankTransactionUploadPage({
