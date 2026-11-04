@@ -230,7 +230,7 @@ function requestFinanceBadges() {
   return financeBadgesRequest;
 }
 
-export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "관리자", logoutAction }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [financeBadges, setFinanceBadges] = useState<Record<string, number>>({});

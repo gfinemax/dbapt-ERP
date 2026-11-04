@@ -108,18 +108,22 @@ type DashboardPageProps = {
   approvalBudget?: ApprovalBudgetSummary;
   approvalDocuments?: ApprovalDocument[];
   dashboardStats?: DashboardStat[];
+  logoutAction?: () => Promise<void>;
+  userLabel?: string;
 };
 
 export function DashboardPage({
   approvalBudget = { approved: 0, available: 0, executed: 0, reserved: 0 },
   approvalDocuments = [],
   dashboardStats: stats = buildDashboardStats(),
+  logoutAction,
+  userLabel = "로그인 필요",
 }: DashboardPageProps = {}) {
   const [isPeriodModalOpen, setIsPeriodModalOpen] = useState(false);
   const approvalDashboard = buildApprovalDashboard(approvalDocuments);
 
   return (
-    <ErpShell>
+    <ErpShell logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="flex flex-col gap-4 rounded-[28px] border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 shadow-[var(--shadow-air)] lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div className="max-w-3xl">
