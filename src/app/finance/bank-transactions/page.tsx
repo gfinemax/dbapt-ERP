@@ -3,8 +3,14 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionUploadPage } from "@/features/finance/bank-transaction-upload-page";
 import { listBankTransactionsForSubjectReview } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
+import { emptyLedgerBankBackfillStatus, loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
-import { confirmBankTransactionSubjectsAction, createBankTransactionsAction } from "./actions";
+import {
+  confirmBankTransactionSubjectsAction,
+  createBankTransactionsAction,
+  setLedgerBankAccountMappingAction,
+  syncLedgerBankTransactionsAction,
+} from "./actions";
 
 export default async function FinanceBankTransactionsRoute() {
   let actor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
@@ -14,20 +20,32 @@ export default async function FinanceBankTransactionsRoute() {
   } catch (error) {
     accessError = error instanceof Error ? error.message : "은행거래 조회 권한을 확인하지 못했어.";
   }
-  const [initialAccountSubjects, initialBankAccounts, initialReviewTransactions] = actor ? await Promise.all([
+  const remoteEnabled = hasSupabaseSecretConfig();
+  const ledgerBackfill = actor && remoteEnabled
+    ? loadLedgerBankBackfillStatus().then((status) => ({ error: undefined, status })).catch(() => ({
+      error: "Ledger 거래 이관 상태를 불러오지 못했어. 관리자에게 데이터베이스 반영 상태를 확인해줘.",
+      status: emptyLedgerBankBackfillStatus,
+    }))
+    : Promise.resolve({ error: undefined, status: emptyLedgerBankBackfillStatus });
+  const [initialAccountSubjects, initialBankAccounts, initialReviewTransactions, initialLedgerBackfill] = actor ? await Promise.all([
     listAccountSubjectsFromSupabase(actor.organization_id),
     listBankAccountsFromSupabase(actor.organization_id),
     listBankTransactionsForSubjectReview(actor.organization_id),
-  ]) : [[], [], []];
+    ledgerBackfill,
+  ]) : [[], [], [], { error: undefined, status: emptyLedgerBankBackfillStatus }];
 
   return (
     <BankTransactionUploadPage
-      createBankTransactions={hasSupabaseSecretConfig() ? createBankTransactionsAction : undefined}
-      confirmBankTransactionSubjects={hasSupabaseSecretConfig() ? confirmBankTransactionSubjectsAction : undefined}
+      createBankTransactions={remoteEnabled ? createBankTransactionsAction : undefined}
+      confirmBankTransactionSubjects={remoteEnabled ? confirmBankTransactionSubjectsAction : undefined}
       accessError={accessError}
       initialAccountSubjects={initialAccountSubjects ?? []}
       initialBankAccounts={initialBankAccounts ?? []}
+      initialLedgerBackfillStatus={initialLedgerBackfill.status}
+      ledgerBackfillError={initialLedgerBackfill.error}
       initialReviewTransactions={initialReviewTransactions}
+      mapLedgerBankAccount={remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
+      syncLedgerBankTransactions={remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
     />
   );
 }

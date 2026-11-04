@@ -7,6 +7,7 @@ import type { ParsedBankTransactionRow } from "@/features/finance/bank-transacti
 import type { BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
 import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
+import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
 
 export async function createBankTransactionsAction(rows: ParsedBankTransactionRow[]) {
   const actor = await requireExpenseActor("PAY");
@@ -28,4 +29,22 @@ export async function confirmBankTransactionSubjectsAction(assignments: BankTran
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/exp");
   return confirmed;
+}
+
+export async function syncLedgerBankTransactionsAction() {
+  const result = await syncLedgerBankTransactions();
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/reports");
+  return result;
+}
+
+export async function setLedgerBankAccountMappingAction(input: {
+  bankAccountId: string;
+  ledgerAccountId: string;
+  note?: string;
+}) {
+  const status = await setLedgerBankAccountMapping(input);
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/reports");
+  return status;
 }

@@ -5,6 +5,7 @@ do $$ begin create role service_role; exception when duplicate_object then null;
 create schema auth;
 create schema core;
 create schema finance;
+create schema audit;
 create table auth.users(id uuid primary key);
 create table core.organizations(id uuid primary key);
 create table finance.reimbursement_members(
@@ -44,11 +45,30 @@ create table finance.collection_receipt_reversals(
   created_by uuid not null references auth.users(id), created_at timestamptz not null default now()
 );
 create table finance.account_subjects(id uuid primary key default gen_random_uuid(),name text not null);
+create table finance.bank_accounts(
+  id uuid primary key default gen_random_uuid(), organization_id uuid not null references core.organizations(id),
+  bank_name text not null, account_name text not null, account_no text not null, account_type text not null,
+  usage_status text not null default '사용', last_synced_at timestamptz, sync_status text not null default '확인필요',
+  unmatched_count integer not null default 0, created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(), deleted_at timestamptz
+);
 create table finance.bank_transactions(
   id uuid primary key default gen_random_uuid(), organization_id uuid not null,
+  bank_account_id uuid not null references finance.bank_accounts(id),
   transacted_at timestamptz not null, description text not null, counterparty text,
   deposit_amount numeric(16,0) not null default 0, withdrawal_amount numeric(16,0) not null default 0,
-  recommended_account_subject_name text, uploaded_account_title text,
+  balance_amount numeric(16,0), transaction_kind text, branch_name text,
+  recommended_account_subject_name text, uploaded_major_category text, uploaded_account_title text,
   confirmed_account_subject_id uuid references finance.account_subjects(id),
-  classification_status text not null default 'UNREVIEWED', deleted_at timestamptz
+  classification_status text not null default 'UNREVIEWED', match_status text not null default '미분류',
+  raw_payload jsonb not null default '{}'::jsonb, memo text, bank_transaction_uid text,
+  resolution_status text not null default 'UNRESOLVED', recommendation_reason text, deleted_at timestamptz,
+  unique(organization_id,id)
+);
+create unique index bank_transactions_uid_unique_idx on finance.bank_transactions(bank_transaction_uid)
+where bank_transaction_uid is not null;
+create table audit.audit_logs(
+  id uuid primary key default gen_random_uuid(), organization_id uuid, actor_user_id uuid,
+  action text not null, entity_schema text not null, entity_table text not null, entity_id text not null,
+  before_data jsonb, after_data jsonb, created_at timestamptz not null default now(), actor_label text
 );

@@ -13,6 +13,8 @@ import { formatKrw } from "./finance-data";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
 import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
+import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
+import { emptyLedgerBankBackfillStatus, type LedgerBankBackfillStatus } from "./ledger-bank-transaction-backfill";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -31,7 +33,18 @@ type BankTransactionUploadPageProps = {
   }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
+  initialLedgerBackfillStatus?: LedgerBankBackfillStatus;
   initialReviewTransactions?: BankTransactionReviewRow[];
+  ledgerBackfillError?: string;
+  mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankBackfillStatus>;
+  syncLedgerBankTransactions?: () => Promise<{
+    complete: boolean;
+    imported_count: number;
+    invalid_count: number;
+    next_cursor: number;
+    received_count: number;
+    status: LedgerBankBackfillStatus;
+  }>;
 };
 
 export function BankTransactionUploadPage({
@@ -40,7 +53,11 @@ export function BankTransactionUploadPage({
   createBankTransactions,
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
+  initialLedgerBackfillStatus = emptyLedgerBankBackfillStatus,
   initialReviewTransactions = [],
+  ledgerBackfillError,
+  mapLedgerBankAccount,
+  syncLedgerBankTransactions,
 }: BankTransactionUploadPageProps = {}) {
   const bankAccounts = initialBankAccounts;
   const accountSubjects = initialAccountSubjects;
@@ -184,6 +201,14 @@ export function BankTransactionUploadPage({
             </Button>
           </div>
         </section>
+
+        <LedgerBankBackfillPanel
+          bankAccounts={bankAccounts}
+          initialStatus={initialLedgerBackfillStatus}
+          loadError={ledgerBackfillError}
+          mapAccount={mapLedgerBankAccount}
+          syncTransactions={syncLedgerBankTransactions}
+        />
 
         <section className="grid gap-4 lg:grid-cols-4">
           <SummaryTile label="미리보기 거래" value={`${summary.rowCount}건`} />
