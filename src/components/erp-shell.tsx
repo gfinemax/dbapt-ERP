@@ -127,7 +127,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       items: [
         { label: "은행 거래내역", href: "/finance/bank-transactions" },
         { label: "카드 사용내역" },
-        { label: "계좌 연동 설정", href: "/finance/bank-transactions#ledger-account-linking" },
+        { label: "계좌 연동 설정", href: "/finance/bank-account-links" },
         { label: "카드 연동 설정" },
         { label: "전표 자동매칭" },
         { label: "미매칭 내역" },

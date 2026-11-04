@@ -259,7 +259,27 @@ describe("ErpShell", () => {
     );
     expect(screen.getByRole("link", { name: "계좌 연동 설정" })).toHaveAttribute(
       "href",
-      "/finance/bank-transactions#ledger-account-linking",
+      "/finance/bank-account-links",
+    );
+  });
+
+  it("highlights the dedicated bank account-link settings route", () => {
+    render(
+      <ErpShell
+        activeDetailLabel="계좌 연동 설정"
+        activeLabel="회계/자금"
+        activeWorkspaceLabel="은행·카드"
+      >
+        <p>계좌 연결 본문</p>
+      </ErpShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "계좌 연동 설정" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByRole("link", { name: "은행 거래내역" })).not.toHaveAttribute(
+      "aria-current",
     );
   });
 
