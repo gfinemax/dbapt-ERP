@@ -35,6 +35,19 @@ const bankAccounts = [{
 }];
 
 describe("LedgerBankBackfillPanel", () => {
+  it("exposes the account-linking anchor and registration path when ERP accounts are missing", () => {
+    render(<LedgerBankBackfillPanel bankAccounts={[]} initialStatus={status} />);
+
+    expect(screen.getByRole("region", { name: "기존 Ledger 통장거래 가져오기" })).toHaveAttribute(
+      "id",
+      "ledger-account-linking",
+    );
+    expect(screen.getByRole("link", { name: "ERP 은행통장 등록" })).toHaveAttribute(
+      "href",
+      "/basic-info?section=bank-accounts",
+    );
+  });
+
   it("requires an explicit ERP account ID mapping before importing staged rows", async () => {
     const mapped: LedgerBankBackfillStatus = {
       ...status,

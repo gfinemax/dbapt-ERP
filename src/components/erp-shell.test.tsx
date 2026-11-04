@@ -257,6 +257,10 @@ describe("ErpShell", () => {
       "aria-current",
       "page",
     );
+    expect(screen.getByRole("link", { name: "계좌 연동 설정" })).toHaveAttribute(
+      "href",
+      "/finance/bank-transactions#ledger-account-linking",
+    );
   });
 
   it("collapses to an accessible icon rail without hiding navigation", () => {

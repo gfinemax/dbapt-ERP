@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -78,11 +79,15 @@ export function LedgerBankBackfillPanel({
   }
 
   return (
-    <section className="rounded-2xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/25 p-5 lg:p-6">
+    <section
+      aria-labelledby="ledger-account-linking-title"
+      className="scroll-mt-36 rounded-2xl border border-[var(--color-deep-cobalt)]/25 bg-[var(--color-morning-tint)]/25 p-5 lg:p-6"
+      id="ledger-account-linking"
+    >
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs font-bold uppercase tracking-wide text-[var(--color-deep-cobalt)]">일회성 원본 이관</p>
-          <h2 className="mt-1 text-xl font-bold">기존 Ledger 통장거래 가져오기</h2>
+          <h2 className="mt-1 text-xl font-bold" id="ledger-account-linking-title">기존 Ledger 통장거래 가져오기</h2>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--color-stone)]">
             Ledger의 과거 거래는 원본 ID와 해시를 보존해 읽기 전용으로 이관해. 먼저 거래를 불러온 뒤 각 Ledger 계좌 ID를 실제 ERP 계좌에 직접 연결해줘. 계좌명으로 자동 연결하지 않아.
           </p>
@@ -103,6 +108,14 @@ export function LedgerBankBackfillPanel({
       {loadError ? <p className="mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{loadError}</p> : null}
       {message ? <p className="mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]" role="status">{message}</p> : null}
       {error ? <p className="mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{error}</p> : null}
+      {bankAccounts.length === 0 ? (
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--color-butter-soft)] bg-white p-4">
+          <p className="text-sm font-semibold text-[var(--color-stone)]">연결할 ERP 계좌가 없어. 은행통장을 먼저 등록해줘.</p>
+          <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/basic-info?section=bank-accounts">
+            ERP 은행통장 등록
+          </Link>
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3">
         {status.accounts.length === 0 ? (
