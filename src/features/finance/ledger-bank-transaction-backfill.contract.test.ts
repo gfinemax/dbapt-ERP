@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve("supabase/migrations/20261104115954_ledger_bank_transaction_backfill.sql"), "utf8");
+const auditActorMigration = readFileSync(resolve("supabase/migrations/20261104125055_ledger_bank_audit_auth_actor.sql"), "utf8");
 const repository = readFileSync(resolve("src/features/finance/ledger-bank-transaction-backfill.ts"), "utf8");
 
 describe("ledger bank transaction backfill contracts", () => {
@@ -22,5 +23,12 @@ describe("ledger bank transaction backfill contracts", () => {
     expect(repository).toContain("const maxPagesPerRun = 5");
     expect(repository).toContain("signLedgerRequest(secret, url, timestamp, nonce)");
     expect(repository).toContain("if (!page.source_frozen)");
+  });
+
+  it("records the authenticated finance actor without violating the legacy core-profile foreign key", () => {
+    expect(auditActorMigration).toContain("auth_actor_id uuid references auth.users(id)");
+    expect(auditActorMigration).toContain("normalize_ledger_bank_auth_actor");
+    expect(auditActorMigration).toContain("new.actor_user_id:=null");
+    expect(auditActorMigration).toContain("new.actor_label:=coalesce(new.actor_label,actor_name)");
   });
 });

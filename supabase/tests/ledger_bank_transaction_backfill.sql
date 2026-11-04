@@ -7,8 +7,8 @@ declare
 begin
   insert into core.organizations(id) values(org);
   insert into auth.users(id) values(actor);
-  insert into finance.reimbursement_members(organization_id,user_id,permissions)
-    values(org,actor,array['ADMIN']);
+  insert into finance.reimbursement_members(organization_id,user_id,display_name,permissions)
+    values(org,actor,'관리자',array['ADMIN']);
   insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type)
     values(bank,org,'테스트은행','ERP 운영계좌','1234567890','운영계좌');
 
@@ -59,5 +59,9 @@ begin
   end if;
   if (finance.ledger_bank_backfill_status(org,actor)->'totals'->>'imported')::integer<>1 then
     raise exception 'TEST: status imported count mismatch';
+  end if;
+  if (select count(*) from audit.audit_logs where action in ('LEDGER_BANK_BACKFILL_SYNC','LEDGER_BANK_ACCOUNT_MAP')
+    and actor_user_id is null and auth_actor_id=actor and actor_label='관리자')<>3 then
+    raise exception 'TEST: Ledger audit actor provenance mismatch';
   end if;
 end $$;

@@ -8,8 +8,10 @@ create schema finance;
 create schema audit;
 create table auth.users(id uuid primary key);
 create table core.organizations(id uuid primary key);
+create table core.user_profiles(id uuid primary key);
 create table finance.reimbursement_members(
-  organization_id uuid not null, user_id uuid not null, permissions text[] not null, active boolean not null default true
+  organization_id uuid not null, user_id uuid not null, display_name text not null,
+  permissions text[] not null, active boolean not null default true
 );
 create function finance.workflow_actor(p_org uuid,p_actor uuid) returns finance.reimbursement_members
 language plpgsql stable as $$
@@ -68,7 +70,8 @@ create table finance.bank_transactions(
 create unique index bank_transactions_uid_unique_idx on finance.bank_transactions(bank_transaction_uid)
 where bank_transaction_uid is not null;
 create table audit.audit_logs(
-  id uuid primary key default gen_random_uuid(), organization_id uuid, actor_user_id uuid,
+  id uuid primary key default gen_random_uuid(), organization_id uuid,
+  actor_user_id uuid references core.user_profiles(id),
   action text not null, entity_schema text not null, entity_table text not null, entity_id text not null,
   before_data jsonb, after_data jsonb, created_at timestamptz not null default now(), actor_label text
 );
