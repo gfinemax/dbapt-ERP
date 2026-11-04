@@ -39,7 +39,7 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
     startTransition(async () => {
       try {
         const result = await syncLedgerContributions();
-        setMessage(`ledger 분담금 ${result.received_count}건을 확인해 ${result.applied_count}건 반영했어. 검토 필요 ${result.issue_count}건.`);
+        setMessage(`ledger 분담금 ${result.received_count}건을 확인해 ${result.applied_count}건 반영했어. 검토 필요 ${result.issue_count}건 · 수납 피드백 ${result.feedback_sent_count}건.`);
         router.refresh();
       } catch (error) { setMessage(error instanceof Error ? error.message : "ledger 분담금을 가져오지 못했어."); }
     });

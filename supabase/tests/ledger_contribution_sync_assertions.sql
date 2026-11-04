@@ -20,6 +20,23 @@ do $$ begin
   end;
 end $$;
 
+insert into finance.collection_receipt_allocations(
+  organization_id,assessment_id,bank_transaction_id,amount,reason,created_by)
+select organization_id,id,'30000000-0000-0000-0000-000000000001',50000,'입금 확인',
+  '10000000-0000-0000-0000-000000000001' from finance.collection_assessments where source_assessment_id='10';
+insert into finance.collection_receipt_reversals(organization_id,allocation_id,reason,created_by)
+select organization_id,id,'입금자 오인식','10000000-0000-0000-0000-000000000001'
+from finance.collection_receipt_allocations limit 1;
+do $$ declare batch jsonb; begin
+  batch:=finance.ledger_allocation_feedback_batch(
+    '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',200);
+  if jsonb_array_length(batch)<>2 then raise exception 'allocation feedback outbox mismatch'; end if;
+  if finance.ledger_allocation_feedback_ack(
+    '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',array[1,2])<>2 then
+    raise exception 'allocation feedback ack mismatch';
+  end if;
+end $$;
+
 select finance.sync_ledger_contribution_assessments(
   '20000000-0000-0000-0000-000000000001','10000000-0000-0000-0000-000000000001',
   'dbapt-ledger',1,2,

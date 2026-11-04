@@ -5,17 +5,23 @@ import { createHash } from "node:crypto";
 import { parseCollectionAssessmentCsv } from "@/features/finance/collection-assessment-csv";
 import { applyCollectionAssessmentImport, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
 import { syncLedgerContributionAssessments } from "@/features/finance/ledger-contribution-sync";
+import { pushLedgerAllocationFeedback } from "@/features/finance/ledger-allocation-feedback";
 
 export async function syncLedgerContributions() {
   const result = await syncLedgerContributionAssessments();
+  const feedback = await pushLedgerAllocationFeedback();
   for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace", "/reports"]) revalidatePath(path);
-  return result;
+  return { ...result, feedback_sent_count: feedback.sent_count };
 }
 
 export async function executeCollectionLedger(command: CollectionLedgerCommand, input: Record<string, unknown>, operationKey: string) {
   const result = await runCollectionLedger(command, input, operationKey);
+  let feedbackPending = false;
+  if (command === "RECEIPT_ALLOCATE" || command === "RECEIPT_REVERSE") {
+    try { await pushLedgerAllocationFeedback(); } catch { feedbackPending = true; }
+  }
   for (const path of ["/finance/collections", "/finance/refunds", "/finance/month-close", "/finance/workspace"]) revalidatePath(path);
-  return result;
+  return { ...result, feedback_pending: feedbackPending };
 }
 
 export async function previewCollectionAssessmentCsv(formData: FormData) {

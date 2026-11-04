@@ -34,8 +34,12 @@ create table finance.collection_ledger_events(
 );
 create table finance.collection_receipt_allocations(
   id uuid primary key default gen_random_uuid(), organization_id uuid not null,
-  assessment_id uuid not null, amount numeric(16,0) not null
+  assessment_id uuid not null, bank_transaction_id uuid not null,
+  amount numeric(16,0) not null, reason text not null,
+  created_by uuid not null references auth.users(id), created_at timestamptz not null default now()
 );
 create table finance.collection_receipt_reversals(
-  id uuid primary key default gen_random_uuid(), allocation_id uuid not null
+  id uuid primary key default gen_random_uuid(), organization_id uuid not null,
+  allocation_id uuid not null, reason text not null,
+  created_by uuid not null references auth.users(id), created_at timestamptz not null default now()
 );
