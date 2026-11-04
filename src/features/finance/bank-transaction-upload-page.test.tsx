@@ -31,6 +31,20 @@ const testBankAccounts = [
 ];
 
 describe("BankTransactionUploadPage", () => {
+  it("keeps the authenticated user identity in the header", () => {
+    const logoutAction = vi.fn();
+    render(
+      <BankTransactionUploadPage
+        initialBankAccounts={testBankAccounts}
+        logoutAction={logoutAction}
+        userLabel="파인맥스"
+      />,
+    );
+    expect(screen.getByText("파인맥스")).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "로그인 필요" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
+  });
+
   it("shows a login handoff without sample bank data when access is unavailable", () => {
     render(<BankTransactionUploadPage accessError="정산 업무 로그인이 필요합니다." initialAccountSubjects={[]} initialBankAccounts={[]} />);
     expect(screen.getByRole("alert")).toHaveTextContent("정산 업무 로그인이 필요합니다.");

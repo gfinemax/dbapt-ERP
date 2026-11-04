@@ -6,6 +6,7 @@ import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { emptyLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-backfill-shared";
 import { loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
+import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
 import {
   confirmBankTransactionSubjectsAction,
   createBankTransactionsAction,
@@ -48,8 +49,10 @@ export default async function FinanceBankTransactionsRoute() {
       initialLedgerBackfillStatus={initialLedgerBackfill.status}
       ledgerBackfillError={initialLedgerBackfill.error}
       initialReviewTransactions={initialReviewTransactions}
+      logoutAction={actor ? reimbursementLogout : undefined}
       mapLedgerBankAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
       syncLedgerBankTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
+      userLabel={actor?.display_name}
     />
   );
 }
