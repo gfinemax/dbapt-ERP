@@ -137,6 +137,10 @@ describe("BankTransactionUploadPage", () => {
       />,
     );
 
+    const accountSubjectSelect = screen.getByLabelText("인터넷 요금 확정 계정과목");
+    expect(within(accountSubjectSelect).getByRole("option", { name: registeredAccountSubjects[0].name })).toBeInTheDocument();
+    expect(accountSubjectSelect).not.toHaveTextContent(registeredAccountSubjects[0].code);
+
     fireEvent.click(screen.getByRole("button", { name: "추천값 전체 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "선택 1건 확정" }));
     expect(confirmBankTransactionSubjects).toHaveBeenCalledWith([{

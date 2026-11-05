@@ -492,10 +492,9 @@ function AccountSubjectSection({
           <p className="mt-1 text-sm text-[var(--color-stone)]">전표, 은행거래 매칭, 운영비 예산, 수지분석 비교에 공통으로 사용합니다.</p>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1120px] border-collapse text-left text-sm">
+          <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
-                <th className="px-4 py-3 text-center">코드</th>
                 <th className="px-4 py-3 text-center">계정과목</th>
                 <th className="px-4 py-3 text-center">수입/지출</th>
                 <th className="px-4 py-3 text-center">차대변</th>
@@ -509,7 +508,6 @@ function AccountSubjectSection({
             <tbody className="divide-y divide-[var(--color-soft-border)]">
               {subjects.map((subject) => (
                 <tr className="bg-white/70" key={subject.id}>
-                  <td className="px-4 py-4 font-semibold">{subject.code}</td>
                   <td className="px-4 py-4 font-semibold">{subject.name}</td>
                   <td className="px-4 py-4">
                     <Badge value={subject.subjectType ?? "미확정"} />
@@ -577,7 +575,6 @@ function RecommendationPanel({
               <span className="min-w-0">
                 <span className="flex flex-wrap items-center gap-2">
                   <span className="font-semibold">{recommendation.name}</span>
-                  <span className="rounded-full bg-[var(--color-cloud-veil)] px-2 py-0.5 text-xs font-semibold text-[var(--color-stone)]">{recommendation.code}</span>
                   <span className="rounded-full bg-[var(--color-butter-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-mustard)]">{recommendation.businessCategory}</span>
                   {"mappingStatus" in recommendation && recommendation.mappingStatus === "POLICY_REVIEW" ? (
                     <span className="rounded-full bg-[var(--color-sunset-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-tangerine)]">정책 확인 필요</span>

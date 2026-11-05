@@ -171,7 +171,7 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
                     <option value="">계정과목 선택</option>
                     <option value={reviewValue}>정책·예외 검토</option>
                     <option value={transferValue}>계좌간이체</option>
-                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} · {subject.name}</option>)}
+                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
                   </select>
                 </td>
               </tr>

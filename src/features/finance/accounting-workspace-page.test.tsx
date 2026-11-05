@@ -54,7 +54,8 @@ describe("accounting drafts and original records", () => {
     render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />); openDraft();
     expect(screen.getAllByLabelText("계정과목")[0]).toHaveValue("");
     expect(screen.getAllByLabelText("계정과목")[1]).toHaveValue("old");
-    expect(screen.getByRole("option", { name: "102 · 기존 예금 · 사용 중지" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "기존 예금 · 사용 중지" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /102/ })).not.toBeInTheDocument();
     expect(screen.getByText("차변 1,000원 · 대변 600원 · 차이 400원")).toBeInTheDocument();
     fireEvent.change(screen.getAllByLabelText("대변")[1], { target: { value: "1000" } });
     expect(screen.getByText("차변 1,000원 · 대변 1,000원 · 차이 0원")).toBeInTheDocument();

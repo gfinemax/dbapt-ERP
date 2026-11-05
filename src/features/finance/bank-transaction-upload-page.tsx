@@ -457,7 +457,7 @@ function BankTransactionSubjectReview({
                 <td className="px-4 py-4">
                   <select aria-label={`${transaction.description} 확정 계정과목`} className="h-10 w-full rounded-md border bg-white px-3" onChange={(event) => setAssignments((current) => ({ ...current, [transaction.id]: event.target.value }))} value={assignments[transaction.id] ?? ""}>
                     <option value="">계정과목 선택</option>
-                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.code} · {subject.name}</option>)}
+                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
                   </select>
                 </td>
               </tr>

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BusinessPartnerPage } from "./business-partner-page";
 import { businessPartners } from "./business-partner-data";
@@ -265,8 +265,9 @@ describe("BusinessPartnerPage", () => {
     fireEvent.click(screen.getByLabelText("추천 계정과목 임대료 선택"));
     fireEvent.click(screen.getByRole("button", { name: "선택 항목 등록" }));
 
-    expect(await screen.findByText("OP-310")).toBeInTheDocument();
-    expect(screen.getAllByText("임대료").length).toBeGreaterThan(0);
+    const registeredSubjects = screen.getByRole("heading", { name: "등록된 계정과목" }).closest("section")!;
+    await waitFor(() => expect(within(registeredSubjects).getByText("임대료")).toBeInTheDocument());
+    expect(screen.queryByText("OP-310")).not.toBeInTheDocument();
     expect(screen.getByText("사무실 임차료 등")).toBeInTheDocument();
   });
 

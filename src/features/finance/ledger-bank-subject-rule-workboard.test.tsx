@@ -33,6 +33,9 @@ describe("LedgerBankSubjectRuleWorkboardPanel", () => {
     const saveRules = vi.fn().mockResolvedValue({ recommended_count: 455, saved_count: 1 });
     render(<LedgerBankSubjectRuleWorkboardPanel accountSubjects={registeredAccountSubjects} initialWorkboard={workboard} saveRules={saveRules} />);
 
+    expect(screen.getByRole("option", { name: registeredAccountSubjects[2].name })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: `${registeredAccountSubjects[2].code} · ${registeredAccountSubjects[2].name}` })).not.toBeInTheDocument();
+
     fireEvent.click(screen.getByRole("button", { name: "연결 후보 전체 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "선택 1개 추천 저장" }));
 
