@@ -6,6 +6,7 @@ import {
   BookOpen,
   Building2,
   CalendarCheck,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -231,6 +232,92 @@ function requestFinanceBadges() {
   return financeBadgesRequest;
 }
 
+const financeWorkflowGroups: ReadonlyArray<{ label: string; sourceGroups: readonly string[] }> = [
+  { label: "업무 홈", sourceGroups: ["업무"] },
+  { label: "지출·신탁", sourceGroups: ["지출관리", "신탁 집행관리"] },
+  { label: "지급·수납", sourceGroups: ["지급관리", "수납·환급"] },
+  { label: "회계·마감", sourceGroups: ["회계·증빙", "예산·마감"] },
+  { label: "관리 설정", sourceGroups: ["설정"] },
+] as const;
+
+function DetailMenuLink({ badges, item, selectedDetailMenu }: { badges: Record<string, number>; item: DetailMenuItem; selectedDetailMenu?: string }) {
+  const badge = badges[item.label] ?? 0;
+
+  return (
+    <a
+      aria-current={item.label === selectedDetailMenu ? "page" : undefined}
+      className={`flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${item.label === selectedDetailMenu ? "bg-[var(--color-morning-tint)] font-semibold text-[var(--color-midnight-ink)]" : "font-medium text-[var(--color-stone)] hover:bg-white hover:text-[var(--color-midnight-ink)]"}`}
+      href={item.href ?? "#"}
+    >
+      <ReceiptText aria-hidden="true" className="size-3.5 shrink-0" />
+      <span className="min-w-0 flex-1">{item.label}</span>
+      {badge > 0 ? <span aria-label={`${item.label} 대기 ${badge}건`} className="min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{badge}</span> : null}
+    </a>
+  );
+}
+
+function WorkspaceNavigation({ menus, selectedWorkspaceLabel, selectedMenu, mobile = false }: { menus: WorkspaceMenu[]; selectedWorkspaceLabel?: string; selectedMenu: string; mobile?: boolean }) {
+  if (menus.length < 2) return null;
+
+  return (
+    <nav aria-label={`${selectedMenu} 업무 영역`} className={mobile ? "space-y-1 border-b border-[var(--color-soft-border)] pb-3" : "mb-4 space-y-1 border-b border-[var(--color-soft-border)] pb-4"}>
+      <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">업무 영역</p>
+      {menus.map((workspace) => {
+        const isActive = workspace.label === selectedWorkspaceLabel;
+        return (
+          <Link
+            aria-current={isActive ? "page" : undefined}
+            className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${isActive ? "bg-[var(--color-pressed-charcoal)] font-bold text-white" : "font-semibold text-[var(--color-stone)] hover:bg-white hover:text-[var(--color-midnight-ink)]"}`}
+            href={workspace.href}
+            key={workspace.label}
+          >
+            <span>{workspace.label}</span>
+            <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+function FinanceDetailNavigation({ ariaLabel, badges, idPrefix, items, selectedDetailMenu }: { ariaLabel: string; badges: Record<string, number>; idPrefix: string; items: DetailMenuItem[]; selectedDetailMenu?: string }) {
+  const activeGroup = financeWorkflowGroups.find((group) => items.some((item) => item.label === selectedDetailMenu && item.group && group.sourceGroups.includes(item.group)))?.label ?? financeWorkflowGroups[0].label;
+  const [openGroup, setOpenGroup] = useState<string | null>(activeGroup);
+
+  return (
+    <nav aria-label={ariaLabel} className="space-y-1">
+      <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">전표·증빙관리</p>
+      {financeWorkflowGroups.map((group, index) => {
+        const groupItems = items.filter((item) => item.group && group.sourceGroups.includes(item.group));
+        const isOpen = openGroup === group.label;
+        const badge = groupItems.reduce((total, item) => total + (badges[item.label] ?? 0), 0);
+        const contentId = `${idPrefix}-finance-group-${index}`;
+
+        return (
+          <div className="rounded-lg" key={group.label}>
+            <button
+              aria-controls={contentId}
+              aria-expanded={isOpen}
+              className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${isOpen ? "bg-[var(--color-cloud-veil)] text-[var(--color-midnight-ink)]" : "text-[var(--color-stone)] hover:bg-white"}`}
+              onClick={() => setOpenGroup((current) => current === group.label ? null : group.label)}
+              type="button"
+            >
+              <ChevronDown aria-hidden="true" className={`size-4 shrink-0 transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`} />
+              <span className="min-w-0 flex-1">{group.label}</span>
+              {badge > 0 ? <span aria-label={`${group.label} 대기 ${badge}건`} className="min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{badge}</span> : null}
+            </button>
+            {isOpen ? (
+              <div className="ml-3 space-y-1 border-l border-[var(--color-soft-border)] py-1 pl-2" id={contentId}>
+                {groupItems.map((item) => <DetailMenuLink badges={badges} item={item} key={item.label} selectedDetailMenu={selectedDetailMenu} />)}
+              </div>
+            ) : null}
+          </div>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
@@ -253,20 +340,13 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const isDetailMode = hasDetailMenus && fullMenuFor !== selectedMenu;
   const detailLabel = activeDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
   const selectedDetailMenu = selectedMenu === "회계/자금" && detailLabel ? normalizeFinanceDetailLabel(detailLabel) : detailLabel;
-  const detailMenuContent = currentDetailMenus.map((item, index) => (
+  const isFinanceWorkflowWorkspace = selectedMenu === "회계/자금" && selectedWorkspace?.label === "전표·증빙관리";
+  const flatDetailMenuContent = currentDetailMenus.map((item, index) => (
     <Fragment key={item.label}>
       {item.group && currentDetailMenus[index - 1]?.group !== item.group ? (
         <p className="px-3 pb-1 pt-4 text-xs font-bold text-[var(--color-fog)]">{item.group}</p>
       ) : null}
-      <a
-        aria-current={item.label === selectedDetailMenu ? "page" : undefined}
-        className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${item.label === selectedDetailMenu ? "bg-[var(--color-morning-tint)] font-semibold text-[var(--color-midnight-ink)]" : "font-medium text-[var(--color-stone)] hover:bg-white hover:text-[var(--color-midnight-ink)]"}`}
-        href={item.href ?? "#"}
-      >
-        <ReceiptText aria-hidden="true" className="size-3.5 shrink-0" />
-        <span className="min-w-0 flex-1">{item.label}</span>
-        {(financeBadges[item.label] ?? 0) > 0 ? <span aria-label={`${item.label} 대기 ${financeBadges[item.label]}건`} className="min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{financeBadges[item.label]}</span> : null}
-      </a>
+      <DetailMenuLink badges={financeBadges} item={item} selectedDetailMenu={selectedDetailMenu} />
     </Fragment>
   ));
 
@@ -324,9 +404,14 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
         ) : null}
 
         {isDetailMode && hasDetailMenus ? (
-          <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">
-            {detailMenuContent}
-          </nav>
+          <>
+            <WorkspaceNavigation menus={currentWorkspaceMenus} selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
+            {isFinanceWorkflowWorkspace ? (
+              <FinanceDetailNavigation ariaLabel={`${selectedMenu} 상세 메뉴`} badges={financeBadges} idPrefix="desktop" items={currentDetailMenus} key={selectedDetailMenu} selectedDetailMenu={selectedDetailMenu} />
+            ) : (
+              <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">{flatDetailMenuContent}</nav>
+            )}
+          </>
         ) : (
           <nav aria-label="전체 메뉴" className="space-y-1">
             <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">전체 메뉴</p>
@@ -412,30 +497,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             </div>
           </div>
 
-          {currentWorkspaceMenus.length > 0 ? (
-            <div className="border-t border-[var(--color-soft-border)] bg-[var(--color-paper-white)]/74 px-4 py-2 sm:px-6 lg:px-8">
-              <nav aria-label={`${selectedMenu} 업무 탭`} className="flex items-center gap-2 overflow-x-auto">
-                {currentWorkspaceMenus.map((workspace) => {
-                  const isActive = workspace.label === selectedWorkspace?.label;
-
-                  return (
-                    <Link
-                      aria-current={isActive ? "page" : undefined}
-                      className={
-                        isActive
-                          ? "flex shrink-0 items-center gap-2 rounded-md bg-[var(--color-pressed-charcoal)] px-3 py-2 text-xs font-bold text-white"
-                          : "flex shrink-0 items-center gap-2 rounded-md border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)] transition hover:border-[var(--color-deep-cobalt)] hover:text-[var(--color-deep-cobalt)]"
-                      }
-                      href={workspace.href}
-                      key={workspace.label}
-                    >
-                      {workspace.label}
-                    </Link>
-                  );
-                })}
-              </nav>
-            </div>
-          ) : null}
         </header>
 
         <div className="border-b border-[var(--color-soft-border)] bg-white px-4 py-2 md:hidden">
@@ -452,7 +513,10 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           </button>
           {isMobileMenuOpen ? (
             <div id="mobile-workspace-navigation" className="max-h-[60dvh] overflow-y-auto overscroll-contain pb-3">
-              {hasDetailMenus ? <nav aria-label={`${selectedMenu} 모바일 상세 메뉴`}>{detailMenuContent}</nav> : null}
+              <WorkspaceNavigation menus={currentWorkspaceMenus} mobile selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
+              {hasDetailMenus ? isFinanceWorkflowWorkspace ? (
+                <FinanceDetailNavigation ariaLabel={`${selectedMenu} 모바일 상세 메뉴`} badges={financeBadges} idPrefix="mobile" items={currentDetailMenus} key={`mobile-${selectedDetailMenu}`} selectedDetailMenu={selectedDetailMenu} />
+              ) : <nav aria-label={`${selectedMenu} 모바일 상세 메뉴`}>{flatDetailMenuContent}</nav> : null}
               <nav aria-label="모바일 전체 메뉴" className="mt-3 border-t border-[var(--color-soft-border)] pt-2">
                 {primaryNavigation.map((item) => <a key={item.label} href={item.href} aria-current={item.label === selectedMenu ? "page" : undefined} className="block rounded-lg px-3 py-3 text-sm font-medium">{item.label}</a>)}
               </nav>

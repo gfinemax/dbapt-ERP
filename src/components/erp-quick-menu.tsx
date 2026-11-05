@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
-import { Settings } from "lucide-react";
+import { ChevronDown, Settings } from "lucide-react";
 import { loadQuickMenuPreferencesAction, saveQuickMenuPreferencesAction } from "@/app/finance/quick-menu/actions";
 import { defaultQuickMenuIds, quickMenuEntries as entries, validQuickMenuIds, type QuickMenuId } from "@/features/finance/erp-quick-menu-catalog";
 
@@ -30,6 +30,7 @@ export function ErpQuickMenu({ badges = {}, onSelect }: { badges?: Record<string
   const raw = useSyncExternalStore(subscribe, snapshot, () => null);
   const [remoteIds, setRemoteIds] = useState<QuickMenuId[] | null>(null);
   const ids = remoteIds ?? readIds(raw);
+  const [expanded, setExpanded] = useState(false);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<QuickMenuId[]>([]);
   const [error, setError] = useState("");
@@ -81,12 +82,16 @@ export function ErpQuickMenu({ badges = {}, onSelect }: { badges?: Record<string
       return next;
     });
   }
+  function toggleExpanded() {
+    if (expanded) setEditing(false);
+    setExpanded((current) => !current);
+  }
   return <section aria-label="퀵메뉴" className="mt-6 border-t border-[var(--color-soft-border)] pt-4">
     <div className="mb-2 flex items-center justify-between px-2">
-      <p className="text-xs font-bold text-[var(--color-stone)]">퀵메뉴</p>
-      <button aria-label="퀵메뉴 설정" aria-expanded={editing} type="button" className="rounded p-2 hover:bg-white focus-visible:outline-2" onClick={() => { setDraft(validQuickMenuIds(ids)); setError(""); setEditing(!editing); operationKey.current = ""; }}><Settings aria-hidden="true" className="size-4" /></button>
+      <button aria-controls="erp-quick-menu-content" aria-expanded={expanded} aria-label={`퀵메뉴 ${expanded ? "접기" : "펼치기"}`} className="flex min-h-10 flex-1 items-center gap-2 rounded px-1 text-left text-xs font-bold text-[var(--color-stone)] hover:bg-white focus-visible:outline-2" onClick={toggleExpanded} type="button"><ChevronDown aria-hidden="true" className={`size-4 transition-transform motion-reduce:transition-none ${expanded ? "rotate-180" : ""}`} />퀵메뉴</button>
+      <button aria-label="퀵메뉴 설정" aria-expanded={editing} type="button" className="rounded p-2 hover:bg-white focus-visible:outline-2" onClick={() => { setExpanded(true); setDraft(validQuickMenuIds(ids)); setError(""); setEditing(!editing); operationKey.current = ""; }}><Settings aria-hidden="true" className="size-4" /></button>
     </div>
-    {editing ? <div aria-label="퀵메뉴 편집" className="space-y-2 text-xs">
+    {expanded ? <div id="erp-quick-menu-content">{editing ? <div aria-label="퀵메뉴 편집" className="space-y-2 text-xs">
       <p>{authenticated ? "내 계정의 모든 기기에 같은 메뉴와 순서가 표시돼." : "로그인 전에는 이 브라우저에 메뉴와 순서를 저장해."}</p>
       <ol className="space-y-1">{draft.map((id, index) => {
         const entry = entries.find((item) => item.id === id)!;
@@ -106,6 +111,6 @@ export function ErpQuickMenu({ badges = {}, onSelect }: { badges?: Record<string
       const count = "badgeLabel" in entry ? badges[entry.badgeLabel] ?? 0 : 0;
       const content = <><span className="min-w-0 flex-1">{entry.label}</span>{count > 0 ? <span aria-label={`${entry.label} 대기 ${count}건`} className="ml-1 min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{count}</span> : null}</>;
       return "href" in entry ? <a aria-label={`퀵메뉴 ${entry.label}`} className={className} href={entry.href} key={id}>{content}</a> : <button aria-label={`퀵메뉴 ${entry.label}`} title={onSelect ? undefined : "이 화면에서는 지원하지 않는 바로가기야"} disabled={!onSelect} className={className} key={id} type="button" onClick={() => onSelect?.(entry.label)}>{content}</button>;
-    })}</div>}
+    })}</div>}</div> : null}
   </section>;
 }

@@ -33,21 +33,28 @@ describe("ErpShell", () => {
 
   it("renders the grouped finance workflow in order and preserves workspace categories", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
-    const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
-    expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "업무현황", "통합 결재함", "전체 지출", "지출 등록·신청", "선지급 사용정산",
-      "월 운영비 요청·수령", "운영비 사용정산", "사업비 집행요청·현황", "조합 지급대기", "전체 지급내역",
-      "분담금 수납관리", "환급관리", "수입·지출 전표관리", "계좌거래 매칭", "증빙자료 관리",
-      "세금계산서·계산서", "예산집행 현황", "월 마감", "지출 처리 기준", "신탁 집행 기준", "운영 준비 점검", "기존 자료 정리",
-    ]);
-    expect(Array.from(detailMenu.querySelectorAll("p")).map((node) => node.textContent)).toEqual([
-      "업무", "지출관리", "신탁 집행관리", "지급관리", "수납·환급", "회계·증빙", "예산·마감", "설정",
-    ]);
-    expect(within(detailMenu).getByRole("link", { name: "업무현황" })).toHaveAttribute("aria-current", "page");
-    expect(within(detailMenu).getAllByRole("link").every((link) => link.getAttribute("href")?.startsWith("/"))).toBe(true);
-    expect(within(screen.getByRole("navigation", { name: "회계/자금 업무 탭" })).getAllByRole("link").map((link) => link.textContent)).toEqual([
+    const workspaceNavigation = screen.getByRole("navigation", { name: "회계/자금 업무 영역" });
+    expect(within(workspaceNavigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "기초정보", "전표·증빙관리", "입출금", "채권·채무", "예산·결산", "은행·카드", "인사·급여", "세무신고", "부가서비스", "보고서",
     ]);
+    expect(within(workspaceNavigation).getByRole("link", { name: "전표·증빙관리" })).toHaveAttribute("aria-current", "page");
+    expect(screen.queryByRole("navigation", { name: "회계/자금 업무 탭" })).not.toBeInTheDocument();
+
+    const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
+    expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "업무현황", "통합 결재함",
+    ]);
+    expect(within(detailMenu).getAllByRole("button").map((button) => button.textContent)).toEqual([
+      "업무 홈", "지출·신탁", "지급·수납", "회계·마감", "관리 설정",
+    ]);
+    expect(within(detailMenu).getByRole("button", { name: "업무 홈" })).toHaveAttribute("aria-expanded", "true");
+    expect(within(detailMenu).getByRole("link", { name: "업무현황" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(within(detailMenu).getByRole("button", { name: "지출·신탁" }));
+    expect(within(detailMenu).getAllByRole("link").map((link) => link.textContent)).toEqual([
+      "전체 지출", "지출 등록·신청", "선지급 사용정산", "월 운영비 요청·수령", "운영비 사용정산", "사업비 집행요청·현황",
+    ]);
+    expect(within(detailMenu).getByRole("button", { name: "업무 홈" })).toHaveAttribute("aria-expanded", "false");
+    expect(within(detailMenu).getByRole("button", { name: "지출·신탁" })).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByLabelText("사이드바")).toHaveClass("overflow-y-auto");
     fireEvent.click(screen.getByRole("button", { name: "전체 메뉴로 돌아가기" }));
     expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
@@ -56,12 +63,12 @@ describe("ErpShell", () => {
   it("routes every finance workspace tab to a stable destination", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
 
-    const workspaceTabs = screen.getByRole("navigation", { name: "회계/자금 업무 탭" });
-    expect(within(workspaceTabs).getByRole("link", { name: "입출금" })).toHaveAttribute("href", "/finance?workspace=cash");
-    expect(within(workspaceTabs).getByRole("link", { name: "채권·채무" })).toHaveAttribute("href", "/finance?workspace=receivables");
-    expect(within(workspaceTabs).getByRole("link", { name: "예산·결산" })).toHaveAttribute("href", "/finance?workspace=budget");
-    expect(within(workspaceTabs).getByRole("link", { name: "세무신고" })).toHaveAttribute("href", "/finance?workspace=tax");
-    expect(within(workspaceTabs).getByRole("link", { name: "부가서비스" })).toHaveAttribute("href", "/finance?workspace=services");
+    const workspaceNavigation = screen.getByRole("navigation", { name: "회계/자금 업무 영역" });
+    expect(within(workspaceNavigation).getByRole("link", { name: "입출금" })).toHaveAttribute("href", "/finance?workspace=cash");
+    expect(within(workspaceNavigation).getByRole("link", { name: "채권·채무" })).toHaveAttribute("href", "/finance?workspace=receivables");
+    expect(within(workspaceNavigation).getByRole("link", { name: "예산·결산" })).toHaveAttribute("href", "/finance?workspace=budget");
+    expect(within(workspaceNavigation).getByRole("link", { name: "세무신고" })).toHaveAttribute("href", "/finance?workspace=tax");
+    expect(within(workspaceNavigation).getByRole("link", { name: "부가서비스" })).toHaveAttribute("href", "/finance?workspace=services");
   });
 
   it("opens the bank-card workspace at its implemented default page", () => {
@@ -75,6 +82,7 @@ describe("ErpShell", () => {
 
   it("opens a new expense resolution from the quick menu on every screen", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 펼치기" }));
     expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toHaveAttribute(
       "href",
       "/finance/expense-entry?flow=before",
@@ -96,8 +104,9 @@ describe("ErpShell", () => {
     fireEvent.click(toggle);
     expect(toggle).toHaveAttribute("aria-expanded", "true");
     const menu = screen.getByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" });
-    expect(within(menu).getAllByRole("link")).toHaveLength(22);
+    expect(within(menu).getAllByRole("link")).toHaveLength(4);
     expect(within(menu).getByRole("link", { name: "조합 지급대기" })).toHaveAttribute("aria-current", "page");
+    fireEvent.click(within(menu).getByRole("button", { name: "관리 설정" }));
     expect(within(menu).getByRole("link", { name: "신탁 집행 기준" })).toHaveAttribute("href", "/finance/workflow-settings");
     fireEvent.click(toggle);
     expect(screen.queryByRole("navigation", { name: "회계/자금 모바일 상세 메뉴" })).not.toBeInTheDocument();
@@ -107,9 +116,14 @@ describe("ErpShell", () => {
     navigation.badges.mockResolvedValue({ "전체 지출": 3, "지출 등록·신청": 2, "기존 자료 정리": 8, "증빙자료 관리": 0 });
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
+    const expenseBadge = await within(detailMenu).findByLabelText("지출·신탁 대기 5건");
+    expect(expenseBadge).toHaveTextContent("5");
+    fireEvent.click(expenseBadge.closest("button")!);
     expect(await within(detailMenu).findByLabelText("전체 지출 대기 3건")).toHaveTextContent("3");
+    fireEvent.click(within(detailMenu).getByRole("button", { name: /관리 설정/ }));
     expect(within(detailMenu).getByRole("link", { name: /기존 자료 정리/ })).toHaveAttribute("href", "/finance/data-cleanup");
     await waitFor(() => expect(within(detailMenu).queryByLabelText("증빙자료 관리 대기 0건")).not.toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 펼치기" }));
     expect(await within(screen.getByRole("region", { name: "퀵메뉴" })).findByLabelText("지출 등록·신청 대기 2건")).toHaveTextContent("2");
   });
 
