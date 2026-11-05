@@ -5,6 +5,7 @@ import {
   buildLedgerAccountSubjectSyncInputs,
   buildLedgerBankSubjectTransactionPage,
   buildLedgerBankSubjectRuleWorkboard,
+  buildLedgerBankSubjectRuleWorkboardFromAggregate,
   normalizeLedgerDescription,
 } from "./ledger-bank-subject-rules";
 
@@ -68,6 +69,29 @@ describe("ledger bank subject rules", () => {
       direction: "WITHDRAWAL",
       ledgerCategoryId: "15",
     }]);
+  });
+
+  it("builds the same review model from database aggregates without downloading every source row", () => {
+    const workboard = buildLedgerBankSubjectRuleWorkboardFromAggregate({
+      blank_description_count: 1,
+      groups: [{
+        amount_total: "3000",
+        direction: "WITHDRAWAL",
+        match_type: "CATEGORY",
+        source_group: "운영비",
+        source_key: "12",
+        source_label: "소모품비",
+        transaction_count: 2,
+      }],
+      transaction_count: 3,
+    }, [], subjects);
+
+    expect(workboard).toMatchObject({ blankDescriptionCount: 1, transactionCount: 3 });
+    expect(workboard.categoryGroups[0]).toMatchObject({
+      amountTotal: 3000,
+      candidateAccountSubjectId: "subject-supply",
+      transactionCount: 2,
+    });
   });
 
   it("returns only the clicked category and direction as a read-only transaction page", () => {

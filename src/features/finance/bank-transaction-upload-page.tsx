@@ -12,19 +12,6 @@ import { registeredBankAccounts } from "@/features/basic-info/business-partner-d
 import { formatKrw } from "./finance-data";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
 import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
-import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
-import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
-import { emptyLedgerBankBackfillStatus, type LedgerBankActionResult, type LedgerBankBackfillStatus, type LedgerBankSyncResult } from "./ledger-bank-backfill-shared";
-import { LedgerBankSubjectRuleWorkboardPanel } from "./ledger-bank-subject-rule-workboard";
-import {
-  emptyLedgerBankSubjectRuleWorkboard,
-  type LedgerAccountSubjectSyncInput,
-  type LedgerAccountSubjectSyncResult,
-  type LedgerBankSubjectRuleInput,
-  type LedgerBankSubjectTransactionPage,
-  type LedgerBankSubjectTransactionQuery,
-  type LedgerBankSubjectRuleWorkboard,
-} from "./ledger-bank-subject-rules";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -35,7 +22,6 @@ const statusClasses: Record<string, string> = {
 
 type BankTransactionUploadPageProps = {
   accessError?: string;
-  confirmBankTransactionSubjects?: (assignments: BankTransactionSubjectAssignment[]) => Promise<Array<{ account_subject_id: string; transaction_id: string }>>;
   createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<{
     duplicateCount: number;
     importedCount: number;
@@ -43,45 +29,16 @@ type BankTransactionUploadPageProps = {
   }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
-  initialLedgerBackfillStatus?: LedgerBankBackfillStatus;
-  initialLedgerSubjectRuleWorkboard?: LedgerBankSubjectRuleWorkboard;
-  initialReviewPage?: number;
-  initialReviewPageSize?: number;
-  initialReviewTotalCount?: number;
-  initialReviewTotalPages?: number;
-  initialReviewTransactions?: BankTransactionReviewRow[];
-  ledgerBackfillError?: string;
-  ledgerSubjectRuleError?: string;
-  loadLedgerSubjectTransactions?: (query: LedgerBankSubjectTransactionQuery) => Promise<LedgerBankSubjectTransactionPage>;
   logoutAction?: () => Promise<void>;
-  mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
-  saveLedgerSubjectRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
-  syncLedgerAccountSubjects?: (items: LedgerAccountSubjectSyncInput[]) => Promise<LedgerAccountSubjectSyncResult>;
-  syncLedgerBankTransactions?: () => Promise<LedgerBankActionResult<LedgerBankSyncResult>>;
   userLabel?: string;
 };
 
 export function BankTransactionUploadPage({
   accessError,
-  confirmBankTransactionSubjects,
   createBankTransactions,
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
-  initialLedgerBackfillStatus = emptyLedgerBankBackfillStatus,
-  initialLedgerSubjectRuleWorkboard = emptyLedgerBankSubjectRuleWorkboard,
-  initialReviewPage = 1,
-  initialReviewPageSize = 200,
-  initialReviewTotalCount = 0,
-  initialReviewTotalPages = 1,
-  initialReviewTransactions = [],
-  ledgerBackfillError,
-  ledgerSubjectRuleError,
-  loadLedgerSubjectTransactions,
   logoutAction,
-  mapLedgerBankAccount,
-  saveLedgerSubjectRules,
-  syncLedgerAccountSubjects,
-  syncLedgerBankTransactions,
   userLabel = "로그인 필요",
 }: BankTransactionUploadPageProps = {}) {
   const bankAccounts = initialBankAccounts;
@@ -227,24 +184,6 @@ export function BankTransactionUploadPage({
           </div>
         </section>
 
-        <LedgerBankBackfillPanel
-          bankAccounts={bankAccounts}
-          initialStatus={initialLedgerBackfillStatus}
-          loadError={ledgerBackfillError}
-          mapAccount={mapLedgerBankAccount}
-          syncTransactions={syncLedgerBankTransactions}
-        />
-
-        <LedgerBankSubjectRuleWorkboardPanel
-          accountSubjects={accountSubjects}
-          initialWorkboard={initialLedgerSubjectRuleWorkboard}
-          key={`${accountSubjects.length}-${initialLedgerSubjectRuleWorkboard.syncedCategoryCount}`}
-          loadError={ledgerSubjectRuleError}
-          loadTransactions={loadLedgerSubjectTransactions}
-          saveRules={saveLedgerSubjectRules}
-          syncAccountSubjects={syncLedgerAccountSubjects}
-        />
-
         <section className="grid gap-4 lg:grid-cols-4">
           <SummaryTile label="미리보기 거래" value={`${summary.rowCount}건`} />
           <SummaryTile label="업로드 분류 반영" value={`${summary.uploadedMatches}건`} />
@@ -356,131 +295,9 @@ export function BankTransactionUploadPage({
           </div>
         </section>
 
-        <BankTransactionSubjectReview
-          accountSubjects={accountSubjects}
-          confirmAssignments={confirmBankTransactionSubjects}
-          page={initialReviewPage}
-          pageSize={initialReviewPageSize}
-          initialTransactions={initialReviewTransactions}
-          totalCount={initialReviewTotalCount}
-          totalPages={initialReviewTotalPages}
-        />
       </div>
     </ErpShell>
   );
-}
-
-function BankTransactionSubjectReview({
-  accountSubjects,
-  confirmAssignments,
-  initialTransactions,
-  page,
-  pageSize,
-  totalCount,
-  totalPages,
-}: {
-  accountSubjects: RegisteredAccountSubject[];
-  confirmAssignments?: BankTransactionUploadPageProps["confirmBankTransactionSubjects"];
-  initialTransactions: BankTransactionReviewRow[];
-  page: number;
-  pageSize: number;
-  totalCount: number;
-  totalPages: number;
-}) {
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
-  const [assignments, setAssignments] = useState<Record<string, string>>(() => Object.fromEntries(
-    initialTransactions.map((transaction) => [transaction.id, transaction.recommendedAccountSubjectId ?? ""]),
-  ));
-  const [isConfirming, setIsConfirming] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  const activeSubjects = accountSubjects.filter((subject) => subject.isActive);
-  const confirmableIds = selectedIds.filter((id) => assignments[id]);
-
-  function toggle(id: string) {
-    setSelectedIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  }
-
-  function selectRecommended() {
-    setSelectedIds(transactions.filter((transaction) => assignments[transaction.id]).map((transaction) => transaction.id));
-  }
-
-  async function confirmSelected() {
-    if (!confirmAssignments || !confirmableIds.length) return;
-    setIsConfirming(true);
-    setError(null);
-    setMessage(null);
-    try {
-      const confirmed = await confirmAssignments(confirmableIds.map((transactionId) => ({
-        accountSubjectId: assignments[transactionId],
-        transactionId,
-      })));
-      const confirmedIds = new Set(confirmed.map((item) => item.transaction_id));
-      setTransactions((current) => current.filter((transaction) => !confirmedIds.has(transaction.id)));
-      setSelectedIds([]);
-      setMessage(`${confirmed.length}건의 계정과목을 관리자 확정했어.`);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "계정과목 일괄 확정에 실패했어.");
-    } finally {
-      setIsConfirming(false);
-    }
-  }
-
-  return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]" id="bank-transaction-review">
-      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
-        <div>
-          <h2 className="text-lg font-bold">계정과목 관리자 일괄 확인</h2>
-          <p className="mt-1 text-sm text-[var(--color-stone)]">추천 결과를 그대로 확정하거나 내부 계정과목으로 바꾼 뒤 선택한 거래를 한 번에 확정합니다.</p>
-          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">전체 {totalCount.toLocaleString("ko-KR")}건 · {page}/{totalPages}페이지</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={selectRecommended} size="sm" type="button" variant="outline">추천값 전체 선택</Button>
-          <Button disabled={!confirmAssignments || !confirmableIds.length || isConfirming} onClick={confirmSelected} size="sm" type="button">
-            {isConfirming ? "확정 중..." : `선택 ${confirmableIds.length}건 확정`}
-          </Button>
-        </div>
-      </div>
-      {message ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{message}</p> : null}
-      {error ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{error}</p> : null}
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1080px] border-collapse text-left text-sm">
-          <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
-            <tr><th className="px-4 py-3 text-center">선택</th><th className="px-4 py-3 text-center">거래일</th><th className="px-4 py-3 text-center">입출금</th><th className="px-4 py-3 text-center">적요/거래처</th><th className="px-4 py-3 text-center">금액</th><th className="px-4 py-3 text-center">추천</th><th className="px-4 py-3 text-center">확정 계정과목</th></tr>
-          </thead>
-          <tbody className="divide-y divide-[var(--color-soft-border)]">
-            {!transactions.length ? <tr><td className="px-4 py-8 text-center text-[var(--color-stone)]" colSpan={7}>확인할 은행거래가 없습니다.</td></tr> : transactions.map((transaction) => (
-              <tr className="bg-white/70" key={transaction.id}>
-                <td className="px-4 py-4 text-center"><input aria-label={`${transaction.description} 거래 선택`} checked={selectedIds.includes(transaction.id)} onChange={() => toggle(transaction.id)} type="checkbox" /></td>
-                <td className="px-4 py-4">{transaction.transactedAt.slice(0, 10)}</td>
-                <td className="px-4 py-4">{transaction.transactionKind ?? "미확정"}</td>
-                <td className="px-4 py-4"><p className="font-semibold">{transaction.description}</p><p className="text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p></td>
-                <td className="px-4 py-4 text-right font-semibold">{formatKrw(transaction.amount)}</td>
-                <td className="px-4 py-4"><p className="font-semibold">{transaction.recommendedAccountSubjectName ?? "추천 없음"}</p><p className="text-xs text-[var(--color-stone)]">{transaction.recommendationReason ?? "관리자 지정 필요"}</p></td>
-                <td className="px-4 py-4">
-                  <select aria-label={`${transaction.description} 확정 계정과목`} className="h-10 w-full rounded-md border bg-white px-3" onChange={(event) => setAssignments((current) => ({ ...current, [transaction.id]: event.target.value }))} value={assignments[transaction.id] ?? ""}>
-                    <option value="">계정과목 선택</option>
-                    {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
-                  </select>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      <div className="flex items-center justify-between gap-3 border-t border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold">
-        {page > 1 ? <Link className="rounded-full border px-4 py-2" href={bankTransactionReviewPageHref(page - 1)}>이전 200건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">이전 200건</span>}
-        <span className="text-[var(--color-stone)]">{totalCount ? `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)}건 표시` : "표시할 거래 없음"}</span>
-        {page < totalPages ? <Link className="rounded-full border px-4 py-2" href={bankTransactionReviewPageHref(page + 1)}>다음 200건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">다음 200건</span>}
-      </div>
-    </section>
-  );
-}
-
-function bankTransactionReviewPageHref(page: number) {
-  return `/finance/bank-transactions?reviewPage=${page}#bank-transaction-review`;
 }
 
 function splitLine(line: string, delimiter: string) {

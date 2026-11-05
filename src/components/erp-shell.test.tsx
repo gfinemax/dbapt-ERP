@@ -261,6 +261,14 @@ describe("ErpShell", () => {
       "href",
       "/finance/bank-account-links",
     );
+    expect(screen.getByRole("link", { name: "전표 자동매칭" })).toHaveAttribute(
+      "href",
+      "/finance/bank-auto-matching",
+    );
+    expect(screen.getByRole("link", { name: "미매칭 내역" })).toHaveAttribute(
+      "href",
+      "/finance/bank-unmatched",
+    );
   });
 
   it("highlights the dedicated bank account-link settings route", () => {

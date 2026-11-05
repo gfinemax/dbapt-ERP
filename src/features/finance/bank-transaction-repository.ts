@@ -30,9 +30,11 @@ export type SupabaseBankTransactionRow = SupabaseBankTransactionInsert & {
   id: string;
 };
 
+export type BankTransactionClassificationStatus = "UNREVIEWED" | "RECOMMENDED" | "CONFIRMED" | "DEFERRED" | "EXCLUDED";
+
 export type BankTransactionReviewRow = {
   bankAccountId: string;
-  classificationStatus: "UNREVIEWED" | "RECOMMENDED" | "DEFERRED";
+  classificationStatus: BankTransactionClassificationStatus;
   counterparty: string;
   description: string;
   id: string;
@@ -42,6 +44,24 @@ export type BankTransactionReviewRow = {
   transactedAt: string;
   transactionKind: "입금" | "출금" | null;
   amount: number;
+};
+
+export type BankTransactionListFilters = {
+  bankAccountId?: string;
+  classificationStatus?: BankTransactionClassificationStatus;
+};
+
+export type BankTransactionListRow = BankTransactionReviewRow & {
+  balanceAmount: number | null;
+  branchName: string;
+};
+
+export type BankTransactionListPage = {
+  page: number;
+  pageSize: number;
+  rows: BankTransactionListRow[];
+  totalCount: number;
+  totalPages: number;
 };
 
 export type BankTransactionReviewPage = {
@@ -117,7 +137,52 @@ export async function createBankTransactionsInSupabase(rows: ParsedBankTransacti
   return { duplicateCount: rows.length - transactions.length, transactions };
 }
 
-const bankTransactionReviewPageSize = 200;
+export const bankTransactionPageSize = 50;
+
+export async function listBankTransactions(
+  organizationId: string,
+  requestedPage = 1,
+  filters: BankTransactionListFilters = {},
+): Promise<BankTransactionListPage> {
+  const supabase = getSupabaseServerClient();
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  if (!supabase) return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  const from = (page - 1) * bankTransactionPageSize;
+  let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
+    .select("id,bank_account_id,transacted_at,transaction_kind,description,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
+    .eq("organization_id", organizationId)
+    .is("deleted_at", null);
+  if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
+  if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
+  const { count, data, error } = await request
+    .order("transacted_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + bankTransactionPageSize - 1);
+  if (error) throw new Error(`은행거래 목록을 불러오지 못했어: ${error.message}`);
+  const rows = (data ?? []).map((row) => ({
+    amount: Number(row.withdrawal_amount) || Number(row.deposit_amount) || 0,
+    balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
+    bankAccountId: row.bank_account_id,
+    branchName: row.branch_name ?? "",
+    classificationStatus: row.classification_status,
+    counterparty: row.counterparty ?? "",
+    description: row.description,
+    id: row.id,
+    recommendedAccountSubjectId: row.recommended_account_subject_id,
+    recommendedAccountSubjectName: row.recommended_account_subject_name,
+    recommendationReason: row.recommendation_reason,
+    transactedAt: row.transacted_at,
+    transactionKind: row.transaction_kind,
+  })) as BankTransactionListRow[];
+  const totalCount = count ?? rows.length;
+  return {
+    page,
+    pageSize: bankTransactionPageSize,
+    rows,
+    totalCount,
+    totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionPageSize)),
+  };
+}
 
 export async function listBankTransactionsForSubjectReview(
   organizationId: string,
@@ -125,8 +190,8 @@ export async function listBankTransactionsForSubjectReview(
 ): Promise<BankTransactionReviewPage> {
   const supabase = getSupabaseServerClient();
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  if (!supabase) return { page, pageSize: bankTransactionReviewPageSize, rows: [], totalCount: 0, totalPages: 1 };
-  const from = (page - 1) * bankTransactionReviewPageSize;
+  if (!supabase) return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  const from = (page - 1) * bankTransactionPageSize;
   const { count, data, error } = await supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
     .select("id,bank_account_id,transacted_at,transaction_kind,description,deposit_amount,withdrawal_amount,counterparty,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
@@ -134,7 +199,7 @@ export async function listBankTransactionsForSubjectReview(
     .in("classification_status", ["UNREVIEWED", "RECOMMENDED", "DEFERRED"])
     .order("transacted_at", { ascending: false })
     .order("id", { ascending: false })
-    .range(from, from + bankTransactionReviewPageSize - 1);
+    .range(from, from + bankTransactionPageSize - 1);
   if (error) throw new Error(`은행거래 검토 목록을 불러오지 못했어: ${error.message}`);
   const rows = (data ?? []).map((row) => ({
     amount: Number(row.withdrawal_amount) || Number(row.deposit_amount) || 0,
@@ -152,10 +217,10 @@ export async function listBankTransactionsForSubjectReview(
   const totalCount = count ?? rows.length;
   return {
     page,
-    pageSize: bankTransactionReviewPageSize,
+    pageSize: bankTransactionPageSize,
     rows,
     totalCount,
-    totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionReviewPageSize)),
+    totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionPageSize)),
   };
 }
 

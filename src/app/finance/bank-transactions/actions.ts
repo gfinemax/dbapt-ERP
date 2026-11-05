@@ -22,6 +22,8 @@ export async function createBankTransactionsAction(rows: ParsedBankTransactionRo
   const result = await createBankTransactionsInSupabase(rows, actor.organization_id);
 
   revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-transactions/upload");
+  revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/exp");
 
   return {
@@ -35,6 +37,7 @@ export async function confirmBankTransactionSubjectsAction(assignments: BankTran
   const actor = await requireExpenseActor("ADMIN");
   const confirmed = await confirmBankTransactionSubjects(actor.organization_id, actor.user_id, assignments);
   revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/exp");
   return confirmed;
 }
@@ -43,6 +46,7 @@ export async function saveLedgerBankSubjectRulesAction(rules: LedgerBankSubjectR
   const actor = await requireExpenseActor("ADMIN");
   const result = await saveLedgerBankSubjectRules(actor.organization_id, actor.user_id, rules);
   revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-auto-matching");
   revalidatePath("/finance/reports");
   return result;
 }
@@ -57,6 +61,7 @@ export async function syncLedgerAccountSubjectsAction(items: LedgerAccountSubjec
   const result = await syncLedgerAccountSubjects(actor.organization_id, actor.user_id, items);
   revalidatePath("/basic-info");
   revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-auto-matching");
   return result;
 }
 
@@ -64,6 +69,7 @@ export async function syncLedgerBankTransactionsAction() {
   try {
     const result = await syncLedgerBankTransactions();
     revalidatePath("/finance/bank-transactions");
+    revalidatePath("/finance/bank-account-links");
     revalidatePath("/finance/reports");
     return { data: result, ok: true } as const;
   } catch (error) {
@@ -83,6 +89,7 @@ export async function setLedgerBankAccountMappingAction(input: {
   try {
     const status = await setLedgerBankAccountMapping(input);
     revalidatePath("/finance/bank-transactions");
+    revalidatePath("/finance/bank-account-links");
     revalidatePath("/finance/reports");
     return { data: status, ok: true } as const;
   } catch (error) {

@@ -112,67 +112,6 @@ describe("BankTransactionUploadPage", () => {
     expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
 
-  it("lets an administrator bulk-confirm recommended account subjects", async () => {
-    const confirmBankTransactionSubjects = vi.fn().mockResolvedValue([
-      { account_subject_id: registeredAccountSubjects[0].id, transaction_id: "transaction-1" },
-    ]);
-    render(
-      <BankTransactionUploadPage
-        confirmBankTransactionSubjects={confirmBankTransactionSubjects}
-        initialAccountSubjects={registeredAccountSubjects}
-        initialBankAccounts={testBankAccounts}
-        initialReviewTransactions={[{
-          amount: 55000,
-          bankAccountId: "bank-002",
-          classificationStatus: "RECOMMENDED",
-          counterparty: "KT",
-          description: "인터넷 요금",
-          id: "transaction-1",
-          recommendedAccountSubjectId: registeredAccountSubjects[0].id,
-          recommendedAccountSubjectName: registeredAccountSubjects[0].name,
-          recommendationReason: "거래 적요 키워드로 추천함",
-          transactedAt: "2026-09-27T09:00:00+09:00",
-          transactionKind: "출금",
-        }]}
-      />,
-    );
-
-    const accountSubjectSelect = screen.getByLabelText("인터넷 요금 확정 계정과목");
-    expect(within(accountSubjectSelect).getByRole("option", { name: registeredAccountSubjects[0].name })).toBeInTheDocument();
-    expect(accountSubjectSelect).not.toHaveTextContent(registeredAccountSubjects[0].code);
-
-    fireEvent.click(screen.getByRole("button", { name: "추천값 전체 선택" }));
-    fireEvent.click(screen.getByRole("button", { name: "선택 1건 확정" }));
-    expect(confirmBankTransactionSubjects).toHaveBeenCalledWith([{
-      accountSubjectId: registeredAccountSubjects[0].id,
-      transactionId: "transaction-1",
-    }]);
-    expect(await screen.findByText("1건의 계정과목을 관리자 확정했어.")).toBeInTheDocument();
-    expect(screen.getByText("확인할 은행거래가 없습니다.")).toBeInTheDocument();
-  });
-
-  it("paginates the complete bank transaction review history beyond the latest 200 rows", () => {
-    render(
-      <BankTransactionUploadPage
-        initialBankAccounts={testBankAccounts}
-        initialReviewPage={2}
-        initialReviewPageSize={200}
-        initialReviewTotalCount={4277}
-        initialReviewTotalPages={22}
-      />,
-    );
-
-    expect(screen.getByText("전체 4,277건 · 2/22페이지")).toBeInTheDocument();
-    expect(screen.getByText("201-400건 표시")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "이전 200건" })).toHaveAttribute(
-      "href",
-      "/finance/bank-transactions?reviewPage=1#bank-transaction-review",
-    );
-    expect(screen.getByRole("link", { name: "다음 200건" })).toHaveAttribute(
-      "href",
-      "/finance/bank-transactions?reviewPage=3#bank-transaction-review",
-    );
-  });
 });
 
 it("does not fabricate account subjects when the internal master is empty", async () => {

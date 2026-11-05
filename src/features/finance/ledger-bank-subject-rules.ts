@@ -97,6 +97,41 @@ type LedgerSourceRow = {
   payload: Record<string, unknown>;
 };
 
+type LedgerGroupAggregateRow = {
+  amount_total: number | string;
+  direction: LedgerBankSubjectRuleDirection;
+  match_type: LedgerBankSubjectRuleMatchType;
+  source_group: string | null;
+  source_key: string;
+  source_label: string;
+  transaction_count: number;
+};
+
+type LedgerGroupAggregateResponse = {
+  blank_description_count: number;
+  groups: LedgerGroupAggregateRow[];
+  transaction_count: number;
+};
+
+type LedgerTransactionRpcRow = {
+  account_name: string | null;
+  balance_amount: number | string | null;
+  bank_name: string | null;
+  deposit_amount: number | string;
+  description: string;
+  management_memo: string | null;
+  memo: string | null;
+  source_transaction_id: string;
+  transaction_date: string | null;
+  transaction_time: string | null;
+  withdrawal_amount: number | string;
+};
+
+type LedgerTransactionRpcResponse = {
+  rows: LedgerTransactionRpcRow[];
+  total_count: number;
+};
+
 type LedgerTransactionSourceRow = LedgerSourceRow & {
   ledger_account_id: string;
   source_transaction_id: string;
@@ -205,9 +240,28 @@ export function buildLedgerBankSubjectRuleWorkboard(
     });
   }
 
+  return decorateLedgerBankSubjectRuleGroups(
+    [...groups.values()],
+    transactionCount,
+    blankDescriptionCount,
+    ruleRows,
+    accountSubjects,
+    linkRows,
+  );
+}
+
+function decorateLedgerBankSubjectRuleGroups(
+  groups: LedgerBankSubjectRuleGroup[],
+  transactionCount: number,
+  blankDescriptionCount: number,
+  ruleRows: LedgerRuleRow[],
+  accountSubjects: RegisteredAccountSubject[],
+  linkRows: LedgerAccountSubjectLinkRow[],
+) {
+  const groupsById = new Map(groups.map((group) => [group.id, group]));
   const subjectsById = new Map(accountSubjects.map((subject) => [subject.id, subject]));
   for (const link of linkRows) {
-    const group = groups.get(groupId("CATEGORY", link.ledger_category_id, link.direction));
+    const group = groupsById.get(groupId("CATEGORY", link.ledger_category_id, link.direction));
     if (!group) continue;
     group.syncStatus = link.sync_status;
     const linkedSubject = link.account_subject_id ? subjectsById.get(link.account_subject_id) : null;
@@ -218,13 +272,13 @@ export function buildLedgerBankSubjectRuleWorkboard(
   }
 
   for (const rule of ruleRows) {
-    const group = groups.get(groupId(rule.match_type, rule.source_key, rule.direction));
+    const group = groupsById.get(groupId(rule.match_type, rule.source_key, rule.direction));
     if (!group) continue;
     group.ruleAccountSubjectId = rule.account_subject_id;
     group.ruleStatus = rule.rule_status;
   }
 
-  const sorted = [...groups.values()].sort((left, right) =>
+  const sorted = groups.toSorted((left, right) =>
     right.transactionCount - left.transactionCount || left.sourceLabel.localeCompare(right.sourceLabel, "ko-KR"));
   return {
     blankDescriptionCount,
@@ -234,6 +288,40 @@ export function buildLedgerBankSubjectRuleWorkboard(
     syncedCategoryCount: sorted.filter((group) => group.matchType === "CATEGORY" && group.syncStatus !== null).length,
     transactionCount,
   };
+}
+
+export function buildLedgerBankSubjectRuleWorkboardFromAggregate(
+  aggregate: LedgerGroupAggregateResponse,
+  ruleRows: LedgerRuleRow[],
+  accountSubjects: RegisteredAccountSubject[],
+  linkRows: LedgerAccountSubjectLinkRow[] = [],
+): LedgerBankSubjectRuleWorkboard {
+  const groups = aggregate.groups.map((row) => {
+    const candidate = uniqueExactCandidate(row.source_label, row.direction, accountSubjects);
+    return {
+      amountTotal: Number(row.amount_total) || 0,
+      candidateAccountSubjectId: candidate?.id ?? null,
+      candidateAccountSubjectName: candidate?.name ?? null,
+      direction: row.direction,
+      id: groupId(row.match_type, row.source_key, row.direction),
+      matchType: row.match_type,
+      ruleAccountSubjectId: null,
+      ruleStatus: null,
+      sourceGroup: row.source_group,
+      sourceKey: row.source_key,
+      sourceLabel: row.source_label,
+      syncStatus: null,
+      transactionCount: Number(row.transaction_count) || 0,
+    } satisfies LedgerBankSubjectRuleGroup;
+  });
+  return decorateLedgerBankSubjectRuleGroups(
+    groups,
+    Number(aggregate.transaction_count) || 0,
+    Number(aggregate.blank_description_count) || 0,
+    ruleRows,
+    accountSubjects,
+    linkRows,
+  );
 }
 
 export function buildLedgerAccountSubjectSyncInputs(workboard: LedgerBankSubjectRuleWorkboard): LedgerAccountSubjectSyncInput[] {
@@ -297,41 +385,30 @@ export function buildLedgerBankSubjectTransactionPage(
   };
 }
 
-const sourceReadBatchSize = 1000;
-
 export async function loadLedgerBankSubjectRuleWorkboard(
   organizationId: string,
   accountSubjects: RegisteredAccountSubject[],
 ): Promise<LedgerBankSubjectRuleWorkboard> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return emptyLedgerBankSubjectRuleWorkboard;
-  const sourceRows: LedgerSourceRow[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase.schema("finance").from("ledger_bank_transaction_sources")
-      .select("payload")
+  const [aggregateResult, ruleResult, linkResult] = await Promise.all([
+    supabase.schema("finance").rpc("load_ledger_bank_subject_groups", { p_org: organizationId }),
+    supabase.schema("finance").from("ledger_bank_subject_rules")
+      .select("account_subject_id,direction,match_type,rule_status,source_key")
       .eq("organization_id", organizationId)
-      .eq("source_system", "dbapt-ledger")
-      .eq("import_status", "IMPORTED")
-      .range(offset, offset + sourceReadBatchSize - 1);
-    if (error) throw new Error(`Ledger 분류 원본을 불러오지 못했어: ${error.message}`);
-    const batch = (data ?? []) as LedgerSourceRow[];
-    sourceRows.push(...batch);
-    if (batch.length < sourceReadBatchSize) break;
-    offset += sourceReadBatchSize;
-  }
-  const { data: rules, error: ruleError } = await supabase.schema("finance").from("ledger_bank_subject_rules")
-    .select("account_subject_id,direction,match_type,rule_status,source_key")
-    .eq("organization_id", organizationId)
-    .eq("source_system", "dbapt-ledger");
+      .eq("source_system", "dbapt-ledger"),
+    supabase.schema("finance").from("ledger_account_subject_links")
+      .select("account_subject_id,direction,ledger_category_id,sync_status")
+      .eq("organization_id", organizationId)
+      .eq("source_system", "dbapt-ledger"),
+  ]);
+  if (aggregateResult.error) throw new Error(`Ledger 분류 원본을 집계하지 못했어: ${aggregateResult.error.message}`);
+  const { data: rules, error: ruleError } = ruleResult;
   if (ruleError) throw new Error(`Ledger 분류 규칙을 불러오지 못했어: ${ruleError.message}`);
-  const { data: links, error: linkError } = await supabase.schema("finance").from("ledger_account_subject_links")
-    .select("account_subject_id,direction,ledger_category_id,sync_status")
-    .eq("organization_id", organizationId)
-    .eq("source_system", "dbapt-ledger");
+  const { data: links, error: linkError } = linkResult;
   if (linkError) throw new Error(`Ledger 계정과목 동기화 상태를 불러오지 못했어: ${linkError.message}`);
-  return buildLedgerBankSubjectRuleWorkboard(
-    sourceRows,
+  return buildLedgerBankSubjectRuleWorkboardFromAggregate(
+    aggregateResult.data as LedgerGroupAggregateResponse,
     (rules ?? []) as LedgerRuleRow[],
     accountSubjects,
     (links ?? []) as LedgerAccountSubjectLinkRow[],
@@ -348,23 +425,37 @@ export async function loadLedgerBankSubjectTransactions(
   if (!Number.isSafeInteger(query.page) || query.page < 1 || query.page > 10000) throw new Error("Ledger 거래 조회 페이지를 확인해줘.");
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
-  const sourceRows: LedgerTransactionSourceRow[] = [];
-  let offset = 0;
-  while (true) {
-    let request = supabase.schema("finance").from("ledger_bank_transaction_sources")
-      .select("source_transaction_id,ledger_account_id,payload")
-      .eq("organization_id", organizationId)
-      .eq("source_system", "dbapt-ledger")
-      .eq("import_status", "IMPORTED");
-    if (query.matchType === "CATEGORY") request = request.eq("payload->>ledger_category_id", query.sourceKey);
-    const { data, error } = await request.range(offset, offset + sourceReadBatchSize - 1);
-    if (error) throw new Error(`Ledger 거래 내용을 불러오지 못했어: ${error.message}`);
-    const batch = (data ?? []) as LedgerTransactionSourceRow[];
-    sourceRows.push(...batch);
-    if (batch.length < sourceReadBatchSize) break;
-    offset += sourceReadBatchSize;
-  }
-  return buildLedgerBankSubjectTransactionPage(sourceRows, query);
+  const { data, error } = await supabase.schema("finance").rpc("load_ledger_bank_subject_transactions", {
+    p_direction: query.direction,
+    p_match_type: query.matchType,
+    p_org: organizationId,
+    p_page: query.page,
+    p_page_size: ledgerBankSubjectTransactionPageSize,
+    p_source_key: query.sourceKey,
+  });
+  if (error) throw new Error(`Ledger 거래 내용을 불러오지 못했어: ${error.message}`);
+  const response = data as LedgerTransactionRpcResponse;
+  const totalCount = Number(response.total_count) || 0;
+  const totalPages = Math.max(1, Math.ceil(totalCount / ledgerBankSubjectTransactionPageSize));
+  return {
+    page: Math.min(query.page, totalPages),
+    pageSize: ledgerBankSubjectTransactionPageSize,
+    rows: (response.rows ?? []).map((row) => ({
+      accountName: row.account_name,
+      balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
+      bankName: row.bank_name,
+      depositAmount: Number(row.deposit_amount) || 0,
+      description: row.description,
+      managementMemo: row.management_memo,
+      memo: row.memo,
+      sourceTransactionId: row.source_transaction_id,
+      transactionDate: row.transaction_date,
+      transactionTime: row.transaction_time,
+      withdrawalAmount: Number(row.withdrawal_amount) || 0,
+    })),
+    totalCount,
+    totalPages,
+  };
 }
 
 export async function syncLedgerAccountSubjects(
