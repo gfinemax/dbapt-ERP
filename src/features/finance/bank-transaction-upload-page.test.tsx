@@ -146,6 +146,29 @@ describe("BankTransactionUploadPage", () => {
     expect(await screen.findByText("1건의 계정과목을 관리자 확정했어.")).toBeInTheDocument();
     expect(screen.getByText("확인할 은행거래가 없습니다.")).toBeInTheDocument();
   });
+
+  it("paginates the complete bank transaction review history beyond the latest 200 rows", () => {
+    render(
+      <BankTransactionUploadPage
+        initialBankAccounts={testBankAccounts}
+        initialReviewPage={2}
+        initialReviewPageSize={200}
+        initialReviewTotalCount={4277}
+        initialReviewTotalPages={22}
+      />,
+    );
+
+    expect(screen.getByText("전체 4,277건 · 2/22페이지")).toBeInTheDocument();
+    expect(screen.getByText("201-400건 표시")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "이전 200건" })).toHaveAttribute(
+      "href",
+      "/finance/bank-transactions?reviewPage=1#bank-transaction-review",
+    );
+    expect(screen.getByRole("link", { name: "다음 200건" })).toHaveAttribute(
+      "href",
+      "/finance/bank-transactions?reviewPage=3#bank-transaction-review",
+    );
+  });
 });
 
 it("does not fabricate account subjects when the internal master is empty", async () => {

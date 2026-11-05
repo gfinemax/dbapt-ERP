@@ -44,6 +44,14 @@ export type BankTransactionReviewRow = {
   amount: number;
 };
 
+export type BankTransactionReviewPage = {
+  page: number;
+  pageSize: number;
+  rows: BankTransactionReviewRow[];
+  totalCount: number;
+  totalPages: number;
+};
+
 export type BankTransactionSubjectAssignment = {
   accountSubjectId: string;
   note?: string;
@@ -109,18 +117,26 @@ export async function createBankTransactionsInSupabase(rows: ParsedBankTransacti
   return { duplicateCount: rows.length - transactions.length, transactions };
 }
 
-export async function listBankTransactionsForSubjectReview(organizationId: string): Promise<BankTransactionReviewRow[]> {
+const bankTransactionReviewPageSize = 200;
+
+export async function listBankTransactionsForSubjectReview(
+  organizationId: string,
+  requestedPage = 1,
+): Promise<BankTransactionReviewPage> {
   const supabase = getSupabaseServerClient();
-  if (!supabase) return [];
-  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
-    .select("id,bank_account_id,transacted_at,transaction_kind,description,deposit_amount,withdrawal_amount,counterparty,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason")
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
+  if (!supabase) return { page, pageSize: bankTransactionReviewPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  const from = (page - 1) * bankTransactionReviewPageSize;
+  const { count, data, error } = await supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
+    .select("id,bank_account_id,transacted_at,transaction_kind,description,deposit_amount,withdrawal_amount,counterparty,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
     .is("deleted_at", null)
     .in("classification_status", ["UNREVIEWED", "RECOMMENDED", "DEFERRED"])
     .order("transacted_at", { ascending: false })
-    .limit(200);
+    .order("id", { ascending: false })
+    .range(from, from + bankTransactionReviewPageSize - 1);
   if (error) throw new Error(`은행거래 검토 목록을 불러오지 못했어: ${error.message}`);
-  return (data ?? []).map((row) => ({
+  const rows = (data ?? []).map((row) => ({
     amount: Number(row.withdrawal_amount) || Number(row.deposit_amount) || 0,
     bankAccountId: row.bank_account_id,
     classificationStatus: row.classification_status,
@@ -133,6 +149,14 @@ export async function listBankTransactionsForSubjectReview(organizationId: strin
     transactedAt: row.transacted_at,
     transactionKind: row.transaction_kind,
   })) as BankTransactionReviewRow[];
+  const totalCount = count ?? rows.length;
+  return {
+    page,
+    pageSize: bankTransactionReviewPageSize,
+    rows,
+    totalCount,
+    totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionReviewPageSize)),
+  };
 }
 
 export async function confirmBankTransactionSubjects(

@@ -34,6 +34,10 @@ type BankTransactionUploadPageProps = {
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
   initialLedgerBackfillStatus?: LedgerBankBackfillStatus;
+  initialReviewPage?: number;
+  initialReviewPageSize?: number;
+  initialReviewTotalCount?: number;
+  initialReviewTotalPages?: number;
   initialReviewTransactions?: BankTransactionReviewRow[];
   ledgerBackfillError?: string;
   logoutAction?: () => Promise<void>;
@@ -49,6 +53,10 @@ export function BankTransactionUploadPage({
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
   initialLedgerBackfillStatus = emptyLedgerBankBackfillStatus,
+  initialReviewPage = 1,
+  initialReviewPageSize = 200,
+  initialReviewTotalCount = 0,
+  initialReviewTotalPages = 1,
   initialReviewTransactions = [],
   ledgerBackfillError,
   logoutAction,
@@ -321,7 +329,11 @@ export function BankTransactionUploadPage({
         <BankTransactionSubjectReview
           accountSubjects={accountSubjects}
           confirmAssignments={confirmBankTransactionSubjects}
+          page={initialReviewPage}
+          pageSize={initialReviewPageSize}
           initialTransactions={initialReviewTransactions}
+          totalCount={initialReviewTotalCount}
+          totalPages={initialReviewTotalPages}
         />
       </div>
     </ErpShell>
@@ -332,10 +344,18 @@ function BankTransactionSubjectReview({
   accountSubjects,
   confirmAssignments,
   initialTransactions,
+  page,
+  pageSize,
+  totalCount,
+  totalPages,
 }: {
   accountSubjects: RegisteredAccountSubject[];
   confirmAssignments?: BankTransactionUploadPageProps["confirmBankTransactionSubjects"];
   initialTransactions: BankTransactionReviewRow[];
+  page: number;
+  pageSize: number;
+  totalCount: number;
+  totalPages: number;
 }) {
   const [transactions, setTransactions] = useState(initialTransactions);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -379,11 +399,12 @@ function BankTransactionSubjectReview({
   }
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+    <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]" id="bank-transaction-review">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
         <div>
           <h2 className="text-lg font-bold">계정과목 관리자 일괄 확인</h2>
           <p className="mt-1 text-sm text-[var(--color-stone)]">추천 결과를 그대로 확정하거나 내부 계정과목으로 바꾼 뒤 선택한 거래를 한 번에 확정합니다.</p>
+          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">전체 {totalCount.toLocaleString("ko-KR")}건 · {page}/{totalPages}페이지</p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={selectRecommended} size="sm" type="button" variant="outline">추천값 전체 선택</Button>
@@ -419,8 +440,17 @@ function BankTransactionSubjectReview({
           </tbody>
         </table>
       </div>
+      <div className="flex items-center justify-between gap-3 border-t border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold">
+        {page > 1 ? <Link className="rounded-full border px-4 py-2" href={bankTransactionReviewPageHref(page - 1)}>이전 200건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">이전 200건</span>}
+        <span className="text-[var(--color-stone)]">{totalCount ? `${(page - 1) * pageSize + 1}-${Math.min(page * pageSize, totalCount)}건 표시` : "표시할 거래 없음"}</span>
+        {page < totalPages ? <Link className="rounded-full border px-4 py-2" href={bankTransactionReviewPageHref(page + 1)}>다음 200건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">다음 200건</span>}
+      </div>
     </section>
   );
+}
+
+function bankTransactionReviewPageHref(page: number) {
+  return `/finance/bank-transactions?reviewPage=${page}#bank-transaction-review`;
 }
 
 function splitLine(line: string, delimiter: string) {

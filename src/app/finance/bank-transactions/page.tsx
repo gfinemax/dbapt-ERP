@@ -14,7 +14,14 @@ import {
   syncLedgerBankTransactionsAction,
 } from "./actions";
 
-export default async function FinanceBankTransactionsRoute() {
+export default async function FinanceBankTransactionsRoute({
+  searchParams,
+}: {
+  searchParams: Promise<{ reviewPage?: string }>;
+}) {
+  const query = await searchParams;
+  const parsedReviewPage = Number.parseInt(query.reviewPage ?? "1", 10);
+  const reviewPage = Number.isSafeInteger(parsedReviewPage) && parsedReviewPage > 0 ? parsedReviewPage : 1;
   let actor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
   let accessError: string | undefined;
   try {
@@ -35,9 +42,9 @@ export default async function FinanceBankTransactionsRoute() {
   const [initialAccountSubjects, initialBankAccounts, initialReviewTransactions, initialLedgerBackfill] = actor ? await Promise.all([
     listAccountSubjectsFromSupabase(actor.organization_id),
     listBankAccountsFromSupabase(actor.organization_id),
-    listBankTransactionsForSubjectReview(actor.organization_id),
+    listBankTransactionsForSubjectReview(actor.organization_id, reviewPage),
     ledgerBackfill,
-  ]) : [[], [], [], await ledgerBackfill];
+  ]) : [[], [], { page: reviewPage, pageSize: 200, rows: [], totalCount: 0, totalPages: 1 }, await ledgerBackfill];
 
   return (
     <BankTransactionUploadPage
@@ -48,7 +55,11 @@ export default async function FinanceBankTransactionsRoute() {
       initialBankAccounts={initialBankAccounts ?? []}
       initialLedgerBackfillStatus={initialLedgerBackfill.status}
       ledgerBackfillError={initialLedgerBackfill.error}
-      initialReviewTransactions={initialReviewTransactions}
+      initialReviewPage={initialReviewTransactions.page}
+      initialReviewPageSize={initialReviewTransactions.pageSize}
+      initialReviewTotalCount={initialReviewTransactions.totalCount}
+      initialReviewTotalPages={initialReviewTransactions.totalPages}
+      initialReviewTransactions={initialReviewTransactions.rows}
       logoutAction={actor ? reimbursementLogout : undefined}
       mapLedgerBankAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
       syncLedgerBankTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
