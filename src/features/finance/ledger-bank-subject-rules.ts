@@ -30,6 +30,35 @@ export type LedgerBankSubjectRuleInput = {
   sourceKey: string;
 };
 
+export type LedgerBankSubjectTransactionQuery = {
+  direction: LedgerBankSubjectRuleDirection;
+  matchType: LedgerBankSubjectRuleMatchType;
+  page: number;
+  sourceKey: string;
+};
+
+export type LedgerBankSubjectTransactionRow = {
+  accountName: string | null;
+  balanceAmount: number | null;
+  bankName: string | null;
+  depositAmount: number;
+  description: string;
+  managementMemo: string | null;
+  memo: string | null;
+  sourceTransactionId: string;
+  transactionDate: string | null;
+  transactionTime: string | null;
+  withdrawalAmount: number;
+};
+
+export type LedgerBankSubjectTransactionPage = {
+  page: number;
+  pageSize: number;
+  rows: LedgerBankSubjectTransactionRow[];
+  totalCount: number;
+  totalPages: number;
+};
+
 export type LedgerBankSubjectRuleGroup = {
   amountTotal: number;
   candidateAccountSubjectId: string | null;
@@ -68,6 +97,11 @@ type LedgerSourceRow = {
   payload: Record<string, unknown>;
 };
 
+type LedgerTransactionSourceRow = LedgerSourceRow & {
+  ledger_account_id: string;
+  source_transaction_id: string;
+};
+
 type LedgerRuleRow = {
   account_subject_id: string | null;
   direction: LedgerBankSubjectRuleDirection;
@@ -91,6 +125,12 @@ function stringValue(payload: Record<string, unknown>, key: string) {
 function numberValue(payload: Record<string, unknown>, key: string) {
   const value = Number(payload[key] ?? 0);
   return Number.isFinite(value) ? value : 0;
+}
+
+function nullableNumberValue(payload: Record<string, unknown>, key: string) {
+  if (payload[key] === null || payload[key] === undefined || payload[key] === "") return null;
+  const value = Number(payload[key]);
+  return Number.isFinite(value) ? value : null;
 }
 
 export function normalizeLedgerDescription(value: string) {
@@ -205,6 +245,58 @@ export function buildLedgerAccountSubjectSyncInputs(workboard: LedgerBankSubject
   }));
 }
 
+export const ledgerBankSubjectTransactionPageSize = 25;
+
+export function buildLedgerBankSubjectTransactionPage(
+  sourceRows: LedgerTransactionSourceRow[],
+  query: LedgerBankSubjectTransactionQuery,
+): LedgerBankSubjectTransactionPage {
+  const matchingRows = sourceRows.flatMap((row): LedgerBankSubjectTransactionRow[] => {
+    const payload = row.payload ?? {};
+    const depositAmount = numberValue(payload, "deposit_amount");
+    const withdrawalAmount = numberValue(payload, "withdrawal_amount");
+    if ((depositAmount > 0) === (withdrawalAmount > 0)) return [];
+    const direction: LedgerBankSubjectRuleDirection = depositAmount > 0 ? "DEPOSIT" : "WITHDRAWAL";
+    if (direction !== query.direction) return [];
+    const categoryId = stringValue(payload, "ledger_category_id");
+    const categoryName = stringValue(payload, "category_name");
+    const description = stringValue(payload, "description") ?? "적요 없음";
+    const hasUsableCategory = Boolean(categoryId && categoryName && categoryName !== "확인필요");
+    const matches = query.matchType === "CATEGORY"
+      ? hasUsableCategory && categoryId === query.sourceKey
+      : !hasUsableCategory && normalizeLedgerDescription(description === "적요 없음" ? "" : description) === query.sourceKey;
+    if (!matches) return [];
+    return [{
+      accountName: stringValue(payload, "account_name"),
+      balanceAmount: nullableNumberValue(payload, "balance_amount"),
+      bankName: stringValue(payload, "bank_name"),
+      depositAmount,
+      description,
+      managementMemo: stringValue(payload, "management_memo"),
+      memo: stringValue(payload, "memo"),
+      sourceTransactionId: row.source_transaction_id,
+      transactionDate: stringValue(payload, "transaction_date"),
+      transactionTime: stringValue(payload, "transaction_time"),
+      withdrawalAmount,
+    }];
+  }).sort((left, right) => {
+    const leftDateTime = `${left.transactionDate ?? ""}T${left.transactionTime ?? ""}`;
+    const rightDateTime = `${right.transactionDate ?? ""}T${right.transactionTime ?? ""}`;
+    return rightDateTime.localeCompare(leftDateTime) || right.sourceTransactionId.localeCompare(left.sourceTransactionId, "ko-KR", { numeric: true });
+  });
+  const totalCount = matchingRows.length;
+  const totalPages = Math.max(1, Math.ceil(totalCount / ledgerBankSubjectTransactionPageSize));
+  const page = Math.min(Math.max(1, query.page), totalPages);
+  const offset = (page - 1) * ledgerBankSubjectTransactionPageSize;
+  return {
+    page,
+    pageSize: ledgerBankSubjectTransactionPageSize,
+    rows: matchingRows.slice(offset, offset + ledgerBankSubjectTransactionPageSize),
+    totalCount,
+    totalPages,
+  };
+}
+
 const sourceReadBatchSize = 1000;
 
 export async function loadLedgerBankSubjectRuleWorkboard(
@@ -244,6 +336,35 @@ export async function loadLedgerBankSubjectRuleWorkboard(
     accountSubjects,
     (links ?? []) as LedgerAccountSubjectLinkRow[],
   );
+}
+
+export async function loadLedgerBankSubjectTransactions(
+  organizationId: string,
+  query: LedgerBankSubjectTransactionQuery,
+): Promise<LedgerBankSubjectTransactionPage> {
+  if (!organizationId || !query.sourceKey.trim() || query.sourceKey.length > 500) throw new Error("조회할 Ledger 거래 분류를 확인해줘.");
+  if (!(["CATEGORY", "DESCRIPTION"] as const).includes(query.matchType)) throw new Error("Ledger 거래 조회 기준을 확인해줘.");
+  if (!(["DEPOSIT", "WITHDRAWAL"] as const).includes(query.direction)) throw new Error("Ledger 거래 입출금 방향을 확인해줘.");
+  if (!Number.isSafeInteger(query.page) || query.page < 1 || query.page > 10000) throw new Error("Ledger 거래 조회 페이지를 확인해줘.");
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const sourceRows: LedgerTransactionSourceRow[] = [];
+  let offset = 0;
+  while (true) {
+    let request = supabase.schema("finance").from("ledger_bank_transaction_sources")
+      .select("source_transaction_id,ledger_account_id,payload")
+      .eq("organization_id", organizationId)
+      .eq("source_system", "dbapt-ledger")
+      .eq("import_status", "IMPORTED");
+    if (query.matchType === "CATEGORY") request = request.eq("payload->>ledger_category_id", query.sourceKey);
+    const { data, error } = await request.range(offset, offset + sourceReadBatchSize - 1);
+    if (error) throw new Error(`Ledger 거래 내용을 불러오지 못했어: ${error.message}`);
+    const batch = (data ?? []) as LedgerTransactionSourceRow[];
+    sourceRows.push(...batch);
+    if (batch.length < sourceReadBatchSize) break;
+    offset += sourceReadBatchSize;
+  }
+  return buildLedgerBankSubjectTransactionPage(sourceRows, query);
 }
 
 export async function syncLedgerAccountSubjects(

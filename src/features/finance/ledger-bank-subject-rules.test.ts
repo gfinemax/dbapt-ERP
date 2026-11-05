@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import {
   buildLedgerAccountSubjectSyncInputs,
+  buildLedgerBankSubjectTransactionPage,
   buildLedgerBankSubjectRuleWorkboard,
   normalizeLedgerDescription,
 } from "./ledger-bank-subject-rules";
@@ -67,5 +68,28 @@ describe("ledger bank subject rules", () => {
       direction: "WITHDRAWAL",
       ledgerCategoryId: "15",
     }]);
+  });
+
+  it("returns only the clicked category and direction as a read-only transaction page", () => {
+    const page = buildLedgerBankSubjectTransactionPage([
+      { ledger_account_id: "10", source_transaction_id: "1", payload: { account_name: "운영계좌", category_name: "소모품비", deposit_amount: 0, description: "문구 구입", ledger_category_id: "12", transaction_date: "2026-01-02", withdrawal_amount: 1000 } },
+      { ledger_account_id: "10", source_transaction_id: "2", payload: { account_name: "운영계좌", category_name: "소모품비", deposit_amount: 0, description: "토너 구입", ledger_category_id: "12", transaction_date: "2026-01-03", withdrawal_amount: 2000 } },
+      { ledger_account_id: "10", source_transaction_id: "3", payload: { category_name: "소모품비", deposit_amount: 3000, description: "입금 제외", ledger_category_id: "12", transaction_date: "2026-01-04", withdrawal_amount: 0 } },
+      { ledger_account_id: "10", source_transaction_id: "4", payload: { category_name: "통신비", deposit_amount: 0, description: "다른 분류", ledger_category_id: "29", transaction_date: "2026-01-05", withdrawal_amount: 4000 } },
+    ], { direction: "WITHDRAWAL", matchType: "CATEGORY", page: 1, sourceKey: "12" });
+
+    expect(page).toMatchObject({ page: 1, pageSize: 25, totalCount: 2, totalPages: 1 });
+    expect(page.rows.map((row) => row.description)).toEqual(["토너 구입", "문구 구입"]);
+  });
+
+  it("uses the same normalized description rule when opening unclassified transactions", () => {
+    const page = buildLedgerBankSubjectTransactionPage([
+      { ledger_account_id: "10", source_transaction_id: "1", payload: { category_name: null, deposit_amount: 0, description: " KT 통신 ", ledger_category_id: null, withdrawal_amount: 1000 } },
+      { ledger_account_id: "10", source_transaction_id: "2", payload: { category_name: "확인필요", deposit_amount: 0, description: "KT통신", ledger_category_id: "99", withdrawal_amount: 2000 } },
+      { ledger_account_id: "10", source_transaction_id: "3", payload: { category_name: "확인필요", deposit_amount: 0, description: "다른 적요", ledger_category_id: "99", withdrawal_amount: 3000 } },
+    ], { direction: "WITHDRAWAL", matchType: "DESCRIPTION", page: 1, sourceKey: "kt통신" });
+
+    expect(page.totalCount).toBe(2);
+    expect(page.rows.map((row) => row.description)).toEqual(["KT통신", "KT 통신"]);
   });
 });

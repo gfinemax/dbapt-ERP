@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
@@ -11,6 +11,8 @@ import {
   type LedgerAccountSubjectSyncResult,
   type LedgerBankSubjectRuleGroup,
   type LedgerBankSubjectRuleInput,
+  type LedgerBankSubjectTransactionPage,
+  type LedgerBankSubjectTransactionQuery,
   type LedgerBankSubjectRuleWorkboard,
 } from "./ledger-bank-subject-rules";
 
@@ -27,6 +29,7 @@ const syncStatusLabels = {
 type Props = {
   accountSubjects: RegisteredAccountSubject[];
   initialWorkboard: LedgerBankSubjectRuleWorkboard;
+  loadTransactions?: (query: LedgerBankSubjectTransactionQuery) => Promise<LedgerBankSubjectTransactionPage>;
   loadError?: string;
   saveRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
   syncAccountSubjects?: (items: LedgerAccountSubjectSyncInput[]) => Promise<LedgerAccountSubjectSyncResult>;
@@ -40,7 +43,14 @@ function initialAssignment(group: LedgerBankSubjectRuleGroup) {
   return group.ruleAccountSubjectId ?? group.candidateAccountSubjectId ?? "";
 }
 
-export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWorkboard, loadError, saveRules, syncAccountSubjects }: Props) {
+type TransactionDetailState = {
+  error: string | null;
+  groupId: string;
+  isLoading: boolean;
+  page: LedgerBankSubjectTransactionPage | null;
+};
+
+export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWorkboard, loadError, loadTransactions, saveRules, syncAccountSubjects }: Props) {
   const [activeType, setActiveType] = useState<"CATEGORY" | "DESCRIPTION">("CATEGORY");
   const [assignments, setAssignments] = useState<Record<string, string>>(() => Object.fromEntries(
     [...initialWorkboard.categoryGroups, ...initialWorkboard.descriptionGroups].map((group) => [group.id, initialAssignment(group)]),
@@ -51,8 +61,10 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
   const [page, setPage] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [transactionDetail, setTransactionDetail] = useState<TransactionDetailState | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const transactionRequestId = useRef(0);
   const activeSubjects = accountSubjects.filter((subject) => subject.isActive);
   const sourceGroups = activeType === "CATEGORY" ? initialWorkboard.categoryGroups : initialWorkboard.descriptionGroups;
   const visibleGroups = useMemo(() => {
@@ -69,6 +81,8 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
   const pageRows = visibleGroups.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   function switchType(type: "CATEGORY" | "DESCRIPTION") {
+    transactionRequestId.current += 1;
+    setTransactionDetail(null);
     setActiveType(type);
     setSelectedIds([]);
     setPage(1);
@@ -83,6 +97,44 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
       .filter((group) => group.candidateAccountSubjectId && !group.ruleStatus)
       .map((group) => group.id);
     setSelectedIds(candidateIds);
+  }
+
+  async function loadTransactionPage(group: LedgerBankSubjectRuleGroup, page: number) {
+    if (!loadTransactions) return;
+    const requestId = ++transactionRequestId.current;
+    setTransactionDetail((current) => ({
+      error: null,
+      groupId: group.id,
+      isLoading: true,
+      page: current?.groupId === group.id ? current.page : null,
+    }));
+    try {
+      const result = await loadTransactions({
+        direction: group.direction,
+        matchType: group.matchType,
+        page,
+        sourceKey: group.sourceKey,
+      });
+      if (transactionRequestId.current !== requestId) return;
+      setTransactionDetail({ error: null, groupId: group.id, isLoading: false, page: result });
+    } catch (caught) {
+      if (transactionRequestId.current !== requestId) return;
+      setTransactionDetail((current) => ({
+        error: caught instanceof Error ? caught.message : "Ledger 거래 내용을 불러오지 못했어.",
+        groupId: group.id,
+        isLoading: false,
+        page: current?.groupId === group.id ? current.page : null,
+      }));
+    }
+  }
+
+  function toggleTransactions(group: LedgerBankSubjectRuleGroup) {
+    if (transactionDetail?.groupId === group.id) {
+      transactionRequestId.current += 1;
+      setTransactionDetail(null);
+      return;
+    }
+    void loadTransactionPage(group, 1);
   }
 
   async function syncAllAccountSubjects() {
@@ -159,11 +211,21 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
           </thead>
           <tbody className="divide-y divide-[var(--color-soft-border)]">
             {!pageRows.length ? <tr><td className="px-4 py-8 text-center text-[var(--color-stone)]" colSpan={7}>표시할 분류 규칙이 없어.</td></tr> : pageRows.map((group) => (
-              <tr className="bg-white/70" key={group.id}>
+              <Fragment key={group.id}>
+              <tr className="bg-white/70">
                 <td className="px-4 py-4 text-center"><input aria-label={`${group.sourceLabel} 규칙 선택`} checked={selectedIds.includes(group.id)} onChange={() => toggle(group.id)} type="checkbox" /></td>
                 <td className="px-4 py-4"><p className="font-semibold">{group.sourceGroup ? `${group.sourceGroup} · ` : ""}{group.sourceLabel}</p><p className="text-xs text-[var(--color-stone)]">{group.matchType === "CATEGORY" ? `category_id ${group.sourceKey}` : "정규화 적요 그룹"}</p></td>
                 <td className="px-4 py-4 text-center">{group.direction === "DEPOSIT" ? "입금" : "출금"}</td>
-                <td className="px-4 py-4 text-right font-semibold">{group.transactionCount.toLocaleString("ko-KR")}건</td>
+                <td className="px-4 py-4 text-right font-semibold">
+                  {loadTransactions ? <button
+                    aria-controls={`ledger-transaction-detail-${group.id}`}
+                    aria-expanded={transactionDetail?.groupId === group.id}
+                    aria-label={`${group.sourceLabel} 거래 ${group.transactionCount.toLocaleString("ko-KR")}건 ${transactionDetail?.groupId === group.id ? "닫기" : "보기"}`}
+                    className="rounded-md px-2 py-1 text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4 hover:bg-[var(--color-morning-tint)]"
+                    onClick={() => toggleTransactions(group)}
+                    type="button"
+                  >{group.transactionCount.toLocaleString("ko-KR")}건</button> : `${group.transactionCount.toLocaleString("ko-KR")}건`}
+                </td>
                 <td className="px-4 py-4 text-right">{formatKrw(group.amountTotal)}</td>
                 <td className="px-4 py-4"><p>{group.candidateAccountSubjectName ?? "일치 후보 없음"}</p>{group.syncStatus ? <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">Ledger 동기화 · {syncStatusLabels[group.syncStatus]}</p> : null}</td>
                 <td className="px-4 py-4">
@@ -175,6 +237,48 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
                   </select>
                 </td>
               </tr>
+              {transactionDetail?.groupId === group.id ? <tr className="bg-[var(--color-cloud-veil)]/70" id={`ledger-transaction-detail-${group.id}`}>
+                <td className="px-4 py-4" colSpan={7}>
+                  <div aria-label={`${group.sourceLabel} 거래 내용`} className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4" role="region">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <h3 className="font-bold">{group.sourceLabel} 거래 내용</h3>
+                        <p className="mt-1 text-xs text-[var(--color-stone)]">Ledger 원본을 읽기 전용으로 표시해.</p>
+                      </div>
+                      <Button onClick={() => toggleTransactions(group)} size="sm" type="button" variant="outline">닫기</Button>
+                    </div>
+                    {transactionDetail.isLoading && !transactionDetail.page ? <p className="py-8 text-center text-sm text-[var(--color-stone)]" role="status">거래 내용을 불러오는 중이야...</p> : null}
+                    {transactionDetail.error ? <p className="mt-4 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{transactionDetail.error}</p> : null}
+                    {transactionDetail.page ? <>
+                      <p className="mt-4 text-sm font-semibold text-[var(--color-stone)]">전체 {transactionDetail.page.totalCount.toLocaleString("ko-KR")}건 · {transactionDetail.page.page}/{transactionDetail.page.totalPages}페이지</p>
+                      <div className="mt-3 overflow-x-auto">
+                        <table className="w-full min-w-[920px] border-collapse text-sm">
+                          <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]"><tr><th className="px-3 py-2 text-left">거래일</th><th className="px-3 py-2 text-left">계좌</th><th className="px-3 py-2 text-left">적요·내용</th><th className="px-3 py-2 text-right">입금</th><th className="px-3 py-2 text-right">출금</th><th className="px-3 py-2 text-right">잔액</th></tr></thead>
+                          <tbody className="divide-y divide-[var(--color-soft-border)]">
+                            {!transactionDetail.page.rows.length ? <tr><td className="px-3 py-6 text-center text-[var(--color-stone)]" colSpan={6}>표시할 거래 내용이 없어.</td></tr> : transactionDetail.page.rows.map((row) => {
+                              const notes = [row.memo, row.managementMemo].filter(Boolean).join(" · ");
+                              return <tr key={row.sourceTransactionId}>
+                                <td className="whitespace-nowrap px-3 py-3"><p>{row.transactionDate ?? "-"}</p><p className="text-xs text-[var(--color-stone)]">{row.transactionTime ?? ""}</p></td>
+                                <td className="px-3 py-3"><p className="font-semibold">{row.accountName ?? "-"}</p><p className="text-xs text-[var(--color-stone)]">{row.bankName ?? ""}</p></td>
+                                <td className="px-3 py-3"><p className="font-semibold">{row.description}</p>{notes ? <p className="mt-1 text-xs text-[var(--color-stone)]">{notes}</p> : null}</td>
+                                <td className="whitespace-nowrap px-3 py-3 text-right">{row.depositAmount > 0 ? formatKrw(row.depositAmount) : "-"}</td>
+                                <td className="whitespace-nowrap px-3 py-3 text-right">{row.withdrawalAmount > 0 ? formatKrw(row.withdrawalAmount) : "-"}</td>
+                                <td className="whitespace-nowrap px-3 py-3 text-right">{row.balanceAmount === null ? "-" : formatKrw(row.balanceAmount)}</td>
+                              </tr>;
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      <div className="mt-3 flex items-center justify-between gap-3">
+                        <Button disabled={transactionDetail.isLoading || transactionDetail.page.page <= 1} onClick={() => void loadTransactionPage(group, transactionDetail.page!.page - 1)} size="sm" type="button" variant="outline">이전 25건</Button>
+                        {transactionDetail.isLoading ? <span className="text-xs font-semibold text-[var(--color-stone)]" role="status">불러오는 중...</span> : <span className="text-xs font-semibold text-[var(--color-stone)]">한 번에 {transactionDetail.page.pageSize}건 표시</span>}
+                        <Button disabled={transactionDetail.isLoading || transactionDetail.page.page >= transactionDetail.page.totalPages} onClick={() => void loadTransactionPage(group, transactionDetail.page!.page + 1)} size="sm" type="button" variant="outline">다음 25건</Button>
+                      </div>
+                    </> : null}
+                  </div>
+                </td>
+              </tr> : null}
+              </Fragment>
             ))}
           </tbody>
         </table>

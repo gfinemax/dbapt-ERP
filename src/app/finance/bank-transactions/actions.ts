@@ -9,10 +9,12 @@ import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
 import {
+  loadLedgerBankSubjectTransactions,
   saveLedgerBankSubjectRules,
   syncLedgerAccountSubjects,
   type LedgerAccountSubjectSyncInput,
   type LedgerBankSubjectRuleInput,
+  type LedgerBankSubjectTransactionQuery,
 } from "@/features/finance/ledger-bank-subject-rules";
 
 export async function createBankTransactionsAction(rows: ParsedBankTransactionRow[]) {
@@ -43,6 +45,11 @@ export async function saveLedgerBankSubjectRulesAction(rules: LedgerBankSubjectR
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/reports");
   return result;
+}
+
+export async function loadLedgerBankSubjectTransactionsAction(query: LedgerBankSubjectTransactionQuery) {
+  const actor = await requireExpenseActor("READ");
+  return loadLedgerBankSubjectTransactions(actor.organization_id, query);
 }
 
 export async function syncLedgerAccountSubjectsAction(items: LedgerAccountSubjectSyncInput[]) {

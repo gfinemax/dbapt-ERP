@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
@@ -68,5 +68,41 @@ describe("LedgerBankSubjectRuleWorkboardPanel", () => {
       ledgerCategoryId: "12",
     }]));
     expect(await screen.findByText("Ledger 1개를 동기화했어. 기존 연결 0개 · 신규 등록 1개 · 검토 유지 0개 · 계좌간이체 0개야.")).toBeInTheDocument();
+  });
+
+  it("loads the clicked rule transactions and closes the read-only detail", async () => {
+    const loadTransactions = vi.fn().mockResolvedValue({
+      page: 1,
+      pageSize: 25,
+      rows: [{
+        accountName: "운영계좌",
+        balanceAmount: 9000,
+        bankName: "국민은행",
+        depositAmount: 0,
+        description: "토지 계약금",
+        managementMemo: "계약서 확인",
+        memo: "창구",
+        sourceTransactionId: "ledger-1",
+        transactionDate: "2026-10-01",
+        transactionTime: "09:30:00",
+        withdrawalAmount: 1000,
+      }],
+      totalCount: 455,
+      totalPages: 19,
+    });
+    render(<LedgerBankSubjectRuleWorkboardPanel
+      accountSubjects={registeredAccountSubjects}
+      initialWorkboard={workboard}
+      loadTransactions={loadTransactions}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "토지매입비 거래 455건 보기" }));
+    expect(loadTransactions).toHaveBeenCalledWith({ direction: "WITHDRAWAL", matchType: "CATEGORY", page: 1, sourceKey: "12" });
+    const detail = await screen.findByRole("region", { name: "토지매입비 거래 내용" });
+    expect(within(detail).getByText("토지 계약금")).toBeInTheDocument();
+    expect(within(detail).getByText("창구 · 계약서 확인")).toBeInTheDocument();
+    expect(within(detail).getByText("1,000원")).toBeInTheDocument();
+    fireEvent.click(within(detail).getByRole("button", { name: "닫기" }));
+    expect(screen.queryByRole("region", { name: "토지매입비 거래 내용" })).not.toBeInTheDocument();
   });
 });

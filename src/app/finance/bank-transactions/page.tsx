@@ -11,6 +11,7 @@ import { emptyLedgerBankSubjectRuleWorkboard, loadLedgerBankSubjectRuleWorkboard
 import {
   confirmBankTransactionSubjectsAction,
   createBankTransactionsAction,
+  loadLedgerBankSubjectTransactionsAction,
   saveLedgerBankSubjectRulesAction,
   setLedgerBankAccountMappingAction,
   syncLedgerAccountSubjectsAction,
@@ -77,6 +78,7 @@ export default async function FinanceBankTransactionsRoute({
       initialLedgerSubjectRuleWorkboard={initialLedgerSubjectRules.workboard}
       ledgerBackfillError={initialLedgerBackfill.error}
       ledgerSubjectRuleError={initialLedgerSubjectRules.error}
+      loadLedgerSubjectTransactions={actor && remoteEnabled ? loadLedgerBankSubjectTransactionsAction : undefined}
       initialReviewPage={initialReviewTransactions.page}
       initialReviewPageSize={initialReviewTransactions.pageSize}
       initialReviewTotalCount={initialReviewTransactions.totalCount}

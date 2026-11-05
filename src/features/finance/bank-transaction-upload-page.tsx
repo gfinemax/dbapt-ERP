@@ -21,6 +21,8 @@ import {
   type LedgerAccountSubjectSyncInput,
   type LedgerAccountSubjectSyncResult,
   type LedgerBankSubjectRuleInput,
+  type LedgerBankSubjectTransactionPage,
+  type LedgerBankSubjectTransactionQuery,
   type LedgerBankSubjectRuleWorkboard,
 } from "./ledger-bank-subject-rules";
 
@@ -50,6 +52,7 @@ type BankTransactionUploadPageProps = {
   initialReviewTransactions?: BankTransactionReviewRow[];
   ledgerBackfillError?: string;
   ledgerSubjectRuleError?: string;
+  loadLedgerSubjectTransactions?: (query: LedgerBankSubjectTransactionQuery) => Promise<LedgerBankSubjectTransactionPage>;
   logoutAction?: () => Promise<void>;
   mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
   saveLedgerSubjectRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
@@ -73,6 +76,7 @@ export function BankTransactionUploadPage({
   initialReviewTransactions = [],
   ledgerBackfillError,
   ledgerSubjectRuleError,
+  loadLedgerSubjectTransactions,
   logoutAction,
   mapLedgerBankAccount,
   saveLedgerSubjectRules,
@@ -236,6 +240,7 @@ export function BankTransactionUploadPage({
           initialWorkboard={initialLedgerSubjectRuleWorkboard}
           key={`${accountSubjects.length}-${initialLedgerSubjectRuleWorkboard.syncedCategoryCount}`}
           loadError={ledgerSubjectRuleError}
+          loadTransactions={loadLedgerSubjectTransactions}
           saveRules={saveLedgerSubjectRules}
           syncAccountSubjects={syncLedgerAccountSubjects}
         />
