@@ -53,15 +53,15 @@ describe("ErpShell", () => {
     expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
   });
 
-  it("switches unfinished workspace tabs immediately without reloading the current finance page", () => {
+  it("routes every finance workspace tab to a stable destination", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
 
     const workspaceTabs = screen.getByRole("navigation", { name: "회계/자금 업무 탭" });
-    fireEvent.click(within(workspaceTabs).getByRole("link", { name: "입출금" }));
-
-    expect(within(workspaceTabs).getByRole("link", { name: "입출금" })).toHaveAttribute("aria-current", "page");
-    expect(within(workspaceTabs).getByRole("link", { name: "전표·증빙관리" })).not.toHaveAttribute("aria-current");
-    expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getByText("조합원 분담금")).toBeInTheDocument();
+    expect(within(workspaceTabs).getByRole("link", { name: "입출금" })).toHaveAttribute("href", "/finance?workspace=cash");
+    expect(within(workspaceTabs).getByRole("link", { name: "채권·채무" })).toHaveAttribute("href", "/finance?workspace=receivables");
+    expect(within(workspaceTabs).getByRole("link", { name: "예산·결산" })).toHaveAttribute("href", "/finance?workspace=budget");
+    expect(within(workspaceTabs).getByRole("link", { name: "세무신고" })).toHaveAttribute("href", "/finance?workspace=tax");
+    expect(within(workspaceTabs).getByRole("link", { name: "부가서비스" })).toHaveAttribute("href", "/finance?workspace=services");
   });
 
   it("opens the bank-card workspace at its implemented default page", () => {
