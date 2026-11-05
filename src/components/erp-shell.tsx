@@ -122,7 +122,7 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       ],
     },
     {
-      href: "/finance",
+      href: "/finance/bank-transactions",
       label: "은행·카드",
       items: [
         { label: "은행 거래내역", href: "/finance/bank-transactions" },
@@ -235,6 +235,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [financeBadges, setFinanceBadges] = useState<Record<string, number>>({});
+  const [selectedWorkspaceOverride, setSelectedWorkspaceOverride] = useState<string>();
   const sidebarToggleLabel = isSidebarOpen ? "사이드바 닫기" : "사이드바 열기";
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
@@ -245,13 +246,15 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
     return () => { active = false; };
   }, [selectedMenu]);
   const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];
-  const selectedWorkspaceLabel = activeWorkspaceLabel ?? defaultWorkspaceLabels[selectedMenu] ?? currentWorkspaceMenus[0]?.label;
+  const selectedWorkspaceLabel = selectedWorkspaceOverride ?? activeWorkspaceLabel ?? defaultWorkspaceLabels[selectedMenu] ?? currentWorkspaceMenus[0]?.label;
   const selectedWorkspace = currentWorkspaceMenus.find((workspace) => workspace.label === selectedWorkspaceLabel) ?? currentWorkspaceMenus[0];
   const currentDetailMenus = selectedWorkspace?.items ?? [];
   const hasDetailMenus = currentDetailMenus.length > 0;
   const [fullMenuFor, setFullMenuFor] = useState<string | null>(null);
   const isDetailMode = hasDetailMenus && fullMenuFor !== selectedMenu;
-  const detailLabel = activeDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
+  const detailLabel = selectedWorkspaceOverride
+    ? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label
+    : activeDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
   const selectedDetailMenu = selectedMenu === "회계/자금" && detailLabel ? normalizeFinanceDetailLabel(detailLabel) : detailLabel;
   const detailMenuContent = currentDetailMenus.map((item, index) => (
     <Fragment key={item.label}>
@@ -419,7 +422,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
                   const isActive = workspace.label === selectedWorkspace?.label;
 
                   return (
-                    <a
+                    <Link
                       aria-current={isActive ? "page" : undefined}
                       className={
                         isActive
@@ -428,9 +431,14 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
                       }
                       href={workspace.href}
                       key={workspace.label}
+                      onClick={(event) => {
+                        setSelectedWorkspaceOverride(workspace.label);
+                        setFullMenuFor(null);
+                        if (workspace.href === "/finance") event.preventDefault();
+                      }}
                     >
                       {workspace.label}
-                    </a>
+                    </Link>
                   );
                 })}
               </nav>

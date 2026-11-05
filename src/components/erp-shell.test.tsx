@@ -53,6 +53,26 @@ describe("ErpShell", () => {
     expect(within(screen.getByRole("navigation", { name: "전체 메뉴" })).getByRole("link", { name: "회계/자금" })).toHaveAttribute("href", "/finance/workspace");
   });
 
+  it("switches unfinished workspace tabs immediately without reloading the current finance page", () => {
+    render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+
+    const workspaceTabs = screen.getByRole("navigation", { name: "회계/자금 업무 탭" });
+    fireEvent.click(within(workspaceTabs).getByRole("link", { name: "입출금" }));
+
+    expect(within(workspaceTabs).getByRole("link", { name: "입출금" })).toHaveAttribute("aria-current", "page");
+    expect(within(workspaceTabs).getByRole("link", { name: "전표·증빙관리" })).not.toHaveAttribute("aria-current");
+    expect(within(screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" })).getByText("조합원 분담금")).toBeInTheDocument();
+  });
+
+  it("opens the bank-card workspace at its implemented default page", () => {
+    render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
+
+    expect(screen.getByRole("link", { name: "은행·카드" })).toHaveAttribute(
+      "href",
+      "/finance/bank-transactions",
+    );
+  });
+
   it("opens a new expense resolution from the quick menu on every screen", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toHaveAttribute(
