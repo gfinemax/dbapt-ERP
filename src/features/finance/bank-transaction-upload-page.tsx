@@ -15,6 +15,8 @@ import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-
 import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from "./bank-transaction-repository";
 import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
 import { emptyLedgerBankBackfillStatus, type LedgerBankActionResult, type LedgerBankBackfillStatus, type LedgerBankSyncResult } from "./ledger-bank-backfill-shared";
+import { LedgerBankSubjectRuleWorkboardPanel } from "./ledger-bank-subject-rule-workboard";
+import { emptyLedgerBankSubjectRuleWorkboard, type LedgerBankSubjectRuleInput, type LedgerBankSubjectRuleWorkboard } from "./ledger-bank-subject-rules";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -34,14 +36,17 @@ type BankTransactionUploadPageProps = {
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
   initialLedgerBackfillStatus?: LedgerBankBackfillStatus;
+  initialLedgerSubjectRuleWorkboard?: LedgerBankSubjectRuleWorkboard;
   initialReviewPage?: number;
   initialReviewPageSize?: number;
   initialReviewTotalCount?: number;
   initialReviewTotalPages?: number;
   initialReviewTransactions?: BankTransactionReviewRow[];
   ledgerBackfillError?: string;
+  ledgerSubjectRuleError?: string;
   logoutAction?: () => Promise<void>;
   mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
+  saveLedgerSubjectRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
   syncLedgerBankTransactions?: () => Promise<LedgerBankActionResult<LedgerBankSyncResult>>;
   userLabel?: string;
 };
@@ -53,14 +58,17 @@ export function BankTransactionUploadPage({
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
   initialLedgerBackfillStatus = emptyLedgerBankBackfillStatus,
+  initialLedgerSubjectRuleWorkboard = emptyLedgerBankSubjectRuleWorkboard,
   initialReviewPage = 1,
   initialReviewPageSize = 200,
   initialReviewTotalCount = 0,
   initialReviewTotalPages = 1,
   initialReviewTransactions = [],
   ledgerBackfillError,
+  ledgerSubjectRuleError,
   logoutAction,
   mapLedgerBankAccount,
+  saveLedgerSubjectRules,
   syncLedgerBankTransactions,
   userLabel = "로그인 필요",
 }: BankTransactionUploadPageProps = {}) {
@@ -213,6 +221,13 @@ export function BankTransactionUploadPage({
           loadError={ledgerBackfillError}
           mapAccount={mapLedgerBankAccount}
           syncTransactions={syncLedgerBankTransactions}
+        />
+
+        <LedgerBankSubjectRuleWorkboardPanel
+          accountSubjects={accountSubjects}
+          initialWorkboard={initialLedgerSubjectRuleWorkboard}
+          loadError={ledgerSubjectRuleError}
+          saveRules={saveLedgerSubjectRules}
         />
 
         <section className="grid gap-4 lg:grid-cols-4">

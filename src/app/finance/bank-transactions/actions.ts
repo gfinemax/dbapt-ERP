@@ -8,6 +8,7 @@ import type { BankTransactionSubjectAssignment } from "@/features/finance/bank-t
 import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
+import { saveLedgerBankSubjectRules, type LedgerBankSubjectRuleInput } from "@/features/finance/ledger-bank-subject-rules";
 
 export async function createBankTransactionsAction(rows: ParsedBankTransactionRow[]) {
   const actor = await requireExpenseActor("PAY");
@@ -29,6 +30,14 @@ export async function confirmBankTransactionSubjectsAction(assignments: BankTran
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/exp");
   return confirmed;
+}
+
+export async function saveLedgerBankSubjectRulesAction(rules: LedgerBankSubjectRuleInput[]) {
+  const actor = await requireExpenseActor("ADMIN");
+  const result = await saveLedgerBankSubjectRules(actor.organization_id, actor.user_id, rules);
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/reports");
+  return result;
 }
 
 export async function syncLedgerBankTransactionsAction() {

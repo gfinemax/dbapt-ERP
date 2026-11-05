@@ -7,9 +7,11 @@ import { emptyLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-ba
 import { loadLedgerBankBackfillStatus } from "@/features/finance/ledger-bank-transaction-backfill";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
+import { emptyLedgerBankSubjectRuleWorkboard, loadLedgerBankSubjectRuleWorkboard } from "@/features/finance/ledger-bank-subject-rules";
 import {
   confirmBankTransactionSubjectsAction,
   createBankTransactionsAction,
+  saveLedgerBankSubjectRulesAction,
   setLedgerBankAccountMappingAction,
   syncLedgerBankTransactionsAction,
 } from "./actions";
@@ -39,12 +41,29 @@ export default async function FinanceBankTransactionsRoute({
       error: actor ? "Ledger 연동 환경설정을 확인해줘." : "Ledger 거래 이관은 로그인 후 사용할 수 있어.",
       status: emptyLedgerBankBackfillStatus,
     });
-  const [initialAccountSubjects, initialBankAccounts, initialReviewTransactions, initialLedgerBackfill] = actor ? await Promise.all([
-    listAccountSubjectsFromSupabase(actor.organization_id),
-    listBankAccountsFromSupabase(actor.organization_id),
-    listBankTransactionsForSubjectReview(actor.organization_id, reviewPage),
+  const accountSubjectsPromise = actor
+    ? listAccountSubjectsFromSupabase(actor.organization_id).then((subjects) => subjects ?? [])
+    : Promise.resolve([]);
+  const bankAccountsPromise = actor ? listBankAccountsFromSupabase(actor.organization_id) : Promise.resolve([]);
+  const reviewTransactionsPromise = actor
+    ? listBankTransactionsForSubjectReview(actor.organization_id, reviewPage)
+    : Promise.resolve({ page: reviewPage, pageSize: 200, rows: [], totalCount: 0, totalPages: 1 });
+  const initialAccountSubjects = await accountSubjectsPromise;
+  const ledgerSubjectRules = actor && remoteEnabled
+    ? loadLedgerBankSubjectRuleWorkboard(actor.organization_id, initialAccountSubjects).then((workboard) => ({ error: undefined, workboard })).catch(() => ({
+      error: "Ledger 계정과목 매핑 작업대를 불러오지 못했어. 데이터베이스 마이그레이션 상태를 확인해줘.",
+      workboard: emptyLedgerBankSubjectRuleWorkboard,
+    }))
+    : Promise.resolve({
+      error: actor ? "Ledger 계정과목 매핑 환경설정을 확인해줘." : "Ledger 계정과목 매핑은 로그인 후 사용할 수 있어.",
+      workboard: emptyLedgerBankSubjectRuleWorkboard,
+    });
+  const [initialBankAccounts, initialReviewTransactions, initialLedgerBackfill, initialLedgerSubjectRules] = await Promise.all([
+    bankAccountsPromise,
+    reviewTransactionsPromise,
     ledgerBackfill,
-  ]) : [[], [], { page: reviewPage, pageSize: 200, rows: [], totalCount: 0, totalPages: 1 }, await ledgerBackfill];
+    ledgerSubjectRules,
+  ]);
 
   return (
     <BankTransactionUploadPage
@@ -54,7 +73,9 @@ export default async function FinanceBankTransactionsRoute({
       initialAccountSubjects={initialAccountSubjects ?? []}
       initialBankAccounts={initialBankAccounts ?? []}
       initialLedgerBackfillStatus={initialLedgerBackfill.status}
+      initialLedgerSubjectRuleWorkboard={initialLedgerSubjectRules.workboard}
       ledgerBackfillError={initialLedgerBackfill.error}
+      ledgerSubjectRuleError={initialLedgerSubjectRules.error}
       initialReviewPage={initialReviewTransactions.page}
       initialReviewPageSize={initialReviewTransactions.pageSize}
       initialReviewTotalCount={initialReviewTransactions.totalCount}
@@ -62,6 +83,7 @@ export default async function FinanceBankTransactionsRoute({
       initialReviewTransactions={initialReviewTransactions.rows}
       logoutAction={actor ? reimbursementLogout : undefined}
       mapLedgerBankAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
+      saveLedgerSubjectRules={actor && remoteEnabled ? saveLedgerBankSubjectRulesAction : undefined}
       syncLedgerBankTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
       userLabel={actor?.display_name}
     />
