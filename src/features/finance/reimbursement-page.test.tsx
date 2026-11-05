@@ -3,8 +3,8 @@ import { beforeEach,describe,expect,it,vi } from "vitest";
 import { ReimbursementLogin } from "./reimbursement-login";
 import { ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),createObjectUrl:vi.fn(),evidenceFetch:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),revokeObjectUrl:vi.fn(),submit:vi.fn()}));
-vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push})}));
+const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),createObjectUrl:vi.fn(),evidenceFetch:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),replace:vi.fn(),revokeObjectUrl:vi.fn(),submit:vi.fn()}));
+vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push,replace:mocks.replace})}));
 vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
 vi.mock("@/app/finance/expenses/actions",()=>({updatePersonalReimbursementDetailsAction:mocks.personalUpdate}));
 vi.stubGlobal("fetch",mocks.evidenceFetch);
@@ -28,6 +28,11 @@ describe("reimbursement workspace",()=>{
  it("opens a deep-linked payment only after approval for a payment operator",()=>{
   render(<ReimbursementPage workspace={w} initialRequestId="r" initialAction="PAY"/>);
   expect(screen.getByRole("dialog",{name:"지급 연결"})).toBeInTheDocument();
+ });
+ it("opens a detail directly from its ID-specific URL state",()=>{
+  render(<ReimbursementPage workspace={w} initialDetailId="r"/>);
+  expect(screen.getByRole("dialog",{name:"문구점 · 80,000원"})).toBeInTheDocument();
+  expect(document.getElementById("reimbursement-request-r")).toHaveClass("border-blue-400");
  });
  it("passes a bank ID rather than a backdated payment date and refreshes after saving",async()=>{
   mocks.command.mockResolvedValue({}); render(<ReimbursementPage workspace={w}/>);
@@ -58,6 +63,7 @@ describe("reimbursement workspace",()=>{
  it("shows the request, prominent usage content, and one evidence preview together",async()=>{
   render(<ReimbursementPage workspace={w}/>);
   fireEvent.click(screen.getByRole("button",{name:"상세 보기"}));
+  expect(mocks.push).toHaveBeenCalledWith("/finance/reimbursements?month=2026-03&tab=requests&detail=r",{scroll:false});
   const dialog=screen.getByRole("dialog",{name:"문구점 · 80,000원"});
   expect(dialog).toHaveTextContent("신청 내용");
   expect(within(dialog).getByText("사용내용")).toBeInTheDocument();
@@ -68,6 +74,7 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByRole("link",{name:"원본 새 창에서 열기"})).toHaveAttribute("href","/finance/reimbursements/evidence?id=r");
   fireEvent.click(screen.getByRole("button",{name:"정산 상세 닫기"}));
   expect(screen.queryByRole("dialog",{name:"문구점 · 80,000원"})).not.toBeInTheDocument();
+  expect(mocks.replace).toHaveBeenCalledWith("/finance/reimbursements?month=2026-03&tab=requests",{scroll:false});
  });
  it("edits a submitted request from the detail dialog and records the reason",async()=>{
   mocks.personalUpdate.mockResolvedValue({ok:true,message:"수정했어."});

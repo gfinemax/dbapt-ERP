@@ -83,12 +83,13 @@ function ReimbursementDetail({record:r,applicantName,budgetName,canEdit,onClose,
     </section>
   </div>;
 }
-export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialAction,initialRequestFormOpen=false}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialAction?:"APPROVE"|"PAY";initialRequestFormOpen?:boolean}) {
+export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialDetailId,initialAction,initialRequestFormOpen=false}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialDetailId?:string;initialAction?:"APPROVE"|"PAY";initialRequestFormOpen?:boolean}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
   const period=w.periods.find(p=>p.month===w.month);
   const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
+  const initialDetail=initialDetailId?w.requests.find(request=>request.id===initialDetailId):undefined;
   const allowedInitialAction=initialRequest&&initialAction&&requestActions(initialRequest,w.member,period).includes(initialAction)?initialAction:"";
-  const [tab,setTab]=useState(initialRequestId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [detail,setDetail]=useState<Reimbursement|null>(null); const [action,setAction]=useState(allowedInitialAction);
+  const [tab,setTab]=useState(initialRequestId||initialDetailId?"requests":initialTab); const [selected,setSelected]=useState<Reimbursement|null>(allowedInitialAction&&initialRequest?initialRequest:null); const [detail,setDetail]=useState<Reimbursement|null>(initialDetail??null); const [action,setAction]=useState(allowedInitialAction);
   const [requestFormOpen,setRequestFormOpen]=useState(initialRequestFormOpen);
   const [source,setSource]=useState(""); const [requestId,setRequestId]=useState(()=>crypto.randomUUID());
   const [usedOn,setUsedOn]=useState(today); const [amount,setAmount]=useState(""); const [merchant,setMerchant]=useState(""); const [purpose,setPurpose]=useState(""); const [budgetId,setBudgetId]=useState("");
@@ -114,7 +115,10 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
   const visible=scopedRequests.filter(r=>status==="ALL"||r.status===status);
   const scopeTitle=listScope==="ACTIVE"?"처리 중인 신청":listScope==="MONTH"?`${w.month.slice(0,7)} 사용분`:`${w.month.slice(0,7)} 완료·종료`;
   const offMonthActiveCount=activeRequests.filter(r=>r.budget_month!==w.month).length;
+  const reimbursementListHref=`/finance/reimbursements?month=${w.month.slice(0,7)}&tab=requests`;
   function changeListScope(scope:"ACTIVE"|"MONTH"|"CLOSED"){setListScope(scope);setStatus("ALL");}
+  function openDetail(record:Reimbursement){setDetail(record);router.push(`${reimbursementListHref}&detail=${encodeURIComponent(record.id)}`,{scroll:false});}
+  function closeDetail(){setDetail(null);router.replace(reimbursementListHref,{scroll:false});}
   function command(command:string,data:Record<string,unknown>){op.run(async()=>{await runReimbursementCommand(command,data);setSelected(null);setAction("");});}
   function selectSource(id:string){setSource(id);const s=w.sources.find(s=>s.id===id);if(s){setUsedOn(koreaDate(new Date(s.occurred_at)));setAmount(String(s.amount));setMerchant(s.counterparty);setPurpose(s.usage_description);setBudgetId(w.budgets.find(b=>b.budget_item===s.budget_item)?.id??"");setOcrData(null);setOcrMessage("기존 지출의 값과 저장된 증빙을 재사용해. 제출 전에 내용을 확인해줘.");}else{setUsedOn(today);setAmount("");setMerchant("");setPurpose("");setBudgetId("");setOcrMessage("");}}
   function selectEntryMode(mode:"OCR"|"SOURCE"|"MANUAL") {
@@ -206,14 +210,14 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           <button aria-pressed={listScope==="CLOSED"} className={listScope==="CLOSED"?button:secondary} onClick={()=>changeListScope("CLOSED")} type="button">완료·종료 {closedMonthRequests.length}</button>
         </div>
         {listScope!=="ACTIVE"&&offMonthActiveCount>0&&<button className="mb-4 w-full rounded-lg bg-blue-50 p-3 text-left text-sm text-blue-900" onClick={()=>changeListScope("ACTIVE")} type="button">다른 사용월에 처리 중인 신청 {offMonthActiveCount}건이 있어. 전체 보기 →</button>}
-        <div className="space-y-4">{visible.map(r=><article id={`reimbursement-request-${r.id}`} key={r.id} className={`rounded-xl border p-4 ${initialRequestId===r.id?"border-blue-400 bg-blue-50/30":""}`}><div className="flex flex-wrap justify-between gap-2"><h3 className="font-bold">{r.merchant} · {money(r.amount)}</h3><span className="text-sm font-semibold">{reimbursementStatusLabels[r.status]}</span></div>
+        <div className="space-y-4">{visible.map(r=><article id={`reimbursement-request-${r.id}`} key={r.id} className={`rounded-xl border p-4 ${initialRequestId===r.id||initialDetailId===r.id?"border-blue-400 bg-blue-50/30":""}`}><div className="flex flex-wrap justify-between gap-2"><h3 className="font-bold">{r.merchant} · {money(r.amount)}</h3><span className="text-sm font-semibold">{reimbursementStatusLabels[r.status]}</span></div>
           <p className="mt-2 text-sm">{r.purpose}</p><p className="mt-2 text-sm text-slate-600">신청자 {names[r.applicant_id]??"등록 사용자"} · {r.budget_month.slice(0,7)} 사용 · {koreaDate(new Date(r.submitted_at))} 신청</p>
           <p className="mt-1 text-xs text-slate-600">실제 사용일 {r.used_on} · 예산 승인 {dateTime(r.approved_at)} · 실제 지급 {dateTime(r.paid_at)}</p>
           {r.delay_reason&&<p className="mt-2 rounded-lg bg-amber-50 p-2 text-sm">지연 사유: {r.delay_reason}</p>}
           <p className="mt-2 text-xs text-slate-600">결제수단 {r.payment_method==="PERSONAL_CARD"?"개인카드":r.payment_method==="PERSONAL_TRANSFER"?"개인계좌 이체":"현금"} · 증빙 {r.evidence_kind==="RECEIPT"?"영수증":r.evidence_kind} · {r.evidence_review_status==="READY"?"증빙 확인 가능":r.evidence_review_status==="APPROVED"?"대체증빙 승인 완료":r.evidence_review_status==="SUPPLEMENT_REQUIRED"?"증빙 보완 필요":"대체증빙 승인대기"}</p>
           {r.missing_receipt_reason&&<p className="mt-2 rounded-lg bg-slate-50 p-2 text-sm">영수증 미첨부 사유: {r.missing_receipt_reason}</p>}
           <div className="my-2 flex flex-wrap gap-3 text-xs">{r.needs_exception&&<span>지연 승인: {r.exception_approved_at?"완료":"대기"}</span>}{r.needs_senior&&<span>장기 지연 승인: {r.senior_approved_at?"완료":"대기"}</span>}{r.over_budget_approved_at&&<span>예산 초과 승인 완료</span>}</div>
-          <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>setDetail(r)} type="button">상세 보기</button><a className={secondary} href={`/finance/reimbursements/evidence?id=${r.id}`} target="_blank" rel="noreferrer">증빙만 보기</a>
+          <div className="flex flex-wrap gap-2"><button className={secondary} onClick={()=>openDetail(r)} type="button">상세 보기</button><a className={secondary} href={`/finance/reimbursements/evidence?id=${r.id}`} target="_blank" rel="noreferrer">증빙만 보기</a>
             {requestActions(r,w.member,period).map(a=><button key={a} className={secondary} disabled={op.pending} onClick={()=>{setSelected(r);setAction(a);}}>{reimbursementCommandLabels[a]}</button>)}
           </div>
         </article>)}{!visible.length&&<p className="py-6 text-center text-slate-500">이 조건에 해당하는 신청이 없어.</p>}</div>
@@ -257,6 +261,6 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
         {op.message&&<p role="alert" className="text-sm text-red-700">{op.message}</p>}
       </form>
     </section></div>}
-    {detail&&<ReimbursementDetail applicantName={names[detail.applicant_id]??"등록 사용자"} budgetName={w.budgets.find(b=>b.id===detail.budget_id)?.budget_item??"예산항목 확인 필요"} canEdit={detail.status==="SUBMITTED"&&Boolean(detail.updated_at)&&(detail.applicant_id===w.member.user_id||isAdmin)} onClose={()=>setDetail(null)} onSaved={()=>{setDetail(null);router.refresh();}} record={detail}/>}
+    {detail&&<ReimbursementDetail applicantName={names[detail.applicant_id]??"등록 사용자"} budgetName={w.budgets.find(b=>b.id===detail.budget_id)?.budget_item??"예산항목 확인 필요"} canEdit={detail.status==="SUBMITTED"&&Boolean(detail.updated_at)&&(detail.applicant_id===w.member.user_id||isAdmin)} onClose={closeDetail} onSaved={()=>{closeDetail();router.refresh();}} record={detail}/>}
   </>;
 }

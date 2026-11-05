@@ -14,6 +14,7 @@ export default async function Page({
     month?: string;
     tab?: string;
     request?: string;
+    detail?: string;
     action?: string;
   }>;
 }) {
@@ -49,7 +50,7 @@ export default async function Page({
       <div className="mx-auto max-w-7xl space-y-5">
         {workspace ? (
           <ReimbursementPage
-            key={`${month}:${query.tab ?? "requests"}:${query.request ?? ""}:${action ?? ""}`}
+            key={`${month}:${query.tab ?? "requests"}:${query.request ?? ""}:${query.detail ?? ""}:${action ?? ""}`}
             workspace={workspace}
             initialTab={
               query.tab === "budgets" || query.tab === "settings"
@@ -57,6 +58,7 @@ export default async function Page({
                 : "requests"
             }
             initialRequestId={query.request}
+            initialDetailId={query.detail}
             initialAction={action}
           />
         ) : (
