@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 const migration = readFileSync(join(process.cwd(), "supabase/migrations/20261105124753_ledger_bank_subject_rules.sql"), "utf8");
 const syncMigration = readFileSync(join(process.cwd(), "supabase/migrations/20261105133849_ledger_account_subject_sync.sql"), "utf8");
 const stableLinkMigration = readFileSync(join(process.cwd(), "supabase/migrations/20261105135359_ledger_account_subject_sync_stable_links.sql"), "utf8");
+const syncAuditActorMigration = readFileSync(join(process.cwd(), "supabase/migrations/20261105140627_ledger_account_subject_sync_audit_actor.sql"), "utf8");
 
 describe("Ledger bank subject rule migration", () => {
   it("keeps rules organization-scoped, audited, and recommendation-only", () => {
@@ -33,5 +34,7 @@ describe("Ledger bank subject rule migration", () => {
     expect(syncMigration).toContain("grant execute on function finance.sync_ledger_account_subjects(uuid,uuid,jsonb) to service_role");
     expect(stableLinkMigration).toContain("link_before.account_subject_id");
     expect(stableLinkMigration).toContain("기존 Ledger category_id와 ERP 계정과목 UUID 연결을 유지");
+    expect(syncAuditActorMigration).toContain("'LEDGER_ACCOUNT_SUBJECTS_SYNC'");
+    expect(syncAuditActorMigration).toContain("execute function audit.normalize_ledger_bank_auth_actor()");
   });
 });
