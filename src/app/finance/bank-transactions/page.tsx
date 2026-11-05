@@ -13,6 +13,7 @@ import {
   createBankTransactionsAction,
   saveLedgerBankSubjectRulesAction,
   setLedgerBankAccountMappingAction,
+  syncLedgerAccountSubjectsAction,
   syncLedgerBankTransactionsAction,
 } from "./actions";
 
@@ -84,6 +85,7 @@ export default async function FinanceBankTransactionsRoute({
       logoutAction={actor ? reimbursementLogout : undefined}
       mapLedgerBankAccount={actor && remoteEnabled ? setLedgerBankAccountMappingAction : undefined}
       saveLedgerSubjectRules={actor && remoteEnabled ? saveLedgerBankSubjectRulesAction : undefined}
+      syncLedgerAccountSubjects={actor && remoteEnabled ? syncLedgerAccountSubjectsAction : undefined}
       syncLedgerBankTransactions={actor && remoteEnabled ? syncLedgerBankTransactionsAction : undefined}
       userLabel={actor?.display_name}
     />

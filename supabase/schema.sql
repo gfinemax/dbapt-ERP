@@ -215,7 +215,7 @@ create table if not exists finance.account_subjects (
   subject_type text not null default '지출' check (subject_type in ('수입', '지출', '자산', '부채', '정산')),
   normal_balance text not null default '차변' check (normal_balance in ('차변', '대변')),
   business_category text not null default '미분류',
-  source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록')),
+  source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록', 'Ledger 원장')),
   aliases text[] not null default array[]::text[],
   description text not null default '',
   sort_order integer not null default 0,
@@ -228,7 +228,7 @@ alter table finance.account_subjects
   add column if not exists subject_type text not null default '지출' check (subject_type in ('수입', '지출', '자산', '부채', '정산')),
   add column if not exists normal_balance text not null default '차변' check (normal_balance in ('차변', '대변')),
   add column if not exists business_category text not null default '미분류',
-  add column if not exists source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록')),
+  add column if not exists source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록', 'Ledger 원장')),
   add column if not exists aliases text[] not null default array[]::text[],
   add column if not exists description text not null default '',
   add column if not exists sort_order integer not null default 0;

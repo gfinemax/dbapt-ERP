@@ -16,7 +16,13 @@ import type { BankTransactionReviewRow, BankTransactionSubjectAssignment } from 
 import { LedgerBankBackfillPanel } from "./ledger-bank-backfill-panel";
 import { emptyLedgerBankBackfillStatus, type LedgerBankActionResult, type LedgerBankBackfillStatus, type LedgerBankSyncResult } from "./ledger-bank-backfill-shared";
 import { LedgerBankSubjectRuleWorkboardPanel } from "./ledger-bank-subject-rule-workboard";
-import { emptyLedgerBankSubjectRuleWorkboard, type LedgerBankSubjectRuleInput, type LedgerBankSubjectRuleWorkboard } from "./ledger-bank-subject-rules";
+import {
+  emptyLedgerBankSubjectRuleWorkboard,
+  type LedgerAccountSubjectSyncInput,
+  type LedgerAccountSubjectSyncResult,
+  type LedgerBankSubjectRuleInput,
+  type LedgerBankSubjectRuleWorkboard,
+} from "./ledger-bank-subject-rules";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -47,6 +53,7 @@ type BankTransactionUploadPageProps = {
   logoutAction?: () => Promise<void>;
   mapLedgerBankAccount?: (input: { bankAccountId: string; ledgerAccountId: string; note?: string }) => Promise<LedgerBankActionResult<LedgerBankBackfillStatus>>;
   saveLedgerSubjectRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
+  syncLedgerAccountSubjects?: (items: LedgerAccountSubjectSyncInput[]) => Promise<LedgerAccountSubjectSyncResult>;
   syncLedgerBankTransactions?: () => Promise<LedgerBankActionResult<LedgerBankSyncResult>>;
   userLabel?: string;
 };
@@ -69,6 +76,7 @@ export function BankTransactionUploadPage({
   logoutAction,
   mapLedgerBankAccount,
   saveLedgerSubjectRules,
+  syncLedgerAccountSubjects,
   syncLedgerBankTransactions,
   userLabel = "로그인 필요",
 }: BankTransactionUploadPageProps = {}) {
@@ -226,8 +234,10 @@ export function BankTransactionUploadPage({
         <LedgerBankSubjectRuleWorkboardPanel
           accountSubjects={accountSubjects}
           initialWorkboard={initialLedgerSubjectRuleWorkboard}
+          key={`${accountSubjects.length}-${initialLedgerSubjectRuleWorkboard.syncedCategoryCount}`}
           loadError={ledgerSubjectRuleError}
           saveRules={saveLedgerSubjectRules}
+          syncAccountSubjects={syncLedgerAccountSubjects}
         />
 
         <section className="grid gap-4 lg:grid-cols-4">

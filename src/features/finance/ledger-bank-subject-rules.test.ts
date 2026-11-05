@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
 
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
-import { buildLedgerBankSubjectRuleWorkboard, normalizeLedgerDescription } from "./ledger-bank-subject-rules";
+import {
+  buildLedgerAccountSubjectSyncInputs,
+  buildLedgerBankSubjectRuleWorkboard,
+  normalizeLedgerDescription,
+} from "./ledger-bank-subject-rules";
 
 const subjects: RegisteredAccountSubject[] = [{
   aliases: [], businessCategory: "운영비", code: "OP-350", description: "", id: "subject-supply",
@@ -39,5 +43,29 @@ describe("ledger bank subject rules", () => {
       sourceKey: "kt통신",
       transactionCount: 2,
     })]);
+  });
+
+  it("uses the persisted Ledger category link instead of relying on a mutable name", () => {
+    const workboard = buildLedgerBankSubjectRuleWorkboard([{
+      payload: { category_group: "사업비", category_name: "토지비(구명칭)", deposit_amount: 0, ledger_category_id: "15", withdrawal_amount: 1000 },
+    }], [], [{ ...subjects[0], id: "subject-land", name: "토지매입비" }], [{
+      account_subject_id: "subject-land",
+      direction: "WITHDRAWAL",
+      ledger_category_id: "15",
+      sync_status: "MATCHED",
+    }]);
+
+    expect(workboard.syncedCategoryCount).toBe(1);
+    expect(workboard.categoryGroups[0]).toEqual(expect.objectContaining({
+      candidateAccountSubjectId: "subject-land",
+      candidateAccountSubjectName: "토지매입비",
+      syncStatus: "MATCHED",
+    }));
+    expect(buildLedgerAccountSubjectSyncInputs(workboard)).toEqual([{
+      categoryGroup: "사업비",
+      categoryName: "토지비(구명칭)",
+      direction: "WITHDRAWAL",
+      ledgerCategoryId: "15",
+    }]);
   });
 });

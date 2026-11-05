@@ -1,6 +1,6 @@
 export type AccountSubjectType = "수입" | "지출" | "자산" | "부채" | "정산";
 export type AccountSubjectNormalBalance = "차변" | "대변";
-export type AccountSubjectSource = "운영비 예산안" | "수지분석표" | "직접등록";
+export type AccountSubjectSource = "운영비 예산안" | "수지분석표" | "직접등록" | "Ledger 원장";
 export type AccountSubjectBusinessCategory =
   | "수입"
   | "인건비"

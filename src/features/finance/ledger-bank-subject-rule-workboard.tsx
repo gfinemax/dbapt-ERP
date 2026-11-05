@@ -5,30 +5,42 @@ import { useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import { formatKrw } from "./finance-data";
-import type {
-  LedgerBankSubjectRuleGroup,
-  LedgerBankSubjectRuleInput,
-  LedgerBankSubjectRuleWorkboard,
+import {
+  buildLedgerAccountSubjectSyncInputs,
+  type LedgerAccountSubjectSyncInput,
+  type LedgerAccountSubjectSyncResult,
+  type LedgerBankSubjectRuleGroup,
+  type LedgerBankSubjectRuleInput,
+  type LedgerBankSubjectRuleWorkboard,
 } from "./ledger-bank-subject-rules";
 
 const reviewValue = "__POLICY_REVIEW__";
 const transferValue = "__TRANSFER__";
 const pageSize = 50;
+const syncStatusLabels = {
+  CREATED: "ERP 신규 등록",
+  MATCHED: "기존 ERP 연결",
+  POLICY_REVIEW: "검토 유지",
+  TRANSFER: "계좌간이체",
+} as const;
 
 type Props = {
   accountSubjects: RegisteredAccountSubject[];
   initialWorkboard: LedgerBankSubjectRuleWorkboard;
   loadError?: string;
   saveRules?: (rules: LedgerBankSubjectRuleInput[]) => Promise<{ recommended_count: number; saved_count: number }>;
+  syncAccountSubjects?: (items: LedgerAccountSubjectSyncInput[]) => Promise<LedgerAccountSubjectSyncResult>;
 };
 
 function initialAssignment(group: LedgerBankSubjectRuleGroup) {
   if (group.ruleStatus === "TRANSFER") return transferValue;
   if (group.ruleStatus === "POLICY_REVIEW") return reviewValue;
+  if (!group.ruleStatus && group.syncStatus === "TRANSFER") return transferValue;
+  if (!group.ruleStatus && group.syncStatus === "POLICY_REVIEW") return reviewValue;
   return group.ruleAccountSubjectId ?? group.candidateAccountSubjectId ?? "";
 }
 
-export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWorkboard, loadError, saveRules }: Props) {
+export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWorkboard, loadError, saveRules, syncAccountSubjects }: Props) {
   const [activeType, setActiveType] = useState<"CATEGORY" | "DESCRIPTION">("CATEGORY");
   const [assignments, setAssignments] = useState<Record<string, string>>(() => Object.fromEntries(
     [...initialWorkboard.categoryGroups, ...initialWorkboard.descriptionGroups].map((group) => [group.id, initialAssignment(group)]),
@@ -38,6 +50,7 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
   const [showOneOffs, setShowOneOffs] = useState(false);
   const [page, setPage] = useState(1);
   const [isSaving, setIsSaving] = useState(false);
+  const [isSyncing, setIsSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const activeSubjects = accountSubjects.filter((subject) => subject.isActive);
@@ -70,6 +83,21 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
       .filter((group) => group.candidateAccountSubjectId && !group.ruleStatus)
       .map((group) => group.id);
     setSelectedIds(candidateIds);
+  }
+
+  async function syncAllAccountSubjects() {
+    if (!syncAccountSubjects || !initialWorkboard.categoryGroups.length) return;
+    setIsSyncing(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const result = await syncAccountSubjects(buildLedgerAccountSubjectSyncInputs(initialWorkboard));
+      setMessage(`Ledger ${result.saved_count}개를 동기화했어. 기존 연결 ${result.matched_count}개 · 신규 등록 ${result.created_count}개 · 검토 유지 ${result.review_count}개 · 계좌간이체 ${result.transfer_count}개야.`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Ledger 계정과목 동기화에 실패했어.");
+    } finally {
+      setIsSyncing(false);
+    }
   }
 
   async function saveSelected() {
@@ -109,7 +137,8 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
       <div className="border-b border-[var(--color-soft-border)] p-5">
         <h2 className="text-lg font-bold">Ledger 계정과목 매핑 작업대</h2>
         <p className="mt-1 text-sm text-[var(--color-stone)]">거래를 한 건씩 고치지 않고 Ledger 분류 ID 또는 반복 적요를 ERP 계정과목에 한 번만 연결해 추천값을 채워.</p>
-        <p className="mt-2 text-xs font-semibold text-[var(--color-stone)]">분류 규칙 {initialWorkboard.categoryGroups.length}개 · 미분류 적요 그룹 {initialWorkboard.descriptionGroups.length}개 · 적요 없음 {initialWorkboard.blankDescriptionCount.toLocaleString("ko-KR")}건 · 저장된 규칙 {initialWorkboard.savedRuleCount}개</p>
+        <p className="mt-1 text-sm text-[var(--color-stone)]">동일한 이름은 기존 ERP 계정과목에 연결하고, 없는 Ledger 항목만 새로 등록해. 확인필요와 계좌간이체는 계정과목으로 만들지 않아.</p>
+        <p className="mt-2 text-xs font-semibold text-[var(--color-stone)]">분류 규칙 {initialWorkboard.categoryGroups.length}개 · ERP 동기화 {initialWorkboard.syncedCategoryCount}개 · 미분류 적요 그룹 {initialWorkboard.descriptionGroups.length}개 · 적요 없음 {initialWorkboard.blankDescriptionCount.toLocaleString("ko-KR")}건 · 저장된 규칙 {initialWorkboard.savedRuleCount}개</p>
       </div>
       {loadError ? <p className="m-4 rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{loadError}</p> : null}
       {message ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{message}</p> : null}
@@ -119,7 +148,8 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
         <Button onClick={() => switchType("DESCRIPTION")} size="sm" type="button" variant={activeType === "DESCRIPTION" ? "default" : "outline"}>미분류 적요 {initialWorkboard.descriptionGroups.length}</Button>
         <input aria-label="Ledger 분류 규칙 검색" className="h-9 min-w-52 flex-1 rounded-md border bg-white px-3 text-sm" onChange={(event) => { setQuery(event.target.value); setPage(1); }} placeholder="항목명·적요 검색" value={query} />
         {activeType === "DESCRIPTION" ? <label className="flex items-center gap-2 text-sm font-semibold"><input checked={showOneOffs} onChange={(event) => { setShowOneOffs(event.target.checked); setPage(1); }} type="checkbox" />일회성 적요 포함</label> : null}
-        <Button onClick={selectExactCandidates} size="sm" type="button" variant="outline">정확 일치 후보 선택</Button>
+        <Button disabled={!syncAccountSubjects || !initialWorkboard.categoryGroups.length || isSyncing} onClick={syncAllAccountSubjects} size="sm" type="button" variant="outline">{isSyncing ? "동기화 중..." : `Ledger ${initialWorkboard.categoryGroups.length}개 ERP 동기화`}</Button>
+        <Button onClick={selectExactCandidates} size="sm" type="button" variant="outline">연결 후보 전체 선택</Button>
         <Button disabled={!saveRules || !saveableCount || isSaving} onClick={saveSelected} size="sm" type="button">{isSaving ? "저장 중..." : `선택 ${saveableCount}개 추천 저장`}</Button>
       </div>
       <div className="overflow-x-auto">
@@ -135,7 +165,7 @@ export function LedgerBankSubjectRuleWorkboardPanel({ accountSubjects, initialWo
                 <td className="px-4 py-4 text-center">{group.direction === "DEPOSIT" ? "입금" : "출금"}</td>
                 <td className="px-4 py-4 text-right font-semibold">{group.transactionCount.toLocaleString("ko-KR")}건</td>
                 <td className="px-4 py-4 text-right">{formatKrw(group.amountTotal)}</td>
-                <td className="px-4 py-4">{group.candidateAccountSubjectName ?? "일치 후보 없음"}</td>
+                <td className="px-4 py-4"><p>{group.candidateAccountSubjectName ?? "일치 후보 없음"}</p>{group.syncStatus ? <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">Ledger 동기화 · {syncStatusLabels[group.syncStatus]}</p> : null}</td>
                 <td className="px-4 py-4">
                   <select aria-label={`${group.sourceLabel} ERP 추천 규칙`} className="h-10 w-full rounded-md border bg-white px-3" onChange={(event) => setAssignments((current) => ({ ...current, [group.id]: event.target.value }))} value={assignments[group.id] ?? ""}>
                     <option value="">계정과목 선택</option>
