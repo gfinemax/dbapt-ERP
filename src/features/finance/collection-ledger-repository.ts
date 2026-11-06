@@ -48,7 +48,11 @@ export type CollectionExternalRecognition = {
   recognition_type: string;
   reason: string;
   status: "ACTIVE" | "CANCELLED";
-  linkage_status: "LINKED" | "UNLINKED" | "ASSESSMENT_MISSING" | "MEMBER_MISMATCH" | "EXCEEDS_ASSESSMENT";
+  source_kind: "application_certificate" | "dongil_fixed_certificate" | "dongil_other" | "trust_account" | "other";
+  accounting_treatment: "confirmed_loss" | "trust_receipt" | "pending_review";
+  actual_fund_amount: number;
+  loss_amount: number;
+  linkage_status: "LINKED" | "MEMBER_LEVEL" | "UNLINKED" | "ASSESSMENT_MISSING" | "MEMBER_MISMATCH" | "EXCEEDS_ASSESSMENT";
   linkage_issue_detail: string | null;
   governance_status: string | null;
   sync_reason: string | null;
