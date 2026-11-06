@@ -2,23 +2,30 @@ import Link from "next/link";
 
 import { ErpShell } from "@/components/erp-shell";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
+import {
+  FinanceDataTable,
+  FinancePageHeader,
+  FinancePagination,
+  FinanceStatusTabs,
+  FinanceToolbar,
+} from "./finance-list-layout";
 import { BankTransactionDetailDrawer } from "./bank-transaction-detail-drawer";
 import type {
   BankTransactionClassificationStatus,
+  BankTransactionListFilters,
   BankTransactionListPage as BankTransactionPageData,
+  BankTransactionStatusCounts,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
 
 type Props = {
   accessError?: string;
   bankAccounts: RegisteredBankAccount[];
-  filters: {
-    bankAccountId?: string;
-    classificationStatus?: BankTransactionClassificationStatus;
-  };
+  filters: BankTransactionListFilters;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
   selectedTransactionId?: string;
+  statusCounts?: BankTransactionStatusCounts;
   userLabel?: string;
 };
 
@@ -38,6 +45,24 @@ const classificationClasses = {
   UNREVIEWED: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
 } as const;
 
+const statusTabLabels: Array<{ label: string; value?: BankTransactionClassificationStatus }> = [
+  { label: "전체" },
+  { label: "미확인", value: "UNREVIEWED" },
+  { label: "추천", value: "RECOMMENDED" },
+  { label: "확정", value: "CONFIRMED" },
+  { label: "보류", value: "DEFERRED" },
+  { label: "제외", value: "EXCLUDED" },
+];
+
+const emptyStatusCounts: BankTransactionStatusCounts = {
+  ALL: 0,
+  CONFIRMED: 0,
+  DEFERRED: 0,
+  EXCLUDED: 0,
+  RECOMMENDED: 0,
+  UNREVIEWED: 0,
+};
+
 export function BankTransactionListPage({
   accessError,
   bankAccounts,
@@ -45,105 +70,162 @@ export function BankTransactionListPage({
   logoutAction,
   pageData,
   selectedTransactionId,
+  statusCounts = emptyStatusCounts,
   userLabel = "로그인 필요",
 }: Props) {
-  const accountNames = new Map(bankAccounts.map((account) => [account.id, account.accountName]));
+  const accounts = new Map(bankAccounts.map((account) => [account.id, account]));
   const selectedTransaction = pageData.rows.find((row) => row.id === selectedTransactionId);
   const currentListHref = bankTransactionPageHref(pageData.page, filters);
+  const selectedAccount = filters.bankAccountId ? accounts.get(filters.bankAccountId) : undefined;
+  const filterChips = buildFilterChips(filters, selectedAccount);
 
   return (
     <ErpShell activeDetailLabel="은행 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
-      <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
-        <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
-          <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 은행·카드 &gt; 은행 거래내역
-          </p>
-          <div className="flex flex-wrap items-end justify-between gap-4">
-            <div>
-              <h1 className="text-3xl font-bold tracking-normal">은행 거래내역</h1>
-              <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
-                거래 조회와 확인에 필요한 정보만 50건씩 보여줘. 가져오기·계정과목 매핑·미매칭 확정은 각각의 작업 화면에서 처리해.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold" href="/finance/bank-transactions/upload">거래내역 업로드</Link>
-              <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold" href="/finance/bank-account-links">계좌 연동 설정</Link>
-              <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance/bank-unmatched">미매칭 확인</Link>
-            </div>
-          </div>
-          {accessError ? <p className="mt-4 rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
-        </section>
+      <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
+        <FinancePageHeader
+          action={{ href: "/finance/bank-transactions/upload", label: "거래내역 업로드" }}
+          breadcrumb="회계/자금 · 은행·카드 · 은행 거래내역"
+          description="계좌 거래를 빠르게 찾고 분류 상태와 계정과목을 확인합니다."
+          title="은행 거래내역"
+        />
+        {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
 
-        <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
-          <form className="grid gap-3 border-b border-[var(--color-soft-border)] p-4 md:grid-cols-[minmax(220px,1fr)_minmax(180px,260px)_auto]" method="get">
-            <label className="grid gap-2 text-sm font-semibold">
-              은행통장
-              <select className="h-11 rounded-lg border border-[var(--color-soft-border)] bg-white px-3" defaultValue={filters.bankAccountId ?? ""} name="accountId">
-                <option value="">전체 계좌</option>
-                {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountName}</option>)}
-              </select>
-            </label>
-            <label className="grid gap-2 text-sm font-semibold">
-              분류 상태
-              <select className="h-11 rounded-lg border border-[var(--color-soft-border)] bg-white px-3" defaultValue={filters.classificationStatus ?? ""} name="status">
-                <option value="">전체 상태</option>
-                {Object.entries(classificationLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-              </select>
-            </label>
-            <button className="h-11 self-end rounded-lg bg-[var(--color-pressed-charcoal)] px-5 text-sm font-semibold text-white" type="submit">필터 적용</button>
-          </form>
+        <section className="overflow-visible rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+          <FinanceStatusTabs
+            items={statusTabLabels.map((item) => ({
+              active: filters.classificationStatus === item.value,
+              count: statusCounts[item.value ?? "ALL"],
+              href: bankTransactionPageHref(1, { ...filters, classificationStatus: item.value }),
+              label: item.label,
+            }))}
+            label="분류 상태 빠른 필터"
+          />
 
-          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 text-sm">
-            <p className="font-semibold">전체 {pageData.totalCount.toLocaleString("ko-KR")}건 · {pageData.page}/{pageData.totalPages}페이지</p>
-            <p className="text-[var(--color-stone)]">행을 선택하면 오른쪽에서 상세 내용을 확인할 수 있어.</p>
+          <FinanceToolbar>
+            <form className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,260px)_minmax(300px,auto)_auto_auto]" method="get">
+              {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                거래 검색
+                <input
+                  className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]"
+                  defaultValue={filters.query ?? ""}
+                  name="q"
+                  placeholder="적요·거래처 검색"
+                  type="search"
+                />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                은행통장
+                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.bankAccountId ?? ""} name="accountId">
+                  <option value="">전체 계좌</option>
+                  {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountName}</option>)}
+                </select>
+              </label>
+              <fieldset className="grid grid-cols-[1fr_auto_1fr] items-end gap-1">
+                <legend className="sr-only">거래 기간</legend>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                  시작일
+                  <input className="h-10 min-w-0 rounded-lg border border-[var(--color-soft-border)] bg-white px-2 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.dateFrom ?? ""} name="from" type="date" />
+                </label>
+                <span aria-hidden="true" className="pb-2.5 text-[var(--color-fog)]">–</span>
+                <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                  종료일
+                  <input className="h-10 min-w-0 rounded-lg border border-[var(--color-soft-border)] bg-white px-2 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.dateTo ?? ""} name="to" type="date" />
+                </label>
+              </fieldset>
+              <button className="h-10 self-end rounded-lg bg-[var(--color-pressed-charcoal)] px-4 text-sm font-semibold text-white" type="submit">조회</button>
+              <Link className="flex h-10 items-center justify-center self-end rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm font-semibold text-[var(--color-stone)]" href="/finance/bank-transactions">초기화</Link>
+            </form>
+
+            {filterChips.length ? (
+              <div aria-label="적용된 필터" className="mt-2 flex flex-wrap items-center gap-1.5">
+                <span className="text-xs font-semibold text-[var(--color-stone)]">적용됨</span>
+                {filterChips.map((chip) => (
+                  <Link
+                    aria-label={`${chip.label} 필터 제거`}
+                    className="rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)] hover:text-[var(--color-midnight-ink)]"
+                    href={bankTransactionPageHref(1, { ...filters, [chip.key]: undefined })}
+                    key={chip.key}
+                  >
+                    {chip.label} ×
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </FinanceToolbar>
+
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] bg-white px-3 py-2">
+            <p className="text-sm font-semibold">
+              조회 결과 <strong className="text-[var(--color-deep-cobalt)]">{pageData.totalCount.toLocaleString("ko-KR")}건</strong>
+            </p>
+            <FinancePagination
+              compact
+              hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
+              page={pageData.page}
+              pageSize={pageData.pageSize}
+              totalCount={pageData.totalCount}
+              totalPages={pageData.totalPages}
+            />
           </div>
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1040px] border-collapse text-left text-sm">
-              <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
-                <tr>
-                  <th className="px-4 py-3">거래일시</th>
-                  <th className="px-4 py-3">계좌</th>
-                  <th className="px-4 py-3">적요·거래처</th>
-                  <th className="px-4 py-3 text-right">입금</th>
-                  <th className="px-4 py-3 text-right">출금</th>
-                  <th className="px-4 py-3">계정과목</th>
-                  <th className="px-4 py-3">상태</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-[var(--color-soft-border)]">
-                {!pageData.rows.length ? (
-                  <tr><td className="px-4 py-12 text-center text-[var(--color-stone)]" colSpan={7}>조건에 맞는 은행거래가 없어.</td></tr>
-                ) : pageData.rows.map((transaction) => {
-                  const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
-                  return (
-                    <tr className="bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
-                      <td className="whitespace-nowrap px-4 py-4">{formatDate(transaction.transactedAt)}</td>
-                      <td className="px-4 py-4 font-semibold">{accountNames.get(transaction.bankAccountId) ?? "계좌 정보 없음"}</td>
-                      <td className="px-4 py-4">
-                        <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description}</Link>
-                        <p className="mt-1 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
-                      </td>
-                      <td className="whitespace-nowrap px-4 py-4 text-right">{transaction.transactionKind === "입금" ? formatKrw(transaction.amount) : "-"}</td>
-                      <td className="whitespace-nowrap px-4 py-4 text-right">{transaction.transactionKind === "출금" ? formatKrw(transaction.amount) : "-"}</td>
-                      <td className="px-4 py-4 font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
-                      <td className="px-4 py-4"><span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-          <div className="flex items-center justify-between gap-3 border-t border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold">
-            {pageData.page > 1 ? <Link className="rounded-full border px-4 py-2" href={bankTransactionPageHref(pageData.page - 1, filters)}>이전 50건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">이전 50건</span>}
-            <span className="text-[var(--color-stone)]">{pageData.totalCount ? `${(pageData.page - 1) * pageData.pageSize + 1}-${Math.min(pageData.page * pageData.pageSize, pageData.totalCount)}건 표시` : "표시할 거래 없음"}</span>
-            {pageData.page < pageData.totalPages ? <Link className="rounded-full border px-4 py-2" href={bankTransactionPageHref(pageData.page + 1, filters)}>다음 50건</Link> : <span className="rounded-full border px-4 py-2 text-[var(--color-stone)] opacity-40">다음 50건</span>}
+
+          <FinanceDataTable minWidthClass="min-w-[840px]">
+            <thead className="sticky top-0 z-[3] bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)] shadow-[0_1px_0_var(--color-soft-border)]">
+              <tr>
+                <th className="px-3 py-2.5 text-center">거래일시</th>
+                <th className="px-3 py-2.5 text-center">계좌</th>
+                <th className="px-3 py-2.5 text-center">적요·거래처</th>
+                <th className="px-3 py-2.5 text-center">금액</th>
+                <th className="px-3 py-2.5 text-center">계정과목</th>
+                <th className="px-3 py-2.5 text-center">상태</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[var(--color-soft-border)]">
+              {!pageData.rows.length ? (
+                <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={6}>조건에 맞는 은행거래가 없습니다.</td></tr>
+              ) : pageData.rows.map((transaction) => {
+                const account = accounts.get(transaction.bankAccountId);
+                const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
+                return (
+                  <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
+                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(transaction.transactedAt)}</td>
+                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
+                      {account ? compactAccountName(account) : "계좌 정보 없음"}
+                    </td>
+                    <td className="px-3 py-2.5">
+                      <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description}</Link>
+                      <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
+                    </td>
+                    <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                      <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>
+                        {signedAmount(transaction.amount, transaction.transactionKind)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.transactionKind ?? "구분 미확인"}</p>
+                    </td>
+                    <td className="px-3 py-2.5 font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
+                    <td className="px-3 py-2.5 text-center">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </FinanceDataTable>
+
+          <div className="border-t border-[var(--color-soft-border)] bg-white px-3 py-2">
+            <FinancePagination
+              hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
+              page={pageData.page}
+              pageSize={pageData.pageSize}
+              totalCount={pageData.totalCount}
+              totalPages={pageData.totalPages}
+            />
           </div>
         </section>
       </div>
 
       {selectedTransaction ? (
         <BankTransactionDetailDrawer
-          accountName={accountNames.get(selectedTransaction.bankAccountId) ?? "계좌 정보 없음"}
+          accountName={accounts.get(selectedTransaction.bankAccountId)?.accountName ?? "계좌 정보 없음"}
           closeHref={currentListHref}
           transaction={selectedTransaction}
         />
@@ -152,13 +234,41 @@ export function BankTransactionListPage({
   );
 }
 
-export function bankTransactionPageHref(page: number, filters: Props["filters"]) {
+type FilterChip = {
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query";
+  label: string;
+};
+
+function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?: RegisteredBankAccount): FilterChip[] {
+  const chips: FilterChip[] = [];
+  if (filters.query) chips.push({ key: "query", label: `검색: ${filters.query}` });
+  if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount?.accountName ?? "선택 계좌" });
+  if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
+  if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
+  if (filters.classificationStatus) chips.push({ key: "classificationStatus", label: classificationLabels[filters.classificationStatus] });
+  return chips;
+}
+
+export function bankTransactionPageHref(page: number, filters: BankTransactionListFilters) {
   const params = new URLSearchParams();
   if (page > 1) params.set("page", String(page));
+  if (filters.query) params.set("q", filters.query);
   if (filters.bankAccountId) params.set("accountId", filters.bankAccountId);
+  if (filters.dateFrom) params.set("from", filters.dateFrom);
+  if (filters.dateTo) params.set("to", filters.dateTo);
   if (filters.classificationStatus) params.set("status", filters.classificationStatus);
   const query = params.toString();
   return `/finance/bank-transactions${query ? `?${query}` : ""}`;
+}
+
+function compactAccountName(account: RegisteredBankAccount) {
+  const digits = account.accountNo.replace(/\D/g, "");
+  return `${account.bankName} · ${digits.slice(-4) || account.accountNo}`;
+}
+
+function signedAmount(amount: number, kind: "입금" | "출금" | null) {
+  const sign = kind === "입금" ? "+" : kind === "출금" ? "−" : "";
+  return `${sign}${formatKrw(amount)}`;
 }
 
 function formatDate(value: string) {

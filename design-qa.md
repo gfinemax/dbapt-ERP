@@ -97,3 +97,24 @@ final result: passed
 - Visual issues rated P0/P1/P2: none remaining.
 
 final result: passed
+
+## Bank transaction list redesign
+
+- Source visual truth: the user-provided bank transaction list screenshot in the current conversation; no local attachment path was exposed.
+- Implementation target: `src/features/finance/bank-transaction-list-page.tsx`.
+- Viewport: source screenshot 1219 x 846 px; implementation viewport and density normalization unavailable.
+- State: redesigned bank transaction list with a compact page header, one primary action, status summary tabs, search/account/date filters, applied-filter chips, a six-column transaction table, and pagination above and below the list.
+- Full-view comparison: blocked because the Codex in-app browser host and native browser connection were unavailable.
+- Focused-region comparison: blocked. Server-rendered HTML and DOM tests confirm the compact 24px title hierarchy, single upload action, status tabs, functional filters, six centered column headings, signed amount column, shortened account label, 52px rows, sticky table header contract, and top/bottom pagination, but no browser screenshot could be captured.
+- Typography: source-level pass. The title is reduced to `text-2xl`, supporting copy is `text-sm`, and table metadata uses the existing finance type scale.
+- Spacing/layout rhythm: source-level pass. Header, toolbar, status tabs, rows, badges, and pagination use the compact finance list primitives in `finance-list-layout.tsx`.
+- Colors/tokens: source-level pass. Existing ERP semantic tokens are reused for active tabs, statuses, surfaces, borders, and amount emphasis.
+- Image/asset fidelity: not applicable; the target contains no image assets and the implementation introduces none.
+- Copy/content: source-level pass. The long instructional paragraph is replaced by one concise sentence, and secondary setup/review actions remain available in the finance sidebar instead of competing with the upload action.
+- Comparison history: iteration 1 centered headers and reduced table spacing; iteration 2 completed the approved redesign with real search/date/account filtering, status counts, amount-column consolidation, account abbreviation, sticky list structures, and reusable finance list components.
+- P0/P1/P2 source-level findings: none in the requested scope.
+- Verification: the development route returned HTTP 200 and contained the redesigned content; focused component/navigation/repository tests passed 25/25; ESLint for changed files and diff checks passed. Repository-wide TypeScript remains blocked by two unrelated implicit-any errors in `src/features/basic-info/business-partner-page.test.tsx:275`.
+
+final result: blocked
+
+Blocker: browser access host unavailable for rendered screenshot capture and side-by-side visual comparison.

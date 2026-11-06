@@ -49,7 +49,12 @@ export type BankTransactionReviewRow = {
 export type BankTransactionListFilters = {
   bankAccountId?: string;
   classificationStatus?: BankTransactionClassificationStatus;
+  dateFrom?: string;
+  dateTo?: string;
+  query?: string;
 };
+
+export type BankTransactionStatusCounts = Record<BankTransactionClassificationStatus | "ALL", number>;
 
 export type BankTransactionListRow = BankTransactionReviewRow & {
   balanceAmount: number | null;
@@ -139,6 +144,18 @@ export async function createBankTransactionsInSupabase(rows: ParsedBankTransacti
 
 export const bankTransactionPageSize = 50;
 
+const bankTransactionClassificationStatuses: BankTransactionClassificationStatus[] = [
+  "UNREVIEWED",
+  "RECOMMENDED",
+  "CONFIRMED",
+  "DEFERRED",
+  "EXCLUDED",
+];
+
+function normalizedBankTransactionSearch(value?: string) {
+  return value?.replace(/[%_*,()]/g, " ").replace(/\s+/g, " ").trim();
+}
+
 export async function listBankTransactions(
   organizationId: string,
   requestedPage = 1,
@@ -154,6 +171,10 @@ export async function listBankTransactions(
     .is("deleted_at", null);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
   if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
+  if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
+  if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
+  const search = normalizedBankTransactionSearch(filters.query);
+  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%`);
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("id", { ascending: false })
@@ -182,6 +203,40 @@ export async function listBankTransactions(
     totalCount,
     totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionPageSize)),
   };
+}
+
+export async function countBankTransactionsByStatus(
+  organizationId: string,
+  filters: Omit<BankTransactionListFilters, "classificationStatus"> = {},
+): Promise<BankTransactionStatusCounts> {
+  const supabase = getSupabaseServerClient();
+  const emptyCounts: BankTransactionStatusCounts = {
+    ALL: 0,
+    CONFIRMED: 0,
+    DEFERRED: 0,
+    EXCLUDED: 0,
+    RECOMMENDED: 0,
+    UNREVIEWED: 0,
+  };
+  if (!supabase) return emptyCounts;
+  const search = normalizedBankTransactionSearch(filters.query);
+
+  const entries = await Promise.all([undefined, ...bankTransactionClassificationStatuses].map(async (status) => {
+    let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .is("deleted_at", null);
+    if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
+    if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
+    if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
+    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%`);
+    if (status) request = request.eq("classification_status", status);
+    const { count, error } = await request;
+    if (error) throw new Error(`은행거래 상태별 건수를 불러오지 못했어: ${error.message}`);
+    return [status ?? "ALL", count ?? 0] as const;
+  }));
+
+  return { ...emptyCounts, ...Object.fromEntries(entries) };
 }
 
 export async function listBankTransactionsForSubjectReview(

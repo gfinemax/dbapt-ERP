@@ -1,7 +1,9 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 
 import { BankTransactionListPage, bankTransactionPageHref } from "./bank-transaction-list-page";
+
+vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadgesAction: vi.fn().mockResolvedValue({}) }));
 
 const bankAccounts = [{
   accountName: "우리은행 운영계좌",
@@ -38,22 +40,66 @@ const pageData = {
   totalPages: 86,
 };
 
+const statusCounts = {
+  ALL: 4277,
+  CONFIRMED: 37,
+  DEFERRED: 3,
+  EXCLUDED: 2,
+  RECOMMENDED: 120,
+  UNREVIEWED: 4115,
+};
+
 describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
-    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} />);
+    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
+    const main = screen.getByRole("main");
     expect(screen.getByRole("heading", { level: 1, name: "은행 거래내역" })).toBeInTheDocument();
-    expect(screen.getByText("전체 4,277건 · 2/86페이지")).toBeInTheDocument();
-    expect(screen.getByText("51-100건 표시")).toBeInTheDocument();
+    expect(screen.getByText("조회 결과")).toHaveTextContent("4,277건");
+    expect(screen.getAllByText("51–100건 · 2/86")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "거래내역 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
     expect(screen.getAllByRole("link", { name: "계좌 연동 설정" }).every((link) => link.getAttribute("href") === "/finance/bank-account-links")).toBe(true);
-    expect(screen.getByRole("link", { name: "미매칭 확인" })).toHaveAttribute("href", "/finance/bank-unmatched");
+    expect(screen.getByRole("link", { name: "미매칭 내역" })).toHaveAttribute("href", "/finance/bank-unmatched");
+    expect(within(main).queryByRole("link", { name: "계좌 연동 설정" })).not.toBeInTheDocument();
+    expect(within(main).queryByRole("link", { name: "미매칭 확인" })).not.toBeInTheDocument();
+    expect(within(screen.getByRole("navigation", { name: "분류 상태 빠른 필터" })).getByRole("link", { name: /미확인.*4,115/ })).toHaveAttribute("href", "/finance/bank-transactions?status=UNREVIEWED");
     expect(screen.queryByText("기존 Ledger 통장거래 가져오기")).not.toBeInTheDocument();
     expect(screen.queryByText("Ledger 계정과목 매핑 작업대")).not.toBeInTheDocument();
   });
 
-  it("preserves account and status filters across pagination", () => {
-    expect(bankTransactionPageHref(3, { bankAccountId: "bank-1", classificationStatus: "UNREVIEWED" })).toBe(
-      "/finance/bank-transactions?page=3&accountId=bank-1&status=UNREVIEWED",
+  it("preserves search, account, date and status filters across pagination", () => {
+    expect(bankTransactionPageHref(3, {
+      bankAccountId: "bank-1",
+      classificationStatus: "UNREVIEWED",
+      dateFrom: "2026-09-01",
+      dateTo: "2026-09-30",
+      query: "인터넷",
+    })).toBe(
+      "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&status=UNREVIEWED",
     );
+  });
+
+  it("uses a compact six-column table with a signed amount and shortened account", () => {
+    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
+
+    expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+    expect(screen.getAllByRole("columnheader").every((header) => header.classList.contains("text-center"))).toBe(true);
+    expect(screen.getByRole("columnheader", { name: "금액" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "입금" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "출금" })).not.toBeInTheDocument();
+    expect(screen.getByText("−55,000원")).toBeInTheDocument();
+    expect(screen.getByText("우리은행 · 1006")).toBeInTheDocument();
+    expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-3", "py-2.5");
+  });
+
+  it("shows active filters as removable chips", () => {
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{ bankAccountId: "bank-1", classificationStatus: "RECOMMENDED", dateFrom: "2026-09-01", query: "KT" }}
+      pageData={pageData}
+      statusCounts={statusCounts}
+    />);
+
+    expect(screen.getByRole("link", { name: "검색: KT 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?accountId=bank-1&from=2026-09-01&status=RECOMMENDED");
+    expect(screen.getByRole("link", { name: "추천 있음 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?q=KT&accountId=bank-1&from=2026-09-01");
   });
 });
