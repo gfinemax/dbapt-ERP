@@ -35,17 +35,26 @@ export type CollectionAssessment = {
 };
 export type CollectionExternalRecognition = {
   id: string;
-  assessment_id: string;
+  assessment_id: string | null;
   source_recognition_id: string;
-  source_assessment_id: string;
-  external_member_id: string;
+  source_root_recognition_id: string;
+  source_current_recognition_id: string;
+  source_assessment_id: string | null;
+  external_member_id: string | null;
+  member_name_snapshot: string | null;
   recognized_on: string;
   recognized_amount: number;
+  claimed_amount: number;
   recognition_type: string;
   reason: string;
   status: "ACTIVE" | "CANCELLED";
+  linkage_status: "LINKED" | "UNLINKED" | "ASSESSMENT_MISSING" | "MEMBER_MISMATCH" | "EXCEEDS_ASSESSMENT";
+  linkage_issue_detail: string | null;
+  governance_status: string | null;
+  sync_reason: string | null;
   source_version: number;
   source_updated_at: string;
+  source_payload: Record<string, unknown>;
 };
 export type CollectionAllocation = {
   id: string;

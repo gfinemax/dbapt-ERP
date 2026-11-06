@@ -42,7 +42,7 @@ describe("collection ledger page", () => {
     render(<CollectionLedgerPage workspace={{
       ...workspace,
       assessments: [{ ...workspace.assessments[0], external_recognized_amount: 300, satisfied_amount: 1000 }],
-      external_recognitions: [{ id: "recognition", assessment_id: "a", source_recognition_id: "r-1", source_assessment_id: "source-a", external_member_id: "peopleon-42", recognized_on: "2026-09-03", recognized_amount: 300, recognition_type: "상계", reason: "기존 채권 상계", status: "ACTIVE", source_version: 1, source_updated_at: "2026-09-03T00:00:00Z" }],
+      external_recognitions: [{ id: "recognition", assessment_id: "a", source_recognition_id: "r-1", source_root_recognition_id: "r-1", source_current_recognition_id: "r-2", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "외부인정 조합원", recognized_on: "2026-09-03", recognized_amount: 300, claimed_amount: 400, recognition_type: "상계", reason: "기존 채권 상계", status: "ACTIVE", linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "reflected", sync_reason: "CORRECTION", source_version: 2, source_updated_at: "2026-09-03T00:00:00Z", source_payload: {} }],
     }} mode="collections" />);
     expect(screen.getByText(/외부 인정 300원/)).toBeInTheDocument();
     expect(screen.getByText("완납")).toBeInTheDocument();

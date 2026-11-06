@@ -104,6 +104,11 @@ begin
       and issue_code='UNKNOWN_ASSESSMENT' and resolved_at is null) then
     raise exception 'unknown assessment issue was not recorded';
   end if;
+  if not exists(select 1 from finance.collection_external_recognitions
+    where organization_id=org and source_recognition_id='recognition-2'
+      and assessment_id is null and linkage_status='ASSESSMENT_MISSING') then
+    raise exception 'unlinked source recognition was not preserved in the ERP registry';
+  end if;
 
   perform finance.sync_ledger_contribution_assessments(
     org,actor,'dbapt-ledger',1,2,
@@ -119,5 +124,33 @@ begin
   if (sync_result->>'reconciled_count')::integer<>1
      or (sync_result->>'unresolved_issue_count')::integer<>0 then
     raise exception 'pending recognition was not reconciled: %',sync_result;
+  end if;
+
+  perform finance.sync_ledger_external_recognitions(
+    org,actor,'dbapt-ledger',3,4,
+    jsonb_build_array(jsonb_build_object(
+      'cursor',4,'source_recognition_id','recognition-1',
+      'source_root_recognition_id','recognition-1',
+      'source_current_recognition_id','recognition-1-correction','source_version',4,
+      'event_type','UPSERT','sync_reason','CORRECTION',
+      'source_assessment_id','assessment-1','external_member_id','peopleon-1',
+      'recognized_on','2026-11-06','recognized_amount',250,'recognition_type','OFFSET',
+      'reason','이사회 정정 인정','status','ACTIVE','source_updated_at','2026-11-06T01:00:00Z',
+      'payload_hash',repeat('f',64)
+    ))
+  );
+  if (select count(*) from finance.collection_external_recognitions
+      where organization_id=org and source_recognition_id='recognition-1')<>1 then
+    raise exception 'correction created a duplicate current recognition';
+  end if;
+  if not exists(select 1 from finance.collection_external_recognitions
+    where organization_id=org and source_recognition_id='recognition-1'
+      and source_current_recognition_id='recognition-1-correction'
+      and recognized_amount=250 and source_version=4) then
+    raise exception 'correction did not update the current recognition projection';
+  end if;
+  if (select count(*) from finance.ledger_external_recognition_events
+      where organization_id=org and source_recognition_id='recognition-1')<>3 then
+    raise exception 'recognition event history was not preserved';
   end if;
 end $$;
