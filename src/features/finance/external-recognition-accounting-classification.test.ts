@@ -43,4 +43,11 @@ describe("external recognition accounting classification", () => {
     expect(page).toContain('recognition.source_kind === "dongil_fixed_certificate"');
     expect(page).toContain('label: "PeopleON ID 연결 필요"');
   });
+
+  it("presents one source ID while preserving technical change metadata in details", () => {
+    expect(page).toContain("원본 ID {recognition.source_root_recognition_id}");
+    expect(page).toContain("동기화 순번 v{recognition.source_version}");
+    expect(page).toContain('label: "취소 원본 보존"');
+    expect(page).toContain("ERP 연결 대상에서는 제외해");
+  });
 });

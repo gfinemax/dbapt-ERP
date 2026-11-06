@@ -55,6 +55,23 @@ describe("collection ledger page", () => {
       external_recognitions: [{ id: "cancelled-recognition", assessment_id: "a", source_recognition_id: "r-8", source_root_recognition_id: "r-8", source_current_recognition_id: "r-8", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "취소 조합원", recognized_on: "2026-09-03", recognized_amount: 0, claimed_amount: 400, recognition_type: "가입신청필증", reason: "외부 납입 인정", status: "CANCELLED", source_kind: "application_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 0, linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "cancelled", sync_reason: "CANCELLATION_REASON_BACKFILL", source_version: 3, source_updated_at: "2026-11-06T00:00:00Z", source_payload: { recognition: { cancel_reason_code: "amount_error", cancel_reason_detail: "금액을 잘못 입력해 취소" } } }],
     }} mode="collections" />);
     expect(screen.getAllByText(/취소 사유: 금액 오류 · 금액을 잘못 입력해 취소/).length).toBeGreaterThan(0);
+    expect(screen.getByText("취소 원본 보존")).toBeInTheDocument();
+    expect(screen.getByText(/ERP 연결 대상에서는 제외해/)).toBeInTheDocument();
+    expect(screen.getByText("취소")).toBeInTheDocument();
+    expect(screen.queryByText("부과 연결 완료")).not.toBeInTheDocument();
+  });
+  it("shows one logical source ID and keeps technical version data collapsed", () => {
+    render(<CollectionLedgerPage workspace={{
+      ...workspace,
+      external_recognitions: [{ id: "corrected-recognition", assessment_id: "a", source_recognition_id: "r-10", source_root_recognition_id: "r-10", source_current_recognition_id: "r-12", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "정정 조합원", recognized_on: "2026-09-03", recognized_amount: 300, claimed_amount: 400, recognition_type: "가입신청필증", reason: "금액 정정", status: "ACTIVE", source_kind: "application_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 300, linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "reflected", sync_reason: "CORRECTION", source_version: 12, source_updated_at: "2026-09-03T00:00:00Z", source_payload: {} }],
+    }} mode="collections" />);
+    expect(screen.getByText("2026-09-03 · 원본 ID r-10")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "변경 이력" })).toBeInTheDocument();
+    expect(screen.queryByRole("columnheader", { name: "버전" })).not.toBeInTheDocument();
+    const history = screen.getByRole("group", { name: "정정 조합원 변경 이력 정보" });
+    expect(history).not.toHaveAttribute("open");
+    expect(within(history).getByText("현재 ID r-12")).toBeInTheDocument();
+    expect(within(history).getByText("동기화 순번 v12")).toBeInTheDocument();
   });
   it("separates Dongil fixed certificates from general external recognitions without overlap", () => {
     const general = { id: "general", assessment_id: "a", source_recognition_id: "r-general", source_root_recognition_id: "r-general", source_current_recognition_id: "r-general", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "일반 인정 조합원", recognized_on: "2026-09-03", recognized_amount: 55_000_000, claimed_amount: 55_000_000, recognition_type: "신탁사 입금", reason: "신탁 보관", status: "ACTIVE", source_kind: "trust_account", accounting_treatment: "trust_receipt", actual_fund_amount: 55_000_000, loss_amount: 0, linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "reflected", sync_reason: "INITIAL", source_version: 1, source_updated_at: "2026-09-03T00:00:00Z", source_payload: {} } as const;
