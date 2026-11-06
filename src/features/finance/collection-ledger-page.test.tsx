@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 vi.mock("@/app/finance/collections/actions", () => ({ executeCollectionLedger: vi.fn(), syncLedgerContributions: vi.fn(), syncLedgerExternalRecognitions: vi.fn(), previewCollectionAssessmentCsv: vi.fn(), applyCollectionAssessmentCsv: vi.fn(), loadCollectionAssessmentCsv: vi.fn(), cancelCollectionAssessmentCsv: vi.fn() }));
@@ -55,5 +55,28 @@ describe("collection ledger page", () => {
       external_recognitions: [{ id: "cancelled-recognition", assessment_id: "a", source_recognition_id: "r-8", source_root_recognition_id: "r-8", source_current_recognition_id: "r-8", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "취소 조합원", recognized_on: "2026-09-03", recognized_amount: 0, claimed_amount: 400, recognition_type: "가입신청필증", reason: "외부 납입 인정", status: "CANCELLED", source_kind: "application_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 0, linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "cancelled", sync_reason: "CANCELLATION_REASON_BACKFILL", source_version: 3, source_updated_at: "2026-11-06T00:00:00Z", source_payload: { recognition: { cancel_reason_code: "amount_error", cancel_reason_detail: "금액을 잘못 입력해 취소" } } }],
     }} mode="collections" />);
     expect(screen.getAllByText(/취소 사유: 금액 오류 · 금액을 잘못 입력해 취소/).length).toBeGreaterThan(0);
+  });
+  it("separates Dongil fixed certificates from general external recognitions without overlap", () => {
+    const general = { id: "general", assessment_id: "a", source_recognition_id: "r-general", source_root_recognition_id: "r-general", source_current_recognition_id: "r-general", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "일반 인정 조합원", recognized_on: "2026-09-03", recognized_amount: 55_000_000, claimed_amount: 55_000_000, recognition_type: "신탁사 입금", reason: "신탁 보관", status: "ACTIVE", source_kind: "trust_account", accounting_treatment: "trust_receipt", actual_fund_amount: 55_000_000, loss_amount: 0, linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "reflected", sync_reason: "INITIAL", source_version: 1, source_updated_at: "2026-09-03T00:00:00Z", source_payload: {} } as const;
+    const fixed = { id: "fixed", assessment_id: null, source_recognition_id: "agency_receipt:137", source_root_recognition_id: "agency_receipt:137", source_current_recognition_id: "agency_receipt:137", source_assessment_id: null, external_member_id: null, member_name_snapshot: "정액 필증 조합원", recognized_on: "2009-07-13", recognized_amount: 30_000_000, claimed_amount: 30_000_000, recognition_type: "동일건설 정액 필증", reason: "정액 필증", status: "ACTIVE", source_kind: "dongil_fixed_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 30_000_000, linkage_status: "ASSESSMENT_MISSING", linkage_issue_detail: "ERP 부과 원본 연결 ID가 없습니다.", governance_status: "legacy_reflected", sync_reason: "INITIAL_AGENCY_BACKFILL", source_version: 1, source_updated_at: "2026-11-06T00:00:00Z", source_payload: {} } as const;
+
+    render(<CollectionLedgerPage workspace={{ ...workspace, external_recognitions: [general, fixed] }} mode="collections" />);
+
+    expect(screen.getByRole("tab", { name: "일반 외부납입 · 1건" })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByText("일반 인정 조합원")).toBeInTheDocument();
+    expect(screen.queryByText("정액 필증 조합원")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "정액 필증 3천만원 · 1건" }));
+    expect(screen.queryByText("일반 인정 조합원")).not.toBeInTheDocument();
+    expect(screen.getByText("정액 필증 조합원")).toBeInTheDocument();
+    expect(screen.getByText("PeopleON ID 연결 필요")).toBeInTheDocument();
+    expect(screen.queryByText("ERP 부과 원본 연결 ID가 없습니다.")).not.toBeInTheDocument();
+    const fixedSummary = screen.getByRole("region", { name: "정액 필증 3천만원 요약" });
+    expect(within(fixedSummary).getByText("1건 · 30,000,000원")).toBeInTheDocument();
+    expect(within(fixedSummary).getByText("30,000,000원")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: "전체 감사 목록 · 2건" }));
+    expect(screen.getByText("일반 인정 조합원")).toBeInTheDocument();
+    expect(screen.getByText("정액 필증 조합원")).toBeInTheDocument();
   });
 });

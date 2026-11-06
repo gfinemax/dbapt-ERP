@@ -34,4 +34,13 @@ describe("external recognition accounting classification", () => {
     expect(page).toContain('trust_receipt: "신탁수납 · 결손 아님"');
     expect(page).toContain("미배분 통장 입금 후보");
   });
+
+  it("keeps Dongil fixed certificates in a dedicated non-overlapping ledger tab", () => {
+    expect(page).toContain('general: "일반 외부납입"');
+    expect(page).toContain('fixed: "정액 필증 3천만원"');
+    expect(page).toContain('all: "전체 감사 목록"');
+    expect(page).toContain('recognition.source_kind !== "dongil_fixed_certificate"');
+    expect(page).toContain('recognition.source_kind === "dongil_fixed_certificate"');
+    expect(page).toContain('label: "PeopleON ID 연결 필요"');
+  });
 });
