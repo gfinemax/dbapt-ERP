@@ -49,4 +49,11 @@ describe("collection ledger page", () => {
     expect(screen.getByText(/현금수지 제외/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "수납 배분" })).not.toBeInTheDocument();
   });
+  it("shows the structured ledger cancellation reason for cancelled external recognition", () => {
+    render(<CollectionLedgerPage workspace={{
+      ...workspace,
+      external_recognitions: [{ id: "cancelled-recognition", assessment_id: "a", source_recognition_id: "r-8", source_root_recognition_id: "r-8", source_current_recognition_id: "r-8", source_assessment_id: "source-a", external_member_id: "peopleon-42", member_name_snapshot: "취소 조합원", recognized_on: "2026-09-03", recognized_amount: 0, claimed_amount: 400, recognition_type: "가입신청필증", reason: "외부 납입 인정", status: "CANCELLED", linkage_status: "LINKED", linkage_issue_detail: null, governance_status: "cancelled", sync_reason: "CANCELLATION_REASON_BACKFILL", source_version: 3, source_updated_at: "2026-11-06T00:00:00Z", source_payload: { recognition: { cancel_reason_code: "amount_error", cancel_reason_detail: "금액을 잘못 입력해 취소" } } }],
+    }} mode="collections" />);
+    expect(screen.getAllByText(/취소 사유: 금액 오류 · 금액을 잘못 입력해 취소/).length).toBeGreaterThan(0);
+  });
 });
