@@ -10,7 +10,9 @@ beforeEach(() => {
     ? { data: { batches: [], selected: null }, error: null }
     : name === "ledger_contribution_sync_status"
       ? { data: { state: null, unresolved_issues: [], sources: [] }, error: null }
-    : { data: { assessments: [], allocations: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
+    : name === "ledger_external_recognition_sync_status"
+      ? { data: { state: null, unresolved_issues: [], source_count: 0 }, error: null }
+    : { data: { assessments: [], allocations: [], external_recognitions: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
 });
 describe("collection ledger repository", () => {
   it("loads only through the authenticated organization and adds the verified viewer", async () => {

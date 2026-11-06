@@ -1,8 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
-import { executeCollectionLedger, syncLedgerContributions } from "@/app/finance/collections/actions";
+import { useMemo, useState, useTransition } from "react";
+import { executeCollectionLedger, syncLedgerContributions, syncLedgerExternalRecognitions } from "@/app/finance/collections/actions";
 import type { CollectionLedgerCommand, CollectionLedgerWorkspace } from "./collection-ledger-repository";
 import { CollectionAssessmentImport } from "./collection-assessment-import";
 
@@ -12,6 +12,16 @@ const primary = "min-h-10 rounded-lg bg-slate-900 px-4 py-2 text-sm font-bold te
 const secondary = "min-h-10 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-semibold disabled:opacity-40";
 const money = (value: number) => `${Number(value).toLocaleString("ko-KR")}원`;
 const statusLabels = { DRAFT: "작성중", APPROVED: "환급 승인", PAID: "지급 완료", CANCELLED: "취소" } as const;
+function groupBy<T>(items: T[], keyOf: (item: T) => string) {
+  const grouped = new Map<string, T[]>();
+  for (const item of items) {
+    const key = keyOf(item);
+    const group = grouped.get(key);
+    if (group) group.push(item);
+    else grouped.set(key, [item]);
+  }
+  return grouped;
+}
 
 export function CollectionLedgerPage({ workspace, mode }: { workspace: CollectionLedgerWorkspace; mode: "collections" | "refunds" }) {
   const router = useRouter();
@@ -33,15 +43,30 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
     });
   };
   const activeAllocations = workspace.allocations.filter((allocation) => !allocation.reversed);
+  const activeExternalRecognitions = workspace.external_recognitions.filter((recognition) => recognition.status === "ACTIVE");
+  const allocationsByAssessment = useMemo(() => groupBy(workspace.allocations, (allocation) => allocation.assessment_id), [workspace.allocations]);
+  const recognitionsByAssessment = useMemo(() => groupBy(workspace.external_recognitions, (recognition) => recognition.assessment_id), [workspace.external_recognitions]);
+  const refundsByAllocation = useMemo(() => groupBy(workspace.refunds.filter((refund) => refund.status !== "CANCELLED"), (refund) => refund.source_allocation_id), [workspace.refunds]);
   const ledgerSync = workspace.ledger_sync ?? { state: null, unresolved_issues: [], sources: [] };
+  const externalRecognitionSync = workspace.ledger_external_recognition_sync ?? { state: null, unresolved_issues: [], source_count: 0 };
   const sync = () => {
     setMessage("");
     startTransition(async () => {
       try {
         const result = await syncLedgerContributions();
-        setMessage(`ledger 분담금 ${result.received_count}건을 확인해 ${result.applied_count}건 반영했어. 검토 필요 ${result.issue_count}건 · 수납 피드백 ${result.feedback_sent_count}건.`);
+        setMessage(`Ledger 부과 ${result.applied_count}건을 반영했어. 검토 필요 ${result.issue_count}건 · 수납 피드백 ${result.feedback_sent_count}건.`);
         router.refresh();
       } catch (error) { setMessage(error instanceof Error ? error.message : "ledger 분담금을 가져오지 못했어."); }
+    });
+  };
+  const syncExternalRecognitions = () => {
+    setMessage("");
+    startTransition(async () => {
+      try {
+        const result = await syncLedgerExternalRecognitions();
+        setMessage(`Ledger 외부 납입 인정 ${result.received_count}건을 확인해 ${result.applied_count}건 반영했어. 재검토 반영 ${result.reconciled_count}건 · 미해결 ${result.unresolved_issue_count}건.`);
+        router.refresh();
+      } catch (error) { setMessage(error instanceof Error ? error.message : "Ledger 외부 납입 인정을 가져오지 못했어."); }
     });
   };
 
@@ -49,19 +74,21 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
     <header className={card}>
       <p className="text-sm font-bold text-blue-700">고유 ID·실제 계좌거래 기반</p>
       <h1 className="mt-1 text-3xl font-bold">{mode === "collections" ? "분담금 수납관리" : "환급관리"}</h1>
-      <p className="mt-2 text-sm text-slate-600">{mode === "collections" ? "조합원 이름이 아니라 외부 원장의 고유 ID로 부과 원본을 등록하고 실제 입금을 배분해." : "원수납 배분에서 환급 결정을 만들고, 분리 승인 후 같은 금액의 실제 출금을 연결해."}</p>
+      <p className="mt-2 text-sm text-slate-600">{mode === "collections" ? "조합원 이름이 아니라 외부 원장의 고유 ID로 부과 원본을 등록하고, 실제 입금과 비현금 외부 납입 인정을 구분해 관리해." : "원수납 배분에서 환급 결정을 만들고, 분리 승인 후 같은 금액의 실제 출금을 연결해."}</p>
       <p className="mt-2 text-xs text-slate-500">표시 이름과 조합원번호는 당시 확인용 스냅샷이며 연결 키로 사용하지 않아.</p>
     </header>
 
     {mode === "collections" ? <>
       {canDecide ? <section className={card} aria-label="ledger 분담금 연동">
-        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">ledger 분담금 가져오기</h2><p className="mt-1 text-sm text-slate-600">ledger의 부과 원본을 고유 ID로만 동기화해. ERP에서는 수납 배분과 보고를 담당해.</p></div><button className={primary} disabled={pending} onClick={sync}>ledger 변경 가져오기</button></div>
-        <p className="mt-3 text-xs text-slate-500">마지막 커서 {ledgerSync.state?.last_cursor ?? 0} · 마지막 동기화 {ledgerSync.state?.last_synced_at?.slice(0, 19).replace("T", " ") ?? "아직 안 함"} · 미해결 검토 {ledgerSync.unresolved_issues.length}건</p>
+        <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Ledger 분담금 가져오기</h2><p className="mt-1 text-sm text-slate-600">Ledger의 부과 원본과 외부 납입 인정을 고유 ID로 동기화해. 외부 인정은 통장 입금으로 집계하지 않아.</p></div><div className="flex flex-wrap gap-2"><button className={secondary} disabled={pending} onClick={sync}>부과 변경 가져오기</button><button className={primary} disabled={pending} onClick={syncExternalRecognitions}>외부 납입 인정 가져오기</button></div></div>
+        <p className="mt-3 text-xs text-slate-500">부과 커서 {ledgerSync.state?.last_cursor ?? 0} · 외부 인정 커서 {externalRecognitionSync.state?.last_cursor ?? 0} · 마지막 외부 인정 동기화 {externalRecognitionSync.state?.last_synced_at?.slice(0, 19).replace("T", " ") ?? "아직 안 함"} · 미해결 검토 {ledgerSync.unresolved_issues.length + externalRecognitionSync.unresolved_issues.length}건</p>
         {ledgerSync.unresolved_issues.length ? <ul className="mt-3 space-y-1 text-sm text-amber-800">{ledgerSync.unresolved_issues.slice(0, 5).map((issue) => <li key={issue.id}>{issue.source_assessment_id} · {issue.issue_detail}</li>)}</ul> : null}
+        {externalRecognitionSync.unresolved_issues.length ? <ul className="mt-3 space-y-1 text-sm text-amber-800">{externalRecognitionSync.unresolved_issues.slice(0, 5).map((issue) => <li key={issue.id}>{issue.source_recognition_id} · {issue.issue_detail}</li>)}</ul> : null}
       </section> : null}
-      <section className="grid gap-3 sm:grid-cols-3">
+      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <article className={card}><p className="text-sm text-slate-500">부과 원본</p><strong className="mt-1 block text-2xl">{workspace.assessments.length}건</strong></article>
         <article className={card}><p className="text-sm text-slate-500">실제 수납 배분</p><strong className="mt-1 block text-2xl">{activeAllocations.length}건</strong></article>
+        <article className={card}><p className="text-sm text-slate-500">외부 납입 인정</p><strong className="mt-1 block text-2xl">{activeExternalRecognitions.length}건</strong></article>
         <article className={card}><p className="text-sm text-slate-500">배분 가능한 입금</p><strong className="mt-1 block text-2xl">{workspace.deposit_candidates.length}건</strong></article>
       </section>
       {canDecide ? <section className={card}>
@@ -80,20 +107,23 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
       {canDecide ? <CollectionAssessmentImport initialHistory={workspace.import_batches} /> : null}
       <section className="space-y-3" aria-label="분담금 부과 목록">
         {workspace.assessments.map((assessment) => {
-          const remaining = Number(assessment.assessed_amount) - Number(assessment.allocated_amount);
-          const allocations = workspace.allocations.filter((allocation) => allocation.assessment_id === assessment.id);
+          const remaining = Number(assessment.assessed_amount) - Number(assessment.satisfied_amount);
+          const allocations = allocationsByAssessment.get(assessment.id) ?? [];
+          const recognitions = recognitionsByAssessment.get(assessment.id) ?? [];
           const hasActiveAllocation = allocations.some((allocation) => !allocation.reversed);
+          const hasActiveRecognition = recognitions.some((recognition) => recognition.status === "ACTIVE");
           return <article className={card} key={assessment.id}>
-            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-blue-700">{assessment.external_member_id}{assessment.member_no ? ` · ${assessment.member_no}` : ""}{assessment.source_system ? " · ledger 연동" : ""}</p><h2 className="mt-1 text-lg font-bold">{assessment.member_name_snapshot} · {assessment.assessment_code}</h2><p className="mt-1 text-sm">부과 {money(assessment.assessed_amount)} · 수납 {money(assessment.allocated_amount)} · 잔액 {money(remaining)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${assessment.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : remaining === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>{assessment.status === "CANCELLED" ? "부과 취소" : remaining === 0 ? "완납" : "수납 진행"}</span></div>
-            {canDecide && !assessment.source_system && assessment.status === "ACTIVE" && !hasActiveAllocation ? <form className="mt-3 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("ASSESSMENT_CANCEL", { id: assessment.id, lock_version: assessment.lock_version, reason: data.get("reason") }); }}><input className={`${input} max-w-sm`} name="reason" aria-label={`${assessment.member_name_snapshot} 부과 취소 사유`} placeholder="부과 취소 사유" required /><button className={secondary} disabled={pending}>부과 원본 취소</button></form> : null}
+            <div className="flex flex-wrap items-start justify-between gap-3"><div><p className="text-xs font-bold text-blue-700">{assessment.external_member_id}{assessment.member_no ? ` · ${assessment.member_no}` : ""}{assessment.source_system ? " · Ledger 연동" : ""}</p><h2 className="mt-1 text-lg font-bold">{assessment.member_name_snapshot} · {assessment.assessment_code}</h2><p className="mt-1 text-sm">부과 {money(assessment.assessed_amount)} · 실제 수납 {money(assessment.cash_allocated_amount)} · 외부 인정 {money(assessment.external_recognized_amount)} · 잔액 {money(remaining)}</p></div><span className={`rounded-full px-2 py-1 text-xs font-bold ${assessment.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : remaining === 0 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>{assessment.status === "CANCELLED" ? "부과 취소" : remaining === 0 ? "완납" : "수납 진행"}</span></div>
+            {canDecide && !assessment.source_system && assessment.status === "ACTIVE" && !hasActiveAllocation && !hasActiveRecognition ? <form className="mt-3 flex flex-wrap gap-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("ASSESSMENT_CANCEL", { id: assessment.id, lock_version: assessment.lock_version, reason: data.get("reason") }); }}><input className={`${input} max-w-sm`} name="reason" aria-label={`${assessment.member_name_snapshot} 부과 취소 사유`} placeholder="부과 취소 사유" required /><button className={secondary} disabled={pending}>부과 원본 취소</button></form> : null}
             {canPay && assessment.status === "ACTIVE" && remaining > 0 && workspace.deposit_candidates.length ? <form className="mt-4 grid gap-2 rounded-xl bg-slate-50 p-3 md:grid-cols-[1fr_140px_1fr_auto]" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("RECEIPT_ALLOCATE", { ...Object.fromEntries(data), assessment_id: assessment.id }); }}>
               <select aria-label={`${assessment.member_name_snapshot} 입금 원본`} className={input} name="bank_transaction_id" required><option value="">실제 입금 선택</option>{workspace.deposit_candidates.map((bank) => <option key={bank.id} value={bank.id}>{bank.transacted_at.slice(0,10)} · {bank.counterparty || bank.description} · 가용 {money(bank.available_amount ?? bank.amount)}</option>)}</select>
               <input aria-label={`${assessment.member_name_snapshot} 수납 배분액`} className={input} name="amount" type="number" min="1" max={remaining} placeholder="배분액" required />
               <input aria-label={`${assessment.member_name_snapshot} 수납 확인 사유`} className={input} name="reason" placeholder="입금자·회차 확인 근거" required />
               <button className={primary} disabled={pending}>수납 배분</button>
             </form> : null}
+            {recognitions.length ? <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50/60 p-3"><p className="text-xs font-bold text-blue-800">외부 납입 인정 · 현금수지 제외</p><ul className="mt-2 space-y-2">{recognitions.map((recognition) => <li className="text-sm" key={recognition.id}><span className={recognition.status === "CANCELLED" ? "line-through text-slate-500" : ""}>{recognition.recognized_on} · {recognition.recognition_type} · <strong>{money(recognition.recognized_amount)}</strong> · {recognition.reason}</span>{recognition.status === "CANCELLED" ? " · 취소됨" : ""}</li>)}</ul></div> : null}
             {allocations.length ? <div className="mt-4 divide-y border-t">{allocations.map((allocation) => {
-              const relatedRefunds = workspace.refunds.filter((refund) => refund.source_allocation_id === allocation.id && refund.status !== "CANCELLED");
+              const relatedRefunds = refundsByAllocation.get(allocation.id) ?? [];
               const refundRemaining = Number(allocation.amount) - relatedRefunds.reduce((sum, refund) => sum + Number(refund.requested_amount), 0);
               const hasOpenRefund = relatedRefunds.some((refund) => refund.status === "DRAFT" || refund.status === "APPROVED");
               return <div className="py-3" key={allocation.id}><div className="flex flex-wrap items-center justify-between gap-2"><p className="text-sm">{allocation.bank_date.slice(0,10)} · {allocation.bank_description} · <strong>{money(allocation.amount)}</strong>{allocation.reversed ? ` · 취소됨 (${allocation.reversal_reason})` : ""}{relatedRefunds.length ? ` · 환급 결정 ${money(Number(allocation.amount) - refundRemaining)}` : ""}</p>{canPay && !allocation.reversed && !relatedRefunds.length ? <form className="flex gap-2" onSubmit={(event) => { event.preventDefault(); const data = new FormData(event.currentTarget); command("RECEIPT_REVERSE", { id: allocation.id, reason: data.get("reason") }); }}><input className={input} name="reason" aria-label="수납 배분 취소 사유" placeholder="취소 사유" required /><button className={secondary} disabled={pending}>배분 취소</button></form> : null}</div>

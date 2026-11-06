@@ -17,7 +17,7 @@ const responses: Record<string, { data: unknown[] | null; count: number | null; 
 };
 
 function database() {
-  return { schema: () => ({ rpc: vi.fn().mockImplementation((name: string) => Promise.resolve({ data: name === "collection_ledger_read" ? { assessments: [{ assessed_amount: 100, allocated_amount: 50 }, { assessed_amount: 100, allocated_amount: 100 }], refunds: [{ status: "DRAFT" }, { status: "PAID" }] } : [{ needs_review: true }, { needs_review: false }], count: null, error: null })), from: (table: string) => {
+  return { schema: () => ({ rpc: vi.fn().mockImplementation((name: string) => Promise.resolve({ data: name === "collection_ledger_read" ? { assessments: [{ assessed_amount: 100, satisfied_amount: 50 }, { assessed_amount: 100, satisfied_amount: 100 }], refunds: [{ status: "DRAFT" }, { status: "PAID" }] } : [{ needs_review: true }, { needs_review: false }], count: null, error: null })), from: (table: string) => {
     const filters: Record<string, unknown> = {};
     const chain = {
       select: () => chain,

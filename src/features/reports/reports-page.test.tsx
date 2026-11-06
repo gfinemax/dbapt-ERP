@@ -10,7 +10,7 @@ describe("ReportsPage", () => {
       categories: [{ category: "조합원 분담금", deposit_amount: 100000, withdrawal_amount: 0, transaction_count: 1 }],
       transactions: [{ id: "tx", date: "2026-10-01T00:00:00Z", description: "분담금", counterparty: "홍길동", deposit_amount: 100000, withdrawal_amount: 0, category: "조합원 분담금", classification_status: "CONFIRMED" }],
     }, quarterly: { period_start: "2026-10-01", period_end: "2026-12-31", deposit_total: 100000,
-      withdrawal_total: 20000, closing_balance: 81000, assessment_total: 200000, receipt_total: 50000, active_member_count: 1 } }, history: [] };
+      withdrawal_total: 20000, closing_balance: 81000, assessment_total: 200000, receipt_total: 50000, external_recognition_total: 30000, satisfied_total: 80000, active_member_count: 1 } }, history: [] };
     render(<ReportsPage initialSection="cash-flow" workspace={workspace} />);
     expect(screen.getByRole("heading", { name: "2026-10 자금 입출금명세서" })).toBeInTheDocument();
     expect(screen.getByText("81,000원")).toBeInTheDocument();

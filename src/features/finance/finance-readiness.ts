@@ -71,7 +71,7 @@ export async function loadFinanceReadiness(): Promise<FinanceReadiness> {
       routeUnclassified: routes.count ?? 0,
       budgetReviewPending: Array.isArray(budgetReview.data) ? budgetReview.data.filter((row) => Boolean((row as { needs_review?: unknown }).needs_review)).length : 0,
       collectionPending: Array.isArray((collectionLedger.data as { assessments?: unknown[] } | null)?.assessments)
-        ? ((collectionLedger.data as { assessments: { assessed_amount: number; allocated_amount: number }[] }).assessments.filter((row) => Number(row.assessed_amount) > Number(row.allocated_amount)).length)
+        ? ((collectionLedger.data as { assessments: { assessed_amount: number; satisfied_amount: number }[] }).assessments.filter((row) => Number(row.assessed_amount) > Number(row.satisfied_amount)).length)
         : 0,
       refundPending: Array.isArray((collectionLedger.data as { refunds?: unknown[] } | null)?.refunds)
         ? ((collectionLedger.data as { refunds: { status: string }[] }).refunds.filter((row) => row.status === "DRAFT" || row.status === "APPROVED").length)

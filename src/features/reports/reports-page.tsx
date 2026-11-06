@@ -379,7 +379,10 @@ function buildActualReportDocuments(workspace: FinancialReportWorkspace): Statut
         {label:"분기 수입 / 지출",value:`${formatMoney(quarterly.deposit_total)} / ${formatMoney(quarterly.withdrawal_total)}`},{label:"분기말 잔액",value:formatMoney(quarterly.closing_balance)}],
       sections:[...document.sections.filter(section=>section.title!=="지급 및 증빙관리"),{title:"지급 및 증빙관리",rows:[
         ["구분","금액/건수","확인상태"],["분담금 부과",formatMoney(quarterly.assessment_total),"ledger 연동"],
-        ["수납 배분",formatMoney(quarterly.receipt_total),"ERP 확정"],["미분류 통장거래",`${monthly.unclassified_count}건`,monthly.unclassified_count?"보완 필요":"확인 완료"]]}]};
+        ["실제 계좌수납",formatMoney(quarterly.receipt_total),"ERP 확정"],
+        ["외부 납입 인정",formatMoney(quarterly.external_recognition_total),"현금수지 제외"],
+        ["총 납부충족액",formatMoney(quarterly.satisfied_total),"수납+외부 인정"],
+        ["미분류 통장거래",`${monthly.unclassified_count}건`,monthly.unclassified_count?"보완 필요":"확인 완료"]]}]};
     return document;
   });
 }

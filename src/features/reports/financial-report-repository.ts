@@ -13,7 +13,8 @@ export type LiveFinancialReport = {
       deposit_amount: number; withdrawal_amount: number; category: string; classification_status: string }>;
   };
   quarterly: { period_start: string; period_end: string; deposit_total: number; withdrawal_total: number;
-    closing_balance: number; assessment_total: number; receipt_total: number; active_member_count: number };
+    closing_balance: number; assessment_total: number; receipt_total: number; external_recognition_total: number;
+    satisfied_total: number; active_member_count: number };
 };
 export type FinancialReportRun = { id: string; report_type: "MONTHLY_CASH" | "QUARTERLY_PERFORMANCE";
   period_start: string; period_end: string; version: number; status: string; reason: string; created_at: string };

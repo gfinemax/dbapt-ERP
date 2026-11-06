@@ -42,3 +42,11 @@ The collections page pulls immutable contribution assessment events from dbapt-l
 timestamped HMAC SHA-256 requests. ERP stores the ledger assessment ID and PeopleON member ID,
 keeps unresolved identity links in a review queue, and remains authoritative for bank receipts,
 allocation, evidence, and reports.
+
+External contribution recognitions are pulled separately from
+`/api/integrations/erp/external-contribution-recognitions`. Each cursor-ordered item must include
+`source_recognition_id`, `source_version`, `source_assessment_id`, `external_member_id`,
+`recognized_on`, `recognized_amount`, `recognition_type`, `reason`, `status`,
+`source_updated_at`, and `payload_hash`. ERP counts active recognitions toward the assessment
+balance but never creates a bank transaction or adds the amount to cash reports. Unknown
+assessments, member mismatches, over-recognition, and malformed items remain in the review queue.

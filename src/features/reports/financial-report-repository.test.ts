@@ -4,7 +4,7 @@ vi.mock("@/features/finance/reimbursement-auth",()=>({requireReimbursementIdenti
 vi.mock("@/features/finance/reimbursement-repository",()=>({reimbursementDb:()=>({schema:()=>({rpc:mocks.rpc})})}));
 import { generateFinancialReportSnapshots, loadFinancialReportWorkspace } from "./financial-report-repository";
 
-const live={generated_at:"2026-11-04T00:00:00Z",source:"ERP",monthly:{period_start:"2026-10-01",period_end:"2026-10-31",opening_balance:0,deposit_total:100000,withdrawal_total:20000,closing_balance:80000,unclassified_count:1,categories:[],transactions:[]},quarterly:{period_start:"2026-10-01",period_end:"2026-12-31",deposit_total:100000,withdrawal_total:20000,closing_balance:80000,assessment_total:100000,receipt_total:50000,active_member_count:1}};
+const live={generated_at:"2026-11-04T00:00:00Z",source:"ERP",monthly:{period_start:"2026-10-01",period_end:"2026-10-31",opening_balance:0,deposit_total:100000,withdrawal_total:20000,closing_balance:80000,unclassified_count:1,categories:[],transactions:[]},quarterly:{period_start:"2026-10-01",period_end:"2026-12-31",deposit_total:100000,withdrawal_total:20000,closing_balance:80000,assessment_total:100000,receipt_total:50000,external_recognition_total:10000,satisfied_total:60000,active_member_count:1}};
 beforeEach(()=>{
   mocks.identity.mockReset().mockResolvedValue({user_id:"actor",organization_id:"org",active:true,permissions:["ADMIN"]});
   mocks.rpc.mockReset().mockImplementation(async(name:string)=>name==="financial_report_live"?{data:live,error:null}:{data:[],error:null});

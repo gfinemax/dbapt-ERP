@@ -1,13 +1,14 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
-vi.mock("@/app/finance/collections/actions", () => ({ executeCollectionLedger: vi.fn(), previewCollectionAssessmentCsv: vi.fn(), applyCollectionAssessmentCsv: vi.fn(), loadCollectionAssessmentCsv: vi.fn(), cancelCollectionAssessmentCsv: vi.fn() }));
+vi.mock("@/app/finance/collections/actions", () => ({ executeCollectionLedger: vi.fn(), syncLedgerContributions: vi.fn(), syncLedgerExternalRecognitions: vi.fn(), previewCollectionAssessmentCsv: vi.fn(), applyCollectionAssessmentCsv: vi.fn(), loadCollectionAssessmentCsv: vi.fn(), cancelCollectionAssessmentCsv: vi.fn() }));
 import { CollectionLedgerPage } from "./collection-ledger-page";
 import type { CollectionLedgerWorkspace } from "./collection-ledger-repository";
 
 const workspace: CollectionLedgerWorkspace = {
-  assessments: [{ id: "a", external_member_id: "peopleon-42", member_no: "M-42", member_name_snapshot: "김조합", assessment_code: "2026-09", due_date: "2026-09-30", assessed_amount: 1000, allocated_amount: 700, status: "ACTIVE", lock_version: 1 }],
+  assessments: [{ id: "a", external_member_id: "peopleon-42", member_no: "M-42", member_name_snapshot: "김조합", assessment_code: "2026-09", due_date: "2026-09-30", assessed_amount: 1000, allocated_amount: 700, cash_allocated_amount: 700, external_recognized_amount: 0, satisfied_amount: 700, status: "ACTIVE", lock_version: 1 }],
   allocations: [{ id: "x", assessment_id: "a", bank_transaction_id: "bank", amount: 700, reason: "확인", created_at: "2026-09-02", reversed: false, reversal_reason: null, bank_date: "2026-09-02", bank_description: "분담금" }],
+  external_recognitions: [],
   refunds: [], deposit_candidates: [{ id: "bank2", transacted_at: "2026-09-03", description: "추가입금", counterparty: "김조합", amount: 300, available_amount: 300 }], withdrawal_candidates: [],
   import_batches: [],
   viewer: { user_id: "admin", permissions: ["ADMIN"] },
@@ -34,7 +35,18 @@ describe("collection ledger page", () => {
     expect(screen.getByPlaceholderText("잔여 400원")).toHaveAttribute("max", "400");
   });
   it("offers assessment cancellation only when no active receipt allocation exists", () => {
-    render(<CollectionLedgerPage workspace={{ ...workspace, allocations: [], assessments: [{ ...workspace.assessments[0], allocated_amount: 0 }] }} mode="collections" />);
+    render(<CollectionLedgerPage workspace={{ ...workspace, allocations: [], assessments: [{ ...workspace.assessments[0], allocated_amount: 0, cash_allocated_amount: 0, satisfied_amount: 0 }] }} mode="collections" />);
     expect(screen.getByRole("button", { name: "부과 원본 취소" })).toBeInTheDocument();
+  });
+  it("counts external recognition toward completion without presenting it as a cash receipt", () => {
+    render(<CollectionLedgerPage workspace={{
+      ...workspace,
+      assessments: [{ ...workspace.assessments[0], external_recognized_amount: 300, satisfied_amount: 1000 }],
+      external_recognitions: [{ id: "recognition", assessment_id: "a", source_recognition_id: "r-1", source_assessment_id: "source-a", external_member_id: "peopleon-42", recognized_on: "2026-09-03", recognized_amount: 300, recognition_type: "상계", reason: "기존 채권 상계", status: "ACTIVE", source_version: 1, source_updated_at: "2026-09-03T00:00:00Z" }],
+    }} mode="collections" />);
+    expect(screen.getByText(/외부 인정 300원/)).toBeInTheDocument();
+    expect(screen.getByText("완납")).toBeInTheDocument();
+    expect(screen.getByText(/현금수지 제외/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "수납 배분" })).not.toBeInTheDocument();
   });
 });

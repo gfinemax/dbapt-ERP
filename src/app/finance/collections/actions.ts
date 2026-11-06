@@ -5,6 +5,7 @@ import { createHash } from "node:crypto";
 import { parseCollectionAssessmentCsv } from "@/features/finance/collection-assessment-csv";
 import { applyCollectionAssessmentImport, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
 import { syncLedgerContributionAssessments } from "@/features/finance/ledger-contribution-sync";
+import { syncLedgerExternalContributionRecognitions } from "@/features/finance/ledger-external-recognition-sync";
 import { pushLedgerAllocationFeedback } from "@/features/finance/ledger-allocation-feedback";
 
 export async function syncLedgerContributions() {
@@ -12,6 +13,12 @@ export async function syncLedgerContributions() {
   const feedback = await pushLedgerAllocationFeedback();
   for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace", "/reports"]) revalidatePath(path);
   return { ...result, feedback_sent_count: feedback.sent_count };
+}
+
+export async function syncLedgerExternalRecognitions() {
+  const result = await syncLedgerExternalContributionRecognitions();
+  for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace", "/reports"]) revalidatePath(path);
+  return result;
 }
 
 export async function executeCollectionLedger(command: CollectionLedgerCommand, input: Record<string, unknown>, operationKey: string) {

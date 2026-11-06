@@ -3,6 +3,7 @@ import { reimbursementDb } from "./reimbursement-repository";
 import { hasReimbursementPermission, type ReimbursementPermission } from "./reimbursement-domain";
 import type { CollectionAssessmentImportInput } from "./collection-assessment-csv";
 import { loadLedgerContributionSyncStatus, type LedgerContributionSyncStatus } from "./ledger-contribution-sync";
+import { loadLedgerExternalRecognitionSyncStatus, type LedgerExternalRecognitionSyncStatus } from "./ledger-external-recognition-sync";
 
 export const collectionLedgerCommands = [
   "ASSESSMENT_SAVE",
@@ -24,10 +25,27 @@ export type CollectionAssessment = {
   due_date: string | null;
   assessed_amount: number;
   allocated_amount: number;
+  cash_allocated_amount: number;
+  external_recognized_amount: number;
+  satisfied_amount: number;
   status: "ACTIVE" | "CANCELLED";
   lock_version: number;
   source_system?: string | null;
   source_assessment_id?: string | null;
+};
+export type CollectionExternalRecognition = {
+  id: string;
+  assessment_id: string;
+  source_recognition_id: string;
+  source_assessment_id: string;
+  external_member_id: string;
+  recognized_on: string;
+  recognized_amount: number;
+  recognition_type: string;
+  reason: string;
+  status: "ACTIVE" | "CANCELLED";
+  source_version: number;
+  source_updated_at: string;
 };
 export type CollectionAllocation = {
   id: string;
@@ -67,11 +85,13 @@ export type CollectionBankCandidate = {
 export type CollectionLedgerWorkspace = {
   assessments: CollectionAssessment[];
   allocations: CollectionAllocation[];
+  external_recognitions: CollectionExternalRecognition[];
   refunds: CollectionRefund[];
   deposit_candidates: CollectionBankCandidate[];
   withdrawal_candidates: CollectionBankCandidate[];
   import_batches: CollectionAssessmentImportSummary[];
   ledger_sync?: LedgerContributionSyncStatus;
+  ledger_external_recognition_sync?: LedgerExternalRecognitionSyncStatus;
   viewer: { user_id: string; permissions: ReimbursementPermission[] };
 };
 export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
@@ -182,17 +202,18 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
   if (!member.active || !staffPermissions.some((permission) => hasReimbursementPermission(member, permission)))
     throw new Error("수납·환급 원장 조회 권한이 필요합니다.");
   const canImport = ["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission));
-  const [ledgerResponse, historyResponse, syncStatus] = await Promise.all([
+  const [ledgerResponse, historyResponse, syncStatus, externalRecognitionSyncStatus] = await Promise.all([
     reimbursementDb().schema("finance").rpc("collection_ledger_read", { p_org: member.organization_id, p_actor: member.user_id }),
     canImport
       ? reimbursementDb().schema("finance").rpc("collection_assessment_import_history", { p_org: member.organization_id, p_actor: member.user_id, p_batch: null })
       : Promise.resolve({ data: { batches: [], selected: null }, error: null }),
     loadLedgerContributionSyncStatus(),
+    loadLedgerExternalRecognitionSyncStatus(),
   ]);
   const { data, error } = ledgerResponse;
   if (error) throw new Error(error.message);
   if (historyResponse.error) throw new Error(historyResponse.error.message);
-  const keys = ["assessments", "allocations", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
+  const keys = ["assessments", "allocations", "external_recognitions", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
   if (!record(data) || keys.some((key) => !Array.isArray(data[key]))) throw new Error("수납·환급 원장 조회 결과를 확인해주세요.");
   const sourceById = new Map(syncStatus.sources.map((source) => [source.id, source]));
   return {
@@ -200,11 +221,13 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
       ...assessment, ...sourceById.get(assessment.id),
     })),
     allocations: data.allocations as CollectionAllocation[],
+    external_recognitions: data.external_recognitions as CollectionExternalRecognition[],
     refunds: data.refunds as CollectionRefund[],
     deposit_candidates: data.deposit_candidates as CollectionBankCandidate[],
     withdrawal_candidates: data.withdrawal_candidates as CollectionBankCandidate[],
     import_batches: importHistory(historyResponse.data).batches,
     ledger_sync: syncStatus,
+    ledger_external_recognition_sync: externalRecognitionSyncStatus,
     viewer: { user_id: member.user_id, permissions: [...member.permissions] },
   };
 }
