@@ -30,6 +30,14 @@ const externalRecognitionTabLabels = {
 } as const;
 type ExternalRecognitionTab = keyof typeof externalRecognitionTabLabels;
 type ExternalRecognitionSort = "asc" | "desc";
+const fixedReceiptMemberGroupLabels = {
+  all: "전체",
+  registered: "등기조합원",
+  withdrawn: "탈퇴·환불조합원",
+  prospective: "예비조합원",
+  unknown: "미확인",
+} as const;
+type FixedReceiptMemberGroup = keyof typeof fixedReceiptMemberGroupLabels;
 const koreanMemberNameCollator = new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" });
 const externalRecognitionCancelLabels: Record<string, string> = {
   duplicate_entry: "중복 입력",
@@ -61,6 +69,17 @@ function groupBy<T>(items: T[], keyOf: (item: T) => string) {
     else grouped.set(key, [item]);
   }
   return grouped;
+}
+function fixedReceiptMemberGroup(recognition: CollectionExternalRecognition): Exclude<FixedReceiptMemberGroup, "all"> {
+  const payload = recognition.source_payload;
+  const rawGroup = typeof payload.member_group === "string" ? payload.member_group : "";
+  return ["registered", "withdrawn", "prospective"].includes(rawGroup)
+    ? rawGroup as Exclude<FixedReceiptMemberGroup, "all" | "unknown">
+    : "unknown";
+}
+function fixedReceiptMemberStatus(recognition: CollectionExternalRecognition) {
+  const status = recognition.source_payload.member_status;
+  return typeof status === "string" && status.trim() ? status.trim() : null;
 }
 function externalRecognitionLinkage(recognition: CollectionExternalRecognition) {
   if (recognition.status === "CANCELLED") {
@@ -125,6 +144,7 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
   const [message, setMessage] = useState("");
   const [externalRecognitionTab, setExternalRecognitionTab] = useState<ExternalRecognitionTab>("general");
   const [externalRecognitionSort, setExternalRecognitionSort] = useState<ExternalRecognitionSort>("asc");
+  const [fixedReceiptGroup, setFixedReceiptGroup] = useState<FixedReceiptMemberGroup>("all");
   const permissions = workspace.viewer.permissions;
   const canDecide = permissions.some((permission) => ["ADMIN", "APPROVE", "CLOSE"].includes(permission));
   const canPay = permissions.some((permission) => ["ADMIN", "PAY"].includes(permission));
@@ -147,9 +167,22 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
   const memberLevelCount = activeExternalRecognitions.filter((recognition) => recognition.linkage_status === "MEMBER_LEVEL").length;
   const generalExternalRecognitions = workspace.external_recognitions.filter((recognition) => recognition.source_kind !== "dongil_fixed_certificate");
   const fixedExternalRecognitions = workspace.external_recognitions.filter((recognition) => recognition.source_kind === "dongil_fixed_certificate");
+  const fixedReceiptGroupSummary = (Object.keys(fixedReceiptMemberGroupLabels) as FixedReceiptMemberGroup[]).map((group) => {
+    const items = group === "all"
+      ? fixedExternalRecognitions
+      : fixedExternalRecognitions.filter((recognition) => fixedReceiptMemberGroup(recognition) === group);
+    return {
+      group,
+      count: items.length,
+      amount: items.reduce((sum, recognition) => sum + Number(recognition.claimed_amount || 0), 0),
+    };
+  });
+  const filteredFixedExternalRecognitions = fixedReceiptGroup === "all"
+    ? fixedExternalRecognitions
+    : fixedExternalRecognitions.filter((recognition) => fixedReceiptMemberGroup(recognition) === fixedReceiptGroup);
   const visibleExternalRecognitions = externalRecognitionTab === "general"
     ? generalExternalRecognitions
-    : externalRecognitionTab === "fixed" ? fixedExternalRecognitions : workspace.external_recognitions;
+    : externalRecognitionTab === "fixed" ? filteredFixedExternalRecognitions : workspace.external_recognitions;
   const sortedVisibleExternalRecognitions = [...visibleExternalRecognitions].sort((left, right) => {
     const leftName = left.member_name_snapshot?.trim() ?? "";
     const rightName = right.member_name_snapshot?.trim() ?? "";
@@ -221,9 +254,15 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
           {(Object.keys(externalRecognitionTabLabels) as ExternalRecognitionTab[]).map((tab) => {
             const count = tab === "general" ? generalExternalRecognitions.length : tab === "fixed" ? fixedExternalRecognitions.length : workspace.external_recognitions.length;
             const selected = externalRecognitionTab === tab;
-            return <button aria-controls="external-recognition-ledger-panel" aria-selected={selected} className={selected ? primary : secondary} key={tab} onClick={() => setExternalRecognitionTab(tab)} role="tab" type="button">{externalRecognitionTabLabels[tab]} · {count}건</button>;
+            return <button aria-controls="external-recognition-ledger-panel" aria-selected={selected} className={selected ? primary : secondary} key={tab} onClick={() => { setExternalRecognitionTab(tab); if (tab !== "fixed") setFixedReceiptGroup("all"); }} role="tab" type="button">{externalRecognitionTabLabels[tab]} · {count}건</button>;
           })}
         </div>
+        {externalRecognitionTab === "fixed" ? <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5" role="tablist" aria-label="정액 필증 현재 조합원 자격">
+          {fixedReceiptGroupSummary.map(({ group, count, amount }) => {
+            const selected = fixedReceiptGroup === group;
+            return <button aria-controls="external-recognition-ledger-panel" aria-selected={selected} className={`rounded-xl border p-3 text-left ${selected ? "border-emerald-700 bg-emerald-50 text-emerald-950" : "border-slate-200 bg-white text-slate-800"}`} key={group} onClick={() => setFixedReceiptGroup(group)} role="tab" type="button"><strong className="block">{fixedReceiptMemberGroupLabels[group]}</strong><span className="mt-1 block text-xs">{count}건 · {money(amount)}</span></button>;
+          })}
+        </div> : null}
         <section aria-label={`${externalRecognitionTabLabels[externalRecognitionTab]} 요약`} className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <article className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">현재 인정</p><strong className="mt-1 block">{visibleActiveExternalRecognitions.length}건 · {money(visibleRecognizedAmount)}</strong></article>
           <article className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">확정결손</p><strong className="mt-1 block">{money(visibleLossAmount)}</strong></article>
@@ -231,8 +270,8 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
           <article className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">취소·0원 보존</p><strong className="mt-1 block">{visibleCancelledCount}건</strong></article>
           <article className="rounded-xl bg-slate-50 p-3"><p className="text-xs text-slate-500">연결 검토</p><strong className="mt-1 block">{visibleReviewCount}건</strong></article>
         </section>
-        {externalRecognitionTab === "fixed" ? <p className="mt-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900">동일건설 정액 필증은 실제 입금이 아닌 비현금 외부 납입 인정이야. 특정 부과를 새로 만들지 않고 조합원 단위 인정과 확정결손으로 관리해.</p> : null}
-        <div className="mt-4 overflow-x-auto" id="external-recognition-ledger-panel" role="tabpanel"><table className="min-w-full text-left text-sm"><thead><tr className="border-b text-slate-500"><th aria-sort={externalRecognitionSort === "asc" ? "ascending" : "descending"} className="px-2 py-2"><button aria-label={`조합원 ${externalRecognitionSort === "asc" ? "내림차순" : "오름차순"}으로 전환`} className="inline-flex items-center gap-1 font-semibold" onClick={() => setExternalRecognitionSort((current) => current === "asc" ? "desc" : "asc")} type="button">조합원·원본 ID <span aria-hidden="true">{externalRecognitionSort === "asc" ? "▲" : "▼"}</span></button></th><th className="px-2 py-2">자료·회계 처리</th><th className="px-2 py-2 text-right">현재 인정액</th><th className="px-2 py-2">현재 상태</th><th className="px-2 py-2">ERP 연결</th><th className="px-2 py-2">변경 이력</th></tr></thead><tbody>{sortedVisibleExternalRecognitions.map((recognition) => { const cancellation = externalRecognitionCancelReason(recognition); const linked = recognition.linkage_status === "LINKED" || recognition.linkage_status === "MEMBER_LEVEL"; const linkage = externalRecognitionLinkage(recognition); const linkageClass = recognition.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : linked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"; return <tr className="border-b last:border-0" key={recognition.id}><td className="px-2 py-3"><strong>{recognition.member_name_snapshot ?? "조합원 연결 전"}</strong><p className="mt-1 text-xs text-slate-500">{recognition.recognized_on} · 원본 ID {recognition.source_root_recognition_id}</p></td><td className="px-2 py-3"><strong>{externalSourceLabels[recognition.source_kind]}</strong><p className={`mt-1 text-xs font-bold ${recognition.accounting_treatment === "confirmed_loss" ? "text-rose-700" : "text-emerald-700"}`}>{externalAccountingLabels[recognition.accounting_treatment]}</p><p className="mt-1 text-xs text-slate-500">실제 자금 {money(recognition.actual_fund_amount)} · 결손 {money(recognition.loss_amount)}</p></td><td className={`px-2 py-3 text-right font-bold ${recognition.status === "CANCELLED" ? "text-slate-400 line-through" : ""}`}>{money(recognition.recognized_amount)}</td><td className="px-2 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${recognition.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{recognition.status === "CANCELLED" ? "취소" : "유효"}</span><p className="mt-2 text-xs text-slate-600">{recognition.governance_status ?? recognition.status}</p>{cancellation ? <p className="mt-1 max-w-xs text-xs font-semibold text-rose-700">취소 사유: {cancellation}</p> : null}</td><td className="px-2 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${linkageClass}`}>{linkage.label}</span>{linkage.detail ? <p className="mt-1 max-w-xs text-xs text-slate-600">{linkage.detail}</p> : null}</td><td className="px-2 py-3"><details aria-label={`${recognition.member_name_snapshot ?? "조합원"} 변경 이력 정보`}><summary className="cursor-pointer font-semibold text-slate-700">상세정보</summary><div className="mt-2 min-w-52 space-y-1 text-xs text-slate-500"><p>Ledger 원본 ID {recognition.source_recognition_id}</p><p>루트 ID {recognition.source_root_recognition_id}</p><p>현재 ID {recognition.source_current_recognition_id}</p><p>동기화 순번 v{recognition.source_version}</p><p>반영 사유 {recognition.sync_reason ?? "동기화"}</p></div></details></td></tr>; })}</tbody></table>{!visibleExternalRecognitions.length ? <p className="py-8 text-center text-sm text-slate-500">이 구분에 해당하는 외부 납입 인정이 없어.</p> : null}</div>
+        {externalRecognitionTab === "fixed" ? <p className="mt-3 rounded-xl bg-blue-50 p-3 text-sm text-blue-900">동일건설 정액 필증은 실제 입금이 아닌 비현금 외부 납입 인정이야. 조합원 자격은 Ledger의 현재 자격을 조회용으로만 구분하며, 특정 부과를 새로 만들지 않고 조합원 단위 인정과 확정결손으로 관리해.</p> : null}
+        <div className="mt-4 overflow-x-auto" id="external-recognition-ledger-panel" role="tabpanel"><table className="min-w-full text-left text-sm"><thead><tr className="border-b text-slate-500"><th aria-sort={externalRecognitionSort === "asc" ? "ascending" : "descending"} className="px-2 py-2"><button aria-label={`조합원 ${externalRecognitionSort === "asc" ? "내림차순" : "오름차순"}으로 전환`} className="inline-flex items-center gap-1 font-semibold" onClick={() => setExternalRecognitionSort((current) => current === "asc" ? "desc" : "asc")} type="button">조합원·원본 ID <span aria-hidden="true">{externalRecognitionSort === "asc" ? "▲" : "▼"}</span></button></th><th className="px-2 py-2">자료·회계 처리</th><th className="px-2 py-2 text-right">현재 인정액</th><th className="px-2 py-2">현재 상태</th><th className="px-2 py-2">ERP 연결</th><th className="px-2 py-2">변경 이력</th></tr></thead><tbody>{sortedVisibleExternalRecognitions.map((recognition) => { const cancellation = externalRecognitionCancelReason(recognition); const linked = recognition.linkage_status === "LINKED" || recognition.linkage_status === "MEMBER_LEVEL"; const linkage = externalRecognitionLinkage(recognition); const linkageClass = recognition.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : linked ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"; const memberGroup = fixedReceiptMemberGroup(recognition); const memberStatus = fixedReceiptMemberStatus(recognition); return <tr className="border-b last:border-0" key={recognition.id}><td className="px-2 py-3"><strong>{recognition.member_name_snapshot ?? "조합원 연결 전"}</strong>{recognition.source_kind === "dongil_fixed_certificate" ? <p className="mt-1"><span className={`rounded-full px-2 py-1 text-xs font-bold ${memberGroup === "registered" ? "bg-emerald-50 text-emerald-700" : memberGroup === "withdrawn" ? "bg-rose-50 text-rose-700" : memberGroup === "prospective" ? "bg-amber-50 text-amber-800" : "bg-slate-100 text-slate-600"}`}>{fixedReceiptMemberGroupLabels[memberGroup]}</span>{memberStatus && memberStatus !== fixedReceiptMemberGroupLabels[memberGroup] ? <span className="ml-2 text-xs text-slate-500">{memberStatus}</span> : null}</p> : null}<p className="mt-1 text-xs text-slate-500">{recognition.recognized_on} · 원본 ID {recognition.source_root_recognition_id}</p></td><td className="px-2 py-3"><strong>{externalSourceLabels[recognition.source_kind]}</strong><p className={`mt-1 text-xs font-bold ${recognition.accounting_treatment === "confirmed_loss" ? "text-rose-700" : "text-emerald-700"}`}>{externalAccountingLabels[recognition.accounting_treatment]}</p><p className="mt-1 text-xs text-slate-500">실제 자금 {money(recognition.actual_fund_amount)} · 결손 {money(recognition.loss_amount)}</p></td><td className={`px-2 py-3 text-right font-bold ${recognition.status === "CANCELLED" ? "text-slate-400 line-through" : ""}`}>{money(recognition.recognized_amount)}</td><td className="px-2 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${recognition.status === "CANCELLED" ? "bg-slate-100 text-slate-600" : "bg-emerald-50 text-emerald-700"}`}>{recognition.status === "CANCELLED" ? "취소" : "유효"}</span><p className="mt-2 text-xs text-slate-600">{recognition.governance_status ?? recognition.status}</p>{cancellation ? <p className="mt-1 max-w-xs text-xs font-semibold text-rose-700">취소 사유: {cancellation}</p> : null}</td><td className="px-2 py-3"><span className={`rounded-full px-2 py-1 text-xs font-bold ${linkageClass}`}>{linkage.label}</span>{linkage.detail ? <p className="mt-1 max-w-xs text-xs text-slate-600">{linkage.detail}</p> : null}</td><td className="px-2 py-3"><details aria-label={`${recognition.member_name_snapshot ?? "조합원"} 변경 이력 정보`}><summary className="cursor-pointer font-semibold text-slate-700">상세정보</summary><div className="mt-2 min-w-52 space-y-1 text-xs text-slate-500"><p>Ledger 원본 ID {recognition.source_recognition_id}</p><p>루트 ID {recognition.source_root_recognition_id}</p><p>현재 ID {recognition.source_current_recognition_id}</p><p>동기화 순번 v{recognition.source_version}</p><p>반영 사유 {recognition.sync_reason ?? "동기화"}</p></div></details></td></tr>; })}</tbody></table>{!visibleExternalRecognitions.length ? <p className="py-8 text-center text-sm text-slate-500">이 구분에 해당하는 외부 납입 인정이 없어.</p> : null}</div>
       </details> : null}
       {canDecide ? <section className={card}>
         <h2 className="text-xl font-bold">부과 원본 등록</h2>

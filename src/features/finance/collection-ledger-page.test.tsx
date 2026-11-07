@@ -112,6 +112,31 @@ describe("collection ledger page", () => {
     expect(screen.getByText("일반 인정 조합원")).toBeInTheDocument();
     expect(screen.getByText("정액 필증 조합원")).toBeInTheDocument();
   });
+  it("filters fixed certificates by the current Ledger member classification without changing accounting", () => {
+    const fixed = { id: "fixed-registered", assessment_id: null, source_recognition_id: "agency_receipt:1", source_root_recognition_id: "agency_receipt:1", source_current_recognition_id: "agency_receipt:1", source_assessment_id: null, external_member_id: "peopleon-1", member_name_snapshot: "등기 대상", recognized_on: "2009-07-13", recognized_amount: 30_000_000, claimed_amount: 30_000_000, recognition_type: "동일건설 정액 필증", reason: "정액 필증", status: "ACTIVE", source_kind: "dongil_fixed_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 30_000_000, linkage_status: "MEMBER_LEVEL", linkage_issue_detail: null, governance_status: "legacy_reflected", sync_reason: "MEMBER_CLASSIFICATION_BACKFILL", source_version: 10, source_updated_at: "2026-11-07T00:00:00Z", source_payload: { member_group: "registered", member_status: "조합원" } } as const;
+    const recognitions = [
+      fixed,
+      { ...fixed, id: "fixed-withdrawn", source_recognition_id: "agency_receipt:2", source_root_recognition_id: "agency_receipt:2", source_current_recognition_id: "agency_receipt:2", member_name_snapshot: "환불 대상", source_payload: { member_group: "withdrawn", member_status: "환불조합원" } },
+      { ...fixed, id: "fixed-prospective", source_recognition_id: "agency_receipt:3", source_root_recognition_id: "agency_receipt:3", source_current_recognition_id: "agency_receipt:3", member_name_snapshot: "예비 대상", source_payload: { member_group: "prospective", member_status: "예비조합원" } },
+      { ...fixed, id: "fixed-unknown", source_recognition_id: "agency_receipt:4", source_root_recognition_id: "agency_receipt:4", source_current_recognition_id: "agency_receipt:4", member_name_snapshot: "미확인 대상", source_payload: {} },
+    ];
+
+    render(<CollectionLedgerPage workspace={{ ...workspace, external_recognitions: recognitions }} mode="collections" />);
+    fireEvent.click(screen.getByRole("tab", { name: "정액 필증 3천만원 · 4건" }));
+
+    expect(screen.getByRole("tab", { name: /전체.*4건.*120,000,000원/ })).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tab", { name: /등기조합원.*1건.*30,000,000원/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /탈퇴·환불조합원.*1건.*30,000,000원/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /예비조합원.*1건.*30,000,000원/ })).toBeInTheDocument();
+    expect(screen.getByRole("tab", { name: /미확인.*1건.*30,000,000원/ })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("tab", { name: /탈퇴·환불조합원.*1건/ }));
+    expect(screen.getByText("환불 대상")).toBeInTheDocument();
+    expect(screen.queryByText("등기 대상")).not.toBeInTheDocument();
+    const summary = screen.getByRole("region", { name: "정액 필증 3천만원 요약" });
+    expect(within(summary).getByText("1건 · 30,000,000원")).toBeInTheDocument();
+    expect(within(summary).getByText("실제 보관 자금").parentElement).toHaveTextContent("0원");
+  });
   it("shows every unresolved recognition and explains missing PeopleON identity instead of a missing assessment", () => {
     const fixed = { id: "fixed", assessment_id: null, source_recognition_id: "agency_receipt:137", source_root_recognition_id: "agency_receipt:137", source_current_recognition_id: "agency_receipt:137", source_assessment_id: null, external_member_id: null, member_name_snapshot: "박용수", recognized_on: "2009-07-13", recognized_amount: 30_000_000, claimed_amount: 30_000_000, recognition_type: "동일건설 정액 필증", reason: "정액 필증", status: "ACTIVE", source_kind: "dongil_fixed_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 30_000_000, linkage_status: "ASSESSMENT_MISSING", linkage_issue_detail: "ERP 부과 원본 연결 ID가 없습니다.", governance_status: "legacy_reflected", sync_reason: "INITIAL_AGENCY_BACKFILL", source_version: 1, source_updated_at: "2026-11-06T00:00:00Z", source_payload: {} } as const;
     const unresolved = Array.from({ length: 6 }, (_, index) => ({
