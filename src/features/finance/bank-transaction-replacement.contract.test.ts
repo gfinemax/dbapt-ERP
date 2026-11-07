@@ -28,6 +28,10 @@ const auditAuthActor = fs.readFileSync(
   path.join(root, "supabase/migrations/20261107110425_bank_replacement_audit_auth_actor.sql"),
   "utf8",
 );
+const replacementSourceLinks = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261107122500_restore_replacement_source_links.sql"),
+  "utf8",
+);
 
 describe("safe bank ledger replacement contract", () => {
   it("preserves the old ledger rows and records a single audited replacement batch", () => {
@@ -77,5 +81,12 @@ describe("safe bank ledger replacement contract", () => {
   it("normalizes replacement audit actors into the Auth identity column", () => {
     expect(auditAuthActor).toContain("'BANK_LEDGER_REPLACED'");
     expect(auditAuthActor).toContain("execute function audit.normalize_ledger_bank_auth_actor()");
+  });
+
+  it("keeps replacement rows eligible for later audited replacements", () => {
+    expect(replacementSourceLinks).toContain("insert into finance.ledger_bank_transaction_sources");
+    expect(replacementSourceLinks).toContain("t.replacement_batch_id=batch_id");
+    expect(replacementSourceLinks).toContain("s.source_transaction_id is null");
+    expect(replacementSourceLinks).toContain("과거 교체 이력에 이미 존재합니다");
   });
 });
