@@ -268,8 +268,8 @@ function compactAccountName(account: RegisteredBankAccount) {
 
 function bankAccountOptionLabel(account: RegisteredBankAccount) {
   const digits = account.accountNo.replace(/\D/g, "");
-  const suffix = digits.slice(-5);
-  return suffix ? `${account.accountName} (${suffix})` : account.accountName;
+  const prefix = digits.slice(0, 5);
+  return prefix ? `${account.accountName} (${prefix})` : account.accountName;
 }
 
 function signedAmount(amount: number, kind: "입금" | "출금" | null) {

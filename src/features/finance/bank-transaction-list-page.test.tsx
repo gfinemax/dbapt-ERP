@@ -66,10 +66,10 @@ describe("BankTransactionListPage", () => {
     expect(screen.queryByText("Ledger 계정과목 매핑 작업대")).not.toBeInTheDocument();
   });
 
-  it("shows only the last five account digits after each bank account name", () => {
+  it("shows only the first five account digits after each bank account name", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
 
-    expect(screen.getByRole("option", { name: "우리은행 운영계좌 (31006)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "우리은행 운영계좌 (10002)" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /1000200031006/ })).not.toBeInTheDocument();
   });
 
