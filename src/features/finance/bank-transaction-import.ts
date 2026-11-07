@@ -124,7 +124,7 @@ export function parseBankTransactionRows(input: ParseBankTransactionRowsInput): 
       return {
         bankAccountId: input.selectedBankAccountId,
         bankAccountName: input.selectedBankAccountName,
-        balanceAmount: columns.balanceAmount === undefined ? null : parseAmount(readCell(row, columns.balanceAmount)),
+        balanceAmount: columns.balanceAmount === undefined ? null : parseNullableAmount(readCell(row, columns.balanceAmount)),
         branchName,
         depositAmount,
         description,
@@ -161,9 +161,6 @@ export function validateBankTransactionReplacementHeaders(headers: string[]) {
   const missing = replacementRequiredColumns
     .filter(([key]) => columns[key] === undefined)
     .map(([, label]) => label);
-  if (!headers.some((header) => /거래.*(고유|번호)|transaction.*id/i.test(header))) {
-    missing.unshift("거래고유번호");
-  }
   return missing;
 }
 
@@ -173,17 +170,12 @@ export function validateBankTransactionReplacementRows(rows: ParsedBankTransacti
   rows.forEach((row, index) => {
     const sourceId = readSuppliedBankTransactionId(row.raw);
     const rowLabel = `${index + 1}행`;
-    if (!sourceId) errors.push(`${rowLabel}: 거래고유번호가 비어 있어.`);
-    else if (sourceIds.has(sourceId)) errors.push(`${rowLabel}: 거래고유번호 ${sourceId}가 중복됐어.`);
-    else sourceIds.add(sourceId);
+    if (sourceId && sourceIds.has(sourceId)) errors.push(`${rowLabel}: 거래고유번호 ${sourceId}가 중복됐어.`);
+    else if (sourceId) sourceIds.add(sourceId);
     if (!row.description.trim()) errors.push(`${rowLabel}: 적요가 비어 있어.`);
     if (!row.transactionKind || (row.depositAmount > 0) === (row.withdrawalAmount > 0)) {
       errors.push(`${rowLabel}: 입금과 출금 중 한 금액만 입력해야 해.`);
     }
-    const suppliedBalance = Object.entries(row.raw)
-      .find(([header]) => columnAliases.balanceAmount.includes(header))?.[1]?.trim();
-    if (!suppliedBalance) errors.push(`${rowLabel}: 거래후잔액이 비어 있어.`);
-    if (!row.uploadedMajorCategory.trim()) errors.push(`${rowLabel}: 항목구분이 비어 있어.`);
   });
   return errors;
 }
@@ -254,6 +246,11 @@ function parseAmount(value: string) {
   return Number.isFinite(parsed) ? parsed : 0;
 }
 
+function parseNullableAmount(value: string) {
+  if (!value.trim()) return null;
+  return parseAmount(value);
+}
+
 export function inferTransactionKind(value: string | null, depositAmount: number, withdrawalAmount: number): "입금" | "출금" | null {
   if (!Number.isFinite(depositAmount) || !Number.isFinite(withdrawalAmount)) return null;
   const inferred = depositAmount > 0 && withdrawalAmount === 0 ? "입금" : withdrawalAmount > 0 && depositAmount === 0 ? "출금" : null;
@@ -265,10 +262,16 @@ export function inferTransactionKind(value: string | null, depositAmount: number
 function combineDateTime(dateValue: string, timeValue: string, fallbackIndex: number) {
   const normalizedDate = dateValue.replace(/[.]/g, "/").replace(/-/g, "/").trim();
   const [year = "2026", month = "01", day = "01"] = normalizedDate.split("/").map((part) => part.padStart(2, "0"));
-  const normalizedTime = timeValue.trim() || `00:${String(fallbackIndex).padStart(2, "0")}`;
-  const [hour = "00", minute = "00"] = normalizedTime.split(":").map((part) => part.padStart(2, "0"));
+  const fallbackSeconds = fallbackIndex % 86_400;
+  const fallbackTime = [
+    Math.floor(fallbackSeconds / 3_600),
+    Math.floor((fallbackSeconds % 3_600) / 60),
+    fallbackSeconds % 60,
+  ].map((part) => String(part).padStart(2, "0")).join(":");
+  const normalizedTime = timeValue.trim() || fallbackTime;
+  const [hour = "00", minute = "00", second = "00"] = normalizedTime.split(":").map((part) => part.padStart(2, "0"));
 
-  return `${year}-${month}-${day}T${hour}:${minute}:00.000+09:00`;
+  return `${year}-${month}-${day}T${hour}:${minute}:${second}.000+09:00`;
 }
 
 function buildRawRecord(headers: string[], row: string[]) {

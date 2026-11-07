@@ -16,6 +16,18 @@ const supersededGuard = fs.readFileSync(
   path.join(root, "supabase/migrations/20261107102957_preserve_superseded_ledger_bank_sources.sql"),
   "utf8",
 );
+const incompleteMetadata = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261107105455_allow_incomplete_bank_statement_metadata.sql"),
+  "utf8",
+);
+const unambiguousItemAlias = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261107110218_fix_bank_replacement_item_alias.sql"),
+  "utf8",
+);
+const auditAuthActor = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261107110425_bank_replacement_audit_auth_actor.sql"),
+  "utf8",
+);
 
 describe("safe bank ledger replacement contract", () => {
   it("preserves the old ledger rows and records a single audited replacement batch", () => {
@@ -46,5 +58,24 @@ describe("safe bank ledger replacement contract", () => {
     expect(supersededGuard).toContain("if old.import_status='SUPERSEDED'");
     expect(supersededGuard).toContain("new.import_status:=old.import_status");
     expect(supersededGuard).toContain("before update on finance.ledger_bank_transaction_sources");
+  });
+
+  it("preserves unavailable balance and classification metadata as null", () => {
+    expect(incompleteMetadata).toContain("create or replace function finance.apply_ledger_bank_replacement");
+    expect(incompleteMetadata).toContain("(item->>'balance_amount')::numeric");
+    expect(incompleteMetadata).toContain("nullif(item->>'uploaded_major_category','')");
+    expect(incompleteMetadata).not.toContain("or item->>'balance_amount' is null");
+  });
+
+  it("keeps PL/pgSQL row variables distinct from INSERT SELECT aliases", () => {
+    expect(unambiguousItemAlias).toContain("row_item jsonb");
+    expect(unambiguousItemAlias).toContain("for row_item in select value");
+    expect(unambiguousItemAlias).toContain("as row_element(value)");
+    expect(unambiguousItemAlias).not.toMatch(/\bitem\s+jsonb/);
+  });
+
+  it("normalizes replacement audit actors into the Auth identity column", () => {
+    expect(auditAuthActor).toContain("'BANK_LEDGER_REPLACED'");
+    expect(auditAuthActor).toContain("execute function audit.normalize_ledger_bank_auth_actor()");
   });
 });

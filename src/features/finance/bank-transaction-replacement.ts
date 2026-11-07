@@ -100,13 +100,14 @@ export async function applyBankTransactionReplacement(input: {
   const validationErrors = validateBankTransactionReplacementRows(input.rows);
   if (validationErrors.length) throw new Error(validationErrors.slice(0, 3).join(" "));
 
-  const rows = input.rows.map((row) => {
+  const rows = input.rows.map((row, index) => {
     const mapped = mapBankTransactionToInsert(row);
-    const suppliedId = readSuppliedBankTransactionId(row.raw);
+    const suppliedId = readSuppliedBankTransactionId(row.raw) || `ERP-ROW-${String(index + 2).padStart(4, "0")}-${createHash("sha256").update(JSON.stringify(row.raw)).digest("hex").slice(0, 12)}`;
     const sourceTransactionId = `${row.bankAccountId}:${suppliedId}`;
+    const bankTransactionUid = `BANK:${row.bankAccountId}:${suppliedId}`;
     const payload = {
       balance_amount: mapped.balance_amount,
-      bank_transaction_uid: mapped.bank_transaction_uid,
+      bank_transaction_uid: bankTransactionUid,
       branch_name: mapped.branch_name,
       counterparty: mapped.counterparty,
       deposit_amount: mapped.deposit_amount,

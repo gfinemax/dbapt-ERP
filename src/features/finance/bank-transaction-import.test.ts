@@ -77,17 +77,17 @@ describe("bank transaction import", () => {
 });
 
 describe("audited bank ledger replacement", () => {
-  it("accepts 항목구분 and requires every provenance column", () => {
+  it("accepts 항목구분 and requires the source statement columns", () => {
     expect(validateBankTransactionReplacementHeaders([
       "거래고유번호", "거래일자", "거래시간", "거래구분", "적요",
       "입금액", "출금액", "거래후잔액", "항목구분",
     ])).toEqual([]);
     expect(validateBankTransactionReplacementHeaders(["거래일자", "적요", "입금액"])).toEqual([
-      "거래고유번호", "거래시간", "거래구분", "출금액", "거래후잔액", "항목구분",
+      "거래시간", "거래구분", "출금액", "거래후잔액", "항목구분",
     ]);
   });
 
-  it("blocks duplicate source IDs, ambiguous amounts, missing balances, and missing item groups", () => {
+  it("blocks duplicate source IDs and ambiguous amounts while preserving missing metadata", () => {
     const rows = parseBankTransactionRows({
       accountSubjects: registeredAccountSubjects,
       headers: ["거래고유번호", "거래일자", "거래시간", "거래구분", "적요", "입금액", "출금액", "거래후잔액", "항목구분"],
@@ -101,9 +101,28 @@ describe("audited bank ledger replacement", () => {
     expect(validateBankTransactionReplacementRows(rows)).toEqual(expect.arrayContaining([
       expect.stringContaining("거래고유번호 W-1가 중복"),
       expect.stringContaining("입금과 출금 중 한 금액만"),
-      expect.stringContaining("거래후잔액"),
-      expect.stringContaining("항목구분"),
     ]));
+    expect(rows[1]).toMatchObject({ balanceAmount: null, uploadedMajorCategory: "" });
+  });
+
+  it("keeps supplied seconds and creates valid fallback times beyond row 59", () => {
+    const rows = parseBankTransactionRows({
+      accountSubjects: registeredAccountSubjects,
+      headers: ["거래일자", "거래시간", "적요", "입금액", "출금액", "거래후잔액", "항목구분"],
+      rows: Array.from({ length: 62 }, (_, index) => [
+        "2026-09-08",
+        index === 0 ? "14:35:59" : "",
+        `거래 ${index + 1}`,
+        "100",
+        "0",
+        "",
+        "",
+      ]),
+      selectedBankAccountId: "bank",
+      selectedBankAccountName: "우리(10055)",
+    });
+    expect(rows[0].transactedAt).toContain("T14:35:59.000+09:00");
+    expect(rows[61].transactedAt).toContain("T00:01:01.000+09:00");
   });
 });
 
