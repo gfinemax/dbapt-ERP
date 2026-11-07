@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
 import type { ParsedBankTransactionRow } from "@/features/finance/bank-transaction-import";
+import { applyBankTransactionReplacement, loadBankTransactionReplacementPreview } from "@/features/finance/bank-transaction-replacement";
 import type { BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
 import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
@@ -31,6 +32,25 @@ export async function createBankTransactionsAction(rows: ParsedBankTransactionRo
     importedCount: result.transactions.length,
     transactions: result.transactions.map((transaction) => ({ id: transaction.id, isWithdrawal: inferTransactionKind(transaction.transaction_kind, Number(transaction.deposit_amount), Number(transaction.withdrawal_amount)) === "출금" })),
   };
+}
+
+export async function loadBankTransactionReplacementPreviewAction(bankAccountId: string) {
+  return loadBankTransactionReplacementPreview(bankAccountId);
+}
+
+export async function applyBankTransactionReplacementAction(input: {
+  bankAccountId: string;
+  expectedOldCount: number;
+  reason: string;
+  rows: ParsedBankTransactionRow[];
+}) {
+  const result = await applyBankTransactionReplacement(input);
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-transactions/upload");
+  revalidatePath("/finance/bank-account-links");
+  revalidatePath("/finance/bank-unmatched");
+  revalidatePath("/finance/reports");
+  return result;
 }
 
 export async function confirmBankTransactionSubjectsAction(assignments: BankTransactionSubjectAssignment[]) {

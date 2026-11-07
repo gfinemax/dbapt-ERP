@@ -4,7 +4,11 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionUploadPage } from "@/features/finance/bank-transaction-upload-page";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
-import { createBankTransactionsAction } from "../actions";
+import {
+  applyBankTransactionReplacementAction,
+  createBankTransactionsAction,
+  loadBankTransactionReplacementPreviewAction,
+} from "../actions";
 
 export default async function FinanceBankTransactionUploadRoute() {
   let actor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
@@ -19,13 +23,16 @@ export default async function FinanceBankTransactionUploadRoute() {
     listBankAccountsFromSupabase(actor.organization_id),
     listAccountSubjectsFromSupabase(actor.organization_id),
   ]) : [[], []];
+  const canReplaceLedgerBank = actor?.permissions.some((permission) => ["ADMIN", "CLOSE"].includes(permission)) ?? false;
 
   return (
     <BankTransactionUploadPage
       accessError={accessError}
       createBankTransactions={actor && hasSupabaseSecretConfig() ? createBankTransactionsAction : undefined}
+      applyBankTransactionReplacement={canReplaceLedgerBank && hasSupabaseSecretConfig() ? applyBankTransactionReplacementAction : undefined}
       initialAccountSubjects={accountSubjects ?? []}
       initialBankAccounts={bankAccounts ?? []}
+      loadBankTransactionReplacementPreview={canReplaceLedgerBank && hasSupabaseSecretConfig() ? loadBankTransactionReplacementPreviewAction : undefined}
       logoutAction={actor ? reimbursementLogout : undefined}
       userLabel={actor?.display_name}
     />

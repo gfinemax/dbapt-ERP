@@ -1,5 +1,5 @@
 import { getSupabaseServerClient } from "@/lib/supabase/server";
-import { inferTransactionKind } from "./bank-transaction-import";
+import { inferTransactionKind, readSuppliedBankTransactionId } from "./bank-transaction-import";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 export const bankTransactionRepositorySchema = "finance";
@@ -112,7 +112,7 @@ export function mapBankTransactionToInsert(row: ParsedBankTransactionRow): Supab
 }
 
 export function buildBankTransactionUid(row: ParsedBankTransactionRow) {
-  const supplied = Object.entries(row.raw).find(([key]) => /거래.*(고유|번호)|transaction.*id/i.test(key))?.[1]?.trim();
+  const supplied = readSuppliedBankTransactionId(row.raw);
   if (supplied) return `BANK:${row.bankAccountId}:${supplied}`;
   const amount = row.withdrawalAmount || row.depositAmount;
   return `FALLBACK:${row.bankAccountId}:${row.transactedAt}:${amount}:${row.description.trim().replace(/\s+/g, " ").toLocaleLowerCase("ko-KR")}`;

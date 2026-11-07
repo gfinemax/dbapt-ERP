@@ -5,6 +5,8 @@ import {
   detectBankTransactionColumns,
   parseBankTransactionRows,
   recommendAccountSubjectForTransaction,
+  validateBankTransactionReplacementHeaders,
+  validateBankTransactionReplacementRows,
 } from "./bank-transaction-import";
 
 describe("bank transaction import", () => {
@@ -71,6 +73,37 @@ describe("bank transaction import", () => {
       matchStatus: "자동추천",
       recommendedAccountSubjectName: "통신비",
     });
+  });
+});
+
+describe("audited bank ledger replacement", () => {
+  it("accepts 항목구분 and requires every provenance column", () => {
+    expect(validateBankTransactionReplacementHeaders([
+      "거래고유번호", "거래일자", "거래시간", "거래구분", "적요",
+      "입금액", "출금액", "거래후잔액", "항목구분",
+    ])).toEqual([]);
+    expect(validateBankTransactionReplacementHeaders(["거래일자", "적요", "입금액"])).toEqual([
+      "거래고유번호", "거래시간", "거래구분", "출금액", "거래후잔액", "항목구분",
+    ]);
+  });
+
+  it("blocks duplicate source IDs, ambiguous amounts, missing balances, and missing item groups", () => {
+    const rows = parseBankTransactionRows({
+      accountSubjects: registeredAccountSubjects,
+      headers: ["거래고유번호", "거래일자", "거래시간", "거래구분", "적요", "입금액", "출금액", "거래후잔액", "항목구분"],
+      rows: [
+        ["W-1", "2026/09/08", "10:00", "입금", "정상", "100", "0", "100", "조합원 분담금 입금"],
+        ["W-1", "2026/09/08", "10:01", "출금", "오류", "100", "100", "", ""],
+      ],
+      selectedBankAccountId: "bank",
+      selectedBankAccountName: "우리(10055)",
+    });
+    expect(validateBankTransactionReplacementRows(rows)).toEqual(expect.arrayContaining([
+      expect.stringContaining("거래고유번호 W-1가 중복"),
+      expect.stringContaining("입금과 출금 중 한 금액만"),
+      expect.stringContaining("거래후잔액"),
+      expect.stringContaining("항목구분"),
+    ]));
   });
 });
 

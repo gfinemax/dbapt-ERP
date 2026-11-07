@@ -2,7 +2,7 @@
 
 import { FileSpreadsheet, Upload } from "lucide-react";
 import Link from "next/link";
-import { type ChangeEvent, useMemo, useState } from "react";
+import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -11,7 +11,13 @@ import type { RegisteredBankAccount } from "@/features/basic-info/business-partn
 import { registeredBankAccounts } from "@/features/basic-info/business-partner-data";
 import { formatKrw } from "./finance-data";
 import { quickExpenseEntryHref } from "./quick-expense-entry";
-import { parseBankTransactionRows, type ParsedBankTransactionRow } from "./bank-transaction-import";
+import {
+  parseBankTransactionRows,
+  type ParsedBankTransactionRow,
+  validateBankTransactionReplacementHeaders,
+  validateBankTransactionReplacementRows,
+} from "./bank-transaction-import";
+import type { BankTransactionReplacementPreview, BankTransactionReplacementResult } from "./bank-transaction-replacement";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -22,6 +28,12 @@ const statusClasses: Record<string, string> = {
 
 type BankTransactionUploadPageProps = {
   accessError?: string;
+  applyBankTransactionReplacement?: (input: {
+    bankAccountId: string;
+    expectedOldCount: number;
+    reason: string;
+    rows: ParsedBankTransactionRow[];
+  }) => Promise<BankTransactionReplacementResult>;
   createBankTransactions?: (rows: ParsedBankTransactionRow[]) => Promise<{
     duplicateCount: number;
     importedCount: number;
@@ -29,15 +41,18 @@ type BankTransactionUploadPageProps = {
   }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
+  loadBankTransactionReplacementPreview?: (bankAccountId: string) => Promise<BankTransactionReplacementPreview>;
   logoutAction?: () => Promise<void>;
   userLabel?: string;
 };
 
 export function BankTransactionUploadPage({
   accessError,
+  applyBankTransactionReplacement,
   createBankTransactions,
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
+  loadBankTransactionReplacementPreview,
   logoutAction,
   userLabel = "로그인 필요",
 }: BankTransactionUploadPageProps = {}) {
@@ -51,6 +66,11 @@ export function BankTransactionUploadPage({
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [savedTransactionIds, setSavedTransactionIds] = useState<string[]>([]);
+  const [uploadMode, setUploadMode] = useState<"append" | "replace">("append");
+  const [replacementPreview, setReplacementPreview] = useState<BankTransactionReplacementPreview | null>(null);
+  const [replacementPreviewError, setReplacementPreviewError] = useState<string | null>(null);
+  const [replacementPreviewLoading, setReplacementPreviewLoading] = useState(false);
+  const [replacementReason, setReplacementReason] = useState("");
   const selectedAccount = useMemo(
     () => bankAccounts.find((account) => account.id === selectedAccountId) ?? bankAccounts[0],
     [bankAccounts, selectedAccountId],
@@ -64,6 +84,32 @@ export function BankTransactionUploadPage({
     }),
     [previewRows],
   );
+  const replacementValidationErrors = useMemo(
+    () => uploadMode === "replace" ? validateBankTransactionReplacementRows(previewRows) : [],
+    [previewRows, uploadMode],
+  );
+
+  useEffect(() => {
+    if (uploadMode !== "replace" || !selectedAccount || !loadBankTransactionReplacementPreview) {
+      return;
+    }
+    let active = true;
+    loadBankTransactionReplacementPreview(selectedAccount.id)
+      .then((preview) => {
+        if (active) setReplacementPreview(preview);
+      })
+      .catch((error: unknown) => {
+        if (!active) return;
+        setReplacementPreview(null);
+        setReplacementPreviewError(error instanceof Error ? error.message : "교체 대상 원장을 확인하지 못했어.");
+      })
+      .finally(() => {
+        if (active) setReplacementPreviewLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [loadBankTransactionReplacementPreview, selectedAccount, uploadMode]);
 
   if (accessError) {
     return (
@@ -100,6 +146,16 @@ export function BankTransactionUploadPage({
     const delimiter = lines[0].includes("\t") ? "\t" : ",";
     const headers = splitLine(lines[0], delimiter);
     const rows = lines.slice(1).map((line) => splitLine(line, delimiter));
+
+    if (uploadMode === "replace") {
+      const missingHeaders = validateBankTransactionReplacementHeaders(headers);
+      if (missingHeaders.length) {
+        setParseError(`교체 파일 필수 컬럼을 확인해줘: ${missingHeaders.join(", ")}`);
+        setPreviewRows([]);
+        setSaveMessage(null);
+        return;
+      }
+    }
 
     setParseError(null);
     setSaveError(null);
@@ -143,6 +199,24 @@ export function BankTransactionUploadPage({
     setSaveError(null);
 
     try {
+      if (uploadMode === "replace") {
+        if (!applyBankTransactionReplacement || !replacementPreview?.ready) {
+          throw new Error("교체 대상과 후속 업무 연결을 먼저 확인해줘.");
+        }
+        if (replacementValidationErrors.length) {
+          throw new Error(replacementValidationErrors.slice(0, 3).join(" "));
+        }
+        const result = await applyBankTransactionReplacement({
+          bankAccountId: selectedAccountId,
+          expectedOldCount: replacementPreview.target_count,
+          reason: replacementReason,
+          rows: previewRows,
+        });
+        setSavedTransactionIds([]);
+        setSaveMessage(`기존 오류 원장 ${result.replaced_count}건을 사용 제외하고 새 원장 ${result.replacement_count}건을 등록했어. 교체 배치 ${result.batch_id}`);
+        setReplacementPreview(null);
+        return;
+      }
       if (createBankTransactions) {
         const saved = await createBankTransactions(previewRows);
         setSavedTransactionIds(saved.transactions.filter((transaction) => transaction.isWithdrawal === true).map((transaction) => transaction.id));
@@ -151,8 +225,8 @@ export function BankTransactionUploadPage({
       }
 
       setSaveMessage(`${previewRows.length}건 저장 준비가 완료되었습니다. 전표 생성은 다음 단계에서 별도로 처리합니다.`);
-    } catch {
-      setSaveError("거래내역 저장 처리에 실패했습니다. 계좌와 Supabase 연결 상태를 확인해 주세요.");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "거래내역 저장 처리에 실패했습니다. 계좌와 Supabase 연결 상태를 확인해 주세요.");
     } finally {
       setIsSaving(false);
     }
@@ -198,7 +272,16 @@ export function BankTransactionUploadPage({
               <select
                 className="h-11 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm font-medium text-[var(--color-midnight-ink)]"
                 id="bank-upload-account"
-                onChange={(event) => setSelectedAccountId(event.target.value)}
+                onChange={(event) => {
+                  setSelectedAccountId(event.target.value);
+                  setPreviewRows([]);
+                  setSaveMessage(null);
+                  if (uploadMode === "replace") {
+                    setReplacementPreview(null);
+                    setReplacementPreviewError(null);
+                    setReplacementPreviewLoading(true);
+                  }
+                }}
                 value={selectedAccountId}
               >
                 {bankAccounts.map((account) => (
@@ -206,6 +289,28 @@ export function BankTransactionUploadPage({
                     {account.accountName}
                   </option>
                 ))}
+              </select>
+            </label>
+            <label className="mt-4 grid gap-2 text-sm font-semibold" htmlFor="bank-upload-mode">
+              업로드 방식
+              <select
+                className="h-11 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm font-medium text-[var(--color-midnight-ink)]"
+                id="bank-upload-mode"
+                onChange={(event) => {
+                  const nextMode = event.target.value === "replace" ? "replace" : "append";
+                  setUploadMode(nextMode);
+                  setPreviewRows([]);
+                  setParseError(null);
+                  setSaveError(null);
+                  setSaveMessage(null);
+                  setReplacementPreview(null);
+                  setReplacementPreviewError(null);
+                  setReplacementPreviewLoading(nextMode === "replace");
+                }}
+                value={uploadMode}
+              >
+                <option value="append">일반 거래 추가</option>
+                {applyBankTransactionReplacement ? <option value="replace">기존 Ledger 오류 원장 교체</option> : null}
               </select>
             </label>
             <div className="mt-4 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm leading-6 text-[var(--color-stone)]">
@@ -217,6 +322,23 @@ export function BankTransactionUploadPage({
             <p className="mt-4 text-sm leading-6 text-[var(--color-stone)]">
               파일에 있는 `계좌구분` 값은 참고값으로만 보고, 실제 저장 계좌는 여기서 선택한 은행통장을 기준으로 처리합니다.
             </p>
+            {uploadMode === "replace" ? (
+              <div className="mt-4 rounded-xl border border-[var(--color-butter-soft)] bg-[var(--color-butter-soft)] p-4 text-sm leading-6">
+                <p className="font-bold">기존 원장을 삭제하지 않고 교체 이력으로 보존해.</p>
+                {replacementPreviewLoading ? <p className="mt-2 text-[var(--color-stone)]">교체 대상 확인 중...</p> : null}
+                {replacementPreview ? (
+                  <div className="mt-2 text-[var(--color-stone)]">
+                    <p>교체 대상 {replacementPreview.target_count.toLocaleString("ko-KR")}건</p>
+                    <p>입금 {formatKrw(replacementPreview.deposit_total)} · 출금 {formatKrw(replacementPreview.withdrawal_total)}</p>
+                    <p>후속 업무 연결 {replacementPreview.blocker_count.toLocaleString("ko-KR")}건</p>
+                    <p className={`mt-2 font-bold ${replacementPreview.ready ? "text-[var(--color-green-ink)]" : "text-[var(--color-tangerine)]"}`}>
+                      {replacementPreview.ready ? "교체 준비 완료" : "교체 전 연결 검토 필요"}
+                    </p>
+                  </div>
+                ) : null}
+                {replacementPreviewError ? <p className="mt-2 font-semibold text-[var(--color-tangerine)]">{replacementPreviewError}</p> : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
@@ -229,8 +351,20 @@ export function BankTransactionUploadPage({
                 value={tableText}
               />
             </label>
-            <p className="mt-3 text-sm text-[var(--color-stone)]">엑셀 파일, 탭 구분, CSV 형식으로 입력할 수 있습니다. 헤더는 항, 목, 거래일자, 거래시간, 거래종류, 적요, 입금, 출금, 잔액, 거래점/취급점을 인식합니다.</p>
+            <p className="mt-3 text-sm text-[var(--color-stone)]">엑셀 파일, 탭 구분, CSV 형식으로 입력할 수 있습니다. 헤더는 항/항목구분, 목, 거래고유번호, 거래일자, 거래시간, 거래종류, 적요, 입금, 출금, 잔액, 거래점/취급점을 인식합니다.</p>
             {parseError ? <p className="mt-3 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]">{parseError}</p> : null}
+            {uploadMode === "replace" ? (
+              <label className="mt-4 grid gap-2 text-sm font-semibold" htmlFor="bank-replacement-reason">
+                원장 교체 사유
+                <textarea
+                  className="min-h-24 rounded-xl border border-[var(--color-soft-border)] bg-white p-3 text-sm leading-6"
+                  id="bank-replacement-reason"
+                  onChange={(event) => setReplacementReason(event.target.value)}
+                  placeholder="예: 기존 Ledger 이관 133건의 거래일·금액·적요 오류를 정정하기 위해 검증된 은행 원장으로 교체"
+                  value={replacementReason}
+                />
+              </label>
+            ) : null}
           </div>
         </section>
 
@@ -240,8 +374,17 @@ export function BankTransactionUploadPage({
               <h2 className="text-lg font-bold">업로드 미리보기</h2>
               <p className="mt-1 text-sm text-[var(--color-stone)]">자동 전표 생성 전 단계이며, 여기서는 계정과목 후보와 신규 후보만 확인합니다.</p>
             </div>
-            <Button className="rounded-full" disabled={previewRows.length === 0 || isSaving} onClick={handleSave} size="sm" type="button" variant="outline">
-              {isSaving ? "저장 중..." : createBankTransactions ? "거래내역 저장" : "저장 데이터 확인"}
+            <Button
+              className="rounded-full"
+              disabled={previewRows.length === 0 || isSaving || (uploadMode === "replace" && (
+                !replacementPreview?.ready || replacementReason.trim().length < 10 || replacementValidationErrors.length > 0
+              ))}
+              onClick={handleSave}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {isSaving ? "저장 중..." : uploadMode === "replace" ? "오류 원장 교체 확정" : createBankTransactions ? "거래내역 저장" : "저장 데이터 확인"}
             </Button>
           </div>
           {saveMessage ? <p className="mx-4 mt-4 rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">{saveMessage}</p> : null}

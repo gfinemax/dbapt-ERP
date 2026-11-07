@@ -112,6 +112,55 @@ describe("BankTransactionUploadPage", () => {
     expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
 
+  it("previews and applies an audited Ledger replacement only after all guards pass", async () => {
+    const loadReplacement = vi.fn().mockResolvedValue({
+      blocker_count: 0,
+      blockers: {},
+      deposit_total: 260302774,
+      first_transaction_at: "2020-05-02T00:00:00+09:00",
+      last_transaction_at: "2023-03-18T00:00:00+09:00",
+      ledger_account_ids: ["5"],
+      ready: true,
+      target_count: 133,
+      withdrawal_total: 161042710,
+    });
+    const applyReplacement = vi.fn().mockResolvedValue({
+      batch_id: "replacement-batch",
+      replaced_count: 133,
+      replacement_count: 1,
+      replacement_deposit_total: 100,
+      replacement_withdrawal_total: 0,
+    });
+    render(
+      <BankTransactionUploadPage
+        applyBankTransactionReplacement={applyReplacement}
+        initialBankAccounts={testBankAccounts}
+        loadBankTransactionReplacementPreview={loadReplacement}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("업로드 방식"), { target: { value: "replace" } });
+    expect(await screen.findByText("교체 대상 133건")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
+      target: {
+        value: "거래고유번호\t거래일자\t거래시간\t거래구분\t적요\t입금액\t출금액\t거래후잔액\t항목구분\nW-1\t2026/09/08\t10:00\t입금\t새 원장\t100\t0\t100\t조합원 분담금 입금",
+      },
+    });
+    fireEvent.change(screen.getByLabelText("원장 교체 사유"), {
+      target: { value: "기존 Ledger 이관 오류 원장을 검증된 은행 원장으로 교체" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "미리보기 생성" }));
+    fireEvent.click(screen.getByRole("button", { name: "오류 원장 교체 확정" }));
+
+    expect(applyReplacement).toHaveBeenCalledWith(expect.objectContaining({
+      bankAccountId: "bank-002",
+      expectedOldCount: 133,
+      reason: "기존 Ledger 이관 오류 원장을 검증된 은행 원장으로 교체",
+      rows: [expect.objectContaining({ description: "새 원장", uploadedMajorCategory: "조합원 분담금 입금" })],
+    }));
+    expect(await screen.findByText(/기존 오류 원장 133건을 사용 제외하고 새 원장 1건을 등록/)).toBeInTheDocument();
+  });
+
 });
 
 it("does not fabricate account subjects when the internal master is empty", async () => {
