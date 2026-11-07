@@ -93,6 +93,32 @@ function externalRecognitionLinkage(recognition: CollectionExternalRecognition) 
   };
 }
 
+function externalSyncIssueDetail(
+  sourceRecognitionId: string,
+  issueDetail: string,
+  recognitions: CollectionExternalRecognition[],
+) {
+  const recognition = recognitions.find((item) => [
+    item.source_recognition_id,
+    item.source_root_recognition_id,
+    item.source_current_recognition_id,
+  ].includes(sourceRecognitionId));
+  if (!recognition) return { memberName: null, detail: issueDetail };
+  if (!recognition.external_member_id) {
+    return {
+      memberName: recognition.member_name_snapshot,
+      detail: "PeopleON 고유 ID 연결이 필요해. 연결 후 같은 원본 ID로 자동 재동기화돼.",
+    };
+  }
+  if (recognition.source_kind === "dongil_fixed_certificate" && !recognition.source_assessment_id) {
+    return {
+      memberName: recognition.member_name_snapshot,
+      detail: "정액 필증은 별도 부과 없이 조합원 단위 외부납입 인정으로 반영돼.",
+    };
+  }
+  return { memberName: recognition.member_name_snapshot, detail: issueDetail };
+}
+
 export function CollectionLedgerPage({ workspace, mode }: { workspace: CollectionLedgerWorkspace; mode: "collections" | "refunds" }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -177,8 +203,8 @@ export function CollectionLedgerPage({ workspace, mode }: { workspace: Collectio
       {canDecide ? <section className={card} aria-label="ledger 분담금 연동">
         <div className="flex flex-wrap items-center justify-between gap-3"><div><h2 className="text-xl font-bold">Ledger 분담금 가져오기</h2><p className="mt-1 text-sm text-slate-600">Ledger의 부과 원본과 외부 납입 인정을 고유 ID로 동기화해. 외부 인정은 통장 입금으로 집계하지 않아.</p></div><div className="flex flex-wrap gap-2"><button className={secondary} disabled={pending} onClick={sync}>부과 변경 가져오기</button><button className={primary} disabled={pending} onClick={syncExternalRecognitions}>외부 납입 인정 가져오기</button></div></div>
         <p className="mt-3 text-xs text-slate-500">부과 커서 {ledgerSync.state?.last_cursor ?? 0} · 외부 인정 커서 {externalRecognitionSync.state?.last_cursor ?? 0} · 마지막 외부 인정 동기화 {externalRecognitionSync.state?.last_synced_at?.slice(0, 19).replace("T", " ") ?? "아직 안 함"} · 미해결 검토 {ledgerSync.unresolved_issues.length + externalRecognitionSync.unresolved_issues.length}건</p>
-        {ledgerSync.unresolved_issues.length ? <ul className="mt-3 space-y-1 text-sm text-amber-800">{ledgerSync.unresolved_issues.slice(0, 5).map((issue) => <li key={issue.id}>{issue.source_assessment_id} · {issue.issue_detail}</li>)}</ul> : null}
-        {externalRecognitionSync.unresolved_issues.length ? <ul className="mt-3 space-y-1 text-sm text-amber-800">{externalRecognitionSync.unresolved_issues.slice(0, 5).map((issue) => <li key={issue.id}>{issue.source_recognition_id} · {issue.issue_detail}</li>)}</ul> : null}
+        {ledgerSync.unresolved_issues.length ? <details className="mt-3" open><summary className="cursor-pointer text-sm font-semibold text-amber-900">부과 연결 검토 {ledgerSync.unresolved_issues.length}건</summary><ul className="mt-2 space-y-1 text-sm text-amber-800">{ledgerSync.unresolved_issues.map((issue) => <li key={issue.id}>{issue.source_assessment_id} · {issue.issue_detail}</li>)}</ul></details> : null}
+        {externalRecognitionSync.unresolved_issues.length ? <details className="mt-3" open><summary className="cursor-pointer text-sm font-semibold text-amber-900">외부납입 연결 검토 {externalRecognitionSync.unresolved_issues.length}건</summary><ul className="mt-2 space-y-1 text-sm text-amber-800">{externalRecognitionSync.unresolved_issues.map((issue) => { const display = externalSyncIssueDetail(issue.source_recognition_id, issue.issue_detail, workspace.external_recognitions); return <li key={issue.id}>{issue.source_recognition_id} · {display.memberName ? `${display.memberName} · ` : ""}{display.detail}</li>; })}</ul></details> : null}
       </section> : null}
       <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
         <article className={card}><p className="text-sm text-slate-500">부과 원본</p><strong className="mt-1 block text-2xl">{workspace.assessments.length}건</strong></article>

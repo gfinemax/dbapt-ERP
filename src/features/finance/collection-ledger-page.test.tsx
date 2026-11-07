@@ -112,4 +112,24 @@ describe("collection ledger page", () => {
     expect(screen.getByText("일반 인정 조합원")).toBeInTheDocument();
     expect(screen.getByText("정액 필증 조합원")).toBeInTheDocument();
   });
+  it("shows every unresolved recognition and explains missing PeopleON identity instead of a missing assessment", () => {
+    const fixed = { id: "fixed", assessment_id: null, source_recognition_id: "agency_receipt:137", source_root_recognition_id: "agency_receipt:137", source_current_recognition_id: "agency_receipt:137", source_assessment_id: null, external_member_id: null, member_name_snapshot: "박용수", recognized_on: "2009-07-13", recognized_amount: 30_000_000, claimed_amount: 30_000_000, recognition_type: "동일건설 정액 필증", reason: "정액 필증", status: "ACTIVE", source_kind: "dongil_fixed_certificate", accounting_treatment: "confirmed_loss", actual_fund_amount: 0, loss_amount: 30_000_000, linkage_status: "ASSESSMENT_MISSING", linkage_issue_detail: "ERP 부과 원본 연결 ID가 없습니다.", governance_status: "legacy_reflected", sync_reason: "INITIAL_AGENCY_BACKFILL", source_version: 1, source_updated_at: "2026-11-06T00:00:00Z", source_payload: {} } as const;
+    const unresolved = Array.from({ length: 6 }, (_, index) => ({
+      id: `issue-${index}`,
+      source_recognition_id: index === 5 ? "agency_receipt:137" : `source-${index}`,
+      source_version: 1,
+      issue_code: "UNKNOWN_ASSESSMENT" as const,
+      issue_detail: "Ledger 외부납입 원장에 ERP 부과 원본 연결 ID가 없습니다.",
+      created_at: "2026-11-07T00:00:00Z",
+    }));
+
+    render(<CollectionLedgerPage workspace={{
+      ...workspace,
+      external_recognitions: [fixed],
+      ledger_external_recognition_sync: { state: null, unresolved_issues: unresolved, source_count: 1 },
+    }} mode="collections" />);
+
+    expect(screen.getByText("외부납입 연결 검토 6건")).toBeInTheDocument();
+    expect(screen.getByText(/agency_receipt:137 · 박용수 · PeopleON 고유 ID 연결이 필요해/)).toBeInTheDocument();
+  });
 });
