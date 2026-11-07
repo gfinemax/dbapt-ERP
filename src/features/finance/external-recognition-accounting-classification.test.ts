@@ -50,4 +50,11 @@ describe("external recognition accounting classification", () => {
     expect(page).toContain('label: "취소 원본 보존"');
     expect(page).toContain("ERP 연결 대상에서는 제외해");
   });
+
+  it("supports ascending and descending Korean member sorting", () => {
+    expect(page).toContain('new Intl.Collator("ko-KR"');
+    expect(page).toContain('useState<ExternalRecognitionSort>("asc")');
+    expect(page).toContain('aria-sort={externalRecognitionSort === "asc" ? "ascending" : "descending"}');
+    expect(page).toContain("sortedVisibleExternalRecognitions.map");
+  });
 });
