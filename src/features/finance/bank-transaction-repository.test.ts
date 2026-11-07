@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBankTransactionUid, mapBankTransactionToInsert } from "./bank-transaction-repository";
+import { buildBankTransactionUid, mapBankTransactionToInsert, mapZeroAmountLedgerSource } from "./bank-transaction-repository";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 describe("bank transaction repository mappers", () => {
@@ -51,5 +51,28 @@ describe("bank transaction repository mappers", () => {
       withdrawal_amount: 3300000,
     });
     expect(buildBankTransactionUid({ ...row, raw: { 거래고유번호: "ABC-123" } })).toBe("BANK:00000000-0000-0000-0000-000000000001:ABC-123");
+  });
+
+  it("maps zero-amount Ledger rows for source audit without turning them into transactions", () => {
+    expect(mapZeroAmountLedgerSource({
+      issue_detail: "입금과 출금 중 정확히 한 금액만 0보다 커야 합니다.",
+      payload: {
+        deposit_amount: 0,
+        description: "예금결산이자",
+        transaction_date: "2022-12-17",
+        transaction_kind: "예금결산",
+        transaction_time: "10:46:59",
+        withdrawal_amount: 0,
+      },
+      source_transaction_id: "1303",
+    })).toEqual({
+      description: "예금결산이자",
+      issueDetail: "입금과 출금 중 정확히 한 금액만 0보다 커야 합니다.",
+      sourceTransactionId: "1303",
+      transactionDate: "2022-12-17",
+      transactionKind: "예금결산",
+      transactionTime: "10:46:59",
+    });
+    expect(mapZeroAmountLedgerSource({ payload: { deposit_amount: 1000, withdrawal_amount: 0 } })).toBeNull();
   });
 });

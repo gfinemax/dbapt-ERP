@@ -49,6 +49,20 @@ const statusCounts = {
   UNREVIEWED: 4115,
 };
 
+const ledgerSourceSummary = {
+  importedTransactionCount: 1258,
+  ledgerOriginalCount: 1303,
+  zeroAmountSourceCount: 45,
+  zeroAmountSources: [{
+    description: "예금결산이자",
+    issueDetail: "입금과 출금 중 정확히 한 금액만 0보다 커야 합니다.",
+    sourceTransactionId: "1303",
+    transactionDate: "2022-12-17",
+    transactionKind: "예금결산",
+    transactionTime: "10:46:59",
+  }],
+};
+
 describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
@@ -108,5 +122,24 @@ describe("BankTransactionListPage", () => {
 
     expect(screen.getByRole("link", { name: "검색: KT 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?accountId=bank-1&from=2026-09-01&status=RECOMMENDED");
     expect(screen.getByRole("link", { name: "추천 있음 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?q=KT&accountId=bank-1&from=2026-09-01");
+  });
+
+  it("separates zero-amount Ledger source rows from ERP accounting transactions", () => {
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{ bankAccountId: "bank-1" }}
+      ledgerSourceSummary={ledgerSourceSummary}
+      pageData={pageData}
+      statusCounts={statusCounts}
+    />);
+
+    const sourceAudit = screen.getByRole("region", { name: "Ledger 원본 대조" });
+    expect(within(sourceAudit).getByText("ERP 회계 거래").parentElement).toHaveTextContent("1,258건");
+    expect(within(sourceAudit).getByText("Ledger 원본").parentElement).toHaveTextContent("1,303건");
+    expect(within(sourceAudit).getByText("금액 없는 원본").parentElement).toHaveTextContent("45건회계 집계 제외");
+    expect(within(sourceAudit).getByText("금액 없는 원본 45건 보기")).toBeInTheDocument();
+    expect(within(sourceAudit).getByText("1303")).toBeInTheDocument();
+    expect(within(sourceAudit).getByText("2022-12-17 10:46:59")).toBeInTheDocument();
+    expect(within(sourceAudit).getByText("예금결산이자")).toBeInTheDocument();
   });
 });

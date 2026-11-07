@@ -56,6 +56,22 @@ export type BankTransactionListFilters = {
 
 export type BankTransactionStatusCounts = Record<BankTransactionClassificationStatus | "ALL", number>;
 
+export type LedgerBankZeroAmountSourceRow = {
+  description: string;
+  issueDetail: string;
+  sourceTransactionId: string;
+  transactionDate: string;
+  transactionKind: string;
+  transactionTime: string | null;
+};
+
+export type LedgerBankSourceSummary = {
+  importedTransactionCount: number;
+  ledgerOriginalCount: number;
+  zeroAmountSourceCount: number;
+  zeroAmountSources: LedgerBankZeroAmountSourceRow[];
+};
+
 export type BankTransactionListRow = BankTransactionReviewRow & {
   balanceAmount: number | null;
   branchName: string;
@@ -151,6 +167,104 @@ const bankTransactionClassificationStatuses: BankTransactionClassificationStatus
   "DEFERRED",
   "EXCLUDED",
 ];
+
+const ledgerBankSourceSystem = "dbapt-ledger";
+const currentLedgerSourceStatuses = ["PENDING_MAPPING", "IMPORTED", "INVALID", "CONFLICT"];
+const ledgerSourceReadBatchSize = 1_000;
+
+function recordValue(value: unknown): Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function sourceString(payload: Record<string, unknown>, key: string) {
+  const value = payload[key];
+  return typeof value === "string" && value.trim() ? value.trim() : "";
+}
+
+function sourceAmount(payload: Record<string, unknown>, key: string) {
+  const value = Number(payload[key] ?? 0);
+  return Number.isFinite(value) ? value : 0;
+}
+
+export function mapZeroAmountLedgerSource(row: Record<string, unknown>): LedgerBankZeroAmountSourceRow | null {
+  const payload = recordValue(row.payload);
+  if (sourceAmount(payload, "deposit_amount") !== 0 || sourceAmount(payload, "withdrawal_amount") !== 0) return null;
+  return {
+    description: sourceString(payload, "description") || "적요 없음",
+    issueDetail: typeof row.issue_detail === "string" && row.issue_detail.trim()
+      ? row.issue_detail.trim()
+      : "입출금액이 모두 0원이어서 회계 거래에서 제외됨",
+    sourceTransactionId: String(row.source_transaction_id ?? ""),
+    transactionDate: sourceString(payload, "transaction_date"),
+    transactionKind: sourceString(payload, "transaction_kind") || "구분 없음",
+    transactionTime: sourceString(payload, "transaction_time") || null,
+  };
+}
+
+export async function loadLedgerBankSourceSummary(
+  organizationId: string,
+  bankAccountId: string,
+): Promise<LedgerBankSourceSummary | undefined> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return undefined;
+  const { data: mappings, error: mappingError } = await supabase.schema(bankTransactionRepositorySchema)
+    .from("ledger_bank_account_mappings")
+    .select("ledger_account_id")
+    .eq("organization_id", organizationId)
+    .eq("source_system", ledgerBankSourceSystem)
+    .eq("bank_account_id", bankAccountId)
+    .eq("mapping_status", "CONFIRMED");
+  if (mappingError) throw new Error(`Ledger 계좌 연결 정보를 불러오지 못했어: ${mappingError.message}`);
+  const ledgerAccountIds = [...new Set((mappings ?? []).map((row) => String(row.ledger_account_id)).filter(Boolean))];
+  if (!ledgerAccountIds.length) return undefined;
+
+  const [currentCountResult, importedCountResult] = await Promise.all([
+    supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
+      .select("source_transaction_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("source_system", ledgerBankSourceSystem)
+      .in("ledger_account_id", ledgerAccountIds)
+      .in("import_status", currentLedgerSourceStatuses),
+    supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
+      .select("source_transaction_id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("source_system", ledgerBankSourceSystem)
+      .in("ledger_account_id", ledgerAccountIds)
+      .eq("import_status", "IMPORTED"),
+  ]);
+  if (currentCountResult.error) throw new Error(`Ledger 원본 건수를 불러오지 못했어: ${currentCountResult.error.message}`);
+  if (importedCountResult.error) throw new Error(`Ledger 반영 건수를 불러오지 못했어: ${importedCountResult.error.message}`);
+
+  const invalidRows: Record<string, unknown>[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
+      .select("source_transaction_id,payload,issue_detail")
+      .eq("organization_id", organizationId)
+      .eq("source_system", ledgerBankSourceSystem)
+      .in("ledger_account_id", ledgerAccountIds)
+      .eq("import_status", "INVALID")
+      .order("source_version", { ascending: true })
+      .range(offset, offset + ledgerSourceReadBatchSize - 1);
+    if (error) throw new Error(`Ledger 제외 원본을 불러오지 못했어: ${error.message}`);
+    const batch = (data ?? []) as Record<string, unknown>[];
+    invalidRows.push(...batch);
+    if (batch.length < ledgerSourceReadBatchSize) break;
+    offset += ledgerSourceReadBatchSize;
+  }
+
+  const zeroAmountSources = invalidRows
+    .map(mapZeroAmountLedgerSource)
+    .filter((row): row is LedgerBankZeroAmountSourceRow => row !== null)
+    .sort((left, right) => `${right.transactionDate}T${right.transactionTime ?? "00:00:00"}|${right.sourceTransactionId}`
+      .localeCompare(`${left.transactionDate}T${left.transactionTime ?? "00:00:00"}|${left.sourceTransactionId}`));
+  return {
+    importedTransactionCount: importedCountResult.count ?? 0,
+    ledgerOriginalCount: currentCountResult.count ?? 0,
+    zeroAmountSourceCount: zeroAmountSources.length,
+    zeroAmountSources,
+  };
+}
 
 function normalizedBankTransactionSearch(value?: string) {
   return value?.replace(/[%_*,()]/g, " ").replace(/\s+/g, " ").trim();

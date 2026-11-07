@@ -15,6 +15,7 @@ import type {
   BankTransactionListFilters,
   BankTransactionListPage as BankTransactionPageData,
   BankTransactionStatusCounts,
+  LedgerBankSourceSummary,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
 
@@ -22,6 +23,7 @@ type Props = {
   accessError?: string;
   bankAccounts: RegisteredBankAccount[];
   filters: BankTransactionListFilters;
+  ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
   selectedTransactionId?: string;
@@ -67,6 +69,7 @@ export function BankTransactionListPage({
   accessError,
   bankAccounts,
   filters,
+  ledgerSourceSummary,
   logoutAction,
   pageData,
   selectedTransactionId,
@@ -153,6 +156,55 @@ export function BankTransactionListPage({
               </div>
             ) : null}
           </FinanceToolbar>
+
+          {ledgerSourceSummary ? (
+            <section aria-label="Ledger 원본 대조" className="border-b border-[var(--color-soft-border)] bg-[var(--color-morning-tint)]/35 px-3 py-3">
+              <div className="grid gap-2 sm:grid-cols-3">
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">ERP 회계 거래</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.importedTransactionCount.toLocaleString("ko-KR")}건</p>
+                </div>
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">Ledger 원본</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.ledgerOriginalCount.toLocaleString("ko-KR")}건</p>
+                </div>
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">금액 없는 원본</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums text-[var(--color-mustard)]">{ledgerSourceSummary.zeroAmountSourceCount.toLocaleString("ko-KR")}건</p>
+                  <p className="text-xs text-[var(--color-stone)]">회계 집계 제외</p>
+                </div>
+              </div>
+              {ledgerSourceSummary.zeroAmountSources.length ? (
+                <details className="mt-2 rounded-lg border border-[var(--color-soft-border)] bg-white">
+                  <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[var(--color-midnight-ink)]">
+                    금액 없는 원본 {ledgerSourceSummary.zeroAmountSourceCount.toLocaleString("ko-KR")}건 보기
+                  </summary>
+                  <div className="max-h-72 overflow-auto border-t border-[var(--color-soft-border)]">
+                    <table className="w-full min-w-[720px] text-sm">
+                      <thead className="sticky top-0 bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
+                        <tr>
+                          <th className="px-3 py-2 text-center">Ledger 원본 ID</th>
+                          <th className="px-3 py-2 text-center">거래일시</th>
+                          <th className="px-3 py-2 text-center">원본 종류·적요</th>
+                          <th className="px-3 py-2 text-center">처리</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-[var(--color-soft-border)]">
+                        {ledgerSourceSummary.zeroAmountSources.map((row) => (
+                          <tr key={row.sourceTransactionId}>
+                            <td className="px-3 py-2 text-center font-semibold tabular-nums">{row.sourceTransactionId}</td>
+                            <td className="whitespace-nowrap px-3 py-2 text-center">{sourceTransactionDateTime(row.transactionDate, row.transactionTime)}</td>
+                            <td className="px-3 py-2 text-center"><strong>{row.transactionKind}</strong><span className="mx-1 text-[var(--color-fog)]">·</span>{row.description}</td>
+                            <td className="px-3 py-2 text-center"><span className="rounded-full bg-[var(--color-butter-soft)] px-2 py-0.5 text-xs font-semibold text-[var(--color-mustard)]" title={row.issueDetail}>회계 집계 제외</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+              ) : null}
+            </section>
+          ) : null}
 
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] bg-white px-3 py-2">
             <p className="text-sm font-semibold">
@@ -279,4 +331,9 @@ function signedAmount(amount: number, kind: "입금" | "출금" | null) {
 
 function formatDate(value: string) {
   return value.slice(0, 16).replace("T", " ");
+}
+
+function sourceTransactionDateTime(date: string, time: string | null) {
+  if (!date) return "일시 미확인";
+  return time ? `${date} ${time}` : date;
 }

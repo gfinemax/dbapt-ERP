@@ -3,6 +3,7 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
 import {
   countBankTransactionsByStatus,
+  loadLedgerBankSourceSummary,
   listBankTransactions,
   type BankTransactionClassificationStatus,
   type BankTransactionStatusCounts,
@@ -44,7 +45,7 @@ export default async function FinanceBankTransactionsRoute({
   }
 
   const emptyStatusCounts: BankTransactionStatusCounts = { ALL: 0, CONFIRMED: 0, DEFERRED: 0, EXCLUDED: 0, RECOMMENDED: 0, UNREVIEWED: 0 };
-  const [bankAccounts, pageData, statusCounts] = actor ? await Promise.all([
+  const [bankAccounts, pageData, statusCounts, ledgerSourceSummary] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
     listBankTransactions(actor.organization_id, page, filters),
     countBankTransactionsByStatus(actor.organization_id, {
@@ -53,7 +54,10 @@ export default async function FinanceBankTransactionsRoute({
       dateTo: filters.dateTo,
       query: filters.query,
     }).catch(() => emptyStatusCounts),
-  ]) : [[], { page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts];
+    filters.bankAccountId
+      ? loadLedgerBankSourceSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]) : [[], { page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined];
 
   return (
     <BankTransactionListPage
@@ -61,6 +65,7 @@ export default async function FinanceBankTransactionsRoute({
       bankAccounts={bankAccounts ?? []}
       filters={filters}
       logoutAction={actor ? reimbursementLogout : undefined}
+      ledgerSourceSummary={ledgerSourceSummary}
       pageData={pageData}
       selectedTransactionId={query.transactionId?.trim()}
       statusCounts={statusCounts}
