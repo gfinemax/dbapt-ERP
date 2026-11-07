@@ -5,7 +5,6 @@ import { createHash } from "node:crypto";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import { verifyLedgerIntegrationRequest } from "./ledger-bank-transaction-export-signature";
 
-const defaultOrganizationName = "대방동 지역주택조합";
 const maximumPageSize = 500;
 
 type ExportEventRow = {
@@ -29,13 +28,12 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
-async function resolveOrganizationId() {
-  const organizationName = process.env.LEDGER_EXPORT_ORGANIZATION_NAME?.trim() || defaultOrganizationName;
-  const { data, error } = await database().schema("core").from("organizations")
-    .select("id").eq("name", organizationName).eq("status", "active").limit(2);
-  if (error) throw new Error(`ERP 조합 정보를 확인하지 못했어: ${error.message}`);
-  if (!data || data.length !== 1) throw new Error("Ledger로 내보낼 ERP 조합을 하나로 확인하지 못했어.");
-  return String(data[0].id);
+function resolveOrganizationId() {
+  const organizationId = process.env.LEDGER_EXPORT_ORGANIZATION_ID?.trim() ?? "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(organizationId)) {
+    throw new Error("Ledger로 내보낼 ERP 조합 ID 환경설정이 필요해.");
+  }
+  return organizationId.toLowerCase();
 }
 
 async function consumeNonce(nonce: string, requestTimestamp: number) {
@@ -68,7 +66,7 @@ export async function exportBankTransactionsForLedger(request: Request) {
   if (!Number.isSafeInteger(afterCursor) || afterCursor < 0) throw new Error("after_cursor를 확인해줘.");
   if (!Number.isSafeInteger(requestedLimit) || requestedLimit < 1) throw new Error("limit을 확인해줘.");
   const pageSize = Math.min(requestedLimit, maximumPageSize);
-  const organizationId = await resolveOrganizationId();
+  const organizationId = resolveOrganizationId();
   const { data, error } = await database().schema("finance")
     .from("ledger_bank_transaction_export_outbox")
     .select("event_id,event_type,payload")

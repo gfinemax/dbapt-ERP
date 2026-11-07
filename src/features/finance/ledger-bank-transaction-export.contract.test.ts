@@ -18,6 +18,8 @@ describe("ERP bank transaction export contract", () => {
   it("requires a signed request and returns stable source identifiers", () => {
     expect(route).toContain("exportBankTransactionsForLedger");
     expect(repository).toContain("verifyLedgerIntegrationRequest");
+    expect(repository).toContain("LEDGER_EXPORT_ORGANIZATION_ID");
+    expect(repository).not.toContain('.schema("core")');
     expect(repository).toContain('source_authority: "dbapt-erp"');
     expect(repository).toContain("payload_hash");
     expect(repository).toContain("next_cursor");
