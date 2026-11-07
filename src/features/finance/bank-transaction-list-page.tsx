@@ -118,7 +118,7 @@ export function BankTransactionListPage({
                 은행통장
                 <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.bankAccountId ?? ""} name="accountId">
                   <option value="">전체 계좌</option>
-                  {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountName}</option>)}
+                  {bankAccounts.map((account) => <option key={account.id} value={account.id}>{bankAccountOptionLabel(account)}</option>)}
                 </select>
               </label>
               <fieldset className="grid grid-cols-[1fr_auto_1fr] items-end gap-1">
@@ -242,7 +242,7 @@ type FilterChip = {
 function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?: RegisteredBankAccount): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.query) chips.push({ key: "query", label: `검색: ${filters.query}` });
-  if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount?.accountName ?? "선택 계좌" });
+  if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount ? bankAccountOptionLabel(selectedAccount) : "선택 계좌" });
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
   if (filters.classificationStatus) chips.push({ key: "classificationStatus", label: classificationLabels[filters.classificationStatus] });
@@ -264,6 +264,12 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
 function compactAccountName(account: RegisteredBankAccount) {
   const digits = account.accountNo.replace(/\D/g, "");
   return `${account.bankName} · ${digits.slice(-4) || account.accountNo}`;
+}
+
+function bankAccountOptionLabel(account: RegisteredBankAccount) {
+  const digits = account.accountNo.replace(/\D/g, "");
+  const suffix = digits.slice(-5);
+  return suffix ? `${account.accountName} (${suffix})` : account.accountName;
 }
 
 function signedAmount(amount: number, kind: "입금" | "출금" | null) {

@@ -7,7 +7,7 @@ vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadges
 
 const bankAccounts = [{
   accountName: "우리은행 운영계좌",
-  accountNo: "***1006",
+  accountNo: "1000200031006",
   accountType: "운영계좌" as const,
   bankName: "우리은행",
   createdAt: "2026-01-01",
@@ -64,6 +64,13 @@ describe("BankTransactionListPage", () => {
     expect(within(screen.getByRole("navigation", { name: "분류 상태 빠른 필터" })).getByRole("link", { name: /미확인.*4,115/ })).toHaveAttribute("href", "/finance/bank-transactions?status=UNREVIEWED");
     expect(screen.queryByText("기존 Ledger 통장거래 가져오기")).not.toBeInTheDocument();
     expect(screen.queryByText("Ledger 계정과목 매핑 작업대")).not.toBeInTheDocument();
+  });
+
+  it("shows only the last five account digits after each bank account name", () => {
+    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
+
+    expect(screen.getByRole("option", { name: "우리은행 운영계좌 (31006)" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /1000200031006/ })).not.toBeInTheDocument();
   });
 
   it("preserves search, account, date and status filters across pagination", () => {
