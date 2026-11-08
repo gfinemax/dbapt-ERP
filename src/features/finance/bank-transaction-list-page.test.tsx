@@ -186,6 +186,7 @@ describe("BankTransactionListPage", () => {
     />);
 
     const totals = screen.getByRole("region", { name: "검색 결과 금액 합계" });
+    expect(totals).toHaveTextContent("조회 거래 총액122,000,000원입금·출금·비현금 인정의 절대금액 합계");
     expect(totals).toHaveTextContent("입금 합계87,000,000원실제 조합계좌 입금");
     expect(totals).toHaveTextContent("출금 합계5,000,000원실제 조합계좌 출금");
     expect(totals).toHaveTextContent("외부납입 인정 합계30,000,000원1건 · 통장 입금 아님");

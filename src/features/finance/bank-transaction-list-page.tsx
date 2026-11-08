@@ -550,8 +550,17 @@ function SummaryCard({ label, note, value }: { label: string; note: string; valu
 
 function FilteredSummaryCards({ summary }: { summary: FilteredFinancialActivitySummary }) {
   const netCashChange = summary.bankDepositTotal - summary.bankWithdrawalTotal;
+  const transactionTotal = Math.abs(summary.bankDepositTotal)
+    + Math.abs(summary.bankWithdrawalTotal)
+    + Math.abs(summary.externalRecognitionTotal);
   return (
-    <section aria-label="검색 결과 금액 합계" className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <section aria-label="검색 결과 금액 합계" className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+      <SearchTotalCard
+        emphasized
+        label="조회 거래 총액"
+        note="입금·출금·비현금 인정의 절대금액 합계"
+        value={formatKrw(transactionTotal)}
+      />
       <SearchTotalCard label="입금 합계" note="실제 조합계좌 입금" value={formatKrw(summary.bankDepositTotal)} />
       <SearchTotalCard label="출금 합계" note="실제 조합계좌 출금" value={formatKrw(summary.bankWithdrawalTotal)} />
       <SearchTotalCard
@@ -564,9 +573,9 @@ function FilteredSummaryCards({ summary }: { summary: FilteredFinancialActivityS
   );
 }
 
-function SearchTotalCard({ label, note, value }: { label: string; note: string; value: string }) {
+function SearchTotalCard({ emphasized = false, label, note, value }: { emphasized?: boolean; label: string; note: string; value: string }) {
   return (
-    <div className="rounded-lg bg-[var(--color-cloud-veil)] px-3 py-2 text-center">
+    <div className={`rounded-lg px-3 py-2 text-center ${emphasized ? "border border-[var(--color-green-ink)] bg-[var(--color-sprout)]" : "bg-[var(--color-cloud-veil)]"}`}>
       <p className="text-xs font-semibold text-[var(--color-stone)]">{label}</p>
       <p className="mt-0.5 font-black tabular-nums text-[var(--color-midnight-ink)]">{value}</p>
       <p className="text-[11px] text-[var(--color-stone)]">{note}</p>
