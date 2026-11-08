@@ -79,6 +79,38 @@ describe("BankTransactionUploadPage", () => {
     expect(screen.getByLabelText("CSV/TSV/엑셀 파일 선택")).toHaveAttribute("accept", ".csv,.tsv,.txt,.xlsx,.xls");
   });
 
+  it("shows the audited sheet enrichment separately from the current empty preview", () => {
+    render(
+      <BankTransactionUploadPage
+        initialBankAccounts={testBankAccounts}
+        initialSheetImportHistory={[{
+          actorLabel: "파인맥스",
+          bankAccountId: "bank-001",
+          batchId: "batch-76",
+          currentTransactionCount: 76,
+          importedAt: "2026-11-08T01:00:38.67399+00:00",
+          insertedCount: 19,
+          matchedCount: 57,
+          sourceDepositTotal: 490965191,
+          sourceDocumentId: "sheet-document-id",
+          sourceRowCount: 76,
+          sourceSheet: "시트1",
+          sourceWithdrawalTotal: 489147570,
+        }]}
+      />,
+    );
+
+    const history = screen.getByRole("region", { name: "최근 업로드·증분 반영 이력" });
+    expect(within(history).getByText("국민은행 신탁계좌 · KB국민은행 (12345)")).toBeInTheDocument();
+    expect(within(history).getByText("담당자 파인맥스 · 원본 시트1")).toBeInTheDocument();
+    expect(within(history).getAllByText("76건")).toHaveLength(2);
+    expect(within(history).getByText("57건")).toBeInTheDocument();
+    expect(within(history).getByText("19건")).toBeInTheDocument();
+    expect(within(history).getByRole("link", { name: "ERP 거래 보기" })).toHaveAttribute("href", "/finance/bank-transactions?accountId=bank-001");
+    expect(within(history).getByRole("link", { name: "원본 시트" })).toHaveAttribute("href", "https://docs.google.com/spreadsheets/d/sheet-document-id/edit");
+    expect(screen.getByText("미리보기 거래").parentElement).toHaveTextContent("0건");
+  });
+
   it("links bank transaction upload from the finance bank-card detail menu", () => {
     render(<BankTransactionUploadPage />);
 

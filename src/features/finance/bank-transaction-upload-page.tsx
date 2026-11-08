@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, Upload } from "lucide-react";
+import { FileSpreadsheet, History, Upload } from "lucide-react";
 import Link from "next/link";
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 
@@ -18,6 +18,7 @@ import {
   validateBankTransactionReplacementRows,
 } from "./bank-transaction-import";
 import type { BankTransactionReplacementPreview, BankTransactionReplacementResult } from "./bank-transaction-replacement";
+import type { BankTransactionSheetImportHistoryEntry } from "./bank-transaction-sheet-import-history";
 
 const statusClasses: Record<string, string> = {
   미분류: "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
@@ -41,6 +42,7 @@ type BankTransactionUploadPageProps = {
   }>;
   initialAccountSubjects?: RegisteredAccountSubject[];
   initialBankAccounts?: RegisteredBankAccount[];
+  initialSheetImportHistory?: BankTransactionSheetImportHistoryEntry[];
   loadBankTransactionReplacementPreview?: (bankAccountId: string) => Promise<BankTransactionReplacementPreview>;
   logoutAction?: () => Promise<void>;
   userLabel?: string;
@@ -52,6 +54,7 @@ export function BankTransactionUploadPage({
   createBankTransactions,
   initialAccountSubjects = [],
   initialBankAccounts = registeredBankAccounts,
+  initialSheetImportHistory = [],
   loadBankTransactionReplacementPreview,
   logoutAction,
   userLabel = "로그인 필요",
@@ -265,6 +268,8 @@ export function BankTransactionUploadPage({
           <SummaryTile label="신규 후보" value={`${summary.newCandidates}건`} />
         </section>
 
+        <SheetImportHistory history={initialSheetImportHistory} bankAccounts={bankAccounts} />
+
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
             <label className="grid gap-2 text-sm font-semibold" htmlFor="bank-upload-account">
@@ -449,6 +454,102 @@ function splitLine(line: string, delimiter: string) {
 
 function formatDisplayDate(value: string) {
   return value.replace("T", " ").replace(":00.000+09:00", "");
+}
+
+function SheetImportHistory({
+  bankAccounts,
+  history,
+}: {
+  bankAccounts: RegisteredBankAccount[];
+  history: BankTransactionSheetImportHistoryEntry[];
+}) {
+  const accounts = new Map(bankAccounts.map((account) => [account.id, account]));
+  return (
+    <section aria-label="최근 업로드·증분 반영 이력" className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-[var(--color-soft-border)] p-5">
+        <div>
+          <div className="flex items-center gap-2">
+            <History className="size-5 text-[var(--color-deep-cobalt)]" />
+            <h2 className="text-lg font-bold">최근 업로드·증분 반영 이력</h2>
+          </div>
+          <p className="mt-1 text-sm leading-6 text-[var(--color-stone)]">
+            상단의 현재 미리보기 수치와 별개로, ERP 원장에 이미 반영된 Google 시트 작업을 보여줘.
+          </p>
+        </div>
+        <span className="rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-bold text-[var(--color-deep-cobalt)]">
+          읽기 전용 감사 이력
+        </span>
+      </div>
+
+      {!history.length ? (
+        <p className="px-5 py-8 text-center text-sm text-[var(--color-stone)]">표시할 시트 증분 반영 이력이 없어.</p>
+      ) : (
+        <div className="divide-y divide-[var(--color-soft-border)]">
+          {history.map((entry) => {
+            const account = accounts.get(entry.bankAccountId);
+            return (
+              <article className="grid gap-4 p-5 xl:grid-cols-[minmax(240px,1.25fr)_repeat(4,minmax(110px,.65fr))_minmax(210px,1fr)] xl:items-center" key={entry.batchId}>
+                <div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[var(--color-sprout)] px-2.5 py-1 text-xs font-bold text-[var(--color-green-ink)]">시트 증분 반영</span>
+                    <span className="text-xs font-semibold text-[var(--color-stone)]">{formatHistoryDate(entry.importedAt)}</span>
+                  </div>
+                  <p className="mt-2 font-bold text-[var(--color-midnight-ink)]">{historyAccountLabel(account, entry.bankAccountId)}</p>
+                  <p className="mt-1 text-xs text-[var(--color-stone)]">담당자 {entry.actorLabel} · 원본 {entry.sourceSheet}</p>
+                </div>
+                <HistoryMetric label="원본 행" value={`${entry.sourceRowCount.toLocaleString("ko-KR")}건`} />
+                <HistoryMetric label="기존 연결" value={`${entry.matchedCount.toLocaleString("ko-KR")}건`} />
+                <HistoryMetric label="신규 추가" value={`${entry.insertedCount.toLocaleString("ko-KR")}건`} />
+                <HistoryMetric label="현재 ERP 거래" value={`${entry.currentTransactionCount.toLocaleString("ko-KR")}건`} strong />
+                <div className="flex flex-col gap-2 text-sm">
+                  <p className="text-xs leading-5 text-[var(--color-stone)]">
+                    입금 {formatKrw(entry.sourceDepositTotal)} · 출금 {formatKrw(entry.sourceWithdrawalTotal)}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-3 py-2 text-xs font-bold text-white" href={`/finance/bank-transactions?accountId=${encodeURIComponent(entry.bankAccountId)}`}>
+                      ERP 거래 보기
+                    </Link>
+                    <a className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-xs font-bold" href={`https://docs.google.com/spreadsheets/d/${encodeURIComponent(entry.sourceDocumentId)}/edit`} rel="noreferrer" target="_blank">
+                      원본 시트
+                    </a>
+                  </div>
+                </div>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function HistoryMetric({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {
+  return (
+    <div className="rounded-xl bg-[var(--color-cloud-veil)] px-3 py-3 text-center">
+      <p className="text-xs font-semibold text-[var(--color-stone)]">{label}</p>
+      <p className={`mt-1 tabular-nums ${strong ? "text-lg font-black text-[var(--color-deep-cobalt)]" : "font-bold"}`}>{value}</p>
+    </div>
+  );
+}
+
+function historyAccountLabel(account: RegisteredBankAccount | undefined, fallbackId: string) {
+  if (!account) return `계좌 ${fallbackId}`;
+  const digits = account.accountNo.replace(/\D/g, "");
+  return `${account.accountName} · ${account.bankName}${digits ? ` (${digits.slice(0, 5)})` : ""}`;
+}
+
+function formatHistoryDate(value: string) {
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    day: "2-digit",
+    hour: "2-digit",
+    hour12: false,
+    minute: "2-digit",
+    month: "2-digit",
+    timeZone: "Asia/Seoul",
+    year: "numeric",
+  }).formatToParts(new Date(value));
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day} ${byType.hour}:${byType.minute}`;
 }
 
 function Badge({ value }: { value: string }) {

@@ -1,0 +1,109 @@
+import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
+import { getSupabaseServerClient } from "@/lib/supabase/server";
+
+export type BankTransactionSheetImportHistoryEntry = {
+  actorLabel: string;
+  bankAccountId: string;
+  batchId: string;
+  currentTransactionCount: number;
+  importedAt: string;
+  insertedCount: number;
+  matchedCount: number;
+  sourceDepositTotal: number;
+  sourceDocumentId: string;
+  sourceRowCount: number;
+  sourceSheet: string;
+  sourceWithdrawalTotal: number;
+};
+
+type SheetImportBatchRow = {
+  bank_account_id: string;
+  id: string;
+  imported_at: string;
+  imported_by: string;
+  inserted_count: number | string;
+  matched_count: number | string;
+  source_deposit_total: number | string;
+  source_document_id: string;
+  source_row_count: number | string;
+  source_sheet: string;
+  source_withdrawal_total: number | string;
+};
+
+type ReimbursementMemberRow = {
+  display_name: string;
+  user_id: string;
+};
+
+export async function listBankTransactionSheetImportHistory(
+  organizationId: string,
+  limit = 6,
+): Promise<BankTransactionSheetImportHistoryEntry[]> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase || !hasSupabaseSecretConfig()) return [];
+
+  const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 20) : 6;
+  const { data, error } = await supabase
+    .schema("finance")
+    .from("bank_transaction_sheet_import_batches")
+    .select("id,bank_account_id,source_document_id,source_sheet,source_row_count,matched_count,inserted_count,source_deposit_total,source_withdrawal_total,imported_by,imported_at")
+    .eq("organization_id", organizationId)
+    .order("imported_at", { ascending: false })
+    .limit(safeLimit);
+  if (error) throw new Error(`시트 증분 반영 이력을 불러오지 못했어: ${error.message}`);
+
+  const batches = (data ?? []) as SheetImportBatchRow[];
+  if (!batches.length) return [];
+
+  const actorIds = [...new Set(batches.map((batch) => batch.imported_by))];
+  const accountIds = [...new Set(batches.map((batch) => batch.bank_account_id))];
+  const [{ data: members, error: memberError }, countEntries] = await Promise.all([
+    supabase
+      .schema("finance")
+      .from("reimbursement_members")
+      .select("user_id,display_name")
+      .eq("organization_id", organizationId)
+      .in("user_id", actorIds),
+    Promise.all(accountIds.map(async (bankAccountId) => {
+      const { count, error: countError } = await supabase
+        .schema("finance")
+        .from("bank_transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("organization_id", organizationId)
+        .eq("bank_account_id", bankAccountId)
+        .is("deleted_at", null);
+      if (countError) throw new Error(`현재 ERP 거래 건수를 불러오지 못했어: ${countError.message}`);
+      return [bankAccountId, count ?? 0] as const;
+    })),
+  ]);
+  if (memberError) throw new Error(`시트 반영 담당자를 불러오지 못했어: ${memberError.message}`);
+
+  const actorLabels = new Map(((members ?? []) as ReimbursementMemberRow[]).map((member) => [member.user_id, member.display_name]));
+  const currentCounts = new Map(countEntries);
+  return batches.map((batch) => mapBankTransactionSheetImportHistoryRow(
+    batch,
+    actorLabels.get(batch.imported_by) ?? "담당자 미확인",
+    currentCounts.get(batch.bank_account_id) ?? 0,
+  ));
+}
+
+export function mapBankTransactionSheetImportHistoryRow(
+  row: SheetImportBatchRow,
+  actorLabel: string,
+  currentTransactionCount: number,
+): BankTransactionSheetImportHistoryEntry {
+  return {
+    actorLabel,
+    bankAccountId: row.bank_account_id,
+    batchId: row.id,
+    currentTransactionCount,
+    importedAt: row.imported_at,
+    insertedCount: Number(row.inserted_count),
+    matchedCount: Number(row.matched_count),
+    sourceDepositTotal: Number(row.source_deposit_total),
+    sourceDocumentId: row.source_document_id,
+    sourceRowCount: Number(row.source_row_count),
+    sourceSheet: row.source_sheet,
+    sourceWithdrawalTotal: Number(row.source_withdrawal_total),
+  };
+}

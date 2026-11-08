@@ -2,6 +2,7 @@ import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
 import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
 import { BankTransactionUploadPage } from "@/features/finance/bank-transaction-upload-page";
+import { listBankTransactionSheetImportHistory } from "@/features/finance/bank-transaction-sheet-import-history";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import {
@@ -19,10 +20,11 @@ export default async function FinanceBankTransactionUploadRoute() {
     accessError = error instanceof Error ? error.message : "은행거래 업로드 권한을 확인하지 못했어.";
   }
 
-  const [bankAccounts, accountSubjects] = actor ? await Promise.all([
+  const [bankAccounts, accountSubjects, sheetImportHistory] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
     listAccountSubjectsFromSupabase(actor.organization_id),
-  ]) : [[], []];
+    listBankTransactionSheetImportHistory(actor.organization_id).catch(() => []),
+  ]) : [[], [], []];
   const canReplaceLedgerBank = actor?.permissions.some((permission) => ["ADMIN", "CLOSE"].includes(permission)) ?? false;
 
   return (
@@ -32,6 +34,7 @@ export default async function FinanceBankTransactionUploadRoute() {
       applyBankTransactionReplacement={canReplaceLedgerBank && hasSupabaseSecretConfig() ? applyBankTransactionReplacementAction : undefined}
       initialAccountSubjects={accountSubjects ?? []}
       initialBankAccounts={bankAccounts ?? []}
+      initialSheetImportHistory={sheetImportHistory}
       loadBankTransactionReplacementPreview={canReplaceLedgerBank && hasSupabaseSecretConfig() ? loadBankTransactionReplacementPreviewAction : undefined}
       logoutAction={actor ? reimbursementLogout : undefined}
       userLabel={actor?.display_name}
