@@ -224,6 +224,15 @@ describe("BankTransactionListPage", () => {
       bankAccounts={bankAccounts}
       filters={{}}
       pageData={pageData}
+      rulePreview={{
+        activeRuleAccountSubjectId: null,
+        activeRuleAccountSubjectName: null,
+        activeRuleId: null,
+        direction: "WITHDRAWAL",
+        matchText: "인터넷 요금",
+        pendingAmount: 165000,
+        pendingCount: 3,
+      }}
       saveReviewAction={saveReviewAction}
       selectedTransactionId="transaction-1"
       statusCounts={statusCounts}
@@ -235,15 +244,18 @@ describe("BankTransactionListPage", () => {
     expect(references).toHaveTextContent("업로드 계정항목통신비");
     expect(references).toHaveTextContent("업로드 메모9월 인터넷 요금");
     expect(within(drawer).getByLabelText("관리자 비고")).toHaveValue("KT 청구서와 대조 필요");
+    expect(within(drawer).getByText("현재 미확인·추천 3건 · 합계 165,000원")).toBeInTheDocument();
+    expect(within(drawer).getByRole("radio", { name: /같은 거래 모두 \+ 앞으로 자동분류/ })).toBeChecked();
 
     fireEvent.change(within(drawer).getByLabelText("ERP 계정과목"), { target: { value: registeredAccountSubjects[0].id } });
     fireEvent.change(within(drawer).getByLabelText("관리자 비고"), { target: { value: "통신비 청구서 확인 완료" } });
-    fireEvent.click(within(drawer).getByRole("button", { name: "계정과목 저장·확정" }));
+    fireEvent.click(within(drawer).getByRole("button", { name: "선택 범위 저장·확정" }));
 
     expect(saveReviewAction).toHaveBeenCalledWith({
       accountSubjectId: registeredAccountSubjects[0].id,
       action: "CONFIRM",
       adminNote: "통신비 청구서 확인 완료",
+      ruleScope: "MATCHING_AND_FUTURE",
       transactionId: "transaction-1",
     });
     expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();

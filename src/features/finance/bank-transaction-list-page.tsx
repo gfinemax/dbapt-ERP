@@ -17,6 +17,7 @@ import type {
   BankTransactionListPage as BankTransactionPageData,
   BankTransactionReviewInput,
   BankTransactionReviewResult,
+  BankTransactionRulePreview,
   BankTransactionStatusCounts,
   BankTransactionSourceReconciliationSummary,
   LedgerBankSourceSummary,
@@ -31,6 +32,7 @@ type Props = {
   ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
+  rulePreview?: BankTransactionRulePreview;
   selectedTransactionId?: string;
   saveReviewAction?: (input: BankTransactionReviewInput) => Promise<BankTransactionReviewResult>;
   sourceReconciliationSummary?: BankTransactionSourceReconciliationSummary;
@@ -80,6 +82,7 @@ export function BankTransactionListPage({
   ledgerSourceSummary,
   logoutAction,
   pageData,
+  rulePreview,
   selectedTransactionId,
   saveReviewAction,
   sourceReconciliationSummary,
@@ -338,6 +341,7 @@ export function BankTransactionListPage({
           accountName={accounts.get(selectedTransaction.bankAccountId)?.accountName ?? "계좌 정보 없음"}
           closeHref={currentListHref}
           key={selectedTransaction.id}
+          rulePreview={rulePreview}
           saveReviewAction={saveReviewAction}
           transaction={selectedTransaction}
         />

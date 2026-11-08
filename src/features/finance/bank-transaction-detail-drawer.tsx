@@ -11,6 +11,8 @@ import type {
   BankTransactionReviewAction,
   BankTransactionReviewInput,
   BankTransactionReviewResult,
+  BankTransactionRulePreview,
+  BankTransactionRuleScope,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
 
@@ -18,6 +20,7 @@ type Props = {
   accountName: string;
   accountSubjects: RegisteredAccountSubject[];
   closeHref: string;
+  rulePreview?: BankTransactionRulePreview;
   saveReviewAction?: (input: BankTransactionReviewInput) => Promise<BankTransactionReviewResult>;
   transaction: BankTransactionListRow;
 };
@@ -30,11 +33,12 @@ const classificationLabels = {
   UNREVIEWED: "미확인",
 } as const;
 
-export function BankTransactionDetailDrawer({ accountName, accountSubjects, closeHref, saveReviewAction, transaction }: Props) {
+export function BankTransactionDetailDrawer({ accountName, accountSubjects, closeHref, rulePreview, saveReviewAction, transaction }: Props) {
   const router = useRouter();
   const closeRef = useRef<HTMLAnchorElement>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState(transaction.confirmedAccountSubjectId ?? transaction.recommendedAccountSubjectId ?? "");
   const [adminNote, setAdminNote] = useState(transaction.classificationNote ?? "");
+  const [ruleScope, setRuleScope] = useState<BankTransactionRuleScope>(rulePreview ? "MATCHING_AND_FUTURE" : "SINGLE");
   const [pendingAction, setPendingAction] = useState<BankTransactionReviewAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -68,10 +72,11 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
         accountSubjectId: action === "CONFIRM" ? selectedSubjectId : null,
         action,
         adminNote,
+        ruleScope: action === "CONFIRM" ? ruleScope : undefined,
         transactionId: transaction.id,
       });
       setAdminNote(saved.classification_note ?? "");
-      setMessage(reviewSuccessMessage(action));
+      setMessage(reviewSuccessMessage(action, saved));
       router.refresh();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "은행거래 검토 내용을 저장하지 못했어.");
@@ -149,6 +154,24 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
                   {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.businessCategory} · {subject.name}</option>)}
                 </select>
               </label>
+              {rulePreview ? (
+                <fieldset className="rounded-xl border border-[var(--color-morning-tint)] bg-[var(--color-morning-tint)]/25 p-3">
+                  <legend className="px-1 text-sm font-bold">같은 거래 적용 범위</legend>
+                  <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">
+                    정확히 같은 적요와 {rulePreview.direction === "WITHDRAWAL" ? "출금" : "입금"} 방향만 묶어. 보류·제외 거래와 다른 계정으로 확정된 거래는 건드리지 않아.
+                  </p>
+                  <div className="mt-3 rounded-lg bg-white px-3 py-2 text-sm">
+                    <p className="font-bold">{rulePreview.matchText} · {rulePreview.direction === "WITHDRAWAL" ? "출금" : "입금"}</p>
+                    <p className="mt-1 text-[var(--color-stone)]">현재 미확인·추천 {rulePreview.pendingCount.toLocaleString("ko-KR")}건 · 합계 {formatKrw(rulePreview.pendingAmount)}</p>
+                    {rulePreview.activeRuleAccountSubjectName ? <p className="mt-1 font-semibold text-[var(--color-deep-cobalt)]">현재 자동 규칙 · {rulePreview.activeRuleAccountSubjectName}</p> : null}
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    <RuleScopeOption checked={ruleScope === "SINGLE"} description="선택한 거래 한 건만 확정해." label="이 거래만" onChange={() => setRuleScope("SINGLE")} />
+                    <RuleScopeOption checked={ruleScope === "MATCHING"} description={`현재 미확인·추천 ${rulePreview.pendingCount.toLocaleString("ko-KR")}건을 함께 확정해.`} label="현재 같은 거래 모두" onChange={() => setRuleScope("MATCHING")} />
+                    <RuleScopeOption checked={ruleScope === "MATCHING_AND_FUTURE"} description="현재 같은 거래를 확정하고 앞으로 들어올 동일 거래도 자동 분류해." label="같은 거래 모두 + 앞으로 자동분류" onChange={() => setRuleScope("MATCHING_AND_FUTURE")} recommended />
+                  </div>
+                </fieldset>
+              ) : null}
               <label className="grid gap-1.5 text-sm font-semibold">
                 관리자 비고
                 <textarea
@@ -166,7 +189,7 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
                 <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("NOTE")} size="sm" type="button" variant="outline">{pendingAction === "NOTE" ? "저장 중..." : "비고만 저장"}</Button>
                 <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("DEFER")} size="sm" type="button" variant="outline">{pendingAction === "DEFER" ? "저장 중..." : "검토 보류"}</Button>
                 <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("EXCLUDE")} size="sm" type="button" variant="outline">{pendingAction === "EXCLUDE" ? "저장 중..." : "제외"}</Button>
-                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("CONFIRM")} size="sm" type="button">{pendingAction === "CONFIRM" ? "확정 중..." : "계정과목 저장·확정"}</Button>
+                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("CONFIRM")} size="sm" type="button">{pendingAction === "CONFIRM" ? "확정 중..." : ruleScope === "SINGLE" ? "이 거래 저장·확정" : "선택 범위 저장·확정"}</Button>
               </div>
             </div>
           ) : (
@@ -212,11 +235,33 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
   );
 }
 
-function reviewSuccessMessage(action: BankTransactionReviewAction) {
+function reviewSuccessMessage(action: BankTransactionReviewAction, saved: BankTransactionReviewResult) {
+  if (action === "CONFIRM" && saved.applied_count && saved.applied_count > 1) {
+    return `${saved.applied_count.toLocaleString("ko-KR")}건을 같은 계정과목으로 확정했어.${saved.rule_id ? " 앞으로 동일 거래도 자동 분류해." : ""}`;
+  }
+  if (action === "CONFIRM" && saved.rule_id) return "이 거래를 확정하고 앞으로 동일 거래 자동 분류 규칙을 저장했어.";
   if (action === "CONFIRM") return "계정과목과 관리자 비고를 확정했어.";
   if (action === "DEFER") return "검토 보류로 저장했어.";
   if (action === "EXCLUDE") return "회계 분류 제외로 저장했어.";
   return "관리자 비고를 저장했어.";
+}
+
+function RuleScopeOption({ checked, description, label, onChange, recommended = false }: {
+  checked: boolean;
+  description: string;
+  label: string;
+  onChange: () => void;
+  recommended?: boolean;
+}) {
+  return (
+    <label className={`flex cursor-pointer items-start gap-3 rounded-lg border p-3 ${checked ? "border-[var(--color-deep-cobalt)] bg-white" : "border-[var(--color-soft-border)] bg-white/70"}`}>
+      <input checked={checked} className="mt-1" name="rule-scope" onChange={onChange} type="radio" />
+      <span>
+        <span className="font-bold">{label}{recommended ? <span className="ml-2 rounded-full bg-[var(--color-sprout)] px-2 py-0.5 text-[10px] text-[var(--color-green-ink)]">추천</span> : null}</span>
+        <span className="mt-1 block text-xs font-normal leading-5 text-[var(--color-stone)]">{description}</span>
+      </span>
+    </label>
+  );
 }
 
 function sheetFieldLabel(fieldName: "ACCOUNT_CATEGORY" | "DESCRIPTION" | "MEMO") {

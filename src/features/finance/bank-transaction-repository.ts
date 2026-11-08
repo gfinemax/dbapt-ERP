@@ -153,11 +153,13 @@ export type BankTransactionSubjectAssignment = {
 };
 
 export type BankTransactionReviewAction = "NOTE" | "CONFIRM" | "DEFER" | "EXCLUDE";
+export type BankTransactionRuleScope = "SINGLE" | "MATCHING" | "MATCHING_AND_FUTURE";
 
 export type BankTransactionReviewInput = {
   accountSubjectId?: string | null;
   action: BankTransactionReviewAction;
   adminNote?: string;
+  ruleScope?: BankTransactionRuleScope;
   transactionId: string;
 };
 
@@ -165,7 +167,21 @@ export type BankTransactionReviewResult = {
   account_subject_id: string | null;
   classification_note: string | null;
   classification_status: BankTransactionClassificationStatus;
+  applied_count?: number;
+  direction?: "DEPOSIT" | "WITHDRAWAL";
+  match_text?: string;
+  rule_id?: string | null;
   transaction_id: string;
+};
+
+export type BankTransactionRulePreview = {
+  activeRuleAccountSubjectId: string | null;
+  activeRuleAccountSubjectName: string | null;
+  activeRuleId: string | null;
+  direction: "DEPOSIT" | "WITHDRAWAL";
+  matchText: string;
+  pendingAmount: number;
+  pendingCount: number;
 };
 
 const bankTransactionSelect =
@@ -775,16 +791,60 @@ export async function saveBankTransactionReview(
 ) {
   const supabase = getSupabaseServerClient();
   if (!supabase) throw new Error("Supabase is not configured.");
-  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc("save_bank_transaction_review", {
+  const isRuleConfirmation = input.action === "CONFIRM" && input.ruleScope && input.ruleScope !== "SINGLE";
+  const rpcName = isRuleConfirmation ? "save_bank_transaction_review_rule" : "save_bank_transaction_review";
+  const rpcInput = isRuleConfirmation ? {
+    p_account_subject_id: input.accountSubjectId || null,
+    p_actor: actorId,
+    p_note: input.adminNote ?? "",
+    p_org: organizationId,
+    p_scope: input.ruleScope,
+    p_transaction_id: input.transactionId,
+  } : {
     p_account_subject_id: input.accountSubjectId || null,
     p_action: input.action,
     p_actor: actorId,
     p_note: input.adminNote ?? "",
     p_org: organizationId,
     p_transaction_id: input.transactionId,
-  });
+  };
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc(rpcName, rpcInput);
   if (error) throw new Error(`은행거래 검토 저장에 실패했어: ${error.message}`);
   const result = (data as BankTransactionReviewResult[] | null)?.[0];
   if (!result) throw new Error("저장된 은행거래 검토 결과를 확인하지 못했어.");
   return result;
+}
+
+export async function loadBankTransactionRulePreview(
+  organizationId: string,
+  actorId: string,
+  transactionId: string,
+): Promise<BankTransactionRulePreview | undefined> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return undefined;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc("preview_bank_transaction_counterparty_rule", {
+    p_actor: actorId,
+    p_org: organizationId,
+    p_transaction_id: transactionId,
+  });
+  if (error) throw new Error(`같은 거래 자동 분류 대상을 불러오지 못했어: ${error.message}`);
+  const row = (data as Array<{
+    active_rule_account_subject_id: string | null;
+    active_rule_account_subject_name: string | null;
+    active_rule_id: string | null;
+    direction: "DEPOSIT" | "WITHDRAWAL";
+    match_text: string;
+    pending_amount: number | string;
+    pending_count: number;
+  }> | null)?.[0];
+  if (!row) return undefined;
+  return {
+    activeRuleAccountSubjectId: row.active_rule_account_subject_id,
+    activeRuleAccountSubjectName: row.active_rule_account_subject_name,
+    activeRuleId: row.active_rule_id,
+    direction: row.direction,
+    matchText: row.match_text,
+    pendingAmount: Number(row.pending_amount) || 0,
+    pendingCount: Number(row.pending_count) || 0,
+  };
 }

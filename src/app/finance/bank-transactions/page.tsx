@@ -7,6 +7,7 @@ import {
   countBankTransactionsByStatus,
   loadLedgerBankSourceSummary,
   loadBankTransactionSourceReconciliationSummary,
+  loadBankTransactionRulePreview,
   listBankTransactions,
   type BankTransactionClassificationStatus,
   type BankTransactionSourceReconciliationStatus,
@@ -60,7 +61,7 @@ export default async function FinanceBankTransactionsRoute({
   const sourceReviewTransactionIds = filters.sourceReconciliationStatus
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
-  const [pageData, statusCounts, ledgerSourceSummary] = actor ? await Promise.all([
+  const [pageData, statusCounts, ledgerSourceSummary, rulePreview] = actor ? await Promise.all([
     listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds),
     countBankTransactionsByStatus(actor.organization_id, {
       bankAccountId: filters.bankAccountId,
@@ -72,7 +73,10 @@ export default async function FinanceBankTransactionsRoute({
     filters.bankAccountId
       ? loadLedgerBankSourceSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined)
       : Promise.resolve(undefined),
-  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined];
+    query.transactionId?.trim()
+      ? loadBankTransactionRulePreview(actor.organization_id, actor.user_id, query.transactionId.trim()).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined];
   const issuesByTransaction = new Map(sourceReconciliationSummary?.issues.map((issue) => [issue.bankTransactionId, issue]) ?? []);
   const pageDataWithReconciliation = {
     ...pageData,
@@ -88,6 +92,7 @@ export default async function FinanceBankTransactionsRoute({
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}
       pageData={pageDataWithReconciliation}
+      rulePreview={rulePreview}
       selectedTransactionId={query.transactionId?.trim()}
       saveReviewAction={actor?.permissions.includes("ADMIN") ? saveBankTransactionReviewAction : undefined}
       sourceReconciliationSummary={sourceReconciliationSummary}
