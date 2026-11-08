@@ -88,6 +88,7 @@ export default async function FinanceBankTransactionsRoute({
       accessError={accessError}
       accountSubjects={accountSubjects ?? []}
       bankAccounts={bankAccounts ?? []}
+      canExport={Boolean(actor?.permissions.includes("ADMIN"))}
       filters={filters}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}

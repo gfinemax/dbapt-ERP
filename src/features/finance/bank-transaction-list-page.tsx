@@ -11,6 +11,7 @@ import {
   FinanceToolbar,
 } from "./finance-list-layout";
 import { BankTransactionDetailDrawer } from "./bank-transaction-detail-drawer";
+import { BankTransactionExportDialog } from "./bank-transaction-export-dialog";
 import type {
   BankTransactionClassificationStatus,
   BankTransactionListFilters,
@@ -28,6 +29,7 @@ type Props = {
   accessError?: string;
   accountSubjects?: RegisteredAccountSubject[];
   bankAccounts: RegisteredBankAccount[];
+  canExport?: boolean;
   filters: BankTransactionListFilters;
   ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
@@ -78,6 +80,7 @@ export function BankTransactionListPage({
   accessError,
   accountSubjects = [],
   bankAccounts,
+  canExport = false,
   filters,
   ledgerSourceSummary,
   logoutAction,
@@ -258,14 +261,17 @@ export function BankTransactionListPage({
             <p className="text-sm font-semibold">
               조회 결과 <strong className="text-[var(--color-deep-cobalt)]">{pageData.totalCount.toLocaleString("ko-KR")}건</strong>
             </p>
-            <FinancePagination
-              compact
-              hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
-              page={pageData.page}
-              pageSize={pageData.pageSize}
-              totalCount={pageData.totalCount}
-              totalPages={pageData.totalPages}
-            />
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {canExport ? <BankTransactionExportDialog filters={filters} totalCount={pageData.totalCount} /> : null}
+              <FinancePagination
+                compact
+                hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
+                page={pageData.page}
+                pageSize={pageData.pageSize}
+                totalCount={pageData.totalCount}
+                totalPages={pageData.totalPages}
+              />
+            </div>
           </div>
 
           <FinanceDataTable minWidthClass="min-w-[1040px] table-fixed">

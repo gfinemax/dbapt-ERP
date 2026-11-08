@@ -402,14 +402,18 @@ export async function listBankTransactions(
   requestedPage = 1,
   filters: BankTransactionListFilters = {},
   transactionIds?: string[],
+  requestedPageSize = bankTransactionPageSize,
 ): Promise<BankTransactionListPage> {
   const supabase = getSupabaseServerClient();
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
-  if (!supabase) return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  const pageSize = Number.isSafeInteger(requestedPageSize) && requestedPageSize > 0
+    ? Math.min(requestedPageSize, 1_000)
+    : bankTransactionPageSize;
+  if (!supabase) return { page, pageSize, rows: [], totalCount: 0, totalPages: 1 };
   if (transactionIds && transactionIds.length === 0) {
-    return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+    return { page, pageSize, rows: [], totalCount: 0, totalPages: 1 };
   }
-  const from = (page - 1) * bankTransactionPageSize;
+  const from = (page - 1) * pageSize;
   let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
     .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,uploaded_major_category,uploaded_account_title,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,classification_note,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
@@ -424,7 +428,7 @@ export async function listBankTransactions(
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("id", { ascending: false })
-    .range(from, from + bankTransactionPageSize - 1);
+    .range(from, from + pageSize - 1);
   if (error) throw new Error(`은행거래 목록을 불러오지 못했어: ${error.message}`);
   const confirmedSubjectIds = [...new Set((data ?? []).map((row) => row.confirmed_account_subject_id).filter((value): value is string => Boolean(value)))];
   const confirmedSubjectNames = new Map<string, string>();
@@ -469,10 +473,10 @@ export async function listBankTransactions(
   const totalCount = count ?? rows.length;
   return {
     page,
-    pageSize: bankTransactionPageSize,
+    pageSize,
     rows,
     totalCount,
-    totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionPageSize)),
+    totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
   };
 }
 

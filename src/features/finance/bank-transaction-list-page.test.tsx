@@ -297,4 +297,18 @@ describe("BankTransactionListPage", () => {
     expect(screen.getByText("운영비 · 복리후생비(식대)")).toBeInTheDocument();
     expect(screen.getByText("지출-운영비").closest("div")).toHaveTextContent("항목구분 · 지출-운영비");
   });
+
+  it("lets an administrator choose ordered Excel or PDF export columns for the current result", () => {
+    render(<BankTransactionListPage bankAccounts={bankAccounts} canExport filters={{ query: "인터넷" }} pageData={pageData} statusCounts={statusCounts} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "검색 결과 내보내기" }));
+    const dialog = screen.getByRole("dialog", { name: "검색 결과 내보내기" });
+    expect(within(dialog).getByText("현재 검색 조건의 4,277건을 선택한 컬럼 순서로 내려받아.")).toBeInTheDocument();
+    expect(within(dialog).getAllByRole("checkbox", { checked: true })).toHaveLength(7);
+    expect(within(dialog).getByText("거래일 → 일시 → 계좌 → 적요 → 거래내역 → 금액 → 계정과목")).toBeInTheDocument();
+    expect(within(dialog).getByText("관리자 비고").parentElement).toHaveTextContent("내부정보");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "PDF" }));
+    expect(within(dialog).getByText(/PDF는 1,000건까지 지원해/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "PDF 내려받기" })).toBeDisabled();
+  });
 });
