@@ -17,7 +17,7 @@ describe("bank transaction sheet import history", () => {
       source_sheet: "시트1",
       source_withdrawal_total: "489147570",
     }, "파인맥스", {
-      currentTransactionCount: 76,
+      erpTransactionCount: 76,
       googleSheetSourceCount: 19,
       ledgerSourceCount: 57,
       otherSourceCount: 0,

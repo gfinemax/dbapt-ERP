@@ -158,18 +158,31 @@ export function BankTransactionListPage({
           </FinanceToolbar>
 
           {ledgerSourceSummary ? (
-            <section aria-label="Ledger 원본 대조" className="border-b border-[var(--color-soft-border)] bg-[var(--color-morning-tint)]/35 px-3 py-3">
-              <div className="grid gap-2 sm:grid-cols-3">
+            <section aria-label="ERP 거래 원본 구성" className="border-b border-[var(--color-soft-border)] bg-[var(--color-morning-tint)]/35 px-3 py-3">
+              <p className="mb-2 text-xs font-semibold text-[var(--color-stone)]">
+                선택 계좌의 전체 ERP 거래를 원본 출처별로 구분했어. 각 원본 건수는 전체 ERP 거래에 포함돼.
+              </p>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                 <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
-                  <p className="text-xs font-semibold text-[var(--color-stone)]">ERP 회계 거래</p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.importedTransactionCount.toLocaleString("ko-KR")}건</p>
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">전체 ERP 거래</p>
+                  <p className="mt-0.5 text-lg font-black tabular-nums text-[var(--color-deep-cobalt)]">{ledgerSourceSummary.erpTransactionCount.toLocaleString("ko-KR")}건</p>
                 </div>
                 <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
-                  <p className="text-xs font-semibold text-[var(--color-stone)]">Ledger 원본</p>
-                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.ledgerOriginalCount.toLocaleString("ko-KR")}건</p>
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">Ledger 원본 연계</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.ledgerSourceCount.toLocaleString("ko-KR")}건</p>
+                  <p className="text-xs text-[var(--color-stone)]">Ledger 원본 {ledgerSourceSummary.ledgerOriginalCount.toLocaleString("ko-KR")}건</p>
                 </div>
                 <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
-                  <p className="text-xs font-semibold text-[var(--color-stone)]">금액 없는 원본</p>
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">Google 시트 신규</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.googleSheetSourceCount.toLocaleString("ko-KR")}건</p>
+                  <p className="text-xs text-[var(--color-stone)]">ERP에 새로 등록</p>
+                </div>
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">기타 원본</p>
+                  <p className="mt-0.5 text-lg font-bold tabular-nums">{ledgerSourceSummary.otherSourceCount.toLocaleString("ko-KR")}건</p>
+                </div>
+                <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                  <p className="text-xs font-semibold text-[var(--color-stone)]">금액 없는 Ledger 원본</p>
                   <p className="mt-0.5 text-lg font-bold tabular-nums text-[var(--color-mustard)]">{ledgerSourceSummary.zeroAmountSourceCount.toLocaleString("ko-KR")}건</p>
                   <p className="text-xs text-[var(--color-stone)]">회계 집계 제외</p>
                 </div>
@@ -177,7 +190,7 @@ export function BankTransactionListPage({
               {ledgerSourceSummary.zeroAmountSources.length ? (
                 <details className="mt-2 rounded-lg border border-[var(--color-soft-border)] bg-white">
                   <summary className="cursor-pointer px-3 py-2 text-sm font-semibold text-[var(--color-midnight-ink)]">
-                    금액 없는 원본 {ledgerSourceSummary.zeroAmountSourceCount.toLocaleString("ko-KR")}건 보기
+                    금액 없는 Ledger 원본 {ledgerSourceSummary.zeroAmountSourceCount.toLocaleString("ko-KR")}건 보기
                   </summary>
                   <div className="max-h-72 overflow-auto border-t border-[var(--color-soft-border)]">
                     <table className="w-full min-w-[720px] text-sm">

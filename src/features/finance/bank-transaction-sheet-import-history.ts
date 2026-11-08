@@ -1,5 +1,6 @@
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
+import { loadBankTransactionSourceCounts, type BankTransactionSourceCounts } from "./bank-transaction-repository";
 
 export type BankTransactionSheetImportHistoryEntry = {
   actorLabel: string;
@@ -38,20 +39,12 @@ type ReimbursementMemberRow = {
   user_id: string;
 };
 
-type CurrentSourceSummary = {
-  currentTransactionCount: number;
-  googleSheetSourceCount: number;
-  ledgerSourceCount: number;
-  otherSourceCount: number;
-};
-
 export async function listBankTransactionSheetImportHistory(
   organizationId: string,
   limit = 6,
 ): Promise<BankTransactionSheetImportHistoryEntry[]> {
   const supabase = getSupabaseServerClient();
   if (!supabase || !hasSupabaseSecretConfig()) return [];
-  const database = supabase;
 
   const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 20) : 6;
   const { data, error } = await supabase
@@ -77,7 +70,7 @@ export async function listBankTransactionSheetImportHistory(
       .in("user_id", actorIds),
     Promise.all(accountIds.map(async (bankAccountId) => [
       bankAccountId,
-      await loadCurrentSourceSummary(organizationId, bankAccountId),
+      await loadBankTransactionSourceCounts(organizationId, bankAccountId),
     ] as const)),
   ]);
   if (memberError) throw new Error(`시트 반영 담당자를 불러오지 못했어: ${memberError.message}`);
@@ -87,47 +80,20 @@ export async function listBankTransactionSheetImportHistory(
   return batches.map((batch) => mapBankTransactionSheetImportHistoryRow(
     batch,
     actorLabels.get(batch.imported_by) ?? "담당자 미확인",
-    sourceSummaries.get(batch.bank_account_id) ?? emptyCurrentSourceSummary(),
+    sourceSummaries.get(batch.bank_account_id) ?? emptySourceCounts(),
   ));
-
-  async function loadCurrentSourceSummary(organizationId: string, bankAccountId: string): Promise<CurrentSourceSummary> {
-    const baseQuery = () => database
-      .schema("finance")
-      .from("bank_transactions")
-      .select("id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("bank_account_id", bankAccountId)
-      .is("deleted_at", null);
-    const [allResult, ledgerResult, googleSheetResult] = await Promise.all([
-      baseQuery(),
-      baseQuery().eq("source_system", "dbapt-ledger"),
-      baseQuery().eq("source_system", "google-sheet"),
-    ]);
-    const queryError = allResult.error ?? ledgerResult.error ?? googleSheetResult.error;
-    if (queryError) throw new Error(`현재 ERP 거래 원본 구성을 불러오지 못했어: ${queryError.message}`);
-
-    const currentTransactionCount = allResult.count ?? 0;
-    const ledgerSourceCount = ledgerResult.count ?? 0;
-    const googleSheetSourceCount = googleSheetResult.count ?? 0;
-    return {
-      currentTransactionCount,
-      googleSheetSourceCount,
-      ledgerSourceCount,
-      otherSourceCount: Math.max(currentTransactionCount - ledgerSourceCount - googleSheetSourceCount, 0),
-    };
-  }
 }
 
 export function mapBankTransactionSheetImportHistoryRow(
   row: SheetImportBatchRow,
   actorLabel: string,
-  sourceSummary: CurrentSourceSummary,
+  sourceSummary: BankTransactionSourceCounts,
 ): BankTransactionSheetImportHistoryEntry {
   return {
     actorLabel,
     bankAccountId: row.bank_account_id,
     batchId: row.id,
-    currentTransactionCount: sourceSummary.currentTransactionCount,
+    currentTransactionCount: sourceSummary.erpTransactionCount,
     googleSheetSourceCount: sourceSummary.googleSheetSourceCount,
     importedAt: row.imported_at,
     insertedCount: Number(row.inserted_count),
@@ -142,9 +108,9 @@ export function mapBankTransactionSheetImportHistoryRow(
   };
 }
 
-function emptyCurrentSourceSummary(): CurrentSourceSummary {
+function emptySourceCounts(): BankTransactionSourceCounts {
   return {
-    currentTransactionCount: 0,
+    erpTransactionCount: 0,
     googleSheetSourceCount: 0,
     ledgerSourceCount: 0,
     otherSourceCount: 0,

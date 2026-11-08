@@ -66,11 +66,19 @@ export type LedgerBankZeroAmountSourceRow = {
 };
 
 export type LedgerBankSourceSummary = {
-  importedTransactionCount: number;
+  erpTransactionCount: number;
+  googleSheetSourceCount: number;
+  ledgerSourceCount: number;
   ledgerOriginalCount: number;
+  otherSourceCount: number;
   zeroAmountSourceCount: number;
   zeroAmountSources: LedgerBankZeroAmountSourceRow[];
 };
+
+export type BankTransactionSourceCounts = Pick<
+  LedgerBankSourceSummary,
+  "erpTransactionCount" | "googleSheetSourceCount" | "ledgerSourceCount" | "otherSourceCount"
+>;
 
 export type BankTransactionListRow = BankTransactionReviewRow & {
   balanceAmount: number | null;
@@ -201,39 +209,72 @@ export function mapZeroAmountLedgerSource(row: Record<string, unknown>): LedgerB
   };
 }
 
+export async function loadBankTransactionSourceCounts(
+  organizationId: string,
+  bankAccountId: string,
+): Promise<BankTransactionSourceCounts> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return emptyBankTransactionSourceCounts();
+  const baseQuery = () => supabase
+    .schema(bankTransactionRepositorySchema)
+    .from("bank_transactions")
+    .select("id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .eq("bank_account_id", bankAccountId)
+    .is("deleted_at", null);
+  const [allResult, ledgerResult, googleSheetResult] = await Promise.all([
+    baseQuery(),
+    baseQuery().eq("source_system", ledgerBankSourceSystem),
+    baseQuery().eq("source_system", "google-sheet"),
+  ]);
+  const queryError = allResult.error ?? ledgerResult.error ?? googleSheetResult.error;
+  if (queryError) throw new Error(`현재 ERP 거래 원본 구성을 불러오지 못했어: ${queryError.message}`);
+
+  const erpTransactionCount = allResult.count ?? 0;
+  const ledgerSourceCount = ledgerResult.count ?? 0;
+  const googleSheetSourceCount = googleSheetResult.count ?? 0;
+  return {
+    erpTransactionCount,
+    googleSheetSourceCount,
+    ledgerSourceCount,
+    otherSourceCount: Math.max(erpTransactionCount - ledgerSourceCount - googleSheetSourceCount, 0),
+  };
+}
+
 export async function loadLedgerBankSourceSummary(
   organizationId: string,
   bankAccountId: string,
 ): Promise<LedgerBankSourceSummary | undefined> {
   const supabase = getSupabaseServerClient();
   if (!supabase) return undefined;
-  const { data: mappings, error: mappingError } = await supabase.schema(bankTransactionRepositorySchema)
-    .from("ledger_bank_account_mappings")
-    .select("ledger_account_id")
-    .eq("organization_id", organizationId)
-    .eq("source_system", ledgerBankSourceSystem)
-    .eq("bank_account_id", bankAccountId)
-    .eq("mapping_status", "CONFIRMED");
+  const [{ data: mappings, error: mappingError }, sourceCounts] = await Promise.all([
+    supabase.schema(bankTransactionRepositorySchema)
+      .from("ledger_bank_account_mappings")
+      .select("ledger_account_id")
+      .eq("organization_id", organizationId)
+      .eq("source_system", ledgerBankSourceSystem)
+      .eq("bank_account_id", bankAccountId)
+      .eq("mapping_status", "CONFIRMED"),
+    loadBankTransactionSourceCounts(organizationId, bankAccountId),
+  ]);
   if (mappingError) throw new Error(`Ledger 계좌 연결 정보를 불러오지 못했어: ${mappingError.message}`);
   const ledgerAccountIds = [...new Set((mappings ?? []).map((row) => String(row.ledger_account_id)).filter(Boolean))];
-  if (!ledgerAccountIds.length) return undefined;
+  if (!ledgerAccountIds.length) {
+    return {
+      ...sourceCounts,
+      ledgerOriginalCount: 0,
+      zeroAmountSourceCount: 0,
+      zeroAmountSources: [],
+    };
+  }
 
-  const [currentCountResult, importedCountResult] = await Promise.all([
-    supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
-      .select("source_transaction_id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("source_system", ledgerBankSourceSystem)
-      .in("ledger_account_id", ledgerAccountIds)
-      .in("import_status", currentLedgerSourceStatuses),
-    supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
-      .select("source_transaction_id", { count: "exact", head: true })
-      .eq("organization_id", organizationId)
-      .eq("source_system", ledgerBankSourceSystem)
-      .in("ledger_account_id", ledgerAccountIds)
-      .eq("import_status", "IMPORTED"),
-  ]);
+  const currentCountResult = await supabase.schema(bankTransactionRepositorySchema).from("ledger_bank_transaction_sources")
+    .select("source_transaction_id", { count: "exact", head: true })
+    .eq("organization_id", organizationId)
+    .eq("source_system", ledgerBankSourceSystem)
+    .in("ledger_account_id", ledgerAccountIds)
+    .in("import_status", currentLedgerSourceStatuses);
   if (currentCountResult.error) throw new Error(`Ledger 원본 건수를 불러오지 못했어: ${currentCountResult.error.message}`);
-  if (importedCountResult.error) throw new Error(`Ledger 반영 건수를 불러오지 못했어: ${importedCountResult.error.message}`);
 
   const invalidRows: Record<string, unknown>[] = [];
   let offset = 0;
@@ -259,10 +300,19 @@ export async function loadLedgerBankSourceSummary(
     .sort((left, right) => `${right.transactionDate}T${right.transactionTime ?? "00:00:00"}|${right.sourceTransactionId}`
       .localeCompare(`${left.transactionDate}T${left.transactionTime ?? "00:00:00"}|${left.sourceTransactionId}`));
   return {
-    importedTransactionCount: importedCountResult.count ?? 0,
+    ...sourceCounts,
     ledgerOriginalCount: currentCountResult.count ?? 0,
     zeroAmountSourceCount: zeroAmountSources.length,
     zeroAmountSources,
+  };
+}
+
+function emptyBankTransactionSourceCounts(): BankTransactionSourceCounts {
+  return {
+    erpTransactionCount: 0,
+    googleSheetSourceCount: 0,
+    ledgerSourceCount: 0,
+    otherSourceCount: 0,
   };
 }
 

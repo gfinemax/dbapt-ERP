@@ -50,8 +50,11 @@ const statusCounts = {
 };
 
 const ledgerSourceSummary = {
-  importedTransactionCount: 1258,
+  erpTransactionCount: 1302,
+  googleSheetSourceCount: 44,
+  ledgerSourceCount: 1258,
   ledgerOriginalCount: 1303,
+  otherSourceCount: 0,
   zeroAmountSourceCount: 45,
   zeroAmountSources: [{
     description: "예금결산이자",
@@ -133,11 +136,13 @@ describe("BankTransactionListPage", () => {
       statusCounts={statusCounts}
     />);
 
-    const sourceAudit = screen.getByRole("region", { name: "Ledger 원본 대조" });
-    expect(within(sourceAudit).getByText("ERP 회계 거래").parentElement).toHaveTextContent("1,258건");
-    expect(within(sourceAudit).getByText("Ledger 원본").parentElement).toHaveTextContent("1,303건");
-    expect(within(sourceAudit).getByText("금액 없는 원본").parentElement).toHaveTextContent("45건회계 집계 제외");
-    expect(within(sourceAudit).getByText("금액 없는 원본 45건 보기")).toBeInTheDocument();
+    const sourceAudit = screen.getByRole("region", { name: "ERP 거래 원본 구성" });
+    expect(within(sourceAudit).getByText("전체 ERP 거래").parentElement).toHaveTextContent("1,302건");
+    expect(within(sourceAudit).getByText("Ledger 원본 연계").parentElement).toHaveTextContent("1,258건Ledger 원본 1,303건");
+    expect(within(sourceAudit).getByText("Google 시트 신규").parentElement).toHaveTextContent("44건ERP에 새로 등록");
+    expect(within(sourceAudit).getByText("기타 원본").parentElement).toHaveTextContent("0건");
+    expect(within(sourceAudit).getByText("금액 없는 Ledger 원본").parentElement).toHaveTextContent("45건회계 집계 제외");
+    expect(within(sourceAudit).getByText("금액 없는 Ledger 원본 45건 보기")).toBeInTheDocument();
     expect(within(sourceAudit).getByText("1303")).toBeInTheDocument();
     expect(within(sourceAudit).getByText("2022-12-17 10:46:59")).toBeInTheDocument();
     expect(within(sourceAudit).getByText("예금결산이자")).toBeInTheDocument();
