@@ -175,6 +175,57 @@
   text-orientation: mixed;
 }
 
+/* Ledger 외부 납입 인정 원장: 헤더와 값을 같은 축에 두고 열 간격을 조밀하게 유지한다. */
+#external-recognition-ledger-panel table {
+  width: 100%;
+  min-width: 64rem;
+  table-layout: fixed;
+}
+
+#external-recognition-ledger-panel th,
+#external-recognition-ledger-panel td {
+  padding-right: 0.25rem !important;
+  padding-left: 0.25rem !important;
+  text-align: center !important;
+  vertical-align: middle;
+}
+
+#external-recognition-ledger-panel th:nth-child(1),
+#external-recognition-ledger-panel td:nth-child(1) {
+  width: 13%;
+}
+
+#external-recognition-ledger-panel th:nth-child(2),
+#external-recognition-ledger-panel td:nth-child(2) {
+  width: 17%;
+}
+
+#external-recognition-ledger-panel th:nth-child(3),
+#external-recognition-ledger-panel td:nth-child(3) {
+  width: 11%;
+}
+
+#external-recognition-ledger-panel th:nth-child(4),
+#external-recognition-ledger-panel td:nth-child(4) {
+  width: 17%;
+}
+
+#external-recognition-ledger-panel th:nth-child(5),
+#external-recognition-ledger-panel td:nth-child(5) {
+  width: 30%;
+}
+
+#external-recognition-ledger-panel th:nth-child(6),
+#external-recognition-ledger-panel td:nth-child(6) {
+  width: 12%;
+}
+
+#external-recognition-ledger-panel td:nth-child(4) p,
+#external-recognition-ledger-panel td:nth-child(5) p {
+  margin-right: auto;
+  margin-left: auto;
+}
+
 @page {
   size: A4 portrait;
   margin: 20mm;
