@@ -420,7 +420,7 @@ export async function listBankTransactions(
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
   const search = normalizedBankTransactionSearch(filters.query);
-  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%`);
+  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%,uploaded_account_title.ilike.%${search}%,branch_name.ilike.%${search}%,classification_note.ilike.%${search}%`);
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("id", { ascending: false })
@@ -541,7 +541,7 @@ export async function countBankTransactionsByStatus(
     if (transactionIds) request = request.in("id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%`);
+    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%,uploaded_account_title.ilike.%${search}%,branch_name.ilike.%${search}%,classification_note.ilike.%${search}%`);
     if (status) request = request.eq("classification_status", status);
     const { count, error } = await request;
     if (error) throw new Error(`은행거래 상태별 건수를 불러오지 못했어: ${error.message}`);

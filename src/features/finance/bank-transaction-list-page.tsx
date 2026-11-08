@@ -268,20 +268,22 @@ export function BankTransactionListPage({
             />
           </div>
 
-          <FinanceDataTable minWidthClass="min-w-[760px] table-fixed">
+          <FinanceDataTable minWidthClass="min-w-[1040px] table-fixed">
             <colgroup>
-              <col className="w-[15%]" />
-              <col className="w-[16%]" />
-              <col className="w-[29%]" />
-              <col className="w-[15%]" />
-              <col className="w-[15%]" />
-              <col className="w-[10%]" />
+              <col className="w-[12%]" />
+              <col className="w-[13%]" />
+              <col className="w-[18%]" />
+              <col className="w-[25%]" />
+              <col className="w-[11%]" />
+              <col className="w-[14%]" />
+              <col className="w-[7%]" />
             </colgroup>
             <thead className="sticky top-0 z-[3] bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)] shadow-[0_1px_0_var(--color-soft-border)]">
               <tr>
                 <th className="px-2 py-2.5 text-center">거래일시</th>
                 <th className="px-2 py-2.5 text-center">계좌</th>
                 <th className="px-2 py-2.5 text-center">적요·거래처</th>
+                <th className="px-2 py-2.5 text-center">거래내역</th>
                 <th className="px-2 py-2.5 text-center">금액</th>
                 <th className="px-2 py-2.5 text-center">계정과목</th>
                 <th className="px-2 py-2.5 text-center">상태</th>
@@ -289,7 +291,7 @@ export function BankTransactionListPage({
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
               {!pageData.rows.length ? (
-                <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={6}>조건에 맞는 은행거래가 없습니다.</td></tr>
+                <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={7}>조건에 맞는 은행거래가 없습니다.</td></tr>
               ) : pageData.rows.map((transaction) => {
                 const account = accounts.get(transaction.bankAccountId);
                 const accountSubjectName = transaction.confirmedAccountSubjectName ?? transaction.recommendedAccountSubjectName;
@@ -299,6 +301,14 @@ export function BankTransactionListPage({
                   ? `${accountSubject.businessCategory} · ${accountSubjectName}`
                   : accountSubjectName ?? "-";
                 const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
+                const transactionDetails = ([
+                  ["항목구분", transaction.uploadedCategory ?? ""],
+                  ["업로드 계정항목", transaction.uploadedAccountTitle ?? ""],
+                  ["메모·비고", transaction.memo ?? ""],
+                  ["취급점", transaction.branchName ?? ""],
+                  ["원본 적요", transaction.originalDescription && transaction.originalDescription !== transaction.description ? transaction.originalDescription : ""],
+                  ["원본 메모", transaction.originalMemo && transaction.originalMemo !== transaction.memo ? transaction.originalMemo : ""],
+                ] satisfies Array<[string, string]>).filter(([, value]) => Boolean(value.trim()));
                 return (
                   <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">{formatDate(transaction.transactedAt)}</td>
@@ -308,6 +318,28 @@ export function BankTransactionListPage({
                     <td className="break-words px-2 py-2.5 text-center align-middle">
                       <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
+                    </td>
+                    <td className="break-words px-2 py-2.5 text-center align-middle text-xs">
+                      {transactionDetails.length ? (
+                        <dl className="grid gap-0.5">
+                          {transactionDetails.map(([label, value]) => (
+                            <div key={label}>
+                              <dt className="inline font-semibold text-[var(--color-stone)]">{label} · </dt>
+                              <dd className="inline text-[var(--color-midnight-ink)]">{value}</dd>
+                            </div>
+                          ))}
+                        </dl>
+                      ) : <p className="text-[var(--color-fog)]">원본 참고정보 없음</p>}
+                      {transaction.classificationNote ? (
+                        <p className="mt-1 font-semibold text-[var(--color-green-ink)]">관리자 비고 · {transaction.classificationNote}</p>
+                      ) : <p className="mt-1 text-[var(--color-stone)]">관리자 비고 없음</p>}
+                      <Link
+                        aria-label={`${transaction.description || "적요 없음"} 관리자 비고 ${transaction.classificationNote ? "수정" : "작성"}`}
+                        className="mt-1 inline-block font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-2"
+                        href={detailHref}
+                      >
+                        {transaction.classificationNote ? "비고 수정" : "비고 작성"}
+                      </Link>
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
                       <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>

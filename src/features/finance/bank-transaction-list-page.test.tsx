@@ -129,11 +129,12 @@ describe("BankTransactionListPage", () => {
     );
   });
 
-  it("uses a compact six-column table with a signed amount and shortened account", () => {
+  it("uses a compact seven-column table with a combined transaction detail column", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
 
-    expect(screen.getAllByRole("columnheader")).toHaveLength(6);
+    expect(screen.getAllByRole("columnheader")).toHaveLength(7);
     expect(screen.getAllByRole("columnheader").every((header) => header.classList.contains("text-center"))).toBe(true);
+    expect(screen.getByRole("columnheader", { name: "거래내역" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "금액" })).toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "입금" })).not.toBeInTheDocument();
     expect(screen.queryByRole("columnheader", { name: "출금" })).not.toBeInTheDocument();
@@ -141,16 +142,24 @@ describe("BankTransactionListPage", () => {
     expect(screen.getByText("우리은행 · 1006")).toBeInTheDocument();
     const transactionRow = screen.getByText("−55,000원").closest("tr");
     expect(transactionRow).not.toBeNull();
-    expect(within(transactionRow!).getAllByRole("cell").every((cell) => cell.classList.contains("text-center"))).toBe(true);
+    const transactionCells = within(transactionRow!).getAllByRole("cell");
+    expect(transactionCells.every((cell) => cell.classList.contains("text-center"))).toBe(true);
+    expect(transactionCells[3]).toHaveTextContent("항목구분 · 운영비");
+    expect(transactionCells[3]).toHaveTextContent("업로드 계정항목 · 통신비");
+    expect(transactionCells[3]).toHaveTextContent("메모·비고 · 9월 인터넷 요금");
+    expect(transactionCells[3]).toHaveTextContent("취급점 · 대방동");
+    expect(transactionCells[3]).toHaveTextContent("관리자 비고 · KT 청구서와 대조 필요");
+    expect(within(transactionRow!).getByRole("link", { name: "인터넷 요금 관리자 비고 수정" })).toHaveAttribute("href", "/finance/bank-transactions?page=2&transactionId=transaction-1");
     expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-2", "py-2.5", "text-center");
-    expect(document.querySelector("table")).toHaveClass("min-w-[760px]", "table-fixed");
+    expect(document.querySelector("table")).toHaveClass("min-w-[1040px]", "table-fixed");
     expect([...document.querySelectorAll("colgroup col")].map((column) => column.className)).toEqual([
-      "w-[15%]",
-      "w-[16%]",
-      "w-[29%]",
-      "w-[15%]",
-      "w-[15%]",
-      "w-[10%]",
+      "w-[12%]",
+      "w-[13%]",
+      "w-[18%]",
+      "w-[25%]",
+      "w-[11%]",
+      "w-[14%]",
+      "w-[7%]",
     ]);
   });
 
@@ -261,7 +270,7 @@ describe("BankTransactionListPage", () => {
     expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();
   });
 
-  it("shows the ERP business category with the account subject and keeps the uploaded category out of the list", () => {
+  it("shows the ERP business category with the account subject while keeping source metadata separate", () => {
     const mealSubject = {
       ...registeredAccountSubjects[3],
       businessCategory: "운영비" as const,
@@ -286,6 +295,6 @@ describe("BankTransactionListPage", () => {
     />);
 
     expect(screen.getByText("운영비 · 복리후생비(식대)")).toBeInTheDocument();
-    expect(screen.queryByText("항목구분 · 지출-운영비")).not.toBeInTheDocument();
+    expect(screen.getByText("지출-운영비").closest("div")).toHaveTextContent("항목구분 · 지출-운영비");
   });
 });
