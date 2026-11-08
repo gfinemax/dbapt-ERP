@@ -57,7 +57,7 @@ describe("BankTransactionUploadPage", () => {
   it("previews pasted bank transactions and prioritizes uploaded 항 and 목 for account matching", async () => {
     render(<BankTransactionUploadPage initialAccountSubjects={registeredAccountSubjects} initialBankAccounts={testBankAccounts} />);
 
-    expect(screen.getByRole("heading", { name: "은행 거래내역 업로드" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "은행 거래 업로드" })).toBeInTheDocument();
     expect(screen.getByLabelText("업로드 대상 계좌")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"), {
@@ -126,11 +126,12 @@ describe("BankTransactionUploadPage", () => {
     expect(screen.getByText("미리보기 거래").parentElement).toHaveTextContent("0건");
   });
 
-  it("links bank transaction upload from the finance bank-card detail menu", () => {
+  it("highlights bank transaction upload in the integrated transaction detail menu", () => {
     render(<BankTransactionUploadPage />);
 
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
-    expect(within(detailMenu).getByRole("link", { name: "거래내역" })).toHaveAttribute("href", "/finance/bank-transactions");
+    expect(within(detailMenu).getByRole("link", { name: "통합 거래내역" })).toHaveAttribute("href", "/finance/bank-transactions");
+    expect(within(detailMenu).getByRole("link", { name: "은행 거래 업로드" })).toHaveAttribute("aria-current", "page");
   });
 
   it("sends preview rows to the save action without creating vouchers", async () => {

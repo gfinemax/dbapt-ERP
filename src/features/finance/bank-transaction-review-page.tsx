@@ -79,11 +79,11 @@ export function BankTransactionReviewPage({
   }
 
   return (
-    <ErpShell activeDetailLabel="미매칭 내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="미매칭 내역" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 은행·카드 &gt; 미매칭 내역
+            회계/자금 &gt; 통합 거래관리 &gt; 미매칭 내역
           </p>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>

@@ -106,13 +106,13 @@ export function BankTransactionListPage({
   const filterChips = buildFilterChips(filters, selectedAccount);
 
   return (
-    <ErpShell activeDetailLabel="거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="통합 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <FinancePageHeader
-          action={{ href: "/finance/bank-transactions/upload", label: "거래내역 업로드" }}
-          breadcrumb="회계/자금 · 은행·카드 · 거래내역"
+          action={{ href: "/finance/bank-transactions/upload", label: "은행 거래 업로드" }}
+          breadcrumb="회계/자금 · 통합 거래관리 · 통합 거래내역"
           description="실제 통장거래와 외부납입 인정을 원본별로 구분하고 필요한 범위만 한 화면에서 조회합니다."
-          title="거래내역"
+          title="통합 거래내역"
         />
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
 

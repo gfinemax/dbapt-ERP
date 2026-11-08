@@ -124,14 +124,15 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
     },
     {
       href: "/finance/bank-transactions",
-      label: "은행·카드",
+      label: "통합 거래관리",
       items: [
-        { label: "거래내역", href: "/finance/bank-transactions" },
-        { label: "카드 사용내역" },
-        { label: "계좌 연동 설정", href: "/finance/bank-account-links" },
-        { label: "카드 연동 설정" },
-        { label: "Ledger 참고 연결", href: "/finance/bank-auto-matching" },
-        { label: "미매칭 내역", href: "/finance/bank-unmatched" },
+        { group: "조회", label: "통합 거래내역", href: "/finance/bank-transactions" },
+        { group: "조회", label: "카드 사용내역" },
+        { group: "가져오기·연동", label: "은행 거래 업로드", href: "/finance/bank-transactions/upload" },
+        { group: "가져오기·연동", label: "계좌 연동 설정", href: "/finance/bank-account-links" },
+        { group: "가져오기·연동", label: "카드 연동 설정" },
+        { group: "가져오기·연동", label: "Ledger 원장 연동", href: "/finance/bank-auto-matching" },
+        { group: "검토", label: "미매칭 내역", href: "/finance/bank-unmatched" },
       ],
     },
     {

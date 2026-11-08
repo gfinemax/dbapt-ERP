@@ -97,10 +97,10 @@ describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
     const main = screen.getByRole("main");
-    expect(screen.getByRole("heading", { level: 1, name: "거래내역" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "통합 거래내역" })).toBeInTheDocument();
     expect(screen.getByText("조회 결과")).toHaveTextContent("4,277건");
     expect(screen.getAllByText("51–100건 · 2/86")).toHaveLength(2);
-    expect(screen.getByRole("link", { name: "거래내역 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
+    expect(within(main).getByRole("link", { name: "은행 거래 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
     expect(screen.getAllByRole("link", { name: "계좌 연동 설정" }).every((link) => link.getAttribute("href") === "/finance/bank-account-links")).toBe(true);
     expect(screen.getByRole("link", { name: "미매칭 내역" })).toHaveAttribute("href", "/finance/bank-unmatched");
     expect(within(main).queryByRole("link", { name: "계좌 연동 설정" })).not.toBeInTheDocument();

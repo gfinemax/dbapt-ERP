@@ -123,7 +123,7 @@ export function BankTransactionUploadPage({
 
   if (accessError) {
     return (
-      <ErpShell activeDetailLabel="거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+      <ErpShell activeDetailLabel="은행 거래 업로드" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={logoutAction} userLabel={userLabel}>
         <section className="mx-auto max-w-[1480px] rounded-2xl border border-[var(--color-butter-soft)] bg-[var(--color-butter-soft)] p-6" role="alert">
           <h1 className="text-2xl font-bold">은행거래 관리 로그인이 필요해</h1>
           <p className="mt-2 text-sm text-[var(--color-stone)]">{accessError}</p>
@@ -243,14 +243,14 @@ export function BankTransactionUploadPage({
   }
 
   return (
-    <ErpShell activeDetailLabel="거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="은행 거래 업로드" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div>
             <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-              회계/자금 &gt; 은행·카드 &gt; 은행 거래내역
+              회계/자금 &gt; 통합 거래관리 &gt; 은행 거래 업로드
             </p>
-            <h1 className="text-3xl font-bold tracking-normal">은행 거래내역 업로드</h1>
+            <h1 className="text-3xl font-bold tracking-normal">은행 거래 업로드</h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
               등록된 은행통장을 선택한 뒤 거래내역을 업로드하고, 파일의 항/목 분류 또는 적요 기반 추천으로 계정과목 후보를 확인합니다.
             </p>

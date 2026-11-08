@@ -35,7 +35,7 @@ describe("ErpShell", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
     const workspaceNavigation = screen.getByRole("navigation", { name: "회계/자금 업무 영역" });
     expect(within(workspaceNavigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
-      "기초정보", "전표·증빙관리", "입출금", "채권·채무", "예산·결산", "은행·카드", "인사·급여", "세무신고", "부가서비스", "보고서",
+      "기초정보", "전표·증빙관리", "입출금", "채권·채무", "예산·결산", "통합 거래관리", "인사·급여", "세무신고", "부가서비스", "보고서",
     ]);
     expect(within(workspaceNavigation).getByRole("link", { name: "전표·증빙관리" })).toHaveAttribute("aria-current", "page");
     expect(screen.queryByRole("navigation", { name: "회계/자금 업무 탭" })).not.toBeInTheDocument();
@@ -71,10 +71,10 @@ describe("ErpShell", () => {
     expect(within(workspaceNavigation).getByRole("link", { name: "부가서비스" })).toHaveAttribute("href", "/finance?workspace=services");
   });
 
-  it("opens the bank-card workspace at its implemented default page", () => {
+  it("opens the integrated transaction workspace at its implemented default page", () => {
     render(<ErpShell activeLabel="회계/자금"><p>본문</p></ErpShell>);
 
-    expect(screen.getByRole("link", { name: "은행·카드" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "통합 거래관리" })).toHaveAttribute(
       "href",
       "/finance/bank-transactions",
     );
@@ -268,34 +268,41 @@ describe("ErpShell", () => {
     ).not.toBeInTheDocument();
   });
 
-  it("links bank transaction upload from the bank-card workspace", () => {
+  it("groups integrated transaction workflows by purpose", () => {
     render(
       <ErpShell
-        activeDetailLabel="거래내역"
+        activeDetailLabel="통합 거래내역"
         activeLabel="회계/자금"
-        activeWorkspaceLabel="은행·카드"
+        activeWorkspaceLabel="통합 거래관리"
       >
         <p>본문</p>
       </ErpShell>,
     );
 
-    expect(screen.getByRole("link", { name: "은행·카드" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "통합 거래관리" })).toHaveAttribute(
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("link", { name: "거래내역" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "통합 거래내역" })).toHaveAttribute(
       "href",
       "/finance/bank-transactions",
     );
-    expect(screen.getByRole("link", { name: "거래내역" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "통합 거래내역" })).toHaveAttribute(
       "aria-current",
       "page",
+    );
+    expect(screen.getByText("조회")).toBeInTheDocument();
+    expect(screen.getByText("가져오기·연동")).toBeInTheDocument();
+    expect(screen.getByText("검토")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "은행 거래 업로드" })).toHaveAttribute(
+      "href",
+      "/finance/bank-transactions/upload",
     );
     expect(screen.getByRole("link", { name: "계좌 연동 설정" })).toHaveAttribute(
       "href",
       "/finance/bank-account-links",
     );
-    expect(screen.getByRole("link", { name: "Ledger 참고 연결" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Ledger 원장 연동" })).toHaveAttribute(
       "href",
       "/finance/bank-auto-matching",
     );
@@ -310,7 +317,7 @@ describe("ErpShell", () => {
       <ErpShell
         activeDetailLabel="계좌 연동 설정"
         activeLabel="회계/자금"
-        activeWorkspaceLabel="은행·카드"
+        activeWorkspaceLabel="통합 거래관리"
       >
         <p>계좌 연결 본문</p>
       </ErpShell>,
@@ -320,7 +327,7 @@ describe("ErpShell", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("link", { name: "거래내역" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "통합 거래내역" })).not.toHaveAttribute(
       "aria-current",
     );
   });
