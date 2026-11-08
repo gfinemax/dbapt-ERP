@@ -12,6 +12,10 @@ const overrideMigration = fs.readFileSync(
   path.join(root, "supabase/migrations/20261108093000_bank_transaction_sheet_field_overrides.sql"),
   "utf8",
 );
+const permissionMigration = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261108110000_allow_sheet_batch_summary_update.sql"),
+  "utf8",
+);
 
 describe("bank transaction sheet enrichment contract", () => {
   it("keeps matched transaction IDs and inserts only missing source rows", () => {
@@ -61,5 +65,11 @@ describe("bank transaction sheet enrichment contract", () => {
     expect(overrideMigration).toContain("revoke all on finance.bank_transaction_sheet_field_overrides from public,anon,authenticated");
     expect(overrideMigration).toContain("grant execute on function finance.apply_bank_transaction_sheet_enrichment");
     expect(overrideMigration).toContain("to service_role");
+  });
+
+  it("lets the service role update the applied batch summary", () => {
+    expect(permissionMigration).toContain(
+      "grant update on finance.bank_transaction_sheet_import_batches to service_role",
+    );
   });
 });
