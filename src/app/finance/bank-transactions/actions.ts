@@ -11,8 +11,8 @@ import {
   type ApplyBankSheetEnrichmentInput,
 } from "@/features/finance/bank-transaction-sheet-enrichment-repository";
 import type { BankSheetSourceRow } from "@/features/finance/bank-transaction-sheet-enrichment";
-import type { BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
-import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from "@/features/finance/bank-transaction-repository";
+import type { BankTransactionReviewInput, BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
+import { confirmBankTransactionSubjects, createBankTransactionsInSupabase, saveBankTransactionReview } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
@@ -86,6 +86,16 @@ export async function confirmBankTransactionSubjectsAction(assignments: BankTran
   revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/exp");
   return confirmed;
+}
+
+export async function saveBankTransactionReviewAction(input: BankTransactionReviewInput) {
+  const actor = await requireExpenseActor("ADMIN");
+  const saved = await saveBankTransactionReview(actor.organization_id, actor.user_id, input);
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-unmatched");
+  revalidatePath("/finance/reports");
+  revalidatePath("/finance/exp");
+  return saved;
 }
 
 export async function saveLedgerBankSubjectRulesAction(rules: LedgerBankSubjectRuleInput[]) {

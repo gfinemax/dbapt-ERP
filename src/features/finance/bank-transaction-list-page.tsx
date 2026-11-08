@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { ErpShell } from "@/components/erp-shell";
+import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
 import {
   FinanceDataTable,
@@ -14,6 +15,8 @@ import type {
   BankTransactionClassificationStatus,
   BankTransactionListFilters,
   BankTransactionListPage as BankTransactionPageData,
+  BankTransactionReviewInput,
+  BankTransactionReviewResult,
   BankTransactionStatusCounts,
   BankTransactionSourceReconciliationSummary,
   LedgerBankSourceSummary,
@@ -22,12 +25,14 @@ import { formatKrw } from "./finance-data";
 
 type Props = {
   accessError?: string;
+  accountSubjects?: RegisteredAccountSubject[];
   bankAccounts: RegisteredBankAccount[];
   filters: BankTransactionListFilters;
   ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
   selectedTransactionId?: string;
+  saveReviewAction?: (input: BankTransactionReviewInput) => Promise<BankTransactionReviewResult>;
   sourceReconciliationSummary?: BankTransactionSourceReconciliationSummary;
   statusCounts?: BankTransactionStatusCounts;
   userLabel?: string;
@@ -69,12 +74,14 @@ const emptyStatusCounts: BankTransactionStatusCounts = {
 
 export function BankTransactionListPage({
   accessError,
+  accountSubjects = [],
   bankAccounts,
   filters,
   ledgerSourceSummary,
   logoutAction,
   pageData,
   selectedTransactionId,
+  saveReviewAction,
   sourceReconciliationSummary,
   statusCounts = emptyStatusCounts,
   userLabel = "로그인 필요",
@@ -291,6 +298,7 @@ export function BankTransactionListPage({
                     <td className="break-words px-2 py-2.5 text-center align-middle">
                       <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
+                      {transaction.uploadedCategory ? <p className="mt-1 text-xs font-semibold text-[var(--color-mustard)]">항목구분 · {transaction.uploadedCategory}</p> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
                       <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>
@@ -326,8 +334,11 @@ export function BankTransactionListPage({
 
       {selectedTransaction ? (
         <BankTransactionDetailDrawer
+          accountSubjects={accountSubjects}
           accountName={accounts.get(selectedTransaction.bankAccountId)?.accountName ?? "계좌 정보 없음"}
           closeHref={currentListHref}
+          key={selectedTransaction.id}
+          saveReviewAction={saveReviewAction}
           transaction={selectedTransaction}
         />
       ) : null}

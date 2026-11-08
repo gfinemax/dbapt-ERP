@@ -38,10 +38,12 @@ describe("BankTransactionReviewPage", () => {
     const select = screen.getByLabelText("인터넷 요금 확정 계정과목");
     expect(within(select).getByRole("option", { name: registeredAccountSubjects[0].name })).toBeInTheDocument();
     expect(select).not.toHaveTextContent(registeredAccountSubjects[0].code);
+    fireEvent.change(screen.getByLabelText("인터넷 요금 관리자 비고"), { target: { value: "통신비 청구서 확인" } });
     fireEvent.click(screen.getByRole("button", { name: "추천값 전체 선택" }));
     fireEvent.click(screen.getByRole("button", { name: "선택 1건 확정" }));
     expect(confirmAssignments).toHaveBeenCalledWith([{
       accountSubjectId: registeredAccountSubjects[0].id,
+      note: "통신비 청구서 확인",
       transactionId: transaction.id,
     }]);
     expect(await screen.findByText("1건의 계정과목을 관리자 확정했어.")).toBeInTheDocument();

@@ -87,11 +87,14 @@ export type BankTransactionSourceCounts = Pick<
 export type BankTransactionListRow = BankTransactionReviewRow & {
   balanceAmount: number | null;
   branchName: string;
+  classificationNote?: string;
   memo?: string;
   originalDescription?: string;
   originalMemo?: string;
   sourceReconciliationIssue?: BankTransactionSourceReconciliationIssue;
   sheetOverrides?: BankTransactionSheetOverride[];
+  uploadedAccountTitle?: string;
+  uploadedCategory?: string;
 };
 
 export type BankTransactionSourceReconciliationIssue = {
@@ -147,6 +150,22 @@ export type BankTransactionSubjectAssignment = {
   accountSubjectId: string;
   note?: string;
   transactionId: string;
+};
+
+export type BankTransactionReviewAction = "NOTE" | "CONFIRM" | "DEFER" | "EXCLUDE";
+
+export type BankTransactionReviewInput = {
+  accountSubjectId?: string | null;
+  action: BankTransactionReviewAction;
+  adminNote?: string;
+  transactionId: string;
+};
+
+export type BankTransactionReviewResult = {
+  account_subject_id: string | null;
+  classification_note: string | null;
+  classification_status: BankTransactionClassificationStatus;
+  transaction_id: string;
 };
 
 const bankTransactionSelect =
@@ -376,7 +395,7 @@ export async function listBankTransactions(
   }
   const from = (page - 1) * bankTransactionPageSize;
   let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
-    .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,recommendation_reason", { count: "exact" })
+    .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,uploaded_major_category,uploaded_account_title,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,classification_note,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
     .is("deleted_at", null);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
@@ -385,7 +404,7 @@ export async function listBankTransactions(
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
   const search = normalizedBankTransactionSearch(filters.query);
-  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%`);
+  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%`);
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("id", { ascending: false })
@@ -404,6 +423,7 @@ export async function listBankTransactions(
   const overrideMap = await loadLatestBankTransactionSheetOverrides(organizationId, (data ?? []).map((row) => row.id));
   const rows = (data ?? []).map((row) => {
     const overrides = overrideMap.get(row.id) ?? [];
+    const categoryOverride = overrides.find((override) => override.fieldName === "ACCOUNT_CATEGORY");
     const descriptionOverride = overrides.find((override) => override.fieldName === "DESCRIPTION");
     const memoOverride = overrides.find((override) => override.fieldName === "MEMO");
     return ({
@@ -411,6 +431,7 @@ export async function listBankTransactions(
     balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
     bankAccountId: row.bank_account_id,
     branchName: row.branch_name ?? "",
+    classificationNote: row.classification_note ?? "",
     classificationStatus: row.classification_status,
     confirmedAccountSubjectId: row.confirmed_account_subject_id,
     confirmedAccountSubjectName: row.confirmed_account_subject_id ? confirmedSubjectNames.get(row.confirmed_account_subject_id) ?? null : null,
@@ -426,6 +447,8 @@ export async function listBankTransactions(
     sheetOverrides: overrides,
     transactedAt: row.transacted_at,
     transactionKind: row.transaction_kind,
+    uploadedAccountTitle: row.uploaded_account_title ?? "",
+    uploadedCategory: categoryOverride?.sourceValue ?? row.uploaded_major_category ?? "",
   }); }) as BankTransactionListRow[];
   const totalCount = count ?? rows.length;
   return {
@@ -502,7 +525,7 @@ export async function countBankTransactionsByStatus(
     if (transactionIds) request = request.in("id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%`);
+    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%`);
     if (status) request = request.eq("classification_status", status);
     const { count, error } = await request;
     if (error) throw new Error(`은행거래 상태별 건수를 불러오지 못했어: ${error.message}`);
@@ -743,4 +766,25 @@ export async function confirmBankTransactionSubjects(
   });
   if (error) throw new Error(`은행거래 계정과목 확정에 실패했어: ${error.message}`);
   return data as Array<{ account_subject_id: string; transaction_id: string }>;
+}
+
+export async function saveBankTransactionReview(
+  organizationId: string,
+  actorId: string,
+  input: BankTransactionReviewInput,
+) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc("save_bank_transaction_review", {
+    p_account_subject_id: input.accountSubjectId || null,
+    p_action: input.action,
+    p_actor: actorId,
+    p_note: input.adminNote ?? "",
+    p_org: organizationId,
+    p_transaction_id: input.transactionId,
+  });
+  if (error) throw new Error(`은행거래 검토 저장에 실패했어: ${error.message}`);
+  const result = (data as BankTransactionReviewResult[] | null)?.[0];
+  if (!result) throw new Error("저장된 은행거래 검토 결과를 확인하지 못했어.");
+  return result;
 }

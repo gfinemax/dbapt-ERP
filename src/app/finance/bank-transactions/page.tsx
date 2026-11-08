@@ -1,4 +1,6 @@
 import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
+import { saveBankTransactionReviewAction } from "@/app/finance/bank-transactions/actions";
+import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
 import {
@@ -50,10 +52,11 @@ export default async function FinanceBankTransactionsRoute({
   }
 
   const emptyStatusCounts: BankTransactionStatusCounts = { ALL: 0, CONFIRMED: 0, DEFERRED: 0, EXCLUDED: 0, RECOMMENDED: 0, UNREVIEWED: 0 };
-  const [bankAccounts, sourceReconciliationSummary] = actor ? await Promise.all([
+  const [bankAccounts, accountSubjects, sourceReconciliationSummary] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
+    listAccountSubjectsFromSupabase(actor.organization_id),
     loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
-  ]) : [[], undefined];
+  ]) : [[], [], undefined];
   const sourceReviewTransactionIds = filters.sourceReconciliationStatus
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
@@ -79,12 +82,14 @@ export default async function FinanceBankTransactionsRoute({
   return (
     <BankTransactionListPage
       accessError={accessError}
+      accountSubjects={accountSubjects ?? []}
       bankAccounts={bankAccounts ?? []}
       filters={filters}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}
       pageData={pageDataWithReconciliation}
       selectedTransactionId={query.transactionId?.trim()}
+      saveReviewAction={actor?.permissions.includes("ADMIN") ? saveBankTransactionReviewAction : undefined}
       sourceReconciliationSummary={sourceReconciliationSummary}
       statusCounts={statusCounts}
       userLabel={actor?.display_name}

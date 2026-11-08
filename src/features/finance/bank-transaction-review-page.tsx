@@ -39,6 +39,9 @@ export function BankTransactionReviewPage({
   const [assignments, setAssignments] = useState<Record<string, string>>(() => Object.fromEntries(
     initialTransactions.map((transaction) => [transaction.id, transaction.recommendedAccountSubjectId ?? ""]),
   ));
+  const [notes, setNotes] = useState<Record<string, string>>(() => Object.fromEntries(
+    initialTransactions.map((transaction) => [transaction.id, ""]),
+  ));
   const [isConfirming, setIsConfirming] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -61,6 +64,7 @@ export function BankTransactionReviewPage({
     try {
       const confirmed = await confirmAssignments(confirmableIds.map((transactionId) => ({
         accountSubjectId: assignments[transactionId],
+        note: notes[transactionId]?.trim() || undefined,
         transactionId,
       })));
       const confirmedIds = new Set(confirmed.map((item) => item.transaction_id));
@@ -128,6 +132,14 @@ export function BankTransactionReviewPage({
                         <option value="">계정과목 선택</option>
                         {activeSubjects.map((subject) => <option key={subject.id} value={subject.id}>{subject.name}</option>)}
                       </select>
+                      <textarea
+                        aria-label={`${transaction.description} 관리자 비고`}
+                        className="mt-2 min-h-16 w-full resize-y rounded-md border bg-white px-3 py-2 text-xs"
+                        maxLength={2000}
+                        onChange={(event) => setNotes((current) => ({ ...current, [transaction.id]: event.target.value }))}
+                        placeholder="분류 판단 근거 또는 확인사항"
+                        value={notes[transaction.id] ?? ""}
+                      />
                     </td>
                   </tr>
                 ))}

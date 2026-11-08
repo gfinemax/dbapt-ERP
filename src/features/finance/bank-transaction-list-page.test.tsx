@@ -1,9 +1,11 @@
-import { render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
+import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
 import { BankTransactionListPage, bankTransactionPageHref } from "./bank-transaction-list-page";
 
 vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadgesAction: vi.fn().mockResolvedValue({}) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 const bankAccounts = [{
   accountName: "우리은행 운영계좌",
@@ -26,6 +28,7 @@ const pageData = {
     balanceAmount: 1200000,
     bankAccountId: "bank-1",
     branchName: "대방동",
+    classificationNote: "KT 청구서와 대조 필요",
     classificationStatus: "RECOMMENDED" as const,
     counterparty: "KT",
     description: "인터넷 요금",
@@ -33,8 +36,11 @@ const pageData = {
     recommendedAccountSubjectId: "subject-1",
     recommendedAccountSubjectName: "통신비",
     recommendationReason: "거래 적요 키워드로 추천함",
+    memo: "9월 인터넷 요금",
     transactedAt: "2026-09-27T09:00:00+09:00",
     transactionKind: "출금" as const,
+    uploadedAccountTitle: "통신비",
+    uploadedCategory: "운영비",
   }],
   totalCount: 4277,
   totalPages: 86,
@@ -204,5 +210,42 @@ describe("BankTransactionListPage", () => {
     const drawer = screen.getByRole("dialog", { name: "적요 없음" });
     expect(within(drawer).getByRole("region", { name: "원본 대조 상태" })).toHaveTextContent("ERP 원본 ID3344");
     expect(within(drawer).getByText("연결 없음")).toBeInTheDocument();
+  });
+
+  it("uses uploaded fields as references and saves the ERP subject with an admin note", async () => {
+    const saveReviewAction = vi.fn().mockResolvedValue({
+      account_subject_id: registeredAccountSubjects[0].id,
+      classification_note: "통신비 청구서 확인 완료",
+      classification_status: "CONFIRMED",
+      transaction_id: "transaction-1",
+    });
+    render(<BankTransactionListPage
+      accountSubjects={registeredAccountSubjects}
+      bankAccounts={bankAccounts}
+      filters={{}}
+      pageData={pageData}
+      saveReviewAction={saveReviewAction}
+      selectedTransactionId="transaction-1"
+      statusCounts={statusCounts}
+    />);
+
+    const drawer = screen.getByRole("dialog", { name: "인터넷 요금" });
+    const references = within(drawer).getByRole("region", { name: "업로드 참고 정보" });
+    expect(references).toHaveTextContent("항목구분운영비");
+    expect(references).toHaveTextContent("업로드 계정항목통신비");
+    expect(references).toHaveTextContent("업로드 메모9월 인터넷 요금");
+    expect(within(drawer).getByLabelText("관리자 비고")).toHaveValue("KT 청구서와 대조 필요");
+
+    fireEvent.change(within(drawer).getByLabelText("ERP 계정과목"), { target: { value: registeredAccountSubjects[0].id } });
+    fireEvent.change(within(drawer).getByLabelText("관리자 비고"), { target: { value: "통신비 청구서 확인 완료" } });
+    fireEvent.click(within(drawer).getByRole("button", { name: "계정과목 저장·확정" }));
+
+    expect(saveReviewAction).toHaveBeenCalledWith({
+      accountSubjectId: registeredAccountSubjects[0].id,
+      action: "CONFIRM",
+      adminNote: "통신비 청구서 확인 완료",
+      transactionId: "transaction-1",
+    });
+    expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();
   });
 });
