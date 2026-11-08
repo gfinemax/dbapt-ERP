@@ -7,10 +7,13 @@ export type BankTransactionSheetImportHistoryEntry = {
   bankAccountId: string;
   batchId: string;
   currentTransactionCount: number;
+  erpOnlyCount: number;
+  fieldOverrideCount: number;
   googleSheetSourceCount: number;
   importedAt: string;
   insertedCount: number;
   ledgerSourceCount: number;
+  manualMatchCount: number;
   matchedCount: number;
   otherSourceCount: number;
   sourceDepositTotal: number;
@@ -18,20 +21,25 @@ export type BankTransactionSheetImportHistoryEntry = {
   sourceRowCount: number;
   sourceSheet: string;
   sourceWithdrawalTotal: number;
+  skippedCount: number;
 };
 
 type SheetImportBatchRow = {
   bank_account_id: string;
+  erp_only_count: number | string;
+  field_override_count: number | string;
   id: string;
   imported_at: string;
   imported_by: string;
   inserted_count: number | string;
   matched_count: number | string;
+  manual_match_count: number | string;
   source_deposit_total: number | string;
   source_document_id: string;
   source_row_count: number | string;
   source_sheet: string;
   source_withdrawal_total: number | string;
+  skipped_count: number | string;
 };
 
 type ReimbursementMemberRow = {
@@ -50,7 +58,7 @@ export async function listBankTransactionSheetImportHistory(
   const { data, error } = await supabase
     .schema("finance")
     .from("bank_transaction_sheet_import_batches")
-    .select("id,bank_account_id,source_document_id,source_sheet,source_row_count,matched_count,inserted_count,source_deposit_total,source_withdrawal_total,imported_by,imported_at")
+    .select("id,bank_account_id,source_document_id,source_sheet,source_row_count,matched_count,manual_match_count,inserted_count,skipped_count,erp_only_count,field_override_count,source_deposit_total,source_withdrawal_total,imported_by,imported_at")
     .eq("organization_id", organizationId)
     .order("imported_at", { ascending: false })
     .limit(safeLimit);
@@ -94,10 +102,13 @@ export function mapBankTransactionSheetImportHistoryRow(
     bankAccountId: row.bank_account_id,
     batchId: row.id,
     currentTransactionCount: sourceSummary.erpTransactionCount,
+    erpOnlyCount: Number(row.erp_only_count ?? 0),
+    fieldOverrideCount: Number(row.field_override_count ?? 0),
     googleSheetSourceCount: sourceSummary.googleSheetSourceCount,
     importedAt: row.imported_at,
     insertedCount: Number(row.inserted_count),
     ledgerSourceCount: sourceSummary.ledgerSourceCount,
+    manualMatchCount: Number(row.manual_match_count ?? 0),
     matchedCount: Number(row.matched_count),
     otherSourceCount: sourceSummary.otherSourceCount,
     sourceDepositTotal: Number(row.source_deposit_total),
@@ -105,6 +116,7 @@ export function mapBankTransactionSheetImportHistoryRow(
     sourceRowCount: Number(row.source_row_count),
     sourceSheet: row.source_sheet,
     sourceWithdrawalTotal: Number(row.source_withdrawal_total),
+    skippedCount: Number(row.skipped_count ?? 0),
   };
 }
 

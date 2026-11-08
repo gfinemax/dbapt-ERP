@@ -8,6 +8,10 @@ const migration = fs.readFileSync(
   path.join(root, "supabase/migrations/20261108005621_bank_transaction_sheet_enrichment.sql"),
   "utf8",
 );
+const overrideMigration = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261108093000_bank_transaction_sheet_field_overrides.sql"),
+  "utf8",
+);
 
 describe("bank transaction sheet enrichment contract", () => {
   it("keeps matched transaction IDs and inserts only missing source rows", () => {
@@ -34,5 +38,28 @@ describe("bank transaction sheet enrichment contract", () => {
     expect(migration).toContain("'DATE'");
     expect(migration).toContain("'BANK_SHEET_ENRICHED'");
     expect(migration).toContain("DATE_ONLY_CONFIRMED");
+  });
+
+  it("stores sheet corrections separately without mutating Ledger source fields", () => {
+    expect(overrideMigration).toContain("create table if not exists finance.bank_transaction_sheet_field_overrides");
+    expect(overrideMigration).toContain("'ACCOUNT_CATEGORY','DESCRIPTION','MEMO'");
+    expect(overrideMigration).toContain("existing_transaction.description");
+    expect(overrideMigration).toContain("existing_transaction.memo");
+    expect(overrideMigration).not.toContain("set description=description_value");
+    expect(overrideMigration).not.toContain("set memo=memo_value");
+  });
+
+  it("keeps zero-value evidence and manual matching auditable", () => {
+    expect(overrideMigration).toContain("'MATCHED','INSERTED','SKIPPED_ZERO'");
+    expect(overrideMigration).toContain("'EXACT','MANUAL_CONFIRMED','DATE_ONLY_CONFIRMED','NEW','ZERO_AMOUNT'");
+    expect(overrideMigration).toContain("matched_count + inserted_count + skipped_count = source_row_count");
+    expect(overrideMigration).toContain("'manual_match_count',manual_match_count");
+  });
+
+  it("keeps the RPC server-only and security-invoker", () => {
+    expect(overrideMigration).toContain("security invoker");
+    expect(overrideMigration).toContain("revoke all on finance.bank_transaction_sheet_field_overrides from public,anon,authenticated");
+    expect(overrideMigration).toContain("grant execute on function finance.apply_bank_transaction_sheet_enrichment");
+    expect(overrideMigration).toContain("to service_role");
   });
 });

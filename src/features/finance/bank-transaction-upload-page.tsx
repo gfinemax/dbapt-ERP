@@ -18,6 +18,9 @@ import {
   validateBankTransactionReplacementRows,
 } from "./bank-transaction-import";
 import type { BankTransactionReplacementPreview, BankTransactionReplacementResult } from "./bank-transaction-replacement";
+import type { BankSheetEnrichmentPreview, BankSheetEnrichmentResult, BankSheetSourceRow } from "./bank-transaction-sheet-enrichment";
+import { BankTransactionSheetEnrichmentPanel } from "./bank-transaction-sheet-enrichment-panel";
+import type { ApplyBankSheetEnrichmentInput } from "./bank-transaction-sheet-enrichment-repository";
 import type { BankTransactionSheetImportHistoryEntry } from "./bank-transaction-sheet-import-history";
 
 const statusClasses: Record<string, string> = {
@@ -29,6 +32,7 @@ const statusClasses: Record<string, string> = {
 
 type BankTransactionUploadPageProps = {
   accessError?: string;
+  applyBankTransactionSheetEnrichment?: (input: ApplyBankSheetEnrichmentInput) => Promise<BankSheetEnrichmentResult>;
   applyBankTransactionReplacement?: (input: {
     bankAccountId: string;
     expectedOldCount: number;
@@ -45,11 +49,13 @@ type BankTransactionUploadPageProps = {
   initialSheetImportHistory?: BankTransactionSheetImportHistoryEntry[];
   loadBankTransactionReplacementPreview?: (bankAccountId: string) => Promise<BankTransactionReplacementPreview>;
   logoutAction?: () => Promise<void>;
+  previewBankTransactionSheetEnrichment?: (input: { bankAccountId: string; sourceRows: BankSheetSourceRow[] }) => Promise<BankSheetEnrichmentPreview>;
   userLabel?: string;
 };
 
 export function BankTransactionUploadPage({
   accessError,
+  applyBankTransactionSheetEnrichment,
   applyBankTransactionReplacement,
   createBankTransactions,
   initialAccountSubjects = [],
@@ -57,6 +63,7 @@ export function BankTransactionUploadPage({
   initialSheetImportHistory = [],
   loadBankTransactionReplacementPreview,
   logoutAction,
+  previewBankTransactionSheetEnrichment,
   userLabel = "로그인 필요",
 }: BankTransactionUploadPageProps = {}) {
   const bankAccounts = initialBankAccounts;
@@ -269,6 +276,12 @@ export function BankTransactionUploadPage({
         </section>
 
         <SheetImportHistory history={initialSheetImportHistory} bankAccounts={bankAccounts} />
+
+        <BankTransactionSheetEnrichmentPanel
+          applyEnrichment={applyBankTransactionSheetEnrichment}
+          bankAccounts={bankAccounts}
+          previewEnrichment={previewBankTransactionSheetEnrichment}
+        />
 
         <section className="grid gap-4 xl:grid-cols-[360px_1fr]">
           <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
@@ -505,6 +518,10 @@ function SheetImportHistory({
                   <p className="text-xs leading-5 text-[var(--color-stone)]">
                     이번 반영: 기존 연결 {entry.matchedCount.toLocaleString("ko-KR")}건 · 신규 추가 {entry.insertedCount.toLocaleString("ko-KR")}건
                   </p>
+                  <p className="text-xs leading-5 text-[var(--color-stone)]">
+                    수동 연결 {entry.manualMatchCount.toLocaleString("ko-KR")}건 · 0원 제외 {entry.skippedCount.toLocaleString("ko-KR")}건 · 표시 보정 {entry.fieldOverrideCount.toLocaleString("ko-KR")}건
+                  </p>
+                  <p className="text-xs leading-5 text-[var(--color-stone)]">ERP 원본만 {entry.erpOnlyCount.toLocaleString("ko-KR")}건 보존</p>
                   <p className="text-xs leading-5 text-[var(--color-stone)]">
                     입금 {formatKrw(entry.sourceDepositTotal)} · 출금 {formatKrw(entry.sourceWithdrawalTotal)}
                   </p>

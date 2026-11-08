@@ -26,10 +26,13 @@ describe("bank transaction sheet import history", () => {
       bankAccountId: "bank-10054",
       batchId: "batch-76",
       currentTransactionCount: 76,
+      erpOnlyCount: 0,
+      fieldOverrideCount: 0,
       googleSheetSourceCount: 19,
       importedAt: "2026-11-08T01:00:38.67399+00:00",
       insertedCount: 19,
       ledgerSourceCount: 57,
+      manualMatchCount: 0,
       matchedCount: 57,
       otherSourceCount: 0,
       sourceDepositTotal: 490965191,
@@ -37,6 +40,7 @@ describe("bank transaction sheet import history", () => {
       sourceRowCount: 76,
       sourceSheet: "시트1",
       sourceWithdrawalTotal: 489147570,
+      skippedCount: 0,
     });
   });
 });

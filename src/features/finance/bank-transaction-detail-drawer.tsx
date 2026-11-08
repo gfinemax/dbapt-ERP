@@ -65,7 +65,27 @@ export function BankTransactionDetailDrawer({ accountName, closeHref, transactio
           <Detail label="분류 상태" value={classificationLabels[transaction.classificationStatus]} />
           <Detail label="추천 계정과목" value={transaction.recommendedAccountSubjectName ?? "추천 없음"} />
           <Detail label="추천 근거" value={transaction.recommendationReason ?? "관리자 확인 필요"} />
+          <Detail label="관리 메모" value={transaction.memo || "메모 없음"} />
         </dl>
+
+        {transaction.sheetOverrides?.length ? (
+          <section className="mt-8 rounded-xl border border-[var(--color-morning-tint)] bg-[var(--color-morning-tint)]/40 p-4" aria-label="Google 시트 보정 이력">
+            <h3 className="font-bold text-[var(--color-deep-cobalt)]">Google 시트 보정 이력</h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">Ledger 원본은 바꾸지 않고 화면·보고서 표시값만 보정했어.</p>
+            <div className="mt-4 space-y-3">
+              {transaction.sheetOverrides.map((override) => (
+                <div className="rounded-lg bg-white p-3 text-sm" key={`${override.fieldName}-${override.sourceRow}`}>
+                  <p className="font-bold">{sheetFieldLabel(override.fieldName)}</p>
+                  <p className="mt-1 text-[var(--color-stone)]">원본 · {override.originalValue || "값 없음"}</p>
+                  <p className="mt-1 font-semibold">보정 · {override.sourceValue}</p>
+                  <a className="mt-2 inline-block text-xs font-bold text-[var(--color-deep-cobalt)] underline" href={`https://docs.google.com/spreadsheets/d/${override.sourceDocumentId}/edit`} rel="noreferrer" target="_blank">
+                    {override.sourceSheet} {override.sourceRow}행 확인
+                  </a>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
 
         <p className="mt-8 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm leading-6 text-[var(--color-stone)]">
           이 화면은 거래 원본을 읽기 전용으로 보여줘. 계정과목 확정은 미매칭 내역에서 처리해.
@@ -73,6 +93,12 @@ export function BankTransactionDetailDrawer({ accountName, closeHref, transactio
       </aside>
     </div>
   );
+}
+
+function sheetFieldLabel(fieldName: "ACCOUNT_CATEGORY" | "DESCRIPTION" | "MEMO") {
+  if (fieldName === "ACCOUNT_CATEGORY") return "항목구분";
+  if (fieldName === "DESCRIPTION") return "적요";
+  return "메모";
 }
 
 function Detail({ label, strong = false, value }: { label: string; strong?: boolean; value: string }) {

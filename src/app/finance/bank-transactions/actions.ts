@@ -5,9 +5,16 @@ import { revalidatePath } from "next/cache";
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
 import type { ParsedBankTransactionRow } from "@/features/finance/bank-transaction-import";
 import { applyBankTransactionReplacement, loadBankTransactionReplacementPreview } from "@/features/finance/bank-transaction-replacement";
+import {
+  applyBankTransactionSheetEnrichment,
+  previewBankTransactionSheetEnrichment,
+  type ApplyBankSheetEnrichmentInput,
+} from "@/features/finance/bank-transaction-sheet-enrichment-repository";
+import type { BankSheetSourceRow } from "@/features/finance/bank-transaction-sheet-enrichment";
 import type { BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
 import { confirmBankTransactionSubjects, createBankTransactionsInSupabase } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
+import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
 import {
   loadLedgerBankSubjectTransactions,
@@ -48,6 +55,27 @@ export async function applyBankTransactionReplacementAction(input: {
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/bank-transactions/upload");
   revalidatePath("/finance/bank-account-links");
+  revalidatePath("/finance/bank-unmatched");
+  revalidatePath("/finance/reports");
+  return result;
+}
+
+export async function previewBankTransactionSheetEnrichmentAction(input: {
+  bankAccountId: string;
+  sourceRows: BankSheetSourceRow[];
+}) {
+  const actor = await requireExpenseActor("READ");
+  return previewBankTransactionSheetEnrichment(actor.organization_id, input.bankAccountId, input.sourceRows);
+}
+
+export async function applyBankTransactionSheetEnrichmentAction(input: ApplyBankSheetEnrichmentInput) {
+  const actor = await requireReimbursementIdentity();
+  if (!actor.permissions.some((permission) => ["ADMIN", "CLOSE"].includes(permission))) {
+    throw new Error("은행 원장 보정은 관리자 또는 마감 담당자만 할 수 있어.");
+  }
+  const result = await applyBankTransactionSheetEnrichment(actor.organization_id, actor.user_id, input);
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-transactions/upload");
   revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/reports");
   return result;

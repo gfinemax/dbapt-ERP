@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
 import { BankTransactionUploadPage } from "./bank-transaction-upload-page";
 
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
 const testBankAccounts = [
   {
     accountName: "국민은행 신탁계좌",
@@ -88,10 +90,13 @@ describe("BankTransactionUploadPage", () => {
           bankAccountId: "bank-001",
           batchId: "batch-76",
           currentTransactionCount: 76,
+          erpOnlyCount: 0,
+          fieldOverrideCount: 57,
           googleSheetSourceCount: 19,
           importedAt: "2026-11-08T01:00:38.67399+00:00",
           insertedCount: 19,
           ledgerSourceCount: 57,
+          manualMatchCount: 2,
           matchedCount: 57,
           otherSourceCount: 0,
           sourceDepositTotal: 490965191,
@@ -99,6 +104,7 @@ describe("BankTransactionUploadPage", () => {
           sourceRowCount: 76,
           sourceSheet: "시트1",
           sourceWithdrawalTotal: 489147570,
+          skippedCount: 1,
         }]}
       />,
     );

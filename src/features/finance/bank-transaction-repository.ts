@@ -83,6 +83,20 @@ export type BankTransactionSourceCounts = Pick<
 export type BankTransactionListRow = BankTransactionReviewRow & {
   balanceAmount: number | null;
   branchName: string;
+  memo?: string;
+  originalDescription?: string;
+  originalMemo?: string;
+  sheetOverrides?: BankTransactionSheetOverride[];
+};
+
+export type BankTransactionSheetOverride = {
+  fieldName: "ACCOUNT_CATEGORY" | "DESCRIPTION" | "MEMO";
+  importedAt: string;
+  originalValue: string;
+  sourceDocumentId: string;
+  sourceRow: number;
+  sourceSheet: string;
+  sourceValue: string;
 };
 
 export type BankTransactionListPage = {
@@ -330,7 +344,7 @@ export async function listBankTransactions(
   if (!supabase) return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
   const from = (page - 1) * bankTransactionPageSize;
   let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
-    .select("id,bank_account_id,transacted_at,transaction_kind,description,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
+    .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
     .is("deleted_at", null);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
@@ -344,21 +358,30 @@ export async function listBankTransactions(
     .order("id", { ascending: false })
     .range(from, from + bankTransactionPageSize - 1);
   if (error) throw new Error(`은행거래 목록을 불러오지 못했어: ${error.message}`);
-  const rows = (data ?? []).map((row) => ({
+  const overrideMap = await loadLatestBankTransactionSheetOverrides(organizationId, (data ?? []).map((row) => row.id));
+  const rows = (data ?? []).map((row) => {
+    const overrides = overrideMap.get(row.id) ?? [];
+    const descriptionOverride = overrides.find((override) => override.fieldName === "DESCRIPTION");
+    const memoOverride = overrides.find((override) => override.fieldName === "MEMO");
+    return ({
     amount: Number(row.withdrawal_amount) || Number(row.deposit_amount) || 0,
     balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
     bankAccountId: row.bank_account_id,
     branchName: row.branch_name ?? "",
     classificationStatus: row.classification_status,
     counterparty: row.counterparty ?? "",
-    description: row.description,
+    description: descriptionOverride?.sourceValue ?? row.description,
     id: row.id,
+    memo: memoOverride?.sourceValue ?? row.memo ?? "",
+    originalDescription: row.description,
+    originalMemo: row.memo ?? "",
     recommendedAccountSubjectId: row.recommended_account_subject_id,
     recommendedAccountSubjectName: row.recommended_account_subject_name,
     recommendationReason: row.recommendation_reason,
+    sheetOverrides: overrides,
     transactedAt: row.transacted_at,
     transactionKind: row.transaction_kind,
-  })) as BankTransactionListRow[];
+  }); }) as BankTransactionListRow[];
   const totalCount = count ?? rows.length;
   return {
     page,
@@ -367,6 +390,44 @@ export async function listBankTransactions(
     totalCount,
     totalPages: Math.max(1, Math.ceil(totalCount / bankTransactionPageSize)),
   };
+}
+
+async function loadLatestBankTransactionSheetOverrides(
+  organizationId: string,
+  transactionIds: string[],
+): Promise<Map<string, BankTransactionSheetOverride[]>> {
+  const result = new Map<string, BankTransactionSheetOverride[]>();
+  if (!transactionIds.length) return result;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return result;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .from("bank_transaction_sheet_field_overrides")
+    .select("bank_transaction_id,field_name,source_value,original_value,source_document_id,source_sheet,source_row,imported_at")
+    .eq("organization_id", organizationId)
+    .eq("apply_status", "APPLIED")
+    .in("bank_transaction_id", transactionIds)
+    .order("imported_at", { ascending: false });
+  if (error) {
+    if (["42P01", "PGRST205"].includes(error.code ?? "")) return result;
+    throw new Error(`Google 시트 보정 이력을 불러오지 못했어: ${error.message}`);
+  }
+  const seen = new Set<string>();
+  for (const row of data ?? []) {
+    const unique = `${row.bank_transaction_id}:${row.field_name}`;
+    if (seen.has(unique)) continue;
+    seen.add(unique);
+    const override: BankTransactionSheetOverride = {
+      fieldName: row.field_name,
+      importedAt: row.imported_at,
+      originalValue: row.original_value ?? "",
+      sourceDocumentId: row.source_document_id,
+      sourceRow: Number(row.source_row),
+      sourceSheet: row.source_sheet,
+      sourceValue: row.source_value,
+    };
+    result.set(row.bank_transaction_id, [...(result.get(row.bank_transaction_id) ?? []), override]);
+  }
+  return result;
 }
 
 export async function countBankTransactionsByStatus(

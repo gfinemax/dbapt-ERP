@@ -6,9 +6,11 @@ import { listBankTransactionSheetImportHistory } from "@/features/finance/bank-t
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import {
+  applyBankTransactionSheetEnrichmentAction,
   applyBankTransactionReplacementAction,
   createBankTransactionsAction,
   loadBankTransactionReplacementPreviewAction,
+  previewBankTransactionSheetEnrichmentAction,
 } from "../actions";
 
 export default async function FinanceBankTransactionUploadRoute() {
@@ -30,6 +32,7 @@ export default async function FinanceBankTransactionUploadRoute() {
   return (
     <BankTransactionUploadPage
       accessError={accessError}
+      applyBankTransactionSheetEnrichment={canReplaceLedgerBank && hasSupabaseSecretConfig() ? applyBankTransactionSheetEnrichmentAction : undefined}
       createBankTransactions={actor && hasSupabaseSecretConfig() ? createBankTransactionsAction : undefined}
       applyBankTransactionReplacement={canReplaceLedgerBank && hasSupabaseSecretConfig() ? applyBankTransactionReplacementAction : undefined}
       initialAccountSubjects={accountSubjects ?? []}
@@ -37,6 +40,7 @@ export default async function FinanceBankTransactionUploadRoute() {
       initialSheetImportHistory={sheetImportHistory}
       loadBankTransactionReplacementPreview={canReplaceLedgerBank && hasSupabaseSecretConfig() ? loadBankTransactionReplacementPreviewAction : undefined}
       logoutAction={actor ? reimbursementLogout : undefined}
+      previewBankTransactionSheetEnrichment={canReplaceLedgerBank && hasSupabaseSecretConfig() ? previewBankTransactionSheetEnrichmentAction : undefined}
       userLabel={actor?.display_name}
     />
   );
