@@ -133,7 +133,19 @@ describe("BankTransactionListPage", () => {
     expect(screen.queryByRole("columnheader", { name: "출금" })).not.toBeInTheDocument();
     expect(screen.getByText("−55,000원")).toBeInTheDocument();
     expect(screen.getByText("우리은행 · 1006")).toBeInTheDocument();
-    expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-3", "py-2.5");
+    const transactionRow = screen.getByText("−55,000원").closest("tr");
+    expect(transactionRow).not.toBeNull();
+    expect(within(transactionRow!).getAllByRole("cell").every((cell) => cell.classList.contains("text-center"))).toBe(true);
+    expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-2", "py-2.5", "text-center");
+    expect(document.querySelector("table")).toHaveClass("min-w-[760px]", "table-fixed");
+    expect([...document.querySelectorAll("colgroup col")].map((column) => column.className)).toEqual([
+      "w-[15%]",
+      "w-[16%]",
+      "w-[29%]",
+      "w-[15%]",
+      "w-[15%]",
+      "w-[10%]",
+    ]);
   });
 
   it("shows active filters as removable chips", () => {

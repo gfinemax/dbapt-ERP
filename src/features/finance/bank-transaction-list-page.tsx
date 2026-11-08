@@ -257,15 +257,23 @@ export function BankTransactionListPage({
             />
           </div>
 
-          <FinanceDataTable minWidthClass="min-w-[840px]">
+          <FinanceDataTable minWidthClass="min-w-[760px] table-fixed">
+            <colgroup>
+              <col className="w-[15%]" />
+              <col className="w-[16%]" />
+              <col className="w-[29%]" />
+              <col className="w-[15%]" />
+              <col className="w-[15%]" />
+              <col className="w-[10%]" />
+            </colgroup>
             <thead className="sticky top-0 z-[3] bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)] shadow-[0_1px_0_var(--color-soft-border)]">
               <tr>
-                <th className="px-3 py-2.5 text-center">거래일시</th>
-                <th className="px-3 py-2.5 text-center">계좌</th>
-                <th className="px-3 py-2.5 text-center">적요·거래처</th>
-                <th className="px-3 py-2.5 text-center">금액</th>
-                <th className="px-3 py-2.5 text-center">계정과목</th>
-                <th className="px-3 py-2.5 text-center">상태</th>
+                <th className="px-2 py-2.5 text-center">거래일시</th>
+                <th className="px-2 py-2.5 text-center">계좌</th>
+                <th className="px-2 py-2.5 text-center">적요·거래처</th>
+                <th className="px-2 py-2.5 text-center">금액</th>
+                <th className="px-2 py-2.5 text-center">계정과목</th>
+                <th className="px-2 py-2.5 text-center">상태</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
@@ -276,22 +284,22 @@ export function BankTransactionListPage({
                 const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
                 return (
                   <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
-                    <td className="whitespace-nowrap px-3 py-2.5">{formatDate(transaction.transactedAt)}</td>
-                    <td className="whitespace-nowrap px-3 py-2.5 font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">{formatDate(transaction.transactedAt)}</td>
+                    <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
                       {account ? compactAccountName(account) : "계좌 정보 없음"}
                     </td>
-                    <td className="px-3 py-2.5">
+                    <td className="break-words px-2 py-2.5 text-center align-middle">
                       <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
                     </td>
-                    <td className="whitespace-nowrap px-3 py-2.5 text-right">
+                    <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
                       <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>
                         {signedAmount(transaction.amount, transaction.transactionKind)}
                       </p>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.transactionKind ?? "구분 미확인"}</p>
                     </td>
-                    <td className="px-3 py-2.5 font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
-                    <td className="px-3 py-2.5 text-center">
+                    <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
+                    <td className="px-2 py-2.5 text-center align-middle">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span>
                       {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}
                     </td>
