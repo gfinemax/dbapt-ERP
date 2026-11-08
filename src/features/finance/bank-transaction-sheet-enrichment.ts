@@ -1,6 +1,24 @@
 export const defaultBankSheetDocumentId = "1Qxh1bMM6hUEDMHzEqAdOppKH8ZYqbVTRZa-Ci7CElQ4";
 export const defaultBankSheetName = "시트1";
 
+export const bankSheetProfiles = [
+  {
+    accountDigits: "07111426104017",
+    documentId: defaultBankSheetDocumentId,
+    reason: "기업(07111) Google 시트의 적요·항목구분·메모 보정 및 신규 거래 반영",
+    sheetName: defaultBankSheetName,
+  },
+  {
+    accountDigits: "131022540467",
+    documentId: "1ygwf7JkjTMoMJJuZdsM4ifA52x-LiuZKbuhNX3z74_w",
+    reason: "신협(13102) Google 시트 390건의 적요·항목구분·메모 보정 및 원본 대조",
+    sheetName: defaultBankSheetName,
+  },
+] as const;
+
+export const bankSheetInsertSelection = "__INSERT__";
+export const bankSheetSkipSelection = "__SKIP_REVIEW__";
+
 export type BankSheetSourceRow = {
   accountLabel: string;
   accountCategory: string;
@@ -34,6 +52,7 @@ export type BankSheetPreviewRow = BankSheetSourceRow & {
 
 export type BankSheetEnrichmentPreview = {
   autoMatchedCount: number;
+  categorizedRowCount: number;
   erpOnlyAfterResolutionCount: number;
   expectedCurrentCount: number;
   newCount: number;
@@ -111,7 +130,7 @@ export function matchBankSheetRows(
   const used = new Set<string>();
   const rows: BankSheetPreviewRow[] = [];
 
-  for (const row of sourceRows) {
+  for (const row of sourceRows.filter((sourceRow) => Boolean(sourceRow.transactionTime))) {
     if (row.depositAmount === 0 && row.withdrawalAmount === 0) {
       rows.push({ ...row, candidates: [], matchedBankTransactionId: null, status: "SKIPPED_ZERO" });
       continue;
@@ -119,32 +138,45 @@ export function matchBankSheetRows(
     if ((row.depositAmount > 0) === (row.withdrawalAmount > 0)) {
       throw new Error(`시트 ${row.sourceRow}행의 입금·출금 방향을 확인해줘.`);
     }
-    if (row.transactionTime) {
-      const candidates = (exactCandidates.get(exactKey(row)) ?? []).filter((candidate) => !used.has(candidate.id));
-      if (candidates.length === 1) {
-        used.add(candidates[0].id);
-        rows.push({ ...row, candidates, matchedBankTransactionId: candidates[0].id, status: "AUTO_MATCH" });
-      } else if (candidates.length > 1) {
-        rows.push({ ...row, candidates, matchedBankTransactionId: null, status: "REVIEW_REQUIRED" });
-      } else {
-        rows.push({ ...row, candidates: [], matchedBankTransactionId: null, status: "NEW" });
-      }
-      continue;
-    }
-
-    const candidates = (dateCandidates.get(dateAmountKey(row)) ?? []).filter((candidate) => !used.has(candidate.id));
-    if (candidates.length) {
+    const candidates = (exactCandidates.get(exactKey(row)) ?? []).filter((candidate) => !used.has(candidate.id));
+    if (candidates.length === 1) {
+      addAutoMatch(rows, row, candidates[0], used);
+    } else if (candidates.length > 1) {
       rows.push({ ...row, candidates, matchedBankTransactionId: null, status: "REVIEW_REQUIRED" });
     } else {
       rows.push({ ...row, candidates: [], matchedBankTransactionId: null, status: "NEW" });
     }
   }
 
+  const dateOnlyGroups = groupSourceRows(sourceRows.filter((row) => !row.transactionTime), dateAmountKey);
+  for (const [key, sourceGroup] of dateOnlyGroups) {
+    const zeroRows = sourceGroup.filter((row) => row.depositAmount === 0 && row.withdrawalAmount === 0);
+    for (const row of zeroRows) {
+      rows.push({ ...row, candidates: [], matchedBankTransactionId: null, status: "SKIPPED_ZERO" });
+    }
+    const pendingSources = sourceGroup.filter((row) => row.depositAmount > 0 || row.withdrawalAmount > 0);
+    for (const row of pendingSources) {
+      if ((row.depositAmount > 0) === (row.withdrawalAmount > 0)) {
+        throw new Error(`시트 ${row.sourceRow}행의 입금·출금 방향을 확인해줘.`);
+      }
+    }
+    const pendingCandidates = (dateCandidates.get(key) ?? []).filter((candidate) => !used.has(candidate.id));
+    matchDateOnlyGroup(pendingSources, pendingCandidates, rows, used);
+  }
+
+  rows.sort((left, right) => left.sourceRow - right.sourceRow);
   const autoMatchedCount = rows.filter((row) => row.status === "AUTO_MATCH").length;
   const reviewRequiredCount = rows.filter((row) => row.status === "REVIEW_REQUIRED").length;
+  const sourceDates = sourceRows.map((row) => row.transactionDate).filter(Boolean).sort();
+  const sourceDateMin = sourceDates[0];
+  const sourceDateMax = sourceDates[sourceDates.length - 1];
+  const inScopeExistingRows = existingRows.filter((row) =>
+    !sourceDateMin || !sourceDateMax || (row.transactionDate >= sourceDateMin && row.transactionDate <= sourceDateMax),
+  );
   return {
     autoMatchedCount,
-    erpOnlyAfterResolutionCount: Math.max(existingRows.length - autoMatchedCount - reviewRequiredCount, 0),
+    categorizedRowCount: sourceRows.filter((row) => Boolean(row.accountCategory.trim())).length,
+    erpOnlyAfterResolutionCount: inScopeExistingRows.filter((row) => !used.has(row.id)).length,
     expectedCurrentCount: existingRows.length,
     newCount: rows.filter((row) => row.status === "NEW").length,
     reviewRequiredCount,
@@ -154,6 +186,97 @@ export function matchBankSheetRows(
     sourceRowCount: sourceRows.length,
     sourceWithdrawalTotal: sourceRows.reduce((sum, row) => sum + row.withdrawalAmount, 0),
   };
+}
+
+function matchDateOnlyGroup(
+  sourceRows: BankSheetSourceRow[],
+  candidates: BankSheetMatchCandidate[],
+  result: BankSheetPreviewRow[],
+  used: Set<string>,
+) {
+  const unmatchedSources = [...sourceRows];
+  const unmatchedCandidates = [...candidates];
+  const sourceDescriptionCounts = countBy(unmatchedSources, (row) => normalizeDescription(row.description));
+  const candidateDescriptionCounts = countBy(unmatchedCandidates, (row) => normalizeDescription(row.description));
+
+  for (let index = unmatchedSources.length - 1; index >= 0; index -= 1) {
+    const source = unmatchedSources[index];
+    const description = normalizeDescription(source.description);
+    if (!description || sourceDescriptionCounts.get(description) !== 1 || candidateDescriptionCounts.get(description) !== 1) continue;
+    const candidateIndex = unmatchedCandidates.findIndex((candidate) => normalizeDescription(candidate.description) === description);
+    if (candidateIndex < 0) continue;
+    const [candidate] = unmatchedCandidates.splice(candidateIndex, 1);
+    unmatchedSources.splice(index, 1);
+    addAutoMatch(result, source, candidate, used);
+  }
+
+  if (unmatchedSources.length === 1 && unmatchedCandidates.length === 1) {
+    addAutoMatch(result, unmatchedSources[0], unmatchedCandidates[0], used);
+    return;
+  }
+
+  if (
+    unmatchedSources.length > 1
+    && unmatchedSources.length === unmatchedCandidates.length
+    && new Set(unmatchedSources.map(enrichmentSignature)).size === 1
+  ) {
+    const orderedSources = [...unmatchedSources].sort((left, right) => left.sourceRow - right.sourceRow);
+    const orderedCandidates = [...unmatchedCandidates].sort((left, right) =>
+      left.sourceTransactionId.localeCompare(right.sourceTransactionId, "ko", { numeric: true }),
+    );
+    orderedSources.forEach((source, index) => addAutoMatch(result, source, orderedCandidates[index], used));
+    return;
+  }
+
+  if (!unmatchedCandidates.length) {
+    unmatchedSources.forEach((source) => result.push({
+      ...source,
+      candidates: [],
+      matchedBankTransactionId: null,
+      status: candidates.length ? "REVIEW_REQUIRED" : "NEW",
+    }));
+    return;
+  }
+
+  unmatchedSources.forEach((source) => result.push({
+    ...source,
+    candidates: unmatchedCandidates,
+    matchedBankTransactionId: null,
+    status: "REVIEW_REQUIRED",
+  }));
+}
+
+function addAutoMatch(
+  rows: BankSheetPreviewRow[],
+  source: BankSheetSourceRow,
+  candidate: BankSheetMatchCandidate,
+  used: Set<string>,
+) {
+  used.add(candidate.id);
+  rows.push({ ...source, candidates: [candidate], matchedBankTransactionId: candidate.id, status: "AUTO_MATCH" });
+}
+
+function countBy<T>(rows: T[], key: (row: T) => string) {
+  const counts = new Map<string, number>();
+  rows.forEach((row) => {
+    const value = key(row);
+    counts.set(value, (counts.get(value) ?? 0) + 1);
+  });
+  return counts;
+}
+
+function groupSourceRows(rows: BankSheetSourceRow[], key: (row: BankSheetSourceRow) => string) {
+  const grouped = new Map<string, BankSheetSourceRow[]>();
+  rows.forEach((row) => grouped.set(key(row), [...(grouped.get(key(row)) ?? []), row]));
+  return grouped;
+}
+
+function enrichmentSignature(row: BankSheetSourceRow) {
+  return [normalizeDescription(row.description), row.accountCategory.trim(), row.memo.trim()].join("|");
+}
+
+function normalizeDescription(value: string) {
+  return value.normalize("NFKC").replace(/[\s()（）._-]+/g, "").toLocaleLowerCase("ko-KR");
 }
 
 function resolveColumns(headers: string[]) {

@@ -55,21 +55,57 @@ describe("bank transaction sheet enrichment", () => {
     const preview = matchBankSheetRows(sourceRows, existing);
 
     expect(preview).toMatchObject({
-      autoMatchedCount: 1,
+      autoMatchedCount: 2,
+      categorizedRowCount: 5,
       erpOnlyAfterResolutionCount: 2,
       expectedCurrentCount: 5,
       newCount: 1,
-      reviewRequiredCount: 2,
+      reviewRequiredCount: 1,
       skippedZeroCount: 1,
       sourceRowCount: 5,
     });
     expect(preview.rows.map((row) => row.status)).toEqual([
       "AUTO_MATCH",
       "REVIEW_REQUIRED",
-      "REVIEW_REQUIRED",
+      "AUTO_MATCH",
       "NEW",
       "SKIPPED_ZERO",
     ]);
+  });
+
+  it("auto-matches date-only rows when the amount group or normalized description is unique", () => {
+    const sourceRows = parseBankSheetText([
+      "계좌구분\t거래일자\t거래시간\t거래종류\t적요\t입금\t출금\t항목구분\t메모",
+      "신협(13102)\t2025-05-17\t\t자동대체\t법무법인월드\t\t3,000,500\t변호사비\t",
+      "신협(13102)\t2025-07-06\t\t현금\t김호진(유진영)\t1,000,000\t\t분양선수금\t",
+    ].join("\n"));
+    const existing = [
+      candidate("law", "2025-05-17", "00:00:00", 0, 3_000_500, "법무법인월드"),
+      candidate("park", "2025-05-17", "00:00:00", 0, 3_000_500, "박노수"),
+      candidate("kim", "2025-07-06", "00:00:00", 1_000_000, 0, "김호진"),
+    ];
+
+    const preview = matchBankSheetRows(sourceRows, existing);
+
+    expect(preview.autoMatchedCount).toBe(2);
+    expect(preview.reviewRequiredCount).toBe(0);
+    expect(preview.erpOnlyAfterResolutionCount).toBe(1);
+    expect(preview.rows.map((row) => row.matchedBankTransactionId)).toEqual(["law", "kim"]);
+  });
+
+  it("keeps a date-only source surplus in review so it can be inserted or excluded explicitly", () => {
+    const sourceRows = parseBankSheetText([
+      "계좌구분\t거래일자\t거래시간\t거래종류\t적요\t입금\t출금\t항목구분\t메모",
+      "신협(13102)\t2025-11-07\t\t자동대체\t안동연(KT)\t\t25,850\t통신비\t",
+      "신협(13102)\t2025-11-07\t\t자동대체\t안동연 (KT)\t\t25,850\t통신비\tPDF에만 있음",
+    ].join("\n"));
+    const existing = [candidate("kt", "2025-11-07", "00:00:00", 0, 25_850, "안동연(KT)")];
+
+    const preview = matchBankSheetRows(sourceRows, existing);
+
+    expect(preview.autoMatchedCount).toBe(0);
+    expect(preview.reviewRequiredCount).toBe(2);
+    expect(preview.rows.every((row) => row.candidates[0]?.id === "kt")).toBe(true);
   });
 
   it("does not use description text to force a match", () => {

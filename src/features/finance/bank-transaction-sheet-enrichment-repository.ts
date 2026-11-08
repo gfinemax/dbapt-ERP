@@ -1,6 +1,8 @@
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import {
+  bankSheetInsertSelection,
+  bankSheetSkipSelection,
   matchBankSheetRows,
   type BankSheetEnrichmentPreview,
   type BankSheetEnrichmentResult,
@@ -57,14 +59,28 @@ export async function applyBankTransactionSheetEnrichment(
   const rows = preview.rows.map((row) => {
     let matchedBankTransactionId = row.matchedBankTransactionId;
     let matchBasis = row.status === "AUTO_MATCH" ? "EXACT" : row.status === "NEW" ? "NEW" : "ZERO_AMOUNT";
-    const operation = row.status === "NEW" ? "INSERTED" : row.status === "SKIPPED_ZERO" ? "SKIPPED_ZERO" : "MATCHED";
+    let operation = row.status === "NEW" ? "INSERTED" : row.status === "SKIPPED_ZERO" ? "SKIPPED_ZERO" : "MATCHED";
 
     if (row.status === "REVIEW_REQUIRED") {
-      matchedBankTransactionId = input.selections[String(row.sourceRow)] ?? null;
-      if (!matchedBankTransactionId || !row.candidates.some((candidate) => candidate.id === matchedBankTransactionId)) {
+      const selection = input.selections[String(row.sourceRow)] ?? "";
+      if (selection === bankSheetInsertSelection) {
+        matchedBankTransactionId = null;
+        matchBasis = "NEW";
+        operation = "INSERTED";
+      } else if (selection === bankSheetSkipSelection) {
+        matchedBankTransactionId = null;
+        matchBasis = "REVIEW_SKIPPED";
+        operation = "SKIPPED_REVIEW";
+      } else {
+        matchedBankTransactionId = selection || null;
+        matchBasis = row.transactionTime ? "MANUAL_CONFIRMED" : "DATE_ONLY_CONFIRMED";
+      }
+      if (
+        (!matchedBankTransactionId && operation === "MATCHED")
+        || (matchedBankTransactionId && !row.candidates.some((candidate) => candidate.id === matchedBankTransactionId))
+      ) {
         throw new Error(`시트 ${row.sourceRow}행의 ERP 원본을 선택해줘.`);
       }
-      matchBasis = row.transactionTime ? "MANUAL_CONFIRMED" : "DATE_ONLY_CONFIRMED";
     }
     if (matchedBankTransactionId) {
       if (selectedIds.has(matchedBankTransactionId)) throw new Error("하나의 ERP 원본을 둘 이상의 시트 행에 연결할 수 없어.");

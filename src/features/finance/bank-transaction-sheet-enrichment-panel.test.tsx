@@ -16,12 +16,24 @@ const accounts = [{
   status: "정상" as const,
   unmatchedCount: 0,
   usageStatus: "사용" as const,
+}, {
+  accountName: "대방동지역주택조합",
+  accountNo: "131-022-540467",
+  accountType: "운영계좌" as const,
+  bankName: "신협은행",
+  createdAt: "2024-12-04",
+  id: "credit-union-account",
+  lastSyncedAt: "2026-11-08 10:00",
+  status: "정상" as const,
+  unmatchedCount: 0,
+  usageStatus: "사용" as const,
 }];
 
 describe("BankTransactionSheetEnrichmentPanel", () => {
   it("shows reconciliation groups and requires an explicit ERP ID for review rows", async () => {
     const preview = vi.fn().mockResolvedValue({
       autoMatchedCount: 1,
+      categorizedRowCount: 2,
       erpOnlyAfterResolutionCount: 1,
       expectedCurrentCount: 3,
       newCount: 1,
@@ -81,6 +93,8 @@ describe("BankTransactionSheetEnrichmentPanel", () => {
 
     expect(await screen.findByText("ERP 원본 선택 필요 · 0/1건")).toBeInTheDocument();
     expect(screen.getByText("신규로 추가할 거래 · 1건")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "시트 거래를 ERP 신규 원본으로 추가" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "시트 중복·오류로 반영 제외" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "보정·신규 거래 반영" })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText("시트 2행 ERP 원본"), { target: { value: "candidate-1" } });
@@ -92,6 +106,16 @@ describe("BankTransactionSheetEnrichmentPanel", () => {
       sourceDocumentId: "1Qxh1bMM6hUEDMHzEqAdOppKH8ZYqbVTRZa-Ci7CElQ4",
       sourceSheet: "시트1",
     }));
-    expect(await screen.findByText("기존 연결 1건, 신규 1건, 0원 제외 0건을 반영했어.")).toBeInTheDocument();
+    expect(await screen.findByText("기존 연결 1건, 신규 1건, 반영 제외 0건을 처리했어.")).toBeInTheDocument();
+  });
+
+  it("loads the credit-union sheet profile when the exact account is selected", () => {
+    render(<BankTransactionSheetEnrichmentPanel bankAccounts={accounts} />);
+
+    fireEvent.change(screen.getByLabelText("대상 ERP 계좌"), { target: { value: "credit-union-account" } });
+
+    expect(screen.getByLabelText("Google 문서 ID")).toHaveValue("1ygwf7JkjTMoMJJuZdsM4ifA52x-LiuZKbuhNX3z74_w");
+    expect(screen.getByLabelText("시트명")).toHaveValue("시트1");
+    expect(screen.getByLabelText("반영 사유")).toHaveValue("신협(13102) Google 시트 390건의 적요·항목구분·메모 보정 및 원본 대조");
   });
 });

@@ -16,6 +16,10 @@ const permissionMigration = fs.readFileSync(
   path.join(root, "supabase/migrations/20261108110000_allow_sheet_batch_summary_update.sql"),
   "utf8",
 );
+const reviewResolutionMigration = fs.readFileSync(
+  path.join(root, "supabase/migrations/20261108113000_bank_sheet_review_resolution.sql"),
+  "utf8",
+);
 
 describe("bank transaction sheet enrichment contract", () => {
   it("keeps matched transaction IDs and inserts only missing source rows", () => {
@@ -71,5 +75,12 @@ describe("bank transaction sheet enrichment contract", () => {
     expect(permissionMigration).toContain(
       "grant update on finance.bank_transaction_sheet_import_batches to service_role",
     );
+  });
+
+  it("preserves non-zero review exclusions as audited source rows", () => {
+    expect(reviewResolutionMigration).toContain("'SKIPPED_REVIEW','REVIEW_SKIPPED'");
+    expect(reviewResolutionMigration).toContain("matched_id is not null or match_basis<>'REVIEW_SKIPPED'");
+    expect(reviewResolutionMigration).toContain("source_payload,source_payload_hash");
+    expect(reviewResolutionMigration).toContain("security invoker");
   });
 });

@@ -7,6 +7,9 @@ import { type ChangeEvent, type ReactNode, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
 import {
+  bankSheetInsertSelection,
+  bankSheetProfiles,
+  bankSheetSkipSelection,
   defaultBankSheetDocumentId,
   defaultBankSheetName,
   parseBankSheetText,
@@ -23,7 +26,7 @@ type Props = {
   previewEnrichment?: (input: { bankAccountId: string; sourceRows: BankSheetSourceRow[] }) => Promise<BankSheetEnrichmentPreview>;
 };
 
-const defaultReason = "기업(07111) Google 시트의 적요·항목구분·메모 보정 및 신규 거래 반영";
+const defaultReason = bankSheetProfiles[0].reason;
 
 export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccounts, previewEnrichment }: Props) {
   const router = useRouter();
@@ -31,9 +34,9 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
     ?? bankAccounts.find((account) => account.accountName.includes("기업"))
     ?? bankAccounts[0];
   const [accountId, setAccountId] = useState(targetAccount?.id ?? "");
-  const [sourceDocumentId, setSourceDocumentId] = useState(defaultBankSheetDocumentId);
-  const [sourceSheet, setSourceSheet] = useState(defaultBankSheetName);
-  const [reason, setReason] = useState(defaultReason);
+  const [sourceDocumentId, setSourceDocumentId] = useState<string>(defaultBankSheetDocumentId);
+  const [sourceSheet, setSourceSheet] = useState<string>(defaultBankSheetName);
+  const [reason, setReason] = useState<string>(defaultReason);
   const [tableText, setTableText] = useState("");
   const [sourceRows, setSourceRows] = useState<BankSheetSourceRow[]>([]);
   const [preview, setPreview] = useState<BankSheetEnrichmentPreview | null>(null);
@@ -42,6 +45,7 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
   const [applying, setApplying] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const selectedAccount = bankAccounts.find((account) => account.id === accountId);
   const reviewRows = useMemo(() => preview?.rows.filter((row) => row.status === "REVIEW_REQUIRED") ?? [], [preview]);
   const newRows = useMemo(() => preview?.rows.filter((row) => row.status === "NEW") ?? [], [preview]);
   const skippedRows = useMemo(() => preview?.rows.filter((row) => row.status === "SKIPPED_ZERO") ?? [], [preview]);
@@ -109,7 +113,7 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
       setMessage(
         result.already_applied
           ? `이미 반영된 시트야. 배치 ${result.batch_id}`
-          : `기존 연결 ${result.matched_count.toLocaleString("ko-KR")}건, 신규 ${result.inserted_count.toLocaleString("ko-KR")}건, 0원 제외 ${result.skipped_count.toLocaleString("ko-KR")}건을 반영했어.`,
+          : `기존 연결 ${result.matched_count.toLocaleString("ko-KR")}건, 신규 ${result.inserted_count.toLocaleString("ko-KR")}건, 반영 제외 ${result.skipped_count.toLocaleString("ko-KR")}건을 처리했어.`,
       );
       router.refresh();
     } catch (applyError) {
@@ -128,7 +132,7 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
             <h2 className="text-lg font-bold">Google 시트 보정·증분 반영</h2>
           </div>
           <p className="mt-2 max-w-4xl text-sm leading-6 text-[var(--color-stone)]">
-            Ledger 원본 ID는 유지하고 적요·메모·항목구분은 보정 이력으로 남겨. 날짜·시간·입출금액이 유일한 거래만 자동 연결하고, 중복·시간 누락은 직접 원본을 선택해.
+            Ledger 원본 ID는 유지하고 적요·메모·항목구분은 보정 이력으로 남겨. 시간 누락 거래는 날짜·입출금액과 적요로 유일하게 확인될 때만 자동 연결하고, 중복 후보는 처리 방법을 직접 선택해.
           </p>
         </div>
         <a className="inline-flex items-center gap-2 rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-bold" href={`https://docs.google.com/spreadsheets/d/${sourceDocumentId}/edit`} rel="noreferrer" target="_blank">
@@ -139,7 +143,7 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
       <div className="grid gap-4 p-5 xl:grid-cols-[360px_1fr]">
         <div className="space-y-4">
           <Field label="대상 ERP 계좌">
-            <select className={inputClass} onChange={(event) => resetPreview(setAccountId, event.target.value)} value={accountId}>
+            <select className={inputClass} onChange={(event) => changeAccount(event.target.value)} value={accountId}>
               {bankAccounts.map((account) => <option key={account.id} value={account.id}>{account.accountName} · {account.bankName} ({firstFive(account.accountNo)})</option>)}
             </select>
           </Field>
@@ -152,7 +156,8 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
             Google 시트 표 붙여넣기
             <textarea className="min-h-52 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 font-mono text-sm leading-6" id="sheet-enrichment-table" onChange={(event) => { setTableText(event.target.value); setPreview(null); }} value={tableText} />
           </label>
-          <p className="mt-2 text-xs leading-5 text-[var(--color-stone)]">계좌구분, 거래일자, 거래시간, 거래종류, 적요, 입금, 출금, 항목구분, 메모 열을 인식해. 빈 메모는 기존 값을 지우지 않아.</p>
+          <p className="mt-2 text-xs leading-5 text-[var(--color-stone)]">계좌구분, 거래일자, 거래시간, 거래종류, 적요, 입금, 출금, 항목구분, 메모 열을 인식해. 항목구분은 모든 행의 추천값으로 반영하고, 빈 메모는 기존 값을 지우지 않아.</p>
+          {selectedAccount ? <p className="mt-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">현재 계좌 · {selectedAccount.bankName} {selectedAccount.accountNo}</p> : null}
           <div className="mt-4 flex flex-wrap gap-2">
             <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-bold">
               <Upload className="size-4" /> Google 시트 파일 선택
@@ -168,8 +173,9 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
 
       {preview ? (
         <div className="border-t border-[var(--color-soft-border)] p-5">
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-7">
             <Metric label="시트 전체" value={`${preview.sourceRowCount.toLocaleString("ko-KR")}건`} />
+            <Metric label="항목구분 입력" value={`${preview.categorizedRowCount.toLocaleString("ko-KR")}/${preview.sourceRowCount.toLocaleString("ko-KR")}건`} />
             <Metric label="자동 연결" value={`${preview.autoMatchedCount.toLocaleString("ko-KR")}건`} />
             <Metric emphasis label="연결 검토" value={`${preview.reviewRequiredCount.toLocaleString("ko-KR")}건`} />
             <Metric label="신규 추가" value={`${preview.newCount.toLocaleString("ko-KR")}건`} />
@@ -186,8 +192,10 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
                   <div className="grid gap-3 p-4 lg:grid-cols-[minmax(230px,1fr)_minmax(360px,1.5fr)] lg:items-center" key={row.sourceRow}>
                     <div><p className="font-bold">시트 {row.sourceRow}행 · {row.transactionDate} {row.transactionTime || "시간 미확인"}</p><p className="mt-1 text-sm text-[var(--color-stone)]">{row.description || "적요 없음"} · {amountLabel(row.depositAmount, row.withdrawalAmount)}</p></div>
                     <select aria-label={`시트 ${row.sourceRow}행 ERP 원본`} className={inputClass} onChange={(event) => setSelections((current) => ({ ...current, [String(row.sourceRow)]: event.target.value }))} value={selections[String(row.sourceRow)] ?? ""}>
-                      <option value="">ERP 원본 ID를 선택해줘</option>
+                      <option value="">처리 방법을 선택해줘</option>
                       {row.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.transactionDate} {candidate.transactionTime} · {candidate.description || "적요 없음"} · {amountLabel(candidate.depositAmount, candidate.withdrawalAmount)} · 원본 {candidate.sourceTransactionId}</option>)}
+                      <option value={bankSheetInsertSelection}>시트 거래를 ERP 신규 원본으로 추가</option>
+                      <option value={bankSheetSkipSelection}>시트 중복·오류로 반영 제외</option>
                     </select>
                   </div>
                 ))}
@@ -210,6 +218,20 @@ export function BankTransactionSheetEnrichmentPanel({ applyEnrichment, bankAccou
 
   function resetPreview(setter: (value: string) => void, value: string) {
     setter(value);
+    setPreview(null);
+    setSelections({});
+    setMessage(null);
+  }
+
+  function changeAccount(value: string) {
+    const account = bankAccounts.find((candidate) => candidate.id === value);
+    const profile = account ? bankSheetProfiles.find((candidate) => account.accountNo.replace(/\D/g, "") === candidate.accountDigits) : undefined;
+    setAccountId(value);
+    if (profile) {
+      setSourceDocumentId(profile.documentId);
+      setSourceSheet(profile.sheetName);
+      setReason(profile.reason);
+    }
     setPreview(null);
     setSelections({});
     setMessage(null);
