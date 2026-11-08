@@ -120,6 +120,14 @@ export type FinancialActivitySummary = {
   trustHeldTotal: number;
 };
 
+export type FilteredFinancialActivitySummary = {
+  bankDepositTotal: number;
+  bankWithdrawalTotal: number;
+  externalRecognitionCount: number;
+  externalRecognitionTotal: number;
+  resultCount: number;
+};
+
 export type BankTransactionSourceReconciliationIssue = {
   bankAccountId: string;
   bankTransactionId: string;
@@ -615,6 +623,42 @@ export async function loadFinancialActivitySummary(organizationId: string): Prom
     externalRecognitionCount: Number(value.external_recognition_count) || 0,
     externalRecognitionTotal: Number(value.external_recognition_total) || 0,
     trustHeldTotal: Number(value.trust_held_total) || 0,
+  };
+}
+
+export async function loadFilteredFinancialActivitySummary(
+  organizationId: string,
+  filters: BankTransactionListFilters,
+  transactionIds?: string[],
+): Promise<FilteredFinancialActivitySummary> {
+  const emptySummary: FilteredFinancialActivitySummary = {
+    bankDepositTotal: 0,
+    bankWithdrawalTotal: 0,
+    externalRecognitionCount: 0,
+    externalRecognitionTotal: 0,
+    resultCount: 0,
+  };
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return emptySummary;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .rpc("filtered_financial_activity_summary", {
+      p_bank_account_id: filters.bankAccountId ?? null,
+      p_classification_status: filters.classificationStatus ?? null,
+      p_date_from: filters.dateFrom ?? null,
+      p_date_to: filters.dateTo ?? null,
+      p_org: organizationId,
+      p_origin_type: filters.originType ?? null,
+      p_query: filters.query ?? null,
+      p_source_record_ids: transactionIds ?? null,
+    });
+  if (error) throw new Error(`검색 결과 합계를 불러오지 못했어: ${error.message}`);
+  const value = recordValue(data);
+  return {
+    bankDepositTotal: Number(value.bank_deposit_total) || 0,
+    bankWithdrawalTotal: Number(value.bank_withdrawal_total) || 0,
+    externalRecognitionCount: Number(value.external_recognition_count) || 0,
+    externalRecognitionTotal: Number(value.external_recognition_total) || 0,
+    resultCount: Number(value.result_count) || 0,
   };
 }
 

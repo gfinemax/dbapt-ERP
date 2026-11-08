@@ -22,6 +22,7 @@ import type {
   BankTransactionStatusCounts,
   BankTransactionSourceReconciliationSummary,
   FinancialActivitySummary,
+  FilteredFinancialActivitySummary,
   LedgerBankSourceSummary,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
@@ -33,6 +34,7 @@ type Props = {
   bankAccounts: RegisteredBankAccount[];
   canExport?: boolean;
   filters: BankTransactionListFilters;
+  filteredSummary?: FilteredFinancialActivitySummary;
   ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
@@ -85,6 +87,7 @@ export function BankTransactionListPage({
   bankAccounts,
   canExport = false,
   filters,
+  filteredSummary,
   ledgerSourceSummary,
   logoutAction,
   pageData,
@@ -279,21 +282,24 @@ export function BankTransactionListPage({
             </section>
           ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] bg-white px-3 py-2">
-            <p className="text-sm font-semibold">
-              조회 결과 <strong className="text-[var(--color-deep-cobalt)]">{pageData.totalCount.toLocaleString("ko-KR")}건</strong>
-            </p>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              {canExport ? <BankTransactionExportDialog filters={filters} totalCount={pageData.totalCount} /> : null}
-              <FinancePagination
-                compact
-                hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
-                page={pageData.page}
-                pageSize={pageData.pageSize}
-                totalCount={pageData.totalCount}
-                totalPages={pageData.totalPages}
-              />
+          <div className="border-b border-[var(--color-soft-border)] bg-white px-3 py-2">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <p className="text-sm font-semibold">
+                조회 결과 <strong className="text-[var(--color-deep-cobalt)]">{pageData.totalCount.toLocaleString("ko-KR")}건</strong>
+              </p>
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {canExport ? <BankTransactionExportDialog filters={filters} totalCount={pageData.totalCount} /> : null}
+                <FinancePagination
+                  compact
+                  hrefForPage={(targetPage) => bankTransactionPageHref(targetPage, filters)}
+                  page={pageData.page}
+                  pageSize={pageData.pageSize}
+                  totalCount={pageData.totalCount}
+                  totalPages={pageData.totalPages}
+                />
+              </div>
             </div>
+            {filteredSummary ? <FilteredSummaryCards summary={filteredSummary} /> : null}
           </div>
 
           <FinanceDataTable minWidthClass="min-w-[1040px] table-fixed">
@@ -497,6 +503,38 @@ function SummaryCard({ label, note, value }: { label: string; note: string; valu
       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{note}</p>
     </div>
   );
+}
+
+function FilteredSummaryCards({ summary }: { summary: FilteredFinancialActivitySummary }) {
+  const netCashChange = summary.bankDepositTotal - summary.bankWithdrawalTotal;
+  return (
+    <section aria-label="검색 결과 금액 합계" className="mt-2 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      <SearchTotalCard label="입금 합계" note="실제 조합계좌 입금" value={formatKrw(summary.bankDepositTotal)} />
+      <SearchTotalCard label="출금 합계" note="실제 조합계좌 출금" value={formatKrw(summary.bankWithdrawalTotal)} />
+      <SearchTotalCard
+        label="외부납입 인정 합계"
+        note={`${summary.externalRecognitionCount.toLocaleString("ko-KR")}건 · 통장 입금 아님`}
+        value={formatKrw(summary.externalRecognitionTotal)}
+      />
+      <SearchTotalCard label="순현금 증감" note="입금 − 출금" value={formatSignedKrw(netCashChange)} />
+    </section>
+  );
+}
+
+function SearchTotalCard({ label, note, value }: { label: string; note: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-[var(--color-cloud-veil)] px-3 py-2 text-center">
+      <p className="text-xs font-semibold text-[var(--color-stone)]">{label}</p>
+      <p className="mt-0.5 font-black tabular-nums text-[var(--color-midnight-ink)]">{value}</p>
+      <p className="text-[11px] text-[var(--color-stone)]">{note}</p>
+    </div>
+  );
+}
+
+function formatSignedKrw(value: number) {
+  if (value > 0) return `+${formatKrw(value)}`;
+  if (value < 0) return `−${formatKrw(Math.abs(value))}`;
+  return formatKrw(0);
 }
 
 function cashImpactLabel(value?: string) {

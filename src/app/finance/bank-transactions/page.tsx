@@ -5,6 +5,7 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
 import {
   countBankTransactionsByStatus,
+  loadFilteredFinancialActivitySummary,
   loadFinancialActivitySummary,
   loadLedgerBankSourceSummary,
   loadBankTransactionSourceReconciliationSummary,
@@ -70,7 +71,7 @@ export default async function FinanceBankTransactionsRoute({
   const sourceReviewTransactionIds = filters.sourceReconciliationStatus
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
-  const [pageData, statusCounts, ledgerSourceSummary, rulePreview] = actor ? await Promise.all([
+  const [pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary] = actor ? await Promise.all([
     listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds),
     countBankTransactionsByStatus(actor.organization_id, {
       bankAccountId: filters.bankAccountId,
@@ -86,7 +87,8 @@ export default async function FinanceBankTransactionsRoute({
     query.transactionId?.trim()
       ? loadBankTransactionRulePreview(actor.organization_id, actor.user_id, query.transactionId.trim()).catch(() => undefined)
       : Promise.resolve(undefined),
-  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined];
+    loadFilteredFinancialActivitySummary(actor.organization_id, filters, sourceReviewTransactionIds).catch(() => undefined),
+  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined, undefined];
   const issuesByTransaction = new Map(sourceReconciliationSummary?.issues.map((issue) => [issue.bankTransactionId, issue]) ?? []);
   const pageDataWithReconciliation = {
     ...pageData,
@@ -101,6 +103,7 @@ export default async function FinanceBankTransactionsRoute({
       canExport={Boolean(actor?.permissions.includes("ADMIN"))}
       filters={filters}
       activitySummary={activitySummary}
+      filteredSummary={filteredSummary}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}
       pageData={pageDataWithReconciliation}

@@ -170,6 +170,28 @@ describe("BankTransactionListPage", () => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
+  it("shows totals for the full filtered result instead of only the visible page", () => {
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filteredSummary={{
+        bankDepositTotal: 87000000,
+        bankWithdrawalTotal: 5000000,
+        externalRecognitionCount: 1,
+        externalRecognitionTotal: 30000000,
+        resultCount: 20,
+      }}
+      filters={{ query: "송동환" }}
+      pageData={{ ...pageData, page: 1, totalCount: 20, totalPages: 1 }}
+      statusCounts={{ ...statusCounts, ALL: 20 }}
+    />);
+
+    const totals = screen.getByRole("region", { name: "검색 결과 금액 합계" });
+    expect(totals).toHaveTextContent("입금 합계87,000,000원실제 조합계좌 입금");
+    expect(totals).toHaveTextContent("출금 합계5,000,000원실제 조합계좌 출금");
+    expect(totals).toHaveTextContent("외부납입 인정 합계30,000,000원1건 · 통장 입금 아님");
+    expect(totals).toHaveTextContent("순현금 증감+82,000,000원입금 − 출금");
+  });
+
   it("preserves search, account, date and status filters across pagination", () => {
     expect(bankTransactionPageHref(3, {
       bankAccountId: "bank-1",
