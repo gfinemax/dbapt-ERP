@@ -88,9 +88,12 @@ describe("BankTransactionUploadPage", () => {
           bankAccountId: "bank-001",
           batchId: "batch-76",
           currentTransactionCount: 76,
+          googleSheetSourceCount: 19,
           importedAt: "2026-11-08T01:00:38.67399+00:00",
           insertedCount: 19,
+          ledgerSourceCount: 57,
           matchedCount: 57,
+          otherSourceCount: 0,
           sourceDepositTotal: 490965191,
           sourceDocumentId: "sheet-document-id",
           sourceRowCount: 76,
@@ -102,10 +105,16 @@ describe("BankTransactionUploadPage", () => {
 
     const history = screen.getByRole("region", { name: "최근 업로드·증분 반영 이력" });
     expect(within(history).getByText("국민은행 신탁계좌 · KB국민은행 (12345)")).toBeInTheDocument();
-    expect(within(history).getByText("담당자 파인맥스 · 원본 시트1")).toBeInTheDocument();
-    expect(within(history).getAllByText("76건")).toHaveLength(2);
+    expect(within(history).getByText("담당자 파인맥스 · 원본 시트1 76행")).toBeInTheDocument();
+    expect(within(history).getByText("전체 ERP 거래")).toBeInTheDocument();
+    expect(within(history).getByText("Ledger 원본 연계")).toBeInTheDocument();
+    expect(within(history).getByText("Google 시트 신규")).toBeInTheDocument();
+    expect(within(history).getByText("기타 원본")).toBeInTheDocument();
+    expect(within(history).getByText("76건")).toBeInTheDocument();
     expect(within(history).getByText("57건")).toBeInTheDocument();
     expect(within(history).getByText("19건")).toBeInTheDocument();
+    expect(within(history).getByText("0건")).toBeInTheDocument();
+    expect(within(history).getByText("이번 반영: 기존 연결 57건 · 신규 추가 19건")).toBeInTheDocument();
     expect(within(history).getByRole("link", { name: "ERP 거래 보기" })).toHaveAttribute("href", "/finance/bank-transactions?accountId=bank-001");
     expect(within(history).getByRole("link", { name: "원본 시트" })).toHaveAttribute("href", "https://docs.google.com/spreadsheets/d/sheet-document-id/edit");
     expect(screen.getByText("미리보기 거래").parentElement).toHaveTextContent("0건");

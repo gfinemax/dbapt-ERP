@@ -6,9 +6,12 @@ export type BankTransactionSheetImportHistoryEntry = {
   bankAccountId: string;
   batchId: string;
   currentTransactionCount: number;
+  googleSheetSourceCount: number;
   importedAt: string;
   insertedCount: number;
+  ledgerSourceCount: number;
   matchedCount: number;
+  otherSourceCount: number;
   sourceDepositTotal: number;
   sourceDocumentId: string;
   sourceRowCount: number;
@@ -35,12 +38,20 @@ type ReimbursementMemberRow = {
   user_id: string;
 };
 
+type CurrentSourceSummary = {
+  currentTransactionCount: number;
+  googleSheetSourceCount: number;
+  ledgerSourceCount: number;
+  otherSourceCount: number;
+};
+
 export async function listBankTransactionSheetImportHistory(
   organizationId: string,
   limit = 6,
 ): Promise<BankTransactionSheetImportHistoryEntry[]> {
   const supabase = getSupabaseServerClient();
   if (!supabase || !hasSupabaseSecretConfig()) return [];
+  const database = supabase;
 
   const safeLimit = Number.isSafeInteger(limit) ? Math.min(Math.max(limit, 1), 20) : 6;
   const { data, error } = await supabase
@@ -57,53 +68,85 @@ export async function listBankTransactionSheetImportHistory(
 
   const actorIds = [...new Set(batches.map((batch) => batch.imported_by))];
   const accountIds = [...new Set(batches.map((batch) => batch.bank_account_id))];
-  const [{ data: members, error: memberError }, countEntries] = await Promise.all([
+  const [{ data: members, error: memberError }, sourceSummaryEntries] = await Promise.all([
     supabase
       .schema("finance")
       .from("reimbursement_members")
       .select("user_id,display_name")
       .eq("organization_id", organizationId)
       .in("user_id", actorIds),
-    Promise.all(accountIds.map(async (bankAccountId) => {
-      const { count, error: countError } = await supabase
-        .schema("finance")
-        .from("bank_transactions")
-        .select("id", { count: "exact", head: true })
-        .eq("organization_id", organizationId)
-        .eq("bank_account_id", bankAccountId)
-        .is("deleted_at", null);
-      if (countError) throw new Error(`현재 ERP 거래 건수를 불러오지 못했어: ${countError.message}`);
-      return [bankAccountId, count ?? 0] as const;
-    })),
+    Promise.all(accountIds.map(async (bankAccountId) => [
+      bankAccountId,
+      await loadCurrentSourceSummary(organizationId, bankAccountId),
+    ] as const)),
   ]);
   if (memberError) throw new Error(`시트 반영 담당자를 불러오지 못했어: ${memberError.message}`);
 
   const actorLabels = new Map(((members ?? []) as ReimbursementMemberRow[]).map((member) => [member.user_id, member.display_name]));
-  const currentCounts = new Map(countEntries);
+  const sourceSummaries = new Map(sourceSummaryEntries);
   return batches.map((batch) => mapBankTransactionSheetImportHistoryRow(
     batch,
     actorLabels.get(batch.imported_by) ?? "담당자 미확인",
-    currentCounts.get(batch.bank_account_id) ?? 0,
+    sourceSummaries.get(batch.bank_account_id) ?? emptyCurrentSourceSummary(),
   ));
+
+  async function loadCurrentSourceSummary(organizationId: string, bankAccountId: string): Promise<CurrentSourceSummary> {
+    const baseQuery = () => database
+      .schema("finance")
+      .from("bank_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("organization_id", organizationId)
+      .eq("bank_account_id", bankAccountId)
+      .is("deleted_at", null);
+    const [allResult, ledgerResult, googleSheetResult] = await Promise.all([
+      baseQuery(),
+      baseQuery().eq("source_system", "dbapt-ledger"),
+      baseQuery().eq("source_system", "google-sheet"),
+    ]);
+    const queryError = allResult.error ?? ledgerResult.error ?? googleSheetResult.error;
+    if (queryError) throw new Error(`현재 ERP 거래 원본 구성을 불러오지 못했어: ${queryError.message}`);
+
+    const currentTransactionCount = allResult.count ?? 0;
+    const ledgerSourceCount = ledgerResult.count ?? 0;
+    const googleSheetSourceCount = googleSheetResult.count ?? 0;
+    return {
+      currentTransactionCount,
+      googleSheetSourceCount,
+      ledgerSourceCount,
+      otherSourceCount: Math.max(currentTransactionCount - ledgerSourceCount - googleSheetSourceCount, 0),
+    };
+  }
 }
 
 export function mapBankTransactionSheetImportHistoryRow(
   row: SheetImportBatchRow,
   actorLabel: string,
-  currentTransactionCount: number,
+  sourceSummary: CurrentSourceSummary,
 ): BankTransactionSheetImportHistoryEntry {
   return {
     actorLabel,
     bankAccountId: row.bank_account_id,
     batchId: row.id,
-    currentTransactionCount,
+    currentTransactionCount: sourceSummary.currentTransactionCount,
+    googleSheetSourceCount: sourceSummary.googleSheetSourceCount,
     importedAt: row.imported_at,
     insertedCount: Number(row.inserted_count),
+    ledgerSourceCount: sourceSummary.ledgerSourceCount,
     matchedCount: Number(row.matched_count),
+    otherSourceCount: sourceSummary.otherSourceCount,
     sourceDepositTotal: Number(row.source_deposit_total),
     sourceDocumentId: row.source_document_id,
     sourceRowCount: Number(row.source_row_count),
     sourceSheet: row.source_sheet,
     sourceWithdrawalTotal: Number(row.source_withdrawal_total),
+  };
+}
+
+function emptyCurrentSourceSummary(): CurrentSourceSummary {
+  return {
+    currentTransactionCount: 0,
+    googleSheetSourceCount: 0,
+    ledgerSourceCount: 0,
+    otherSourceCount: 0,
   };
 }

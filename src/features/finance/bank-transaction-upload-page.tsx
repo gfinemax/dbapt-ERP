@@ -473,7 +473,7 @@ function SheetImportHistory({
             <h2 className="text-lg font-bold">최근 업로드·증분 반영 이력</h2>
           </div>
           <p className="mt-1 text-sm leading-6 text-[var(--color-stone)]">
-            상단의 현재 미리보기 수치와 별개로, ERP 원장에 이미 반영된 Google 시트 작업을 보여줘.
+            상단 미리보기와 별개로 ERP 전체 거래와 원본 구성을 보여줘. Ledger 원본 연계와 Google 시트 신규는 모두 ERP 거래에 포함돼.
           </p>
         </div>
         <span className="rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-bold text-[var(--color-deep-cobalt)]">
@@ -488,20 +488,23 @@ function SheetImportHistory({
           {history.map((entry) => {
             const account = accounts.get(entry.bankAccountId);
             return (
-              <article className="grid gap-4 p-5 xl:grid-cols-[minmax(240px,1.25fr)_repeat(4,minmax(110px,.65fr))_minmax(210px,1fr)] xl:items-center" key={entry.batchId}>
+              <article className="grid gap-4 p-5 xl:grid-cols-[minmax(240px,1.25fr)_repeat(4,minmax(120px,.7fr))_minmax(210px,1fr)] xl:items-center" key={entry.batchId}>
                 <div>
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="rounded-full bg-[var(--color-sprout)] px-2.5 py-1 text-xs font-bold text-[var(--color-green-ink)]">시트 증분 반영</span>
                     <span className="text-xs font-semibold text-[var(--color-stone)]">{formatHistoryDate(entry.importedAt)}</span>
                   </div>
                   <p className="mt-2 font-bold text-[var(--color-midnight-ink)]">{historyAccountLabel(account, entry.bankAccountId)}</p>
-                  <p className="mt-1 text-xs text-[var(--color-stone)]">담당자 {entry.actorLabel} · 원본 {entry.sourceSheet}</p>
+                  <p className="mt-1 text-xs text-[var(--color-stone)]">담당자 {entry.actorLabel} · 원본 {entry.sourceSheet} {entry.sourceRowCount.toLocaleString("ko-KR")}행</p>
                 </div>
-                <HistoryMetric label="원본 행" value={`${entry.sourceRowCount.toLocaleString("ko-KR")}건`} />
-                <HistoryMetric label="기존 연결" value={`${entry.matchedCount.toLocaleString("ko-KR")}건`} />
-                <HistoryMetric label="신규 추가" value={`${entry.insertedCount.toLocaleString("ko-KR")}건`} />
-                <HistoryMetric label="현재 ERP 거래" value={`${entry.currentTransactionCount.toLocaleString("ko-KR")}건`} strong />
+                <HistoryMetric label="전체 ERP 거래" value={`${entry.currentTransactionCount.toLocaleString("ko-KR")}건`} strong />
+                <HistoryMetric label="Ledger 원본 연계" value={`${entry.ledgerSourceCount.toLocaleString("ko-KR")}건`} />
+                <HistoryMetric label="Google 시트 신규" value={`${entry.googleSheetSourceCount.toLocaleString("ko-KR")}건`} />
+                <HistoryMetric label="기타 원본" value={`${entry.otherSourceCount.toLocaleString("ko-KR")}건`} />
                 <div className="flex flex-col gap-2 text-sm">
+                  <p className="text-xs leading-5 text-[var(--color-stone)]">
+                    이번 반영: 기존 연결 {entry.matchedCount.toLocaleString("ko-KR")}건 · 신규 추가 {entry.insertedCount.toLocaleString("ko-KR")}건
+                  </p>
                   <p className="text-xs leading-5 text-[var(--color-stone)]">
                     입금 {formatKrw(entry.sourceDepositTotal)} · 출금 {formatKrw(entry.sourceWithdrawalTotal)}
                   </p>

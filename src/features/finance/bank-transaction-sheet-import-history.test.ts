@@ -16,14 +16,22 @@ describe("bank transaction sheet import history", () => {
       source_row_count: "76",
       source_sheet: "시트1",
       source_withdrawal_total: "489147570",
-    }, "파인맥스", 76)).toEqual({
+    }, "파인맥스", {
+      currentTransactionCount: 76,
+      googleSheetSourceCount: 19,
+      ledgerSourceCount: 57,
+      otherSourceCount: 0,
+    })).toEqual({
       actorLabel: "파인맥스",
       bankAccountId: "bank-10054",
       batchId: "batch-76",
       currentTransactionCount: 76,
+      googleSheetSourceCount: 19,
       importedAt: "2026-11-08T01:00:38.67399+00:00",
       insertedCount: 19,
+      ledgerSourceCount: 57,
       matchedCount: 57,
+      otherSourceCount: 0,
       sourceDepositTotal: 490965191,
       sourceDocumentId: "document-1",
       sourceRowCount: 76,
