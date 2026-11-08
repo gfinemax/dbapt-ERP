@@ -79,7 +79,10 @@ describe("bank transaction repository mappers", () => {
   it("separates an ERP-only source review from matched, deferred and excluded transactions", () => {
     const issues = deriveBankTransactionSourceReconciliationIssues({
       downstreamLinks: new Map([["erp-only", []]]),
-      importRows: [{ batch_id: "batch-1", bank_transaction_id: "matched" }],
+      importRows: [
+        { batch_id: "batch-1", bank_transaction_id: "matched", source_payload: { 거래일자: "2021-03-24" } },
+        { batch_id: "batch-1", bank_transaction_id: null, source_payload: { 거래일자: "2021-03-23" } },
+      ],
       latestBatches: [{ bank_account_id: "bank-1", id: "batch-1", imported_at: "2026-11-08T10:00:00+09:00", source_document_id: "sheet-doc", source_sheet: "시트1" }],
       transactions: [
         { bank_account_id: "bank-1", classification_status: "UNREVIEWED", deposit_amount: 0, id: "matched", source_system: "dbapt-ledger", source_transaction_id: "100", transacted_at: "2021-03-24T09:52:00+09:00", withdrawal_amount: 1000000 },
@@ -96,6 +99,25 @@ describe("bank transaction repository mappers", () => {
       sourceTransactionId: "3344",
       withdrawalImpact: 1000000,
     });
-    expect(issues[0].reason).toContain("최신 Google 시트(시트1)");
+    expect(issues[0].reason).toContain("대조 기간 2021-03-23~2021-03-24");
+  });
+
+  it("limits source review to the latest sheet period and accepts links from an earlier upload", () => {
+    const issues = deriveBankTransactionSourceReconciliationIssues({
+      importRows: [
+        { batch_id: "batch-new", bank_transaction_id: "new-linked", source_payload: { 거래일자: "2026-10-28" } },
+        { batch_id: "batch-new", bank_transaction_id: null, source_payload: { 거래일자: "2026.11.03" } },
+        { batch_id: "batch-old", bank_transaction_id: "historically-linked", source_payload: { 거래일자: "2026-11-01" } },
+      ],
+      latestBatches: [{ bank_account_id: "bank-1", id: "batch-new", imported_at: "2026-11-08T10:00:00+09:00", source_document_id: "sheet-doc", source_sheet: "시트1" }],
+      transactions: [
+        { bank_account_id: "bank-1", classification_status: "CONFIRMED", deposit_amount: 0, id: "outside-period", source_system: "dbapt-ledger", source_transaction_id: "4863", transacted_at: "2026-09-30T04:32:00+09:00", withdrawal_amount: 313000 },
+        { bank_account_id: "bank-1", classification_status: "CONFIRMED", deposit_amount: 0, id: "historically-linked", source_system: "dbapt-ledger", source_transaction_id: "4902", transacted_at: "2026-11-01T04:15:00+09:00", withdrawal_amount: 379000 },
+        { bank_account_id: "bank-1", classification_status: "CONFIRMED", deposit_amount: 0, id: "in-period-unlinked", source_system: "dbapt-ledger", source_transaction_id: "5000", transacted_at: "2026-11-02T04:15:00+09:00", withdrawal_amount: 448000 },
+        { bank_account_id: "bank-1", classification_status: "CONFIRMED", deposit_amount: 0, id: "new-linked", source_system: "google-sheet", source_transaction_id: "sheet:3", transacted_at: "2026-10-28T04:15:00+09:00", withdrawal_amount: 520000 },
+      ],
+    });
+
+    expect(issues.map((issue) => issue.bankTransactionId)).toEqual(["in-period-unlinked"]);
   });
 });

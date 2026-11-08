@@ -562,6 +562,7 @@ type ReconciliationBatchRow = {
 type ReconciliationImportRow = {
   bank_transaction_id: string | null;
   batch_id: string;
+  source_payload: Record<string, unknown> | null;
 };
 
 type ReconciliationTransactionRow = {
@@ -582,17 +583,25 @@ export function deriveBankTransactionSourceReconciliationIssues(input: {
   transactions: ReconciliationTransactionRow[];
 }): BankTransactionSourceReconciliationIssue[] {
   const batchByAccount = new Map(input.latestBatches.map((batch) => [batch.bank_account_id, batch]));
-  const matchedByBatch = new Map<string, Set<string>>();
+  const matchedTransactionIds = new Set<string>();
+  const coverageByBatch = new Map<string, { dateFrom: string; dateTo: string }>();
   for (const row of input.importRows) {
-    if (!row.bank_transaction_id) continue;
-    const matches = matchedByBatch.get(row.batch_id) ?? new Set<string>();
-    matches.add(row.bank_transaction_id);
-    matchedByBatch.set(row.batch_id, matches);
+    if (row.bank_transaction_id) matchedTransactionIds.add(row.bank_transaction_id);
+    const sourceDate = bankTransactionSheetSourceDate(row.source_payload);
+    if (!sourceDate) continue;
+    const current = coverageByBatch.get(row.batch_id);
+    coverageByBatch.set(row.batch_id, {
+      dateFrom: !current || sourceDate < current.dateFrom ? sourceDate : current.dateFrom,
+      dateTo: !current || sourceDate > current.dateTo ? sourceDate : current.dateTo,
+    });
   }
 
   return input.transactions.flatMap((transaction) => {
     const batch = batchByAccount.get(transaction.bank_account_id);
-    if (!batch || matchedByBatch.get(batch.id)?.has(transaction.id)) return [];
+    if (!batch || matchedTransactionIds.has(transaction.id)) return [];
+    const coverage = coverageByBatch.get(batch.id);
+    const transactionDate = transaction.transacted_at.slice(0, 10);
+    if (!coverage || transactionDate < coverage.dateFrom || transactionDate > coverage.dateTo) return [];
     if (["DEFERRED", "EXCLUDED"].includes(transaction.classification_status)) return [];
     return [{
       bankAccountId: transaction.bank_account_id,
@@ -600,7 +609,7 @@ export function deriveBankTransactionSourceReconciliationIssues(input: {
       comparedAt: batch.imported_at,
       depositImpact: Number(transaction.deposit_amount) || 0,
       downstreamLinkLabels: input.downstreamLinks?.get(transaction.id) ?? [],
-      reason: `ERP에는 있지만 최신 Google 시트(${batch.source_sheet}) 반영 배치의 어떤 행에도 연결되지 않았어. 실제 은행 거래 여부와 시트 누락 여부를 확인해줘.`,
+      reason: `최신 Google 시트(${batch.source_sheet}) 대조 기간 ${coverage.dateFrom}~${coverage.dateTo} 안의 ERP 거래지만, 업로드된 어느 원본 행에도 연결되지 않았어. 실제 은행 거래 여부와 시트 누락 여부를 확인해줘.`,
       sourceDocumentId: batch.source_document_id,
       sourceSheet: batch.source_sheet,
       sourceSystem: transaction.source_system ?? "ERP",
@@ -609,6 +618,17 @@ export function deriveBankTransactionSourceReconciliationIssues(input: {
       withdrawalImpact: Number(transaction.withdrawal_amount) || 0,
     }];
   }).sort((left, right) => right.transactedAt.localeCompare(left.transactedAt));
+}
+
+function bankTransactionSheetSourceDate(payload: Record<string, unknown> | null) {
+  if (!payload) return null;
+  for (const key of ["거래일자", "거래일", "날짜", "일자", "transaction_date"]) {
+    const value = payload[key];
+    if (typeof value !== "string") continue;
+    const normalized = value.trim().replace(/[./]/g, "-");
+    if (/^\d{4}-\d{2}-\d{2}$/.test(normalized)) return normalized;
+  }
+  return null;
 }
 
 export async function loadBankTransactionSourceReconciliationSummary(
@@ -638,8 +658,8 @@ export async function loadBankTransactionSourceReconciliationSummary(
 
   const importRows = await readPagedReconciliationRows<ReconciliationImportRow>(async (from, to) => {
     const result = await supabase.schema(bankTransactionRepositorySchema).from("bank_transaction_sheet_import_rows")
-      .select("batch_id,bank_transaction_id")
-      .in("batch_id", latestBatches.map((batch) => batch.id))
+      .select("batch_id,bank_transaction_id,source_payload")
+      .in("batch_id", (batchData ?? []).map((batch) => batch.id))
       .range(from, to);
     return { data: result.data as ReconciliationImportRow[] | null, error: result.error };
   }, "Google 시트 연결 행");
