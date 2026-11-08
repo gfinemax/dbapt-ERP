@@ -2,8 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 
-import { createAccountSubjectsInSupabase } from "@/features/basic-info/account-subject-repository";
-import type { AccountSubjectRegistrationInput } from "@/features/basic-info/account-subject-data";
+import { createAccountSubjectsInSupabase, manageAccountSubjectInSupabase } from "@/features/basic-info/account-subject-repository";
+import type { AccountSubjectManagementInput, AccountSubjectRegistrationInput } from "@/features/basic-info/account-subject-data";
 import { createBankAccountInSupabase, updateBankAccountInSupabase } from "@/features/basic-info/bank-account-repository";
 import type { BankAccountInput } from "@/features/basic-info/business-partner-data";
 import type { BusinessPartnerOcrInput } from "@/features/basic-info/business-partner-data";
@@ -69,4 +69,14 @@ export async function createAccountSubjectsAction(input: AccountSubjectRegistrat
   revalidatePath("/basic-info");
 
   return subjects;
+}
+
+export async function manageAccountSubjectAction(subjectId: string | null, input: AccountSubjectManagementInput) {
+  const actor = await requireExpenseActor("ADMIN");
+  const subject = await manageAccountSubjectInSupabase(subjectId, input, actor.organization_id, actor.user_id);
+  revalidatePath("/basic-info");
+  revalidatePath("/finance/bank-transactions");
+  revalidatePath("/finance/bank-unmatched");
+  revalidatePath("/finance/bank-auto-matching");
+  return subject;
 }

@@ -49,25 +49,10 @@ describe("LedgerBankSubjectRuleWorkboardPanel", () => {
     expect(await screen.findByText("1개 규칙을 저장했고 455건에 추천값을 설정했어. 거래 확정은 아직 하지 않았어.")).toBeInTheDocument();
   });
 
-  it("syncs all Ledger categories before rule selection and reports guarded outcomes", async () => {
-    const syncAccountSubjects = vi.fn().mockResolvedValue({
-      created_count: 1, matched_count: 0, review_count: 0, saved_count: 1, transfer_count: 0,
-    });
-    render(<LedgerBankSubjectRuleWorkboardPanel
-      accountSubjects={registeredAccountSubjects}
-      initialWorkboard={workboard}
-      syncAccountSubjects={syncAccountSubjects}
-    />);
-
-    fireEvent.click(screen.getByRole("button", { name: "Ledger 1개 ERP 동기화" }));
-
-    await waitFor(() => expect(syncAccountSubjects).toHaveBeenCalledWith([{
-      categoryGroup: "사업비",
-      categoryName: "토지매입비",
-      direction: "WITHDRAWAL",
-      ledgerCategoryId: "12",
-    }]));
-    expect(await screen.findByText("Ledger 1개를 동기화했어. 기존 연결 0개 · 신규 등록 1개 · 검토 유지 0개 · 계좌간이체 0개야.")).toBeInTheDocument();
+  it("keeps Ledger read-only and sends missing subjects to ERP management", () => {
+    render(<LedgerBankSubjectRuleWorkboardPanel accountSubjects={registeredAccountSubjects} initialWorkboard={workboard} />);
+    expect(screen.getByText("없는 계정과목은 먼저 ERP 계정과목 관리에서 등록해. 확인필요와 계좌간이체는 자동 확정하지 않아.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /ERP 동기화/ })).not.toBeInTheDocument();
   });
 
   it("loads the clicked rule transactions and closes the read-only detail", async () => {

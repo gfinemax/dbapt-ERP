@@ -5,6 +5,7 @@ import {
   buildOperatingAccountSubjectCandidates,
   createAccountSubjectsInSupabase,
   listAccountSubjectsFromSupabase,
+  manageAccountSubjectInSupabase,
   mapAccountSubjectFromRow,
   mapAccountSubjectToInsert,
 } from "./account-subject-repository";
@@ -48,9 +49,11 @@ describe("account subject repository mappers", () => {
       description: "PF 대출 이자 비용",
       id: "account-db-001",
       isActive: true,
+      isPrimary: false,
       name: "PF이자",
       normalBalance: "차변",
       parentId: null,
+      primaryOrder: 0,
       sortOrder: 20,
       source: "수지분석표",
       subjectType: "지출",
@@ -79,9 +82,11 @@ describe("account subject repository mappers", () => {
       code: "OP-310",
       description: "사무실 임차료 등",
       is_active: true,
+      is_primary: false,
       name: "임대료",
       normal_balance: "차변",
       parent_id: null,
+      primary_order: 0,
       sort_order: 310,
       source: "운영비 예산안",
       subject_type: "지출",
@@ -155,6 +160,29 @@ describe("account subject repository mappers", () => {
       p_actor: "actor-1",
       p_org: "org-1",
       p_items: [expect.objectContaining({ budget_ids: ["budget-1"], code: "OPERATING-COMM" })],
+    }));
+  });
+
+  it("creates or updates ERP-owned subjects through the audited management RPC", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: [{
+        aliases: ["송금수수료"], business_category: "운영비", code: "OP-430", created_at: "2026-11-08",
+        description: "송금 및 발급 수수료", id: "subject-430", is_active: true, is_primary: true,
+        name: "지급수수료", normal_balance: "차변", parent_id: null, primary_order: 20, sort_order: 430,
+        source: "직접등록", subject_type: "지출",
+      }],
+      error: null,
+    });
+    mockedGetSupabaseServerClient.mockReturnValue({ schema: vi.fn().mockReturnValue({ rpc }) } as never);
+
+    await expect(manageAccountSubjectInSupabase(null, {
+      aliases: ["송금수수료"], businessCategory: "운영비", code: "OP-430", description: "송금 및 발급 수수료",
+      isActive: true, isPrimary: true, name: "지급수수료", normalBalance: "차변", parentId: null,
+      primaryOrder: 20, sortOrder: 430, subjectType: "지출",
+    }, "org-1", "actor-1")).resolves.toMatchObject({ id: "subject-430", isPrimary: true, primaryOrder: 20 });
+    expect(rpc).toHaveBeenCalledWith("manage_account_subject", expect.objectContaining({
+      p_actor: "actor-1", p_org: "org-1", p_subject_id: null,
+      p_data: expect.objectContaining({ code: "OP-430", is_primary: true, primary_order: 20 }),
     }));
   });
 });

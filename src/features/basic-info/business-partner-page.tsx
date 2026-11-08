@@ -13,6 +13,7 @@ import {
   getSelectableAccountSubjectRecommendations,
   registeredAccountSubjects,
   type AccountSubjectRegistrationInput,
+  type AccountSubjectManagementInput,
   type AccountSubjectRecommendation,
   type OperatingAccountSubjectCandidate,
   type RegisteredAccountSubject,
@@ -35,10 +36,11 @@ import {
 } from "./business-partner-data";
 
 export type BasicInfoSection = "partners" | "items" | "bank-accounts" | "cards" | "account-subjects";
-type ModalType = "partner" | "item" | "bank-account" | "card" | null;
+type ModalType = "partner" | "item" | "bank-account" | "card" | "account-subject" | null;
 type CreateBankAccount = (input: BankAccountInput) => Promise<RegisteredBankAccount>;
 type UpdateBankAccount = (id: string, input: BankAccountInput) => Promise<RegisteredBankAccount>;
 type CreateAccountSubjects = (input: AccountSubjectRegistrationInput[]) => Promise<RegisteredAccountSubject[]>;
+type ManageAccountSubject = (subjectId: string | null, input: AccountSubjectManagementInput) => Promise<RegisteredAccountSubject>;
 type DisplayAccountSubjectRecommendation = AccountSubjectRecommendation & Partial<Pick<OperatingAccountSubjectCandidate, "budgetIds" | "mappingNote" | "mappingStatus">>;
 type CreateBusinessPartner = (input: BusinessPartnerInput) => Promise<BusinessPartner>;
 type UpdateBusinessPartner = (id: string, input: BusinessPartnerInput) => Promise<BusinessPartner>;
@@ -65,7 +67,7 @@ const detailLabels: Record<BasicInfoSection, string> = {
   items: "품목등록",
   "bank-accounts": "은행통장 등록",
   cards: "신용카드 등록",
-  "account-subjects": "계정과목 등록",
+  "account-subjects": "계정과목 관리",
 };
 
 function Badge({ value }: { value: string }) {
@@ -98,6 +100,7 @@ export function BusinessPartnerPage({
   initialCreditCards,
   initialItems,
   initialSection,
+  manageAccountSubject,
   updateBusinessPartner,
   updateBankAccount,
 }: {
@@ -115,6 +118,7 @@ export function BusinessPartnerPage({
   initialCreditCards?: RegisteredCreditCard[];
   initialItems?: RegisteredItem[];
   initialSection?: BasicInfoSection;
+  manageAccountSubject?: ManageAccountSubject;
   updateBusinessPartner?: UpdateBusinessPartner;
   updateBankAccount?: UpdateBankAccount;
 } = {}) {
@@ -128,12 +132,14 @@ export function BusinessPartnerPage({
   const [modalType, setModalType] = useState<ModalType>(null);
   const [editingBusinessPartner, setEditingBusinessPartner] = useState<BusinessPartner | null>(null);
   const [editingBankAccount, setEditingBankAccount] = useState<RegisteredBankAccount | null>(null);
+  const [editingAccountSubject, setEditingAccountSubject] = useState<RegisteredAccountSubject | null>(null);
   const activeDetailLabel = detailLabels[activeSection];
 
   function closeModal() {
     setModalError(null);
     setEditingBusinessPartner(null);
     setEditingBankAccount(null);
+    setEditingAccountSubject(null);
     setModalType(null);
   }
 
@@ -163,6 +169,8 @@ export function BusinessPartnerPage({
         ) : activeSection === "account-subjects" ? (
           <AccountSubjectSection
             accessError={accountSubjectAccessError}
+            onAdd={() => { setEditingAccountSubject(null); setModalError(null); setModalType("account-subject"); }}
+            onEdit={(subject) => { setEditingAccountSubject(subject); setModalError(null); setModalType("account-subject"); }}
             onRegister={async (recommendations) => {
               const subjects = recommendations.map(buildAccountSubjectFromRecommendation);
               const registrationInputs = recommendations.map((recommendation) => ({
@@ -214,6 +222,7 @@ export function BusinessPartnerPage({
       ) : null}
       {modalType === "partner" ? <BusinessPartnerModal initialPartner={editingBusinessPartner} onClose={closeModal} onSave={async (input) => { setModalError(null); try { if (editingBusinessPartner) { const partner = updateBusinessPartner ? await updateBusinessPartner(editingBusinessPartner.id, input) : buildUpdatedLocalPartner(editingBusinessPartner, input); setPartners((current) => current.map((item) => item.id === partner.id ? partner : item)); } else { const partner = createBusinessPartner ? await createBusinessPartner(input) : buildLocalPartner(input); setPartners((current) => [...current, partner]); } closeModal(); } catch (error) { setModalError(error instanceof Error ? error.message : "거래처 저장에 실패했습니다."); } }} saveError={modalError} /> : null}
       {modalType === "item" ? <ItemModal onClose={closeModal} onSave={async (input) => { setModalError(null); try { const item = createItem ? await createItem(input) : buildLocalItem(input); setItems((current) => [...current, item]); closeModal(); } catch (error) { setModalError(error instanceof Error ? error.message : "품목 저장에 실패했습니다."); } }} saveError={modalError} /> : null}
+      {modalType === "account-subject" ? <AccountSubjectModal initialSubject={editingAccountSubject} onClose={closeModal} onSave={async (input) => { setModalError(null); try { const subject = manageAccountSubject ? await manageAccountSubject(editingAccountSubject?.id ?? null, input) : buildLocalManagedAccountSubject(editingAccountSubject, input); setAccountSubjects((current) => mergeManagedAccountSubject(current, subject)); closeModal(); } catch (error) { setModalError(error instanceof Error ? error.message : "계정과목 저장에 실패했어."); } }} saveError={modalError} subjects={accountSubjects} /> : null}
     </ErpShell>
   );
 }
@@ -258,7 +267,7 @@ function PartnerSection({ loadError, onAdd, onEdit, partners }: { loadError?: st
                 ? "/basic-info?section=bank-accounts"
                 : workflow.title === "신용카드 등록"
                   ? "/basic-info?section=cards"
-                  : workflow.title === "계정과목 등록"
+                  : workflow.title === "계정과목 등록" || workflow.title === "계정과목 관리"
                     ? "/basic-info?section=account-subjects"
                   : workflow.title === "품목등록"
                     ? "/basic-info?section=items"
@@ -379,11 +388,15 @@ function ItemSection({ items, onAdd }: { items: RegisteredItem[]; onAdd: () => v
 
 function AccountSubjectSection({
   accessError,
+  onAdd,
+  onEdit,
   onRegister,
   operatingCandidates,
   subjects,
 }: {
   accessError?: string;
+  onAdd: () => void;
+  onEdit: (subject: RegisteredAccountSubject) => void;
   onRegister: (recommendations: DisplayAccountSubjectRecommendation[]) => Promise<void>;
   operatingCandidates?: OperatingAccountSubjectCandidate[];
   subjects: RegisteredAccountSubject[];
@@ -431,14 +444,18 @@ function AccountSubjectSection({
       <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
         <div>
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 기초정보 &gt; 계정과목 등록
+            회계/자금 &gt; 기초정보 &gt; 계정과목 관리
           </p>
-          <h1 className="text-3xl font-bold tracking-normal">계정과목 등록</h1>
+          <h1 className="text-3xl font-bold tracking-normal">계정과목 관리</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
-            업로드한 운영비 예산을 기준으로 생성된 후보를 관리자가 확인해 등록합니다. 수지분석표 항목은 별도 후보로 제공합니다.
+            ERP에서 계정과목을 직접 생성·수정하고 주요 계정과목의 표시순서를 관리해. Ledger 분류는 아래 ERP 계정과목에 연결할 때만 참고해.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Button className="rounded-full" onClick={onAdd} size="lg" type="button" variant="outline">
+            <Plus className="size-4" />
+            ERP 계정과목 추가
+          </Button>
           <Button
             className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]"
             disabled={selectedRecommendations.length === 0 || isSaving}
@@ -496,6 +513,7 @@ function AccountSubjectSection({
             <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
               <tr>
                 <th className="px-4 py-3 text-center">계정과목</th>
+                <th className="px-4 py-3 text-center">중요도</th>
                 <th className="px-4 py-3 text-center">수입/지출</th>
                 <th className="px-4 py-3 text-center">차대변</th>
                 <th className="px-4 py-3 text-center">업무분류</th>
@@ -503,12 +521,14 @@ function AccountSubjectSection({
                 <th className="px-4 py-3 text-center">별칭</th>
                 <th className="px-4 py-3 text-center">설명</th>
                 <th className="px-4 py-3 text-center">사용</th>
+                <th className="px-4 py-3 text-center">관리</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
               {subjects.map((subject) => (
                 <tr className="bg-white/70" key={subject.id}>
-                  <td className="px-4 py-4 font-semibold">{subject.name}</td>
+                  <td className="px-4 py-4 font-semibold"><span className="block">{subject.name}</span><span className="text-xs font-normal text-[var(--color-stone)]">{subject.code}</span></td>
+                  <td className="px-4 py-4 text-center">{subject.isPrimary ? <span className="rounded-full bg-[var(--color-butter-soft)] px-2.5 py-1 text-xs font-semibold text-[var(--color-mustard)]">주요 {subject.primaryOrder || ""}</span> : "-"}</td>
                   <td className="px-4 py-4">
                     <Badge value={subject.subjectType ?? "미확정"} />
                   </td>
@@ -522,6 +542,7 @@ function AccountSubjectSection({
                   <td className="px-4 py-4">
                     <Badge value={subject.isActive ? "사용" : "사용안함"} />
                   </td>
+                  <td className="px-4 py-4 text-center"><Button aria-label={`${subject.name} 수정`} onClick={() => onEdit(subject)} size="sm" type="button" variant="outline"><Pencil className="size-4" /></Button></td>
                 </tr>
               ))}
             </tbody>
@@ -836,6 +857,73 @@ function BankAccountModal({
   );
 }
 
+function AccountSubjectModal({
+  initialSubject,
+  onClose,
+  onSave,
+  saveError,
+  subjects,
+}: {
+  initialSubject: RegisteredAccountSubject | null;
+  onClose: () => void;
+  onSave: (input: AccountSubjectManagementInput) => Promise<void>;
+  saveError: string | null;
+  subjects: RegisteredAccountSubject[];
+}) {
+  const [form, setForm] = useState({
+    aliases: initialSubject?.aliases.join(", ") ?? "",
+    businessCategory: initialSubject?.businessCategory ?? "미분류",
+    code: initialSubject?.code ?? "",
+    description: initialSubject?.description ?? "",
+    isActive: initialSubject?.isActive ?? true,
+    isPrimary: initialSubject?.isPrimary ?? false,
+    name: initialSubject?.name ?? "",
+    normalBalance: initialSubject?.normalBalance ?? "차변",
+    parentId: initialSubject?.parentId ?? "",
+    primaryOrder: String(initialSubject?.primaryOrder ?? 0),
+    sortOrder: String(initialSubject?.sortOrder ?? 0),
+    subjectType: initialSubject?.subjectType ?? "지출",
+  });
+
+  return (
+    <ModalFrame onClose={onClose} title={initialSubject ? "ERP 계정과목 수정" : "ERP 계정과목 추가"}>
+      <form className="grid max-h-[72vh] gap-4 overflow-y-auto pr-1 sm:grid-cols-2" onSubmit={(event) => {
+        event.preventDefault();
+        void onSave({
+          aliases: form.aliases.split(",").map((value) => value.trim()).filter(Boolean),
+          businessCategory: form.businessCategory as AccountSubjectManagementInput["businessCategory"],
+          code: form.code.trim(),
+          description: form.description.trim(),
+          isActive: form.isActive,
+          isPrimary: form.isPrimary && form.isActive,
+          name: form.name.trim(),
+          normalBalance: form.normalBalance as AccountSubjectManagementInput["normalBalance"],
+          parentId: form.parentId || null,
+          primaryOrder: Number(form.primaryOrder) || 0,
+          sortOrder: Number(form.sortOrder) || 0,
+          subjectType: form.subjectType as AccountSubjectManagementInput["subjectType"],
+        });
+      }}>
+        <FormInput label="계정코드" onChange={(value) => setForm((current) => ({ ...current, code: value }))} value={form.code} />
+        <FormInput label="계정과목명" onChange={(value) => setForm((current) => ({ ...current, name: value }))} value={form.name} />
+        <FormSelect label="수입/지출 유형" onChange={(value) => setForm((current) => ({ ...current, subjectType: value as typeof current.subjectType }))} options={["수입", "지출", "자산", "부채", "정산"]} value={form.subjectType} />
+        <FormSelect label="차대변" onChange={(value) => setForm((current) => ({ ...current, normalBalance: value as typeof current.normalBalance }))} options={["차변", "대변"]} value={form.normalBalance} />
+        <FormSelect label="업무분류" onChange={(value) => setForm((current) => ({ ...current, businessCategory: value as typeof current.businessCategory }))} options={["수입", "인건비", "운영비", "사업추진비", "토지비", "공사비", "인허가·부담금", "분양제비용", "기타개발비", "등기·법무비", "금융비용", "정산·환불", "미분류"]} value={form.businessCategory} />
+        <label className="grid gap-1.5 text-sm font-semibold">상위 계정과목<select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm" onChange={(event) => setForm((current) => ({ ...current, parentId: event.target.value }))} value={form.parentId}><option value="">없음</option>{subjects.filter((subject) => subject.isActive && subject.id !== initialSubject?.id).map((subject) => <option key={subject.id} value={subject.id}>{subject.code} · {subject.name}</option>)}</select></label>
+        <FormInput label="별칭 (쉼표 구분)" onChange={(value) => setForm((current) => ({ ...current, aliases: value }))} value={form.aliases} />
+        <FormInput label="설명" onChange={(value) => setForm((current) => ({ ...current, description: value }))} value={form.description} />
+        <FormInput label="전체 표시순서" onChange={(value) => setForm((current) => ({ ...current, sortOrder: value }))} type="number" value={form.sortOrder} />
+        <FormInput label="주요 표시순서" onChange={(value) => setForm((current) => ({ ...current, primaryOrder: value }))} type="number" value={form.primaryOrder} />
+        <label className="flex items-center gap-2 rounded-lg border border-[var(--color-soft-border)] p-3 text-sm font-semibold"><input checked={form.isPrimary} onChange={(event) => setForm((current) => ({ ...current, isPrimary: event.target.checked }))} type="checkbox" />주요 계정과목으로 표시</label>
+        <label className="flex items-center gap-2 rounded-lg border border-[var(--color-soft-border)] p-3 text-sm font-semibold"><input checked={form.isActive} onChange={(event) => setForm((current) => ({ ...current, isActive: event.target.checked }))} type="checkbox" />사용 중</label>
+        {initialSubject?.source === "Ledger 원장" ? <p className="rounded-lg bg-[var(--color-morning-tint)] p-3 text-sm text-[var(--color-deep-cobalt)] sm:col-span-2">Ledger에서 가져온 출처 표시는 보존하지만, 이후 이름·분류·사용 여부는 ERP에서 관리해.</p> : null}
+        {saveError ? <div className="sm:col-span-2"><SaveError message={saveError} /></div> : null}
+        <div className="sm:col-span-2"><ModalActions onClose={onClose} /></div>
+      </form>
+    </ModalFrame>
+  );
+}
+
 function buildLocalBankAccount(input: BankAccountInput): RegisteredBankAccount {
   return {
     ...input,
@@ -875,6 +963,20 @@ function mergeAccountSubjects(current: RegisteredAccountSubject[], additions: Re
   const nextSubjects = additions.filter((subject) => !existingNames.has(subject.name));
 
   return [...current, ...nextSubjects].sort((left, right) => left.sortOrder - right.sortOrder || left.code.localeCompare(right.code));
+}
+
+function mergeManagedAccountSubject(current: RegisteredAccountSubject[], subject: RegisteredAccountSubject) {
+  const next = current.some((item) => item.id === subject.id)
+    ? current.map((item) => item.id === subject.id ? subject : item)
+    : [...current, subject];
+  return next.sort((left, right) => Number(right.isPrimary) - Number(left.isPrimary)
+    || (left.primaryOrder ?? 0) - (right.primaryOrder ?? 0)
+    || left.sortOrder - right.sortOrder
+    || left.code.localeCompare(right.code));
+}
+
+function buildLocalManagedAccountSubject(initial: RegisteredAccountSubject | null, input: AccountSubjectManagementInput): RegisteredAccountSubject {
+  return { ...input, id: initial?.id ?? `account-subject-${Date.now()}`, source: initial?.source ?? "직접등록" };
 }
 
 function BusinessPartnerModal({ initialPartner, onClose, onSave, saveError }: { initialPartner: BusinessPartner | null; onClose: () => void; onSave: (input: BusinessPartnerInput) => Promise<void>; saveError: string | null }) {

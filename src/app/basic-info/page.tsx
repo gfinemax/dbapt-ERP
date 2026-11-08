@@ -6,7 +6,7 @@ import { listCreditCardsFromSupabase } from "@/features/basic-info/credit-card-r
 import { listItemsFromSupabase } from "@/features/basic-info/item-repository";
 import { hasSupabaseSecretConfig } from "@/lib/supabase/config";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
-import { createAccountSubjectsAction, createBankAccountAction, createCreditCardAction, createItemAction, createManualBusinessPartnerAction, updateBankAccountAction, updateBusinessPartnerAction } from "./actions";
+import { createAccountSubjectsAction, createBankAccountAction, createCreditCardAction, createItemAction, createManualBusinessPartnerAction, manageAccountSubjectAction, updateBankAccountAction, updateBusinessPartnerAction } from "./actions";
 
 type BasicInfoRouteProps = {
   searchParams?: Promise<{
@@ -92,6 +92,11 @@ export default async function BasicInfoRoute({ searchParams }: BasicInfoRoutePro
       initialCreditCards={initialCreditCards ?? undefined}
       initialItems={initialItems ?? undefined}
       initialSection={initialSection}
+      manageAccountSubject={
+        shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "account-subjects", initialAccountSubjects)
+          ? manageAccountSubjectAction
+          : undefined
+      }
       updateBusinessPartner={shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "partners", initialBusinessPartners) ? updateBusinessPartnerAction : undefined}
       updateBankAccount={
         shouldEnableBasicInfoRemoteCreate(hasRemoteWriteConfig, initialSection, "bank-accounts", initialBankAccounts)

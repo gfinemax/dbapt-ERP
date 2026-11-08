@@ -219,7 +219,10 @@ create table if not exists finance.account_subjects (
   aliases text[] not null default array[]::text[],
   description text not null default '',
   sort_order integer not null default 0,
+  is_primary boolean not null default false,
+  primary_order integer not null default 0,
   is_active boolean not null default true,
+  updated_at timestamptz not null default now(),
   created_at timestamptz not null default now(),
   unique (organization_id, code)
 );
@@ -231,7 +234,10 @@ alter table finance.account_subjects
   add column if not exists source text not null default '직접등록' check (source in ('운영비 예산안', '수지분석표', '직접등록', 'Ledger 원장')),
   add column if not exists aliases text[] not null default array[]::text[],
   add column if not exists description text not null default '',
-  add column if not exists sort_order integer not null default 0;
+  add column if not exists sort_order integer not null default 0,
+  add column if not exists is_primary boolean not null default false,
+  add column if not exists primary_order integer not null default 0,
+  add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists finance.bank_transactions (
   id uuid primary key default gen_random_uuid(),

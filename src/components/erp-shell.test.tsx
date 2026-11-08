@@ -160,7 +160,7 @@ describe("ErpShell", () => {
       "href",
       "/basic-info?section=cards",
     );
-    expect(screen.getByRole("link", { name: "계정과목 등록" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "계정과목 관리" })).toHaveAttribute(
       "href",
       "/basic-info?section=account-subjects",
     );
@@ -295,7 +295,7 @@ describe("ErpShell", () => {
       "href",
       "/finance/bank-account-links",
     );
-    expect(screen.getByRole("link", { name: "전표 자동매칭" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Ledger 참고 연결" })).toHaveAttribute(
       "href",
       "/finance/bank-auto-matching",
     );

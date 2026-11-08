@@ -23,15 +23,19 @@ export type RegisteredAccountSubject = {
   description: string;
   id: string;
   isActive: boolean;
+  isPrimary?: boolean;
   name: string;
   normalBalance: AccountSubjectNormalBalance | null;
   parentId: string | null;
+  primaryOrder?: number;
   sortOrder: number;
   source: AccountSubjectSource | null;
   subjectType: AccountSubjectType | null;
 };
 
-export type AccountSubjectRecommendation = Omit<RegisteredAccountSubject, "id" | "isActive" | "parentId" | "normalBalance" | "source" | "subjectType"> & { normalBalance: AccountSubjectNormalBalance; source: AccountSubjectSource; subjectType: AccountSubjectType };
+export type AccountSubjectManagementInput = Omit<RegisteredAccountSubject, "id" | "source">;
+
+export type AccountSubjectRecommendation = Omit<RegisteredAccountSubject, "id" | "isActive" | "isPrimary" | "parentId" | "primaryOrder" | "normalBalance" | "source" | "subjectType"> & { normalBalance: AccountSubjectNormalBalance; source: AccountSubjectSource; subjectType: AccountSubjectType };
 
 export type AccountSubjectRegistrationInput = Omit<RegisteredAccountSubject, "id"> & {
   budgetIds: string[];
@@ -201,7 +205,9 @@ export function buildAccountSubjectFromRecommendation(recommendation: AccountSub
     ...recommendation,
     id: `account-subject-${recommendation.code.toLowerCase()}`,
     isActive: true,
+    isPrimary: false,
     parentId: null,
+    primaryOrder: 0,
   };
 }
 

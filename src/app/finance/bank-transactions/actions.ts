@@ -19,8 +19,6 @@ import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/featu
 import {
   loadLedgerBankSubjectTransactions,
   saveLedgerBankSubjectRules,
-  syncLedgerAccountSubjects,
-  type LedgerAccountSubjectSyncInput,
   type LedgerBankSubjectRuleInput,
   type LedgerBankSubjectTransactionQuery,
 } from "@/features/finance/ledger-bank-subject-rules";
@@ -102,15 +100,6 @@ export async function saveLedgerBankSubjectRulesAction(rules: LedgerBankSubjectR
 export async function loadLedgerBankSubjectTransactionsAction(query: LedgerBankSubjectTransactionQuery) {
   const actor = await requireExpenseActor("READ");
   return loadLedgerBankSubjectTransactions(actor.organization_id, query);
-}
-
-export async function syncLedgerAccountSubjectsAction(items: LedgerAccountSubjectSyncInput[]) {
-  const actor = await requireExpenseActor("ADMIN");
-  const result = await syncLedgerAccountSubjects(actor.organization_id, actor.user_id, items);
-  revalidatePath("/basic-info");
-  revalidatePath("/finance/bank-transactions");
-  revalidatePath("/finance/bank-auto-matching");
-  return result;
 }
 
 export async function syncLedgerBankTransactionsAction() {

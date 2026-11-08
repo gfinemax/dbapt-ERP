@@ -3,6 +3,7 @@ import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type {
   AccountSubjectBusinessCategory,
   AccountSubjectNormalBalance,
+  AccountSubjectManagementInput,
   AccountSubjectRegistrationInput,
   AccountSubjectSource,
   AccountSubjectType,
@@ -20,9 +21,11 @@ export type SupabaseAccountSubjectRow = {
   description: string | null;
   id: string;
   is_active: boolean;
+  is_primary?: boolean | null;
   name: string;
   normal_balance: AccountSubjectNormalBalance | null;
   parent_id: string | null;
+  primary_order?: number | null;
   sort_order: number | null;
   source: AccountSubjectSource | null;
   subject_type: AccountSubjectType | null;
@@ -56,9 +59,11 @@ export function mapAccountSubjectFromRow(row: SupabaseAccountSubjectRow): Regist
     description: row.description ?? "",
     id: row.id,
     isActive: row.is_active,
+    isPrimary: row.is_primary ?? false,
     name: row.name,
     normalBalance: row.normal_balance,
     parentId: row.parent_id,
+    primaryOrder: row.primary_order ?? 0,
     sortOrder: row.sort_order ?? 0,
     source: row.source,
     subjectType: row.subject_type,
@@ -77,9 +82,11 @@ export function mapAccountSubjectToInsert(subject: RegisteredAccountSubject): Su
     code: subject.code,
     description: subject.description,
     is_active: subject.isActive,
+    is_primary: subject.isPrimary ?? false,
     name: subject.name,
     normal_balance: subject.normalBalance,
     parent_id: subject.parentId,
+    primary_order: subject.primaryOrder ?? 0,
     sort_order: subject.sortOrder,
     source: subject.source,
     subject_type: subject.subjectType,
@@ -87,7 +94,7 @@ export function mapAccountSubjectToInsert(subject: RegisteredAccountSubject): Su
 }
 
 const accountSubjectSelect =
-  "id, code, name, parent_id, is_active, created_at, subject_type, normal_balance, business_category, source, aliases, description, sort_order";
+  "id, code, name, parent_id, is_active, is_primary, primary_order, created_at, subject_type, normal_balance, business_category, source, aliases, description, sort_order";
 
 export async function listAccountSubjectsFromSupabase(organizationId?: string) {
   const supabase = getSupabaseServerClient();
@@ -109,7 +116,48 @@ export async function listAccountSubjectsFromSupabase(organizationId?: string) {
     return null;
   }
 
-  return (data as SupabaseAccountSubjectRow[]).map(mapAccountSubjectFromRow);
+  return (data as SupabaseAccountSubjectRow[]).map(mapAccountSubjectFromRow).sort((left, right) =>
+    Number(right.isPrimary) - Number(left.isPrimary)
+    || (left.primaryOrder ?? 0) - (right.primaryOrder ?? 0)
+    || left.sortOrder - right.sortOrder
+    || left.code.localeCompare(right.code));
+}
+
+export async function manageAccountSubjectInSupabase(
+  subjectId: string | null,
+  input: AccountSubjectManagementInput,
+  organizationId: string,
+  actorId: string,
+) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+
+  const { data, error } = await supabase.schema(accountSubjectRepositorySchema).rpc("manage_account_subject", {
+    p_actor: actorId,
+    p_data: {
+      aliases: input.aliases,
+      business_category: input.businessCategory,
+      code: input.code,
+      description: input.description,
+      is_active: input.isActive,
+      is_primary: input.isPrimary ?? false,
+      name: input.name,
+      normal_balance: input.normalBalance,
+      parent_id: input.parentId,
+      primary_order: input.primaryOrder ?? 0,
+      sort_order: input.sortOrder,
+      subject_type: input.subjectType,
+    },
+    p_org: organizationId,
+    p_subject_id: subjectId,
+  });
+  if (error) {
+    if (error.code === "23505") throw new Error("같은 코드의 ERP 계정과목이 이미 있어.");
+    throw new Error(`계정과목 저장에 실패했어: ${error.message}`);
+  }
+  const saved = (data as SupabaseAccountSubjectRow[] | null)?.[0];
+  if (!saved) throw new Error("저장된 계정과목을 다시 확인하지 못했어.");
+  return mapAccountSubjectFromRow(saved);
 }
 
 function businessCategoryForSection(section: string | null): AccountSubjectBusinessCategory {

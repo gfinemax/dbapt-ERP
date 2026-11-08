@@ -36,6 +36,8 @@ export type BankTransactionSourceReconciliationStatus = "SOURCE_REVIEW_REQUIRED"
 export type BankTransactionReviewRow = {
   bankAccountId: string;
   classificationStatus: BankTransactionClassificationStatus;
+  confirmedAccountSubjectId?: string | null;
+  confirmedAccountSubjectName?: string | null;
   counterparty: string;
   description: string;
   id: string;
@@ -374,7 +376,7 @@ export async function listBankTransactions(
   }
   const from = (page - 1) * bankTransactionPageSize;
   let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
-    .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
+    .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,recommendation_reason", { count: "exact" })
     .eq("organization_id", organizationId)
     .is("deleted_at", null);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
@@ -389,6 +391,16 @@ export async function listBankTransactions(
     .order("id", { ascending: false })
     .range(from, from + bankTransactionPageSize - 1);
   if (error) throw new Error(`은행거래 목록을 불러오지 못했어: ${error.message}`);
+  const confirmedSubjectIds = [...new Set((data ?? []).map((row) => row.confirmed_account_subject_id).filter((value): value is string => Boolean(value)))];
+  const confirmedSubjectNames = new Map<string, string>();
+  if (confirmedSubjectIds.length) {
+    const { data: subjectRows, error: subjectError } = await supabase.schema(bankTransactionRepositorySchema)
+      .from("account_subjects")
+      .select("id,name")
+      .in("id", confirmedSubjectIds);
+    if (subjectError) throw new Error(`확정 계정과목을 불러오지 못했어: ${subjectError.message}`);
+    for (const subject of subjectRows ?? []) confirmedSubjectNames.set(subject.id, subject.name);
+  }
   const overrideMap = await loadLatestBankTransactionSheetOverrides(organizationId, (data ?? []).map((row) => row.id));
   const rows = (data ?? []).map((row) => {
     const overrides = overrideMap.get(row.id) ?? [];
@@ -400,6 +412,8 @@ export async function listBankTransactions(
     bankAccountId: row.bank_account_id,
     branchName: row.branch_name ?? "",
     classificationStatus: row.classification_status,
+    confirmedAccountSubjectId: row.confirmed_account_subject_id,
+    confirmedAccountSubjectName: row.confirmed_account_subject_id ? confirmedSubjectNames.get(row.confirmed_account_subject_id) ?? null : null,
     counterparty: row.counterparty ?? "",
     description: descriptionOverride?.sourceValue ?? row.description,
     id: row.id,

@@ -298,7 +298,10 @@ export function BankTransactionListPage({
                       </p>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.transactionKind ?? "구분 미확인"}</p>
                     </td>
-                    <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
+                    <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">
+                      {transaction.confirmedAccountSubjectName ?? transaction.recommendedAccountSubjectName ?? "-"}
+                      {transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
+                    </td>
                     <td className="px-2 py-2.5 text-center align-middle">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span>
                       {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}

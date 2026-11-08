@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { BusinessPartnerPage } from "./business-partner-page";
+import type { AccountSubjectRegistrationInput } from "./account-subject-data";
 import { businessPartners } from "./business-partner-data";
 
 describe("BusinessPartnerPage", () => {
@@ -255,8 +256,8 @@ describe("BusinessPartnerPage", () => {
   it("renders account subject registration and registers selected recommendations", async () => {
     render(<BusinessPartnerPage initialAccountSubjects={[]} initialSection="account-subjects" />);
 
-    expect(screen.getByRole("heading", { name: "계정과목 등록" })).toBeInTheDocument();
-    expect(screen.getByText("업로드한 운영비 예산을 기준으로 생성된 후보를 관리자가 확인해 등록합니다. 수지분석표 항목은 별도 후보로 제공합니다.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "계정과목 관리" })).toBeInTheDocument();
+    expect(screen.getByText("ERP에서 계정과목을 직접 생성·수정하고 주요 계정과목의 표시순서를 관리해. Ledger 분류는 아래 ERP 계정과목에 연결할 때만 참고해.")).toBeInTheDocument();
     expect(screen.getByText("업로드한 운영비 예산 기준")).toBeInTheDocument();
     expect(screen.getByText("수지분석표 기준")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "계정과목" })).toBeInTheDocument();
@@ -267,12 +268,12 @@ describe("BusinessPartnerPage", () => {
 
     const registeredSubjects = screen.getByRole("heading", { name: "등록된 계정과목" }).closest("section")!;
     await waitFor(() => expect(within(registeredSubjects).getByText("임대료")).toBeInTheDocument());
-    expect(screen.queryByText("OP-310")).not.toBeInTheDocument();
+    expect(screen.getByText("OP-310")).toBeInTheDocument();
     expect(screen.getByText("사무실 임차료 등")).toBeInTheDocument();
   });
 
   it("shows live operating-budget candidates and sends their budget link for administrator confirmation", async () => {
-    const createAccountSubjects = vi.fn(async (inputs) => inputs.map((input, index) => ({ ...input, id: `saved-${index}` })));
+    const createAccountSubjects = vi.fn(async (inputs: AccountSubjectRegistrationInput[]) => inputs.map((input, index) => ({ ...input, id: `saved-${index}` })));
     render(
       <BusinessPartnerPage
         createAccountSubjects={createAccountSubjects}

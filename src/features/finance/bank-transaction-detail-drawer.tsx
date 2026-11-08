@@ -63,6 +63,7 @@ export function BankTransactionDetailDrawer({ accountName, closeHref, transactio
           <Detail label="거래처" value={transaction.counterparty || "-"} />
           <Detail label="거래점" value={transaction.branchName || "-"} />
           <Detail label="분류 상태" value={classificationLabels[transaction.classificationStatus]} />
+          <Detail label="ERP 확정 계정과목" value={transaction.confirmedAccountSubjectName ?? "미확정"} />
           <Detail label="추천 계정과목" value={transaction.recommendedAccountSubjectName ?? "추천 없음"} />
           <Detail label="추천 근거" value={transaction.recommendationReason ?? "관리자 확인 필요"} />
           <Detail label="관리 메모" value={transaction.memo || "메모 없음"} />
