@@ -5,6 +5,7 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
 import {
   countBankTransactionsByStatus,
+  loadFinancialActivitySummary,
   loadLedgerBankSourceSummary,
   loadBankTransactionSourceReconciliationSummary,
   loadBankTransactionRulePreview,
@@ -12,6 +13,7 @@ import {
   type BankTransactionClassificationStatus,
   type BankTransactionSourceReconciliationStatus,
   type BankTransactionStatusCounts,
+  type FinancialActivityOrigin,
 } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 
@@ -22,11 +24,12 @@ const classificationStatuses = new Set<BankTransactionClassificationStatus>([
   "DEFERRED",
   "EXCLUDED",
 ]);
+const activityOrigins = new Set<Exclude<FinancialActivityOrigin, "ALL">>(["BANK_TRANSACTION", "EXTERNAL_RECOGNITION"]);
 
 export default async function FinanceBankTransactionsRoute({
   searchParams,
 }: {
-  searchParams: Promise<{ accountId?: string; from?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string }>;
+  searchParams: Promise<{ accountId?: string; from?: string; origin?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string }>;
 }) {
   const query = await searchParams;
   const parsedPage = Number.parseInt(query.page ?? "1", 10);
@@ -39,6 +42,9 @@ export default async function FinanceBankTransactionsRoute({
     classificationStatus,
     dateFrom: validDate(query.from),
     dateTo: validDate(query.to),
+    originType: activityOrigins.has(query.origin as Exclude<FinancialActivityOrigin, "ALL">)
+      ? query.origin as Exclude<FinancialActivityOrigin, "ALL">
+      : undefined,
     query: query.q?.trim().slice(0, 100) || undefined,
     sourceReconciliationStatus: query.sourceReview === "required"
       ? "SOURCE_REVIEW_REQUIRED" as BankTransactionSourceReconciliationStatus
@@ -53,11 +59,14 @@ export default async function FinanceBankTransactionsRoute({
   }
 
   const emptyStatusCounts: BankTransactionStatusCounts = { ALL: 0, CONFIRMED: 0, DEFERRED: 0, EXCLUDED: 0, RECOMMENDED: 0, UNREVIEWED: 0 };
-  const [bankAccounts, accountSubjects, sourceReconciliationSummary] = actor ? await Promise.all([
+  const [bankAccounts, accountSubjects, sourceReconciliationSummary, activitySummary] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
     listAccountSubjectsFromSupabase(actor.organization_id),
-    loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
-  ]) : [[], [], undefined];
+    filters.originType === "EXTERNAL_RECOGNITION"
+      ? Promise.resolve(undefined)
+      : loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
+    loadFinancialActivitySummary(actor.organization_id).catch(() => undefined),
+  ]) : [[], [], undefined, undefined];
   const sourceReviewTransactionIds = filters.sourceReconciliationStatus
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
@@ -67,6 +76,7 @@ export default async function FinanceBankTransactionsRoute({
       bankAccountId: filters.bankAccountId,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
+      originType: filters.originType,
       query: filters.query,
       sourceReconciliationStatus: filters.sourceReconciliationStatus,
     }, sourceReviewTransactionIds).catch(() => emptyStatusCounts),
@@ -90,6 +100,7 @@ export default async function FinanceBankTransactionsRoute({
       bankAccounts={bankAccounts ?? []}
       canExport={Boolean(actor?.permissions.includes("ADMIN"))}
       filters={filters}
+      activitySummary={activitySummary}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}
       pageData={pageDataWithReconciliation}

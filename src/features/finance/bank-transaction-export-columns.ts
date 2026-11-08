@@ -12,6 +12,10 @@ export const bankTransactionExportColumns = [
   { defaultSelected: false, id: "balance", label: "거래 후 잔액" },
   { defaultSelected: false, id: "adminNote", label: "관리자 비고", sensitive: true },
   { defaultSelected: false, id: "sourceStatus", label: "원본 대조 상태" },
+  { defaultSelected: false, id: "originType", label: "원본 구분" },
+  { defaultSelected: false, id: "cashImpact", label: "현금 영향" },
+  { defaultSelected: false, id: "accountingTreatment", label: "외부납입 회계 처리" },
+  { defaultSelected: false, id: "sourceRecordId", label: "원본 레코드 ID", sensitive: true },
   { defaultSelected: false, id: "transactionId", label: "ERP 거래 ID", sensitive: true },
 ] as const;
 

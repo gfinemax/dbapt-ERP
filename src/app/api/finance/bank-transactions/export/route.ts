@@ -116,6 +116,7 @@ function normalizeFilters(value: unknown): BankTransactionListFilters {
     classificationStatus: status,
     dateFrom: cleanDate(input.dateFrom),
     dateTo: cleanDate(input.dateTo),
+    originType: input.originType === "BANK_TRANSACTION" || input.originType === "EXTERNAL_RECOGNITION" ? input.originType : undefined,
     query: cleanString(input.query, 100),
     sourceReconciliationStatus: input.sourceReconciliationStatus === "SOURCE_REVIEW_REQUIRED" ? "SOURCE_REVIEW_REQUIRED" : undefined,
   };

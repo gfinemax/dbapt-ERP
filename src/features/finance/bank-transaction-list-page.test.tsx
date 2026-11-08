@@ -97,7 +97,7 @@ describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
     const main = screen.getByRole("main");
-    expect(screen.getByRole("heading", { level: 1, name: "은행 거래내역" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "통합 거래내역" })).toBeInTheDocument();
     expect(screen.getByText("조회 결과")).toHaveTextContent("4,277건");
     expect(screen.getAllByText("51–100건 · 2/86")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "거래내역 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
@@ -117,6 +117,59 @@ describe("BankTransactionListPage", () => {
     expect(screen.queryByRole("option", { name: /1000200031006/ })).not.toBeInTheDocument();
   });
 
+  it("shows external recognitions beside bank rows without opening the bank edit drawer", () => {
+    render(<BankTransactionListPage
+      activitySummary={{
+        bankDepositTotal: 100000000,
+        bankTransactionCount: 10,
+        bankWithdrawalTotal: 20000000,
+        confirmedLossTotal: 30000000,
+        externalRecognitionCount: 1,
+        externalRecognitionTotal: 30000000,
+        trustHeldTotal: 0,
+      }}
+      bankAccounts={bankAccounts}
+      filters={{ originType: "EXTERNAL_RECOGNITION" }}
+      pageData={{
+        page: 1,
+        pageSize: 50,
+        totalCount: 1,
+        totalPages: 1,
+        rows: [{
+          amount: 30000000,
+          balanceAmount: null,
+          bankAccountId: "",
+          branchName: "",
+          cashImpact: "NON_CASH_RECOGNITION",
+          classificationStatus: "CONFIRMED",
+          counterparty: "고진오",
+          description: "동일건설 정액 필증 3천만원",
+          id: "external:recognition-1",
+          accountingTreatment: "confirmed_loss",
+          actualFundAmount: 0,
+          lossAmount: 30000000,
+          memo: "필증 인정",
+          originType: "EXTERNAL_RECOGNITION",
+          recognitionStatus: "ACTIVE",
+          recommendedAccountSubjectId: null,
+          recommendedAccountSubjectName: null,
+          recommendationReason: null,
+          sourceRecordId: "recognition-1",
+          transactedAt: "2009-07-13T00:00:00+09:00",
+          transactionKind: null,
+        }],
+      }}
+      statusCounts={{ ...statusCounts, ALL: 1, CONFIRMED: 1 }}
+    />);
+
+    expect(screen.getByRole("region", { name: "통합 거래 요약" })).toHaveTextContent("외부납입 인정30,000,000원1건 · 통장 입금 아님");
+    expect(screen.getByRole("combobox", { name: "원본 구분" })).toHaveValue("EXTERNAL_RECOGNITION");
+    expect(screen.getAllByText("외부납입 인정 · 확정결손")).toHaveLength(2);
+    expect(screen.getAllByText("비현금 인정").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" })).toHaveAttribute("href", "/finance/collections");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
   it("preserves search, account, date and status filters across pagination", () => {
     expect(bankTransactionPageHref(3, {
       bankAccountId: "bank-1",
@@ -124,8 +177,9 @@ describe("BankTransactionListPage", () => {
       dateFrom: "2026-09-01",
       dateTo: "2026-09-30",
       query: "인터넷",
+      originType: "BANK_TRANSACTION",
     })).toBe(
-      "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&status=UNREVIEWED",
+      "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&origin=BANK_TRANSACTION&status=UNREVIEWED",
     );
   });
 

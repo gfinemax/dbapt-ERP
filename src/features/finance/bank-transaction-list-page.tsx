@@ -21,6 +21,7 @@ import type {
   BankTransactionRulePreview,
   BankTransactionStatusCounts,
   BankTransactionSourceReconciliationSummary,
+  FinancialActivitySummary,
   LedgerBankSourceSummary,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
@@ -28,6 +29,7 @@ import { formatKrw } from "./finance-data";
 type Props = {
   accessError?: string;
   accountSubjects?: RegisteredAccountSubject[];
+  activitySummary?: FinancialActivitySummary;
   bankAccounts: RegisteredBankAccount[];
   canExport?: boolean;
   filters: BankTransactionListFilters;
@@ -79,6 +81,7 @@ const emptyStatusCounts: BankTransactionStatusCounts = {
 export function BankTransactionListPage({
   accessError,
   accountSubjects = [],
+  activitySummary,
   bankAccounts,
   canExport = false,
   filters,
@@ -94,21 +97,32 @@ export function BankTransactionListPage({
 }: Props) {
   const accounts = new Map(bankAccounts.map((account) => [account.id, account]));
   const accountSubjectsById = new Map(accountSubjects.map((subject) => [subject.id, subject]));
-  const selectedTransaction = pageData.rows.find((row) => row.id === selectedTransactionId);
+  const selectedTransaction = pageData.rows.find((row) => row.id === selectedTransactionId && row.originType !== "EXTERNAL_RECOGNITION");
   const currentListHref = bankTransactionPageHref(pageData.page, filters);
   const selectedAccount = filters.bankAccountId ? accounts.get(filters.bankAccountId) : undefined;
   const filterChips = buildFilterChips(filters, selectedAccount);
 
   return (
-    <ErpShell activeDetailLabel="은행 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="통합 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <FinancePageHeader
           action={{ href: "/finance/bank-transactions/upload", label: "거래내역 업로드" }}
-          breadcrumb="회계/자금 · 은행·카드 · 은행 거래내역"
-          description="계좌 거래를 빠르게 찾고 분류 상태와 계정과목을 확인합니다."
-          title="은행 거래내역"
+          breadcrumb="회계/자금 · 은행·카드 · 통합 거래내역"
+          description="실제 통장거래와 외부납입 인정을 함께 조회하되 원본과 현금 영향을 분리해 관리합니다."
+          title="통합 거래내역"
         />
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
+
+        {activitySummary ? (
+          <section aria-label="통합 거래 요약" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+            <SummaryCard label="실제 통장 거래" value={`${activitySummary.bankTransactionCount.toLocaleString("ko-KR")}건`} note="은행 원본" />
+            <SummaryCard label="통장 입금" value={formatKrw(activitySummary.bankDepositTotal)} note="조합계좌 현금" />
+            <SummaryCard label="통장 출금" value={formatKrw(activitySummary.bankWithdrawalTotal)} note="조합계좌 현금" />
+            <SummaryCard label="외부납입 인정" value={formatKrw(activitySummary.externalRecognitionTotal)} note={`${activitySummary.externalRecognitionCount.toLocaleString("ko-KR")}건 · 통장 입금 아님`} />
+            <SummaryCard label="확정결손" value={formatKrw(activitySummary.confirmedLossTotal)} note="비현금 인정" />
+            <SummaryCard label="신탁사 보관" value={formatKrw(activitySummary.trustHeldTotal)} note="조합계좌 외 보관" />
+          </section>
+        ) : null}
 
         {sourceReconciliationSummary?.issueCount ? (
           <section aria-label="원본 대조 알림" className="rounded-xl border border-[var(--color-mustard)] bg-[var(--color-butter-soft)]/55 p-4">
@@ -142,7 +156,7 @@ export function BankTransactionListPage({
           />
 
           <FinanceToolbar>
-            <form className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,260px)_minmax(300px,auto)_auto_auto]" method="get">
+            <form className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_minmax(150px,190px)_minmax(180px,240px)_minmax(300px,auto)_auto_auto]" method="get">
               {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
               {filters.sourceReconciliationStatus ? <input name="sourceReview" type="hidden" value="required" /> : null}
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
@@ -154,6 +168,14 @@ export function BankTransactionListPage({
                   placeholder="적요·거래처 검색"
                   type="search"
                 />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                원본 구분
+                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.originType ?? ""} name="origin">
+                  <option value="">전체 원본</option>
+                  <option value="BANK_TRANSACTION">은행 통장거래</option>
+                  <option value="EXTERNAL_RECOGNITION">외부납입 인정</option>
+                </select>
               </label>
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 은행통장
@@ -297,17 +319,26 @@ export function BankTransactionListPage({
             </thead>
             <tbody className="divide-y divide-[var(--color-soft-border)]">
               {!pageData.rows.length ? (
-                <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={7}>조건에 맞는 은행거래가 없습니다.</td></tr>
+                <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={7}>조건에 맞는 거래내역이 없습니다.</td></tr>
               ) : pageData.rows.map((transaction) => {
+                const isExternalRecognition = transaction.originType === "EXTERNAL_RECOGNITION";
                 const account = accounts.get(transaction.bankAccountId);
                 const accountSubjectName = transaction.confirmedAccountSubjectName ?? transaction.recommendedAccountSubjectName;
                 const accountSubjectId = transaction.confirmedAccountSubjectId ?? transaction.recommendedAccountSubjectId;
                 const accountSubject = accountSubjectId ? accountSubjectsById.get(accountSubjectId) : undefined;
-                const accountSubjectLabel = accountSubjectName && accountSubject?.businessCategory
+                const accountSubjectLabel = isExternalRecognition
+                  ? externalAccountingLabel(transaction.accountingTreatment)
+                  : accountSubjectName && accountSubject?.businessCategory
                   ? `${accountSubject.businessCategory} · ${accountSubjectName}`
                   : accountSubjectName ?? "-";
                 const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
-                const transactionDetails = ([
+                const transactionDetails = (isExternalRecognition ? [
+                  ["원본", "Ledger 외부납입 인정"],
+                  ["현금 영향", cashImpactLabel(transaction.cashImpact)],
+                  ["회계 처리", externalAccountingLabel(transaction.accountingTreatment)],
+                  ["인정 사유", transaction.memo ?? ""],
+                  ["Ledger 원본 ID", transaction.sourceRecordId ?? ""],
+                ] : [
                   ["항목구분", transaction.uploadedCategory ?? ""],
                   ["업로드 계정항목", transaction.uploadedAccountTitle ?? ""],
                   ["메모·비고", transaction.memo ?? ""],
@@ -318,11 +349,17 @@ export function BankTransactionListPage({
                 return (
                   <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">{formatDate(transaction.transactedAt)}</td>
-                    <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
-                      {account ? compactAccountName(account) : "계좌 정보 없음"}
+                    <td className="px-2 py-2.5 text-center align-middle font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
+                      {isExternalRecognition ? (
+                        <><span className="block">외부납입 인정</span><span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">{cashImpactLabel(transaction.cashImpact)}</span></>
+                      ) : account ? compactAccountName(account) : "계좌 정보 없음"}
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle">
-                      <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
+                      {isExternalRecognition ? (
+                        <Link className="font-bold text-[var(--color-green-ink)] underline decoration-dotted underline-offset-4" href="/finance/collections">{transaction.description || "외부납입 인정"}</Link>
+                      ) : (
+                        <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
+                      )}
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle text-xs">
@@ -336,29 +373,30 @@ export function BankTransactionListPage({
                           ))}
                         </dl>
                       ) : <p className="text-[var(--color-fog)]">원본 참고정보 없음</p>}
-                      {transaction.classificationNote ? (
+                      {!isExternalRecognition && transaction.classificationNote ? (
                         <p className="mt-1 font-semibold text-[var(--color-green-ink)]">관리자 비고 · {transaction.classificationNote}</p>
-                      ) : <p className="mt-1 text-[var(--color-stone)]">관리자 비고 없음</p>}
-                      <Link
+                      ) : !isExternalRecognition ? <p className="mt-1 text-[var(--color-stone)]">관리자 비고 없음</p> : null}
+                      {!isExternalRecognition ? <Link
                         aria-label={`${transaction.description || "적요 없음"} 관리자 비고 ${transaction.classificationNote ? "수정" : "작성"}`}
                         className="mt-1 inline-block font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-2"
                         href={detailHref}
                       >
                         {transaction.classificationNote ? "비고 수정" : "비고 작성"}
-                      </Link>
+                      </Link> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
                       <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>
-                        {signedAmount(transaction.amount, transaction.transactionKind)}
+                        {isExternalRecognition ? formatKrw(transaction.amount) : signedAmount(transaction.amount, transaction.transactionKind)}
                       </p>
-                      <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.transactionKind ?? "구분 미확인"}</p>
+                      <p className="mt-0.5 text-xs text-[var(--color-stone)]">{isExternalRecognition ? cashImpactLabel(transaction.cashImpact) : transaction.transactionKind ?? "구분 미확인"}</p>
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">
                       {accountSubjectLabel}
-                      {transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
+                      {isExternalRecognition ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">Ledger 원장 분류</span> : transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
                     </td>
                     <td className="px-2 py-2.5 text-center align-middle">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span>
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{isExternalRecognition ? externalStatusLabel(transaction.recognitionStatus, transaction.accountingTreatment) : classificationLabels[transaction.classificationStatus]}</span>
+                      {isExternalRecognition ? <span className="mt-1 block text-xs font-semibold text-[var(--color-stone)]">외부납입 원본</span> : null}
                       {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}
                     </td>
                   </tr>
@@ -395,13 +433,14 @@ export function BankTransactionListPage({
 }
 
 type FilterChip = {
-  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query" | "sourceReconciliationStatus";
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "originType" | "query" | "sourceReconciliationStatus";
   label: string;
 };
 
 function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?: RegisteredBankAccount): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.query) chips.push({ key: "query", label: `검색: ${filters.query}` });
+  if (filters.originType) chips.push({ key: "originType", label: filters.originType === "BANK_TRANSACTION" ? "은행 통장거래" : "외부납입 인정" });
   if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount ? bankAccountOptionLabel(selectedAccount) : "선택 계좌" });
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
@@ -417,6 +456,7 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
   if (filters.bankAccountId) params.set("accountId", filters.bankAccountId);
   if (filters.dateFrom) params.set("from", filters.dateFrom);
   if (filters.dateTo) params.set("to", filters.dateTo);
+  if (filters.originType) params.set("origin", filters.originType);
   if (filters.classificationStatus) params.set("status", filters.classificationStatus);
   if (filters.sourceReconciliationStatus) params.set("sourceReview", "required");
   const query = params.toString();
@@ -447,4 +487,32 @@ function formatDate(value: string) {
 function sourceTransactionDateTime(date: string, time: string | null) {
   if (!date) return "일시 미확인";
   return time ? `${date} ${time}` : date;
+}
+
+function SummaryCard({ label, note, value }: { label: string; note: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-3 text-center">
+      <p className="text-xs font-semibold text-[var(--color-stone)]">{label}</p>
+      <p className="mt-1 text-lg font-black tabular-nums text-[var(--color-midnight-ink)]">{value}</p>
+      <p className="mt-0.5 text-xs text-[var(--color-stone)]">{note}</p>
+    </div>
+  );
+}
+
+function cashImpactLabel(value?: string) {
+  if (value === "BANK_CASH") return "조합계좌 현금";
+  if (value === "TRUST_HELD") return "신탁사 보관";
+  return "비현금 인정";
+}
+
+function externalAccountingLabel(value?: string | null) {
+  if (value === "confirmed_loss") return "외부납입 인정 · 확정결손";
+  if (value === "trust_receipt") return "외부납입 인정 · 신탁사 보관 수납";
+  return "외부납입 인정 · 회계 처리 검토";
+}
+
+function externalStatusLabel(status?: string | null, accountingTreatment?: string | null) {
+  if (status === "CANCELLED") return "취소 원본 보존";
+  if (accountingTreatment === "pending_review") return "회계 검토 보류";
+  return "인정 반영";
 }

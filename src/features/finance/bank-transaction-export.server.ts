@@ -20,7 +20,7 @@ export type BankTransactionExportData = {
   generatedAt: string;
   records: BankTransactionExportRecord[];
   title: string;
-  totals: { deposit: number; withdrawal: number };
+  totals: { confirmedLoss: number; deposit: number; externalRecognition: number; trustHeld: number; withdrawal: number };
 };
 
 const statusLabels = {
@@ -44,7 +44,11 @@ export function buildBankTransactionExportData(input: {
   const subjects = new Map(input.accountSubjects.map((subject) => [subject.id, subject]));
   let deposit = 0;
   let withdrawal = 0;
+  let externalRecognition = 0;
+  let confirmedLoss = 0;
+  let trustHeld = 0;
   const records = input.rows.map((row) => {
+    const isExternalRecognition = row.originType === "EXTERNAL_RECOGNITION";
     const account = accounts.get(row.bankAccountId);
     const subjectId = row.confirmedAccountSubjectId ?? row.recommendedAccountSubjectId;
     const subject = subjectId ? subjects.get(subjectId) : undefined;
@@ -52,21 +56,28 @@ export function buildBankTransactionExportData(input: {
     const signedAmount = row.transactionKind === "입금" ? row.amount : row.transactionKind === "출금" ? -row.amount : row.amount;
     if (row.transactionKind === "입금") deposit += row.amount;
     if (row.transactionKind === "출금") withdrawal += row.amount;
+    if (isExternalRecognition && row.recognitionStatus === "ACTIVE") externalRecognition += row.amount;
+    if (isExternalRecognition && row.recognitionStatus === "ACTIVE" && row.accountingTreatment === "confirmed_loss") confirmedLoss += row.lossAmount ?? 0;
+    if (isExternalRecognition && row.recognitionStatus === "ACTIVE" && row.accountingTreatment === "trust_receipt") trustHeld += row.actualFundAmount ?? 0;
     const { date, time } = koreaDateTimeParts(row.transactedAt);
     return {
-      account: account ? `${account.bankName} · ${account.accountName} · ${account.accountNo}` : "계좌 정보 없음",
-      accountSubject: subject?.businessCategory ? `${subject.businessCategory} · ${subjectName}` : subjectName,
+      account: isExternalRecognition ? "외부납입 인정 원장" : account ? `${account.bankName} · ${account.accountName} · ${account.accountNo}` : "계좌 정보 없음",
+      accountingTreatment: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : "",
+      accountSubject: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : subject?.businessCategory ? `${subject.businessCategory} · ${subjectName}` : subjectName,
       adminNote: row.classificationNote ?? "",
       amount: signedAmount,
       balance: row.balanceAmount ?? "",
+      cashImpact: cashImpactLabel(row.cashImpact),
       classificationStatus: statusLabels[row.classificationStatus],
       counterparty: row.counterparty || "",
       description: row.description || "",
       details: transactionDetails(row),
-      sourceStatus: row.sourceReconciliationIssue ? `원본 확인 필요 · ${row.sourceReconciliationIssue.reason}` : "원본 대조 이상 없음",
+      originType: isExternalRecognition ? "외부납입 인정" : "은행 통장거래",
+      sourceRecordId: row.sourceRecordId ?? row.id,
+      sourceStatus: isExternalRecognition ? "Ledger 외부납입 인정 원본" : row.sourceReconciliationIssue ? `원본 확인 필요 · ${row.sourceReconciliationIssue.reason}` : "원본 대조 이상 없음",
       transactionDate: date,
       transactionId: row.id,
-      transactionKind: row.transactionKind ?? "구분 미확인",
+      transactionKind: isExternalRecognition ? cashImpactLabel(row.cashImpact) : row.transactionKind ?? "구분 미확인",
       transactionTime: time,
     } satisfies BankTransactionExportRecord;
   });
@@ -76,11 +87,20 @@ export function buildBankTransactionExportData(input: {
     generatedAt: input.generatedAt ?? new Date().toISOString(),
     records,
     title: cleanTitle(input.title),
-    totals: { deposit, withdrawal },
+    totals: { confirmedLoss, deposit, externalRecognition, trustHeld, withdrawal },
   };
 }
 
 function transactionDetails(row: BankTransactionListRow) {
+  if (row.originType === "EXTERNAL_RECOGNITION") {
+    return ([
+      ["원본", "Ledger 외부납입 인정"],
+      ["현금 영향", cashImpactLabel(row.cashImpact)],
+      ["회계 처리", accountingTreatmentLabel(row.accountingTreatment)],
+      ["인정 사유", row.memo ?? ""],
+      ["Ledger 원본 ID", row.sourceRecordId ?? ""],
+    ] satisfies Array<[string, string]>).filter(([, value]) => value.trim()).map(([label, value]) => `${label}: ${value.trim()}`).join("\n");
+  }
   return ([
     ["항목구분", row.uploadedCategory ?? ""],
     ["업로드 계정항목", row.uploadedAccountTitle ?? ""],
@@ -91,9 +111,21 @@ function transactionDetails(row: BankTransactionListRow) {
   ] satisfies Array<[string, string]>).filter(([, value]) => value.trim()).map(([label, value]) => `${label}: ${value.trim()}`).join("\n");
 }
 
+function cashImpactLabel(value?: string) {
+  if (value === "BANK_CASH") return "조합계좌 현금";
+  if (value === "TRUST_HELD") return "신탁사 보관";
+  return "비현금 인정";
+}
+
+function accountingTreatmentLabel(value?: string | null) {
+  if (value === "confirmed_loss") return "외부납입 인정 · 확정결손";
+  if (value === "trust_receipt") return "외부납입 인정 · 신탁사 보관 수납";
+  return "외부납입 인정 · 회계 처리 검토";
+}
+
 function cleanTitle(value?: string) {
   const title = value?.replace(/[\u0000-\u001f]/g, " ").replace(/\s+/g, " ").trim().slice(0, 80);
-  return title || "은행 거래내역";
+  return title || "통합 거래내역";
 }
 
 function koreaDateTimeParts(value: string) {
@@ -132,6 +164,9 @@ export function bankTransactionWorkbookSheets(data: BankTransactionExportData) {
     ["거래 건수", data.records.length],
     ["입금 합계", { format: "#,##0", type: Number, value: data.totals.deposit }],
     ["출금 합계", { format: "#,##0", type: Number, value: data.totals.withdrawal }],
+    ["외부납입 인정 합계", { format: "#,##0", type: Number, value: data.totals.externalRecognition }],
+    ["확정결손 합계", { format: "#,##0", type: Number, value: data.totals.confirmedLoss }],
+    ["신탁사 보관 합계", { format: "#,##0", type: Number, value: data.totals.trustHeld }],
     ["안내", "검색 결과를 읽기 전용으로 내보낸 자료이며 ERP 원본 거래를 변경하지 않습니다."],
   ];
   return [
@@ -146,8 +181,9 @@ export async function buildBankTransactionWorkbook(data: BankTransactionExportDa
 
 function excelColumnWidth(column: BankTransactionExportColumnId) {
   return ({
-    account: 34, accountSubject: 28, adminNote: 38, amount: 18, balance: 18, classificationStatus: 14, counterparty: 22,
-    description: 24, details: 52, sourceStatus: 36, transactionDate: 13, transactionId: 38, transactionKind: 14, transactionTime: 12,
+    account: 34, accountingTreatment: 28, accountSubject: 28, adminNote: 38, amount: 18, balance: 18, cashImpact: 18,
+    classificationStatus: 14, counterparty: 22, description: 24, details: 52, originType: 18, sourceRecordId: 38,
+    sourceStatus: 36, transactionDate: 13, transactionId: 38, transactionKind: 14, transactionTime: 12,
   } satisfies Record<BankTransactionExportColumnId, number>)[column];
 }
 
@@ -155,6 +191,7 @@ export function bankTransactionFilterSummary(filters: BankTransactionListFilters
   const parts = [
     filters.query ? `검색어 ${filters.query}` : "",
     filters.bankAccountId ? `계좌 ID ${filters.bankAccountId}` : "전체 계좌",
+    filters.originType ? `원본 ${filters.originType === "BANK_TRANSACTION" ? "은행 통장거래" : "외부납입 인정"}` : "전체 원본",
     filters.dateFrom ? `시작일 ${filters.dateFrom}` : "",
     filters.dateTo ? `종료일 ${filters.dateTo}` : "",
     filters.classificationStatus ? `상태 ${statusLabels[filters.classificationStatus]}` : "",
@@ -164,9 +201,9 @@ export function bankTransactionFilterSummary(filters: BankTransactionListFilters
 }
 
 const pdfColumnWeights: Record<BankTransactionExportColumnId, number> = {
-  account: 1.5, accountSubject: 1.25, adminNote: 1.5, amount: 0.85, balance: 0.85, classificationStatus: 0.75,
-  counterparty: 1.1, description: 1.15, details: 2.25, sourceStatus: 1.45, transactionDate: 0.8, transactionId: 1.5,
-  transactionKind: 0.75, transactionTime: 0.7,
+  account: 1.5, accountingTreatment: 1.25, accountSubject: 1.25, adminNote: 1.5, amount: 0.85, balance: 0.85,
+  cashImpact: 0.9, classificationStatus: 0.75, counterparty: 1.1, description: 1.15, details: 2.25, originType: 0.9,
+  sourceRecordId: 1.5, sourceStatus: 1.45, transactionDate: 0.8, transactionId: 1.5, transactionKind: 0.75, transactionTime: 0.7,
 };
 
 export async function buildBankTransactionPdf(data: BankTransactionExportData) {
@@ -208,7 +245,7 @@ function createPdfLayout(columns: BankTransactionExportColumnId[]) {
 function drawPdfPageHeader(page: PDFPage, font: PDFFont, data: BankTransactionExportData, layout: ReturnType<typeof createPdfLayout>, continuation = false) {
   page.drawText(`${data.title}${continuation ? " (계속)" : ""}`, { color: rgb(0.05, 0.24, 0.18), font, size: 15, x: layout.left, y: 566 });
   page.drawText(`검색 조건: ${bankTransactionFilterSummary(data.filters)}`, { color: rgb(0.25, 0.31, 0.29), font, size: 7.5, x: layout.left, y: 548 });
-  page.drawText(`총 ${data.records.length.toLocaleString("ko-KR")}건 · 입금 ${data.totals.deposit.toLocaleString("ko-KR")}원 · 출금 ${data.totals.withdrawal.toLocaleString("ko-KR")}원`, { color: rgb(0.25, 0.31, 0.29), font, size: 7.5, x: layout.left, y: 535 });
+  page.drawText(`총 ${data.records.length.toLocaleString("ko-KR")}건 · 통장 입금 ${data.totals.deposit.toLocaleString("ko-KR")}원 · 통장 출금 ${data.totals.withdrawal.toLocaleString("ko-KR")}원 · 외부인정 ${data.totals.externalRecognition.toLocaleString("ko-KR")}원`, { color: rgb(0.25, 0.31, 0.29), font, size: 7.5, x: layout.left, y: 535 });
   const y = 521;
   data.columns.forEach((column, index) => {
     page.drawRectangle({ color: rgb(0.05, 0.36, 0.26), height: 22, width: layout.widths[index], x: layout.positions[index], y: y - 22 });
