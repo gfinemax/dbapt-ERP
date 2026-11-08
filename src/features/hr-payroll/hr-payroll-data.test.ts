@@ -7,7 +7,7 @@ describe("hr payroll data", () => {
   });
 
   it("defines hr payroll workflows in the requested order", () => {
-    expect(payrollWorkflows.map((workflow) => workflow.title)).toEqual(["사원정보등록", "급여입력 및 전표처리", "급여대장확인"]);
+    expect(payrollWorkflows.map((workflow) => workflow.title)).toEqual(["사원 관리", "급여 계산 및 전표처리", "급여대장확인"]);
   });
 
   it("calculates deduction totals and net pay from earning and deduction rows", () => {

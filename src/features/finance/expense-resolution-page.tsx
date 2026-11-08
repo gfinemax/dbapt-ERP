@@ -2915,7 +2915,7 @@ export function ExpenseResolutionPage({
       });
       setFormState((current) => ({ ...current, vendorId: result.partner.id }));
       setVendorRegistrationNotice(result.status === "CREATED"
-        ? `신규 거래처 '${result.partner.name}'을 기초정보에 자동등록했습니다.`
+        ? `신규 거래처 '${result.partner.name}'을 기준정보에 자동등록했습니다.`
         : `등록된 거래처 '${result.partner.name}'을 연결했습니다.`);
     } catch (error) {
       setVendorRegistrationNotice(error instanceof Error ? error.message : "거래처 자동등록에 실패했습니다.");
@@ -3600,8 +3600,8 @@ export function ExpenseResolutionPage({
     <ErpShell
       userLabel={currentUserName}
       activeDetailLabel="지출결의서 관리"
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel="전표·증빙"
       onQuickMenuSelect={(label) => {
         if (label === "지출결의 작성") {
           openCreateModal();
@@ -3620,7 +3620,7 @@ export function ExpenseResolutionPage({
         <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div>
             <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-              회계/자금 &gt; 전표·증빙관리 &gt; 지출결의서 관리
+              회계·자금 &gt; 전표·증빙 &gt; 지출결의서 관리
             </p>
             <h1 className="text-3xl font-bold tracking-normal">지출결의서 관리</h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">

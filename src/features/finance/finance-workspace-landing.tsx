@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-export type FinanceWorkspaceKey = "cash" | "receivables" | "budget" | "tax" | "services";
+export type FinanceWorkspaceKey = "cash" | "receivables" | "budget" | "tax" | "settings";
 
 type WorkspaceItem = {
   description: string;
@@ -16,14 +16,14 @@ type WorkspaceLanding = {
 
 export const financeWorkspaceLandings: Record<FinanceWorkspaceKey, WorkspaceLanding> = {
   cash: {
-    label: "입출금",
-    description: "조합 자금의 수납과 지급 업무를 항목별로 확인합니다.",
+    label: "수납·지급",
+    description: "조합 자금을 받거나 지급하는 실제 처리 업무를 확인합니다.",
     items: [
-      { label: "조합원 분담금", description: "조합원별 부과·수납 원장 연결 상태를 확인합니다.", href: "/finance/collections" },
-      { label: "토지비 지급", description: "토지비 지급 요청과 집행 내역을 관리합니다." },
-      { label: "신탁계좌 관리", description: "신탁계좌의 요청·회신·집행 흐름을 확인합니다.", href: "/finance/trust?view=business" },
-      { label: "업무대행비", description: "업무대행비 요청과 지급 내역을 관리합니다." },
-      { label: "시공/설계/감리비", description: "사업 관련 용역비 집행 현황을 확인합니다." },
+      { label: "분담금 수납관리", description: "조합원별 부과·수납 원장 연결 상태를 확인합니다.", href: "/finance/collections" },
+      { label: "조합 지급대기", description: "승인과 지급 근거 확인을 마친 지급 대상을 처리합니다.", href: "/finance/payments?tab=UNPAID" },
+      { label: "전체 지급내역", description: "대기부터 지급 완료까지 전체 집행 이력을 확인합니다.", href: "/finance/payments?tab=ALL" },
+      { label: "환급관리", description: "조합원 환급 대상과 지급 상태를 관리합니다.", href: "/finance/refunds" },
+      { label: "신탁 집행", description: "신탁계좌의 요청·회신·집행 흐름을 확인합니다.", href: "/finance/trust?view=business" },
     ],
   },
   receivables: {
@@ -48,29 +48,32 @@ export const financeWorkspaceLandings: Record<FinanceWorkspaceKey, WorkspaceLand
     ],
   },
   tax: {
-    label: "세무신고",
-    description: "세무 신고에 필요한 증빙과 제출 자료를 준비합니다.",
+    label: "세무 자료",
+    description: "세무 검토와 신고에 필요한 증빙 및 전달 자료를 준비합니다.",
     items: [
-      { label: "부가세 신고", description: "부가세 신고 대상 증빙을 확인합니다." },
-      { label: "원천세 신고", description: "원천세 신고에 필요한 지급 자료를 확인합니다." },
+      { label: "부가세 자료", description: "부가세 검토 대상 증빙을 확인합니다." },
+      { label: "원천세 자료", description: "원천세 검토에 필요한 지급 자료를 확인합니다." },
       { label: "법인세 자료", description: "법인세 검토용 회계 자료를 준비합니다." },
       { label: "전자세금계산서", description: "등록된 세금계산서·계산서 증빙을 조회합니다.", href: "/finance/tax-documents" },
       { label: "신고자료 내보내기", description: "세무사 전달용 월별 자료를 내려받습니다.", href: "/finance/tax-documents" },
     ],
   },
-  services: {
-    label: "부가서비스",
-    description: "전자 업무와 ERP 이용 지원 기능을 확인합니다.",
+  settings: {
+    label: "연동·설정",
+    description: "외부 거래자료 연결 상태와 회계 업무 기준을 관리합니다.",
     items: [
-      { label: "전자계약", description: "계약 문서의 전자 작성·서명 기능을 준비 중입니다." },
-      { label: "전자결재", description: "기안·결재 업무로 이동합니다.", href: "/approval/inbox" },
-      { label: "도움말", description: "ERP 주요 업무별 이용 안내를 확인합니다." },
-      { label: "환경설정", description: "조직별 ERP 환경 설정 기능을 준비 중입니다." },
+      { label: "은행 거래 업로드", description: "은행에서 내려받은 거래 파일을 가져옵니다.", href: "/finance/bank-transactions/upload" },
+      { label: "은행계좌 연동", description: "ERP 계좌와 Ledger 계좌 연결 상태를 관리합니다.", href: "/finance/bank-account-links" },
+      { label: "Ledger 원장 연동", description: "Ledger 원본 거래의 가져오기와 연결 상태를 확인합니다.", href: "/finance/bank-auto-matching" },
+      { label: "지출 처리 기준", description: "지출결의와 증빙 확인에 적용할 기준을 관리합니다.", href: "/finance/expense-settings" },
+      { label: "신탁 집행 기준", description: "신탁 요청·수령·정산 업무의 처리 기준을 관리합니다.", href: "/finance/workflow-settings" },
+      { label: "운영 준비 점검", description: "필수 기준정보와 권한 준비 상태를 확인합니다.", href: "/finance/readiness" },
     ],
   },
 };
 
 export function parseFinanceWorkspaceKey(value: string | undefined): FinanceWorkspaceKey | undefined {
+  if (value === "services") return "settings";
   return value && Object.hasOwn(financeWorkspaceLandings, value) ? value as FinanceWorkspaceKey : undefined;
 }
 
@@ -80,7 +83,7 @@ export function FinanceWorkspaceLanding({ workspaceKey }: { workspaceKey: Financ
   return (
     <div className="mx-auto max-w-7xl space-y-6">
       <section className="rounded-[24px] border border-[var(--color-soft-border)] bg-white p-6">
-        <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">회계/자금 &gt; {workspace.label}</p>
+        <p className="text-sm font-bold text-[var(--color-deep-cobalt)]">회계·자금 &gt; {workspace.label}</p>
         <h1 className="mt-2 text-3xl font-bold">{workspace.label}</h1>
         <p className="mt-2 text-sm text-[var(--color-stone)]">{workspace.description}</p>
       </section>

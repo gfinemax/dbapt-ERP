@@ -20,8 +20,8 @@ import {
 type ModalType = "employee" | "payroll" | null;
 
 const detailLabels: Record<HrPayrollSection, string> = {
-  employees: "사원정보등록",
-  "payroll-entry": "급여입력",
+  employees: "사원 관리",
+  "payroll-entry": "급여 계산",
   "payroll-ledger": "급여대장",
 };
 
@@ -30,7 +30,7 @@ export function HrPayrollPage({ initialSection = "employees" }: { initialSection
   const activeDetailLabel = detailLabels[initialSection];
 
   return (
-    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="인사·급여">
+    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계·자금" activeWorkspaceLabel="인사·급여">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         {initialSection === "payroll-entry" ? (
           <PayrollEntrySection onOpenEmployee={() => setModalType("employee")} onOpenPayroll={() => setModalType("payroll")} />
@@ -58,8 +58,8 @@ function EmployeeSection({ onOpenEmployee }: { onOpenEmployee: () => void }) {
         description={workflow.description}
         helperText={workflow.helperText}
         onAction={onOpenEmployee}
-        route="회계/자금 > 인사·급여 > 사원정보등록"
-        title="사원정보등록"
+        route="회계·자금 > 인사·급여 > 사원 관리"
+        title="사원 관리"
       />
 
       <WorkflowCards activeIndex={0} />
@@ -110,8 +110,8 @@ function PayrollEntrySection({ onOpenEmployee, onOpenPayroll }: { onOpenEmployee
         description={workflow.description}
         helperText="공제 항목 - 소득세, 주민세 및 4대보험 등을 자동 계산"
         onAction={onOpenPayroll}
-        route="회계/자금 > 인사·급여 > 급여입력"
-        title="급여입력 및 전표처리"
+        route="회계·자금 > 인사·급여 > 급여 계산"
+        title="급여 계산 및 전표처리"
       />
 
       <WorkflowCards activeIndex={1} />
@@ -135,10 +135,10 @@ function PayrollEntrySection({ onOpenEmployee, onOpenPayroll }: { onOpenEmployee
 
         <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
           <div className="flex items-center justify-between gap-3">
-            <h2 className="text-lg font-bold">급여입력 입력창 제공</h2>
+            <h2 className="text-lg font-bold">급여 계산 입력창 제공</h2>
             <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 text-white hover:bg-[var(--color-midnight-ink)]" onClick={onOpenPayroll} size="sm">
               <Plus className="size-4" />
-              급여입력
+              급여 계산
             </Button>
           </div>
 
@@ -168,7 +168,7 @@ function PayrollLedgerSection() {
         actionLabel="전월 복사"
         description={workflow.description}
         helperText={workflow.helperText}
-        route="회계/자금 > 인사·급여 > 급여대장"
+        route="회계·자금 > 인사·급여 > 급여대장"
         title="급여대장확인"
       />
 
@@ -410,7 +410,7 @@ function EmployeeModal({ onClose }: { onClose: () => void }) {
 
 function PayrollModal({ onClose }: { onClose: () => void }) {
   return (
-    <ModalFrame onClose={onClose} title="급여입력 입력창">
+    <ModalFrame onClose={onClose} title="급여 계산 입력창">
       <form className="grid gap-4" onSubmit={blockSubmit}>
         <label className="grid gap-1.5 text-sm font-semibold">
           사원선택

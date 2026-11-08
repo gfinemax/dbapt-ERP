@@ -6,7 +6,6 @@ import {
   BookOpen,
   Building2,
   CalendarCheck,
-  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CreditCard,
@@ -26,13 +25,17 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useState } from "react";
 import { ErpQuickMenu } from "./erp-quick-menu";
-import { financeNavigation, normalizeFinanceDetailLabel } from "@/features/finance/finance-navigation";
+import {
+  financeWorkspaceMenus,
+  normalizeFinanceDetailLabel,
+  normalizeFinanceWorkspaceLabel,
+} from "@/features/finance/finance-navigation";
 import { loadFinanceNavigationBadgesAction } from "@/app/finance/navigation/actions";
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
   { label: "기안·결재", icon: FilePenLine, href: "/approval/inbox" },
-  { label: "회계/자금", icon: Wallet, href: "/finance/workspace" },
+  { label: "회계·자금", icon: Wallet, href: "/finance/workspace" },
   { label: "조합원", icon: Users, href: "/members" },
   { label: "총회", icon: CalendarCheck, href: "#" },
   { label: "토지", icon: Map, href: "#" },
@@ -54,6 +57,7 @@ type WorkspaceMenu = {
   href: string;
   items: DetailMenuItem[];
   label: string;
+  section?: string;
 };
 
 const workspaceMenus: Record<string, WorkspaceMenu[]> = {
@@ -70,126 +74,18 @@ const workspaceMenus: Record<string, WorkspaceMenu[]> = {
       ],
     },
   ],
-  "회계/자금": [
-    {
-      defaultDetailLabel: "거래처등록",
-      href: "/basic-info",
-      label: "기초정보",
-      items: [
-        { label: "거래처등록", href: "/basic-info?section=partners" },
-        { label: "품목등록", href: "/basic-info?section=items" },
-        { label: "은행통장 등록", href: "/basic-info?section=bank-accounts" },
-        { label: "신용카드 등록", href: "/basic-info?section=cards" },
-        { label: "계정과목 관리", href: "/basic-info?section=account-subjects" },
-        { label: "초기잔액 등록" },
-      ],
-    },
-    {
-      defaultDetailLabel: "업무현황",
-      href: "/finance/workspace",
-      label: "전표·증빙관리",
-      items: financeNavigation,
-    },
-    {
-      href: "/finance?workspace=cash",
-      label: "입출금",
-      items: [
-        { label: "조합원 분담금" },
-        { label: "토지비 지급" },
-        { label: "신탁계좌 관리" },
-        { label: "업무대행비" },
-        { label: "시공/설계/감리비" },
-      ],
-    },
-    {
-      href: "/finance?workspace=receivables",
-      label: "채권·채무",
-      items: [
-        { label: "거래처 원장" },
-        { label: "채권 잔액" },
-        { label: "채무 잔액" },
-        { label: "미납/연체 관리" },
-        { label: "지급 예정표" },
-      ],
-    },
-    {
-      href: "/finance?workspace=budget",
-      label: "예산·결산",
-      items: [
-        { label: "예산 대비 집행" },
-        { label: "사업비 집행률" },
-        { label: "월별 결산" },
-        { label: "계정별 집계" },
-      ],
-    },
-    {
-      href: "/finance/bank-transactions",
-      label: "통합 거래관리",
-      items: [
-        { group: "조회", label: "통합 거래내역", href: "/finance/bank-transactions" },
-        { group: "조회", label: "카드 사용내역" },
-        { group: "가져오기·연동", label: "은행 거래 업로드", href: "/finance/bank-transactions/upload" },
-        { group: "가져오기·연동", label: "계좌 연동 설정", href: "/finance/bank-account-links" },
-        { group: "가져오기·연동", label: "카드 연동 설정" },
-        { group: "가져오기·연동", label: "Ledger 원장 연동", href: "/finance/bank-auto-matching" },
-        { group: "검토", label: "미매칭 내역", href: "/finance/bank-unmatched" },
-      ],
-    },
-    {
-      defaultDetailLabel: "사원정보등록",
-      href: "/hr-payroll",
-      label: "인사·급여",
-      items: [
-        { label: "사원정보등록", href: "/hr-payroll?section=employees" },
-        { label: "급여입력", href: "/hr-payroll?section=payroll-entry" },
-        { label: "급여대장", href: "/hr-payroll?section=payroll-ledger" },
-        { label: "급여명세" },
-        { label: "급여이체" },
-        { label: "근로소득 원천징수영수증" },
-        { label: "4대보험" },
-        { label: "퇴직금 정산" },
-      ],
-    },
-    {
-      href: "/finance?workspace=tax",
-      label: "세무신고",
-      items: [
-        { label: "부가세 신고" },
-        { label: "원천세 신고" },
-        { label: "법인세 자료" },
-        { label: "전자세금계산서" },
-        { label: "신고자료 내보내기" },
-      ],
-    },
-    {
-      href: "/finance?workspace=services",
-      label: "부가서비스",
-      items: [
-        { label: "전자계약" },
-        { label: "전자결재" },
-        { label: "도움말" },
-        { label: "환경설정" },
-      ],
-    },
-    {
-      defaultDetailLabel: "보고서 목록",
-      href: "/finance/reports",
-      label: "보고서",
-      items: [
-        { label: "보고서 목록", href: "/finance/reports" },
-        { label: "실적보고서", href: "/finance/reports?section=performance" },
-        { label: "자금입출금명세서", href: "/finance/reports?section=cash-flow" },
-        { label: "운영비 예산", href: "/finance/reports?section=budget" },
-      ],
-    },
-  ],
+  "회계·자금": financeWorkspaceMenus,
 };
 
 const defaultWorkspaceLabels: Record<string, string> = {
-  "회계/자금": "전표·증빙관리",
+  "회계·자금": "업무 홈",
 };
 
 function normalizeActiveLabel(activeLabel: string) {
+  if (activeLabel === "회계/자금") {
+    return "회계·자금";
+  }
+
   if (activeLabel === "조합원관리") {
     return "조합원";
   }
@@ -233,14 +129,6 @@ function requestFinanceBadges() {
   return financeBadgesRequest;
 }
 
-const financeWorkflowGroups: ReadonlyArray<{ label: string; sourceGroups: readonly string[] }> = [
-  { label: "업무 홈", sourceGroups: ["업무"] },
-  { label: "지출·신탁", sourceGroups: ["지출관리", "신탁 집행관리"] },
-  { label: "지급·수납", sourceGroups: ["지급관리", "수납·환급"] },
-  { label: "회계·마감", sourceGroups: ["회계·증빙", "예산·마감"] },
-  { label: "관리 설정", sourceGroups: ["설정"] },
-] as const;
-
 function DetailMenuLink({ badges, item, selectedDetailMenu }: { badges: Record<string, number>; item: DetailMenuItem; selectedDetailMenu?: string }) {
   const badge = badges[item.label] ?? 0;
 
@@ -257,62 +145,29 @@ function DetailMenuLink({ badges, item, selectedDetailMenu }: { badges: Record<s
   );
 }
 
-function WorkspaceNavigation({ menus, selectedWorkspaceLabel, selectedMenu, mobile = false }: { menus: WorkspaceMenu[]; selectedWorkspaceLabel?: string; selectedMenu: string; mobile?: boolean }) {
+function WorkspaceNavigation({ badges, menus, selectedWorkspaceLabel, selectedMenu, mobile = false }: { badges: Record<string, number>; menus: WorkspaceMenu[]; selectedWorkspaceLabel?: string; selectedMenu: string; mobile?: boolean }) {
   if (menus.length < 2) return null;
 
   return (
     <nav aria-label={`${selectedMenu} 업무 영역`} className={mobile ? "space-y-1 border-b border-[var(--color-soft-border)] pb-3" : "mb-4 space-y-1 border-b border-[var(--color-soft-border)] pb-4"}>
-      <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">업무 영역</p>
-      {menus.map((workspace) => {
+      {menus.map((workspace, index) => {
         const isActive = workspace.label === selectedWorkspaceLabel;
+        const badge = workspace.items.reduce((total, item) => total + (badges[item.label] ?? 0), 0);
         return (
-          <Link
-            aria-current={isActive ? "page" : undefined}
-            className={`flex min-h-10 items-center justify-between rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${isActive ? "bg-[var(--color-pressed-charcoal)] font-bold text-white" : "font-semibold text-[var(--color-stone)] hover:bg-white hover:text-[var(--color-midnight-ink)]"}`}
-            href={workspace.href}
-            key={workspace.label}
-          >
-            <span>{workspace.label}</span>
-            <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
-          </Link>
-        );
-      })}
-    </nav>
-  );
-}
-
-function FinanceDetailNavigation({ ariaLabel, badges, idPrefix, items, selectedDetailMenu }: { ariaLabel: string; badges: Record<string, number>; idPrefix: string; items: DetailMenuItem[]; selectedDetailMenu?: string }) {
-  const activeGroup = financeWorkflowGroups.find((group) => items.some((item) => item.label === selectedDetailMenu && item.group && group.sourceGroups.includes(item.group)))?.label ?? financeWorkflowGroups[0].label;
-  const [openGroup, setOpenGroup] = useState<string | null>(activeGroup);
-
-  return (
-    <nav aria-label={ariaLabel} className="space-y-1">
-      <p className="mb-2 px-2 text-xs font-bold text-[var(--color-fog)]">전표·증빙관리</p>
-      {financeWorkflowGroups.map((group, index) => {
-        const groupItems = items.filter((item) => item.group && group.sourceGroups.includes(item.group));
-        const isOpen = openGroup === group.label;
-        const badge = groupItems.reduce((total, item) => total + (badges[item.label] ?? 0), 0);
-        const contentId = `${idPrefix}-finance-group-${index}`;
-
-        return (
-          <div className="rounded-lg" key={group.label}>
-            <button
-              aria-controls={contentId}
-              aria-expanded={isOpen}
-              className={`flex min-h-11 w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm font-bold focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${isOpen ? "bg-[var(--color-cloud-veil)] text-[var(--color-midnight-ink)]" : "text-[var(--color-stone)] hover:bg-white"}`}
-              onClick={() => setOpenGroup((current) => current === group.label ? null : group.label)}
-              type="button"
-            >
-              <ChevronDown aria-hidden="true" className={`size-4 shrink-0 transition-transform motion-reduce:transition-none ${isOpen ? "rotate-180" : ""}`} />
-              <span className="min-w-0 flex-1">{group.label}</span>
-              {badge > 0 ? <span aria-label={`${group.label} 대기 ${badge}건`} className="min-w-5 rounded-full bg-amber-100 px-1.5 py-0.5 text-center text-[10px] font-bold text-amber-900">{badge}</span> : null}
-            </button>
-            {isOpen ? (
-              <div className="ml-3 space-y-1 border-l border-[var(--color-soft-border)] py-1 pl-2" id={contentId}>
-                {groupItems.map((item) => <DetailMenuLink badges={badges} item={item} key={item.label} selectedDetailMenu={selectedDetailMenu} />)}
-              </div>
+          <Fragment key={workspace.label}>
+            {workspace.section && menus[index - 1]?.section !== workspace.section ? (
+              <p className={`${index === 0 ? "pb-1" : "pb-1 pt-4"} px-2 text-xs font-bold text-[var(--color-fog)]`}>{workspace.section}</p>
             ) : null}
-          </div>
+            <Link
+              aria-current={isActive ? "page" : undefined}
+              className={`flex min-h-10 items-center gap-2 rounded-lg px-3 py-2 text-sm focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)] ${isActive ? "bg-[var(--color-pressed-charcoal)] font-bold text-white" : "font-semibold text-[var(--color-stone)] hover:bg-white hover:text-[var(--color-midnight-ink)]"}`}
+              href={workspace.href}
+            >
+              <span className="min-w-0 flex-1">{workspace.label}</span>
+              {badge > 0 ? <span aria-label={`${workspace.label} 대기 ${badge}건`} className={`min-w-5 rounded-full px-1.5 py-0.5 text-center text-[10px] font-bold ${isActive ? "bg-white/20 text-white" : "bg-amber-100 text-amber-900"}`}>{badge}</span> : null}
+              <ChevronRight aria-hidden="true" className="size-3.5 shrink-0" />
+            </Link>
+          </Fragment>
         );
       })}
     </nav>
@@ -327,21 +182,32 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   const SidebarToggleIcon = isSidebarOpen ? ChevronLeft : ChevronRight;
   const selectedMenu = normalizeActiveLabel(activeLabel);
   useEffect(() => {
-    if (selectedMenu !== "회계/자금") return;
+    if (selectedMenu !== "회계·자금") return;
     let active = true;
     void requestFinanceBadges().then((badges) => { if (active) setFinanceBadges(badges); }).catch(() => { /* Navigation remains usable when counts cannot be refreshed. */ });
     return () => { active = false; };
   }, [selectedMenu]);
   const currentWorkspaceMenus = workspaceMenus[selectedMenu] ?? [];
-  const selectedWorkspaceLabel = activeWorkspaceLabel ?? defaultWorkspaceLabels[selectedMenu] ?? currentWorkspaceMenus[0]?.label;
-  const selectedWorkspace = currentWorkspaceMenus.find((workspace) => workspace.label === selectedWorkspaceLabel) ?? currentWorkspaceMenus[0];
+  const normalizedActiveDetailLabel = selectedMenu === "회계·자금" && activeDetailLabel
+    ? normalizeFinanceDetailLabel(activeDetailLabel)
+    : activeDetailLabel;
+  const normalizedActiveWorkspaceLabel = selectedMenu === "회계·자금" && activeWorkspaceLabel
+    ? normalizeFinanceWorkspaceLabel(activeWorkspaceLabel)
+    : activeWorkspaceLabel;
+  const requestedWorkspace = currentWorkspaceMenus.find((workspace) => workspace.label === normalizedActiveWorkspaceLabel);
+  const workspaceForDetail = normalizedActiveDetailLabel
+    ? currentWorkspaceMenus.find((workspace) => workspace.items.some((item) => item.label === normalizedActiveDetailLabel))
+    : undefined;
+  const hasCurrentWorkspaceLabel = currentWorkspaceMenus.some((workspace) => workspace.label === activeWorkspaceLabel);
+  const selectedWorkspace = selectedMenu === "회계·자금" && activeWorkspaceLabel && !hasCurrentWorkspaceLabel
+    ? workspaceForDetail ?? requestedWorkspace ?? currentWorkspaceMenus[0]
+    : requestedWorkspace ?? currentWorkspaceMenus.find((workspace) => workspace.label === defaultWorkspaceLabels[selectedMenu]) ?? currentWorkspaceMenus[0];
   const currentDetailMenus = selectedWorkspace?.items ?? [];
   const hasDetailMenus = currentDetailMenus.length > 0;
   const [fullMenuFor, setFullMenuFor] = useState<string | null>(null);
   const isDetailMode = hasDetailMenus && fullMenuFor !== selectedMenu;
-  const detailLabel = activeDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
-  const selectedDetailMenu = selectedMenu === "회계/자금" && detailLabel ? normalizeFinanceDetailLabel(detailLabel) : detailLabel;
-  const isFinanceWorkflowWorkspace = selectedMenu === "회계/자금" && selectedWorkspace?.label === "전표·증빙관리";
+  const detailLabel = normalizedActiveDetailLabel ?? selectedWorkspace?.defaultDetailLabel ?? currentDetailMenus[0]?.label;
+  const selectedDetailMenu = selectedMenu === "회계·자금" && detailLabel ? normalizeFinanceDetailLabel(detailLabel) : detailLabel;
   const flatDetailMenuContent = currentDetailMenus.map((item, index) => (
     <Fragment key={item.label}>
       {item.group && currentDetailMenus[index - 1]?.group !== item.group ? (
@@ -406,12 +272,8 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
 
         {isDetailMode && hasDetailMenus ? (
           <>
-            <WorkspaceNavigation menus={currentWorkspaceMenus} selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
-            {isFinanceWorkflowWorkspace ? (
-              <FinanceDetailNavigation ariaLabel={`${selectedMenu} 상세 메뉴`} badges={financeBadges} idPrefix="desktop" items={currentDetailMenus} key={selectedDetailMenu} selectedDetailMenu={selectedDetailMenu} />
-            ) : (
-              <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">{flatDetailMenuContent}</nav>
-            )}
+            <WorkspaceNavigation badges={financeBadges} menus={currentWorkspaceMenus} selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
+            <nav aria-label={`${selectedMenu} 상세 메뉴`} className="space-y-1">{flatDetailMenuContent}</nav>
           </>
         ) : (
           <nav aria-label="전체 메뉴" className="space-y-1">
@@ -514,10 +376,8 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
           </button>
           {isMobileMenuOpen ? (
             <div id="mobile-workspace-navigation" className="max-h-[60dvh] overflow-y-auto overscroll-contain pb-3">
-              <WorkspaceNavigation menus={currentWorkspaceMenus} mobile selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
-              {hasDetailMenus ? isFinanceWorkflowWorkspace ? (
-                <FinanceDetailNavigation ariaLabel={`${selectedMenu} 모바일 상세 메뉴`} badges={financeBadges} idPrefix="mobile" items={currentDetailMenus} key={`mobile-${selectedDetailMenu}`} selectedDetailMenu={selectedDetailMenu} />
-              ) : <nav aria-label={`${selectedMenu} 모바일 상세 메뉴`}>{flatDetailMenuContent}</nav> : null}
+              <WorkspaceNavigation badges={financeBadges} menus={currentWorkspaceMenus} mobile selectedMenu={selectedMenu} selectedWorkspaceLabel={selectedWorkspace?.label} />
+              {hasDetailMenus ? <nav aria-label={`${selectedMenu} 모바일 상세 메뉴`}>{flatDetailMenuContent}</nav> : null}
               <nav aria-label="모바일 전체 메뉴" className="mt-3 border-t border-[var(--color-soft-border)] pt-2">
                 {primaryNavigation.map((item) => <a key={item.label} href={item.href} aria-current={item.label === selectedMenu ? "page" : undefined} className="block rounded-lg px-3 py-3 text-sm font-medium">{item.label}</a>)}
               </nav>

@@ -97,13 +97,12 @@ describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
     const main = screen.getByRole("main");
-    expect(screen.getByRole("heading", { level: 1, name: "통합 거래내역" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "전체 거래내역" })).toBeInTheDocument();
     expect(screen.getByText("조회 결과")).toHaveTextContent("4,277건");
     expect(screen.getAllByText("51–100건 · 2/86")).toHaveLength(2);
     expect(within(main).getByRole("link", { name: "은행 거래 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
-    expect(screen.getAllByRole("link", { name: "계좌 연동 설정" }).every((link) => link.getAttribute("href") === "/finance/bank-account-links")).toBe(true);
-    expect(screen.getByRole("link", { name: "미매칭 내역" })).toHaveAttribute("href", "/finance/bank-unmatched");
-    expect(within(main).queryByRole("link", { name: "계좌 연동 설정" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "미매칭 거래 검토" })).toHaveAttribute("href", "/finance/bank-unmatched");
+    expect(screen.queryByRole("link", { name: "은행계좌 연동" })).not.toBeInTheDocument();
     expect(within(main).queryByRole("link", { name: "미매칭 확인" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("navigation", { name: "분류 상태 빠른 필터" })).getByRole("link", { name: /미확인.*4,115/ })).toHaveAttribute("href", "/finance/bank-transactions?status=UNREVIEWED");
     expect(screen.queryByText("기존 Ledger 통장거래 가져오기")).not.toBeInTheDocument();
@@ -210,7 +209,7 @@ describe("BankTransactionListPage", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{ query: "송동환" }} pageData={pageData} statusCounts={statusCounts} />);
 
     const views = screen.getByRole("navigation", { name: "거래내역 구분" });
-    expect(within(views).getByRole("link", { name: /통합 거래내역/ })).toHaveAttribute("aria-current", "page");
+    expect(within(views).getByRole("link", { name: /전체 거래내역/ })).toHaveAttribute("aria-current", "page");
     expect(within(views).getByRole("link", { name: /은행 거래내역/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&origin=BANK_TRANSACTION");
     expect(within(views).getByRole("link", { name: /외부납입 인정/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&origin=EXTERNAL_RECOGNITION");
     expect(within(views).getByRole("link", { name: /검토 필요/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&view=review");

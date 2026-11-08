@@ -36,11 +36,11 @@ export default async function FinanceBankAutoMatchingRoute() {
     };
 
   return (
-    <ErpShell activeDetailLabel="Ledger 원장 연동" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={actor ? reimbursementLogout : undefined} userLabel={actor?.display_name}>
+    <ErpShell activeDetailLabel="Ledger 원장 연동" activeLabel="회계·자금" activeWorkspaceLabel="연동·설정" logoutAction={actor ? reimbursementLogout : undefined} userLabel={actor?.display_name}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-5">
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 통합 거래관리 &gt; Ledger 원장 연동
+            회계·자금 &gt; 연동·설정 &gt; Ledger 원장 연동
           </p>
           <div className="flex flex-wrap items-end justify-between gap-4">
             <div>

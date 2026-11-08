@@ -19,7 +19,7 @@ export function FinanceDetailPage({ transactionId }: FinanceDetailPageProps) {
   }
 
   return (
-    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
+    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계·자금" activeWorkspaceLabel="전표·증빙">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <Link className="inline-flex w-fit items-center gap-2 text-sm font-semibold text-[var(--color-stone)]" href="/finance">
           <ArrowLeft className="size-4" />

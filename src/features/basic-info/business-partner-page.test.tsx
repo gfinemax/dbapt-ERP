@@ -10,12 +10,12 @@ describe("BusinessPartnerPage", () => {
 
     expect(screen.getByRole("heading", { name: "거래처 관리" })).toBeInTheDocument();
     expect(screen.getByText("세금계산서 및 채권/채무 관리를 위한 거래처 정보를 등록합니다.")).toBeInTheDocument();
-    expect(screen.getByText("회계/자금 > 기초정보 > 거래처등록 > 유형선택 > 건별등록/엑셀 일괄등록")).toBeInTheDocument();
-    expect(screen.getAllByText("거래처등록").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("품목등록").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("은행통장 등록").length).toBeGreaterThan(0);
+    expect(screen.getByText("회계·자금 > 기준정보 > 거래처 관리 > 유형선택 > 건별등록/엑셀 일괄등록")).toBeInTheDocument();
+    expect(screen.getAllByText("거래처 관리").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("품목 관리").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("은행계좌 관리").length).toBeGreaterThan(0);
     expect(screen.getByText("조합 신탁계좌, 운영계좌, 토지비 계좌 등 계좌 기본정보를 등록합니다.")).toBeInTheDocument();
-    expect(screen.getAllByText("신용카드 등록").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("법인카드 관리").length).toBeGreaterThan(0);
     expect(screen.getByText("법인카드, 업무대행 카드 등 카드 기본정보와 인증정보를 등록합니다.")).toBeInTheDocument();
     expect(screen.getByText("유형선택")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "건별등록" })).toBeInTheDocument();
@@ -80,7 +80,7 @@ describe("BusinessPartnerPage", () => {
   it("renders the item section and persists a new item through the configured action", async () => {
     const createItem = vi.fn(async (input) => ({ ...input, id: "item-db-1", usageStatus: "사용" as const }));
     render(<BusinessPartnerPage createItem={createItem} initialItems={[]} initialSection="items" />);
-    expect(screen.getByRole("heading", { name: "품목등록" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "품목 관리" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "품목 추가" }));
     fireEvent.change(screen.getByLabelText("품목코드"), { target: { value: "ITEM-001" } });
     fireEvent.change(screen.getByLabelText("품목명"), { target: { value: "인쇄용역" } });
@@ -92,7 +92,7 @@ describe("BusinessPartnerPage", () => {
   it("renders bank account registration list and adds an account from the modal", () => {
     render(<BusinessPartnerPage initialSection="bank-accounts" />);
 
-    expect(screen.getByRole("heading", { name: "은행통장 등록" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "은행계좌 관리" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "개설일자" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "개설목적" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "확인일자" })).toBeInTheDocument();
@@ -235,7 +235,7 @@ describe("BusinessPartnerPage", () => {
   it("renders credit card registration list and adds a card from the modal", () => {
     render(<BusinessPartnerPage initialSection="cards" />);
 
-    expect(screen.getByRole("heading", { name: "신용카드 등록" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "법인카드 관리" })).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "카드 발급일" })).toBeInTheDocument();
     expect(screen.getAllByText("법인카드").length).toBeGreaterThan(0);
 

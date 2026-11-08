@@ -102,7 +102,7 @@ export function ExpenseApprovalInboxPage({ viewer, dataLoadError, initialResolut
 
   const Container = embedded ? Fragment : ErpShell;
   return (
-    <Container {...(embedded ? {} : { userLabel: currentApproverLabel, activeDetailLabel: "지출 승인함", activeLabel: "회계/자금", activeWorkspaceLabel: "전표·증빙관리" })}>
+    <Container {...(embedded ? {} : { userLabel: currentApproverLabel, activeDetailLabel: "지출 승인함", activeLabel: "회계·자금", activeWorkspaceLabel: "전표·증빙" })}>
       {dataLoadError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{dataLoadError}</div> : null}
       {workflowError ? <div className="mx-auto mb-4 max-w-[1480px] rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{workflowError}</div> : null}
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">

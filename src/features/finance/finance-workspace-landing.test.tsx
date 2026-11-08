@@ -6,7 +6,8 @@ import { FinanceWorkspaceLanding, parseFinanceWorkspaceKey } from "./finance-wor
 describe("FinanceWorkspaceLanding", () => {
   it("accepts only supported workspace query values", () => {
     expect(parseFinanceWorkspaceKey("cash")).toBe("cash");
-    expect(parseFinanceWorkspaceKey("services")).toBe("services");
+    expect(parseFinanceWorkspaceKey("settings")).toBe("settings");
+    expect(parseFinanceWorkspaceKey("services")).toBe("settings");
     expect(parseFinanceWorkspaceKey("unknown")).toBeUndefined();
     expect(parseFinanceWorkspaceKey(undefined)).toBeUndefined();
   });
@@ -25,5 +26,16 @@ describe("FinanceWorkspaceLanding", () => {
 
     expect(screen.getByRole("link", { name: /예산 대비 집행/ })).toHaveAttribute("href", "/finance/reimbursements?tab=budgets");
     expect(screen.getByRole("link", { name: /월별 결산/ })).toHaveAttribute("href", "/finance/month-close");
+  });
+
+  it("separates money handling from integrations and settings", () => {
+    render(<FinanceWorkspaceLanding workspaceKey="cash" />);
+    expect(screen.getByRole("heading", { level: 1, name: "수납·지급" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /분담금 수납관리/ })).toHaveAttribute("href", "/finance/collections");
+    expect(screen.queryByText("은행 거래 업로드")).not.toBeInTheDocument();
+
+    render(<FinanceWorkspaceLanding workspaceKey="settings" />);
+    expect(screen.getByRole("heading", { level: 1, name: "연동·설정" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /은행 거래 업로드/ })).toHaveAttribute("href", "/finance/bank-transactions/upload");
   });
 });

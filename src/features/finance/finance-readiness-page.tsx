@@ -26,7 +26,7 @@ function SetupCard({ ready, title, detail, href }: { ready: boolean; title: stri
 export function FinanceReadinessPage({ readiness }: { readiness: FinanceReadiness }) {
   const { configuration, queues } = readiness;
   return <main className="space-y-5">
-    <header className="rounded-2xl border bg-white p-6"><p className="text-sm font-bold text-blue-700">회계/자금 운영 점검</p><h1 className="mt-1 text-3xl font-bold">운영 준비 점검</h1><p className="mt-2 text-sm text-slate-600">설정 누락과 현재 처리 대기를 구분해서 보여줘. 대기 건수는 오류가 아니라 담당자가 이어서 처리할 업무야.</p></header>
+    <header className="rounded-2xl border bg-white p-6"><p className="text-sm font-bold text-blue-700">회계·자금 · 연동·설정</p><h1 className="mt-1 text-3xl font-bold">운영 준비 점검</h1><p className="mt-2 text-sm text-slate-600">설정 누락과 현재 처리 대기를 구분해서 보여줘. 대기 건수는 오류가 아니라 담당자가 이어서 처리할 업무야.</p></header>
     <section aria-labelledby="setup-heading"><h2 id="setup-heading" className="mb-3 text-xl font-bold">필수 설정</h2><div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
       <SetupCard ready={configuration.missingRoles.length === 0} title="담당 역할" detail={`${configuration.activeStaff}명 활성 · ${configuration.missingRoles.length ? `${configuration.missingRoles.join("·")} 역할 없음` : "관리·승인·지급·마감 담당 있음"}`} href="/finance/reimbursements?tab=members" />
       <SetupCard ready={configuration.verifiedTrustContracts > 0} title="신탁 계약" detail={`확인 완료 계약 ${configuration.verifiedTrustContracts}건`} href="/finance/workflow-settings" />

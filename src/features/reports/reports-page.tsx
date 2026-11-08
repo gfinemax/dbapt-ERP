@@ -25,9 +25,9 @@ import {
 import type { FinancialReportRun, FinancialReportWorkspace } from "./financial-report-repository";
 
 const detailLabels: Record<ReportSection, string> = {
-  overview: "보고서 목록",
-  performance: "실적보고서",
-  "cash-flow": "자금입출금명세서",
+  overview: "보고서 현황",
+  performance: "사업실적보고서",
+  "cash-flow": "자금 입출금 명세서",
   budget: "운영비 예산",
 };
 
@@ -37,7 +37,7 @@ export function ReportsPage({ initialSection = "overview", workspace, loadError 
   const activeDetailLabel = detailLabels[initialSection];
 
   return (
-    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="보고서">
+    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계·자금" activeWorkspaceLabel="보고서·공시">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6" style={{ fontFamily: reportFontFamily }}>
         {initialSection === "performance" ? (
           <PerformanceSection workspace={workspace} />
@@ -81,9 +81,9 @@ function ReportOverviewSection({ workspace, loadError }: { workspace?: Financial
         }
         badge="자동 생성 관리"
         description="분기별 실적보고서와 월별 자금입출금명세서를 생성일 기준으로 누적 관리하고, 누락 지출 수정 시 영향받는 보고서를 새 버전으로 재생성합니다."
-        route="회계/자금 > 보고서 > 보고서 목록"
+        route="회계·자금 > 보고서·공시 > 보고서 현황"
         subtitle="홈페이지/정보몽땅 공개"
-        title="보고서 목록"
+        title="보고서 현황"
       />
       {loadError ? <p className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900" role="alert">{loadError} · 아래 샘플 양식은 참고용으로만 표시해.</p> : null}
       {message ? <p className="rounded-xl border bg-white p-3 text-sm" role="status">{message}</p> : null}
@@ -170,7 +170,7 @@ function PerformanceSection({ workspace }: { workspace?: FinancialReportWorkspac
         }
         badge={quarterlyPerformanceReport.status}
         description={quarterlyPerformanceReport.basis}
-        route="회계/자금 > 보고서 > 실적보고서"
+        route="회계·자금 > 보고서·공시 > 사업실적보고서"
         subtitle={quarterlyPerformanceReport.period}
         title={quarterlyPerformanceReport.title}
       />
@@ -223,7 +223,7 @@ function CashFlowSection({ workspace }: { workspace?: FinancialReportWorkspace }
         }
         badge="월별 작성"
         description="월별 자금 입출금명세서와 운영비 세부내역을 같은 화면에서 확인합니다."
-        route="회계/자금 > 보고서 > 자금입출금명세서"
+        route="회계·자금 > 보고서·공시 > 자금 입출금 명세서"
         subtitle={cashFlowStatement.unit}
         title={monthly ? `${monthly.period_start.slice(0,7)} 자금 입출금명세서` : cashFlowStatement.title}
       />
@@ -260,7 +260,7 @@ function BudgetSection() {
         }
         badge="연간 기준"
         description={`${operatingBudget.currentPeriod} ${operatingBudget.previousPeriod}`}
-        route="회계/자금 > 보고서 > 운영비 예산"
+        route="회계·자금 > 보고서·공시 > 운영비 예산"
         subtitle={operatingBudget.unit}
         title={operatingBudget.title}
       />

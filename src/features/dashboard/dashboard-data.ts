@@ -223,7 +223,7 @@ export const dashboardModules: DashboardModule[] = [
     tone: "blue",
   },
   {
-    name: "회계/자금",
+    name: "회계·자금",
     source: "ERP Core",
     description: "입출금, 계정과목, 예산 집행, 신탁/대행/시공 지출을 관리합니다.",
     metric: "지출결의 승인대기 3건",

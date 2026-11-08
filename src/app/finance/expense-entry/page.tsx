@@ -140,8 +140,8 @@ export default async function ExpenseEntryRoute({
     <ErpShell
       userLabel={member?.display_name ?? "로그인 필요"}
       logoutAction={reimbursementLogout}
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel="전표·증빙"
       activeDetailLabel="지출 등록·신청"
     >
       <div className="mx-auto max-w-7xl">{content}</div>

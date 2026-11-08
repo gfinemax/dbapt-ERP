@@ -52,17 +52,18 @@ export function ExpenseComplianceSettingsPage({
   }
   return (
     <ErpShell
+      activeLabel="회계·자금"
       activeDetailLabel="지출 처리 기준"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeWorkspaceLabel="연동·설정"
     >
       <main className="mx-auto max-w-5xl p-6">
         <p className="text-sm font-bold text-[var(--color-stone)]">
-          회계/자금 &gt; 전표·증빙관리 &gt; 지출 관리설정
+          회계·자금 &gt; 연동·설정 &gt; 지출 처리 기준
         </p>
         <h1 className="mt-2 text-3xl font-bold">지출결의 관리설정</h1>
         <p className="mt-3 rounded-xl border border-blue-200 bg-blue-50 p-4 font-bold text-blue-950">
           신규 소액지출은 지출관리의 소액지출 화면에서 등록하고, 한도는
-          기초정보의 결재 설정에서 관리해. 기존 소액 일괄결의 기준값은 과거 문서
+          기준정보의 결재 설정에서 관리해. 기존 소액 일괄결의 기준값은 과거 문서
           검증을 위해 데이터에만 보존돼.
         </p>
         <ExpensePolicySettingsPanel organizationId={organizationId} previewPolicy={previewPolicy} saveDraft={savePolicyDraft} transitionPolicy={transitionPolicy} workspace={policyWorkspace} />

@@ -63,8 +63,8 @@ export default async function Page({
     <ErpShell
       userLabel={member?.display_name ?? "로그인 필요"}
       logoutAction={reimbursementLogout}
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel="수납·지급"
       activeDetailLabel={view === "operating-funds" ? "월 운영비 요청·수령" : view === "operating-settlement" ? "운영비 사용정산" : "사업비 집행요청·현황"}
     >
       <div className="mx-auto max-w-7xl">{content}</div>

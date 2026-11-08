@@ -54,8 +54,8 @@ export default async function Page() {
   );
   return (
     <ErpShell
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel="연동·설정"
       activeDetailLabel="지출 처리 기준"
       userLabel={actor.display_name}
     >

@@ -41,8 +41,8 @@ export default async function Page({
     <ErpShell
       userLabel={workspace?.member.display_name ?? "로그인 필요"}
       logoutAction={reimbursementLogout}
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="전표·증빙관리"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel={query.tab === "budgets" ? "예산·결산" : "전표·증빙"}
       activeDetailLabel={
         query.tab === "budgets" ? "예산집행 현황" : "지출 등록·신청"
       }

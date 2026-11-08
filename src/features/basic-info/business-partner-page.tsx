@@ -63,10 +63,10 @@ const badgeClasses: Record<string, string> = {
 };
 
 const detailLabels: Record<BasicInfoSection, string> = {
-  partners: "거래처등록",
-  items: "품목등록",
-  "bank-accounts": "은행통장 등록",
-  cards: "신용카드 등록",
+  partners: "거래처 관리",
+  items: "품목 관리",
+  "bank-accounts": "은행계좌 관리",
+  cards: "법인카드 관리",
   "account-subjects": "계정과목 관리",
 };
 
@@ -144,7 +144,7 @@ export function BusinessPartnerPage({
   }
 
   return (
-    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계/자금" activeWorkspaceLabel="기초정보">
+    <ErpShell activeDetailLabel={activeDetailLabel} activeLabel="회계·자금" activeWorkspaceLabel="기준정보">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         {activeSection === "partners" ? (
           <PartnerSection loadError={businessPartnerLoadError} onAdd={() => { setEditingBusinessPartner(null); setModalType("partner"); }} onEdit={(partner) => { setEditingBusinessPartner(partner); setModalError(null); setModalType("partner"); }} partners={partners} />
@@ -235,7 +235,7 @@ function PartnerSection({ loadError, onAdd, onEdit, partners }: { loadError?: st
       <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
         <div>
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 기초정보 &gt; 거래처등록 &gt; 유형선택 &gt; 건별등록/엑셀 일괄등록
+            회계·자금 &gt; 기준정보 &gt; 거래처 관리 &gt; 유형선택 &gt; 건별등록/엑셀 일괄등록
           </p>
           <h1 className="text-3xl font-bold tracking-normal">거래처 관리</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
@@ -263,13 +263,13 @@ function PartnerSection({ loadError, onAdd, onEdit, partners }: { loadError?: st
                 : "rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 transition hover:border-[var(--color-deep-cobalt)]"
             }
             href={
-              workflow.title === "은행통장 등록"
+              workflow.title === "은행계좌 관리"
                 ? "/basic-info?section=bank-accounts"
-                : workflow.title === "신용카드 등록"
+                : workflow.title === "법인카드 관리"
                   ? "/basic-info?section=cards"
                   : workflow.title === "계정과목 등록" || workflow.title === "계정과목 관리"
                     ? "/basic-info?section=account-subjects"
-                  : workflow.title === "품목등록"
+                  : workflow.title === "품목 관리"
                     ? "/basic-info?section=items"
                     : "/basic-info?section=partners"
             }
@@ -378,7 +378,7 @@ function PartnerSection({ loadError, onAdd, onEdit, partners }: { loadError?: st
 
 function ItemSection({ items, onAdd }: { items: RegisteredItem[]; onAdd: () => void }) {
   return <>
-    <RegistrationHeader actionLabel="품목 추가" description="전표 적요와 거래 분류에 사용할 품목 기본정보를 등록합니다." onAdd={onAdd} title="품목등록" />
+    <RegistrationHeader actionLabel="품목 추가" description="전표 적요와 거래 분류에 사용할 품목 기본정보를 등록합니다." onAdd={onAdd} title="품목 관리" />
     <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
       <table className="w-full border-collapse text-left text-sm"><thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]"><tr>{["품목코드", "품목명", "분류", "단위", "설명", "사용여부"].map((label) => <th className="px-4 py-3 text-center" key={label}>{label}</th>)}</tr></thead>
       <tbody className="divide-y divide-[var(--color-soft-border)]">{items.length ? items.map((item) => <tr key={item.id}><td className="px-4 py-4 font-semibold">{item.code}</td><td className="px-4 py-4 font-semibold">{item.name}</td><td className="px-4 py-4">{item.category}</td><td className="px-4 py-4">{item.unit}</td><td className="px-4 py-4 text-[var(--color-stone)]">{item.description}</td><td className="px-4 py-4"><Badge value={item.usageStatus} /></td></tr>) : <tr><td className="px-4 py-10 text-center text-[var(--color-stone)]" colSpan={6}>등록된 품목이 없습니다.</td></tr>}</tbody></table>
@@ -444,7 +444,7 @@ function AccountSubjectSection({
       <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
         <div>
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 기초정보 &gt; 계정과목 관리
+            회계·자금 &gt; 기준정보 &gt; 계정과목 관리
           </p>
           <h1 className="text-3xl font-bold tracking-normal">계정과목 관리</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
@@ -629,7 +629,7 @@ function BankAccountSection({
         actionLabel="은행통장 추가"
         description="조합 신탁계좌, 운영계좌, 토지비 계좌 등 계좌 기본정보를 등록하고 연동 상태를 확인합니다."
         onAdd={onAdd}
-        title="은행통장 등록"
+        title="은행계좌 관리"
       />
 
       <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
@@ -706,7 +706,7 @@ function CreditCardSection({ cards, onAdd }: { cards: RegisteredCreditCard[]; on
         actionLabel="신용카드 추가"
         description="법인카드, 업무대행 카드 등 카드 기본정보와 인증정보를 등록하고 사용 상태를 관리합니다."
         onAdd={onAdd}
-        title="신용카드 등록"
+        title="법인카드 관리"
       />
 
       <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
@@ -768,7 +768,7 @@ function RegistrationHeader({
     <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
       <div>
         <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-          회계/자금 &gt; 기초정보 &gt; {title}
+          회계·자금 &gt; 기준정보 &gt; {title}
         </p>
         <h1 className="text-3xl font-bold tracking-normal">{title}</h1>
         <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">{description}</p>

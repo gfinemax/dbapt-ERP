@@ -101,23 +101,23 @@ export const businessPartnerFilters = ["전체", "매출", "매입", "혼합"];
 export const basicInfoWorkflows = [
   {
     description: "세금계산서 및 채권/채무 관리를 위한 거래처 기본정보를 등록합니다.",
-    title: "거래처등록",
+    title: "거래처 관리",
   },
   {
     description: "전표 적요와 거래 분류에 사용할 품목 기본정보를 등록합니다.",
-    title: "품목등록",
+    title: "품목 관리",
   },
   {
     description: "조합 신탁계좌, 운영계좌, 토지비 계좌 등 계좌 기본정보를 등록합니다.",
-    title: "은행통장 등록",
+    title: "은행계좌 관리",
   },
   {
     description: "법인카드, 업무대행 카드 등 카드 기본정보와 인증정보를 등록합니다.",
-    title: "신용카드 등록",
+    title: "법인카드 관리",
   },
   {
     description: "운영비 예산안과 수지분석표 기준 계정과목을 등록합니다.",
-    title: "계정과목 등록",
+    title: "계정과목 관리",
   },
 ];
 

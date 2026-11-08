@@ -67,18 +67,18 @@ export default async function FinanceBankAccountLinksRoute({
 
   return (
     <ErpShell
-      activeDetailLabel="계좌 연동 설정"
-      activeLabel="회계/자금"
-      activeWorkspaceLabel="통합 거래관리"
+      activeDetailLabel="은행계좌 연동"
+      activeLabel="회계·자금"
+      activeWorkspaceLabel="연동·설정"
       logoutAction={actor ? reimbursementLogout : undefined}
       userLabel={actor?.display_name}
     >
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 통합 거래관리 &gt; 계좌 연동 설정
+            회계·자금 &gt; 연동·설정 &gt; 은행계좌 연동
           </p>
-          <h1 className="text-3xl font-bold tracking-normal">계좌 연동 설정</h1>
+          <h1 className="text-3xl font-bold tracking-normal">은행계좌 연동</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
             기존 Ledger 계좌를 ERP에 등록된 실제 은행통장과 직접 연결해. 계좌명만으로 자동 연결하지 않고 원본 계좌 ID를 보존해.
           </p>

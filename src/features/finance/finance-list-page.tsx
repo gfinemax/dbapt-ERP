@@ -37,7 +37,7 @@ const statusClasses: Record<string, string> = {
   확인필요: "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
 };
 
-const voucherMenuPath = ["전표·증빙관리", "수입·지출 전표관리", "추가", "내용입력", "저장", "증빙선택"];
+const voucherMenuPath = ["전표·증빙", "수입·지출 전표관리", "추가", "내용입력", "저장", "증빙선택"];
 const voucherWorkflows = [
   {
     title: "수입/지출 전표등록",
@@ -94,12 +94,12 @@ export function FinanceListPage() {
   const [isAddMenuOpen, setIsAddMenuOpen] = useState(false);
 
   return (
-    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
+    <ErpShell activeDetailLabel="수입·지출 전표관리" activeLabel="회계·자금" activeWorkspaceLabel="전표·증빙">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
           <div>
             <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-              회계/자금 &gt; 전표·증빙관리 &gt; 수입·지출 전표관리
+              회계·자금 &gt; 전표·증빙 &gt; 수입·지출 전표관리
             </p>
             <h1 className="text-3xl font-bold tracking-normal">수입·지출 전표관리</h1>
             <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">

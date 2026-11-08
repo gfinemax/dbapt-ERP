@@ -161,12 +161,12 @@ export function ExpensePaymentWorkflowPage({ dataLoadError, initialMode, initial
       : "실제 지급이 완료된 지출결의서와 지출전표 생성 여부를 확인합니다.";
 
   return (
-    <ErpShell activeDetailLabel={title} activeLabel="회계/자금" activeWorkspaceLabel="전표·증빙관리">
+    <ErpShell activeDetailLabel={title} activeLabel="회계·자금" activeWorkspaceLabel="수납·지급">
       <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
         {(dataLoadError || transitionError) ? <div className="rounded-2xl border border-orange-300 bg-orange-50 px-5 py-4 font-semibold text-orange-700">{transitionError || dataLoadError}</div> : null}
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:p-7">
           <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-            회계/자금 &gt; 전표·증빙관리 &gt; {title}
+            회계·자금 &gt; 수납·지급 &gt; {title}
           </p>
           <h1 className="text-3xl font-bold tracking-normal">{title}</h1>
           <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">{description}</p>

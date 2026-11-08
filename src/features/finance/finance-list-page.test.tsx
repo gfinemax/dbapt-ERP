@@ -8,7 +8,7 @@ describe("FinanceListPage", () => {
 
     expect(screen.getByRole("heading", { name: "수입·지출 전표관리" })).toBeInTheDocument();
     expect(screen.getAllByText("수입·지출 전표관리").length).toBeGreaterThan(0);
-    expect(screen.getByText("회계/자금 > 전표·증빙관리 > 수입·지출 전표관리")).toBeInTheDocument();
+    expect(screen.getByText("회계·자금 > 전표·증빙 > 수입·지출 전표관리")).toBeInTheDocument();
     expect(
       screen.getByText("조합원 분담금 수납, 협력업체 지급, 운영비 지출, 토지매입비, 환불금 등 조합의 자금거래를 전표와 증빙자료 기준으로 관리합니다."),
     ).toBeInTheDocument();

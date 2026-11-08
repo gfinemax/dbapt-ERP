@@ -12,7 +12,7 @@ describe("dashboard data", () => {
   it("defines the six ERP module cards in display order", () => {
     expect(dashboardModules.map((module) => module.name)).toEqual([
       "조합원관리",
-      "회계/자금",
+      "회계·자금",
       "총회관리",
       "토지관리",
       "수지분석",

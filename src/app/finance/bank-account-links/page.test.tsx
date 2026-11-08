@@ -47,8 +47,8 @@ describe("bank account link settings route", () => {
 
     const { container } = render(await FinanceBankAccountLinksRoute({ searchParams: Promise.resolve({}) }));
 
-    expect(container.firstElementChild).toHaveAttribute("data-active-detail", "계좌 연동 설정");
-    expect(screen.getByRole("heading", { level: 1, name: "계좌 연동 설정" })).toBeInTheDocument();
+    expect(container.firstElementChild).toHaveAttribute("data-active-detail", "은행계좌 연동");
+    expect(screen.getByRole("heading", { level: 1, name: "은행계좌 연동" })).toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "ERP 은행통장 등록" })[0]).toHaveAttribute(
       "href",
       "/basic-info?section=bank-accounts",

@@ -19,8 +19,8 @@ describe("ReportsPage", () => {
   it("renders a managed report list with automatic generation and publication status", () => {
     render(<ReportsPage initialSection="overview" />);
 
-    expect(screen.getByText("회계/자금 > 보고서 > 보고서 목록")).toBeInTheDocument();
-    expect(screen.getByRole("heading", { name: "보고서 목록" })).toBeInTheDocument();
+    expect(screen.getByText("회계·자금 > 보고서·공시 > 보고서 현황")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "보고서 현황" })).toBeInTheDocument();
     expect(screen.getByText("분기 종료 다음 달 1일")).toBeInTheDocument();
     expect(screen.getByText("대상월 다음 달 1일")).toBeInTheDocument();
     expect(screen.getAllByText("홈페이지/정보몽땅 공개").length).toBeGreaterThanOrEqual(1);
@@ -66,7 +66,7 @@ describe("ReportsPage", () => {
   it("renders the DOCX-based quarterly performance report", () => {
     render(<ReportsPage initialSection="performance" />);
 
-    expect(screen.getByText("회계/자금 > 보고서 > 실적보고서")).toBeInTheDocument();
+    expect(screen.getByText("회계·자금 > 보고서·공시 > 사업실적보고서")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "대방동 지역주택조합 실적보고서" })).toBeInTheDocument();
     expect(screen.getByText("2026.1.1.부터 2026.3.31.까지")).toBeInTheDocument();
     expect(screen.getByText(/주택법 제 12조/)).toBeInTheDocument();
@@ -79,7 +79,7 @@ describe("ReportsPage", () => {
   it("renders the monthly cash flow statement from the spreadsheet reference", () => {
     render(<ReportsPage initialSection="cash-flow" />);
 
-    expect(screen.getByText("회계/자금 > 보고서 > 자금입출금명세서")).toBeInTheDocument();
+    expect(screen.getByText("회계·자금 > 보고서·공시 > 자금 입출금 명세서")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "2026년 3월 자금 입출금명세서" })).toBeInTheDocument();
     expect(screen.getByText("3월 운영비 세부내역")).toBeInTheDocument();
     expect(screen.getByText("8,266,110")).toBeInTheDocument();
@@ -89,7 +89,7 @@ describe("ReportsPage", () => {
   it("renders the annual operating budget reference", () => {
     render(<ReportsPage initialSection="budget" />);
 
-    expect(screen.getByText("회계/자금 > 보고서 > 운영비 예산")).toBeInTheDocument();
+    expect(screen.getByText("회계·자금 > 보고서·공시 > 운영비 예산")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "2026년 운영비 예산(안)" })).toBeInTheDocument();
     expect(screen.getByText("(당기 : 2026/01/01 ~ 2026/12/31)")).toBeInTheDocument();
     const budgetTable = screen.getByRole("table", { name: "운영비 예산표" });

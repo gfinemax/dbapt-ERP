@@ -106,13 +106,13 @@ export function BankTransactionListPage({
   const filterChips = buildFilterChips(filters, selectedAccount);
 
   return (
-    <ErpShell activeDetailLabel="통합 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="전체 거래내역" activeLabel="회계·자금" activeWorkspaceLabel="거래·대사" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <FinancePageHeader
           action={{ href: "/finance/bank-transactions/upload", label: "은행 거래 업로드" }}
-          breadcrumb="회계/자금 · 통합 거래관리 · 통합 거래내역"
+          breadcrumb="회계·자금 · 거래·대사 · 전체 거래내역"
           description="실제 통장거래와 외부납입 인정을 원본별로 구분하고 필요한 범위만 한 화면에서 조회합니다."
-          title="통합 거래내역"
+          title="전체 거래내역"
         />
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
 
@@ -474,7 +474,7 @@ function ActivityViewTabs({ filters }: { filters: BankTransactionListFilters }) 
         ? "external"
         : "all";
   const items = [
-    { description: "은행 + 외부납입", label: "통합 거래내역", value: "all" },
+    { description: "은행 + 외부납입", label: "전체 거래내역", value: "all" },
     { description: "실제 통장 입출금", label: "은행 거래내역", value: "bank" },
     { description: "비현금·신탁 인정", label: "외부납입 인정", value: "external" },
     { description: "미확인·보류·원본", label: "검토 필요", value: "review" },
