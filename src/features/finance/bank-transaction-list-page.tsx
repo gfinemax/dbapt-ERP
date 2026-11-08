@@ -90,6 +90,7 @@ export function BankTransactionListPage({
   userLabel = "로그인 필요",
 }: Props) {
   const accounts = new Map(bankAccounts.map((account) => [account.id, account]));
+  const accountSubjectsById = new Map(accountSubjects.map((subject) => [subject.id, subject]));
   const selectedTransaction = pageData.rows.find((row) => row.id === selectedTransactionId);
   const currentListHref = bankTransactionPageHref(pageData.page, filters);
   const selectedAccount = filters.bankAccountId ? accounts.get(filters.bankAccountId) : undefined;
@@ -291,6 +292,12 @@ export function BankTransactionListPage({
                 <tr><td className="px-3 py-12 text-center text-[var(--color-stone)]" colSpan={6}>조건에 맞는 은행거래가 없습니다.</td></tr>
               ) : pageData.rows.map((transaction) => {
                 const account = accounts.get(transaction.bankAccountId);
+                const accountSubjectName = transaction.confirmedAccountSubjectName ?? transaction.recommendedAccountSubjectName;
+                const accountSubjectId = transaction.confirmedAccountSubjectId ?? transaction.recommendedAccountSubjectId;
+                const accountSubject = accountSubjectId ? accountSubjectsById.get(accountSubjectId) : undefined;
+                const accountSubjectLabel = accountSubjectName && accountSubject?.businessCategory
+                  ? `${accountSubject.businessCategory} · ${accountSubjectName}`
+                  : accountSubjectName ?? "-";
                 const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
                 return (
                   <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
@@ -301,7 +308,6 @@ export function BankTransactionListPage({
                     <td className="break-words px-2 py-2.5 text-center align-middle">
                       <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
-                      {transaction.uploadedCategory ? <p className="mt-1 text-xs font-semibold text-[var(--color-mustard)]">항목구분 · {transaction.uploadedCategory}</p> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
                       <p className={`font-bold tabular-nums ${transaction.transactionKind === "입금" ? "text-[var(--color-deep-cobalt)]" : "text-[var(--color-midnight-ink)]"}`}>
@@ -310,7 +316,7 @@ export function BankTransactionListPage({
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.transactionKind ?? "구분 미확인"}</p>
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">
-                      {transaction.confirmedAccountSubjectName ?? transaction.recommendedAccountSubjectName ?? "-"}
+                      {accountSubjectLabel}
                       {transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
                     </td>
                     <td className="px-2 py-2.5 text-center align-middle">

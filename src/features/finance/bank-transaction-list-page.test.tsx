@@ -260,4 +260,32 @@ describe("BankTransactionListPage", () => {
     });
     expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();
   });
+
+  it("shows the ERP business category with the account subject and keeps the uploaded category out of the list", () => {
+    const mealSubject = {
+      ...registeredAccountSubjects[3],
+      businessCategory: "운영비" as const,
+      id: "meal-subject",
+      name: "복리후생비(식대)",
+    };
+    render(<BankTransactionListPage
+      accountSubjects={[...registeredAccountSubjects, mealSubject]}
+      bankAccounts={bankAccounts}
+      filters={{}}
+      pageData={{
+        ...pageData,
+        rows: [{
+          ...pageData.rows[0],
+          classificationStatus: "CONFIRMED" as const,
+          confirmedAccountSubjectId: mealSubject.id,
+          confirmedAccountSubjectName: mealSubject.name,
+          uploadedCategory: "지출-운영비",
+        }],
+      }}
+      statusCounts={statusCounts}
+    />);
+
+    expect(screen.getByText("운영비 · 복리후생비(식대)")).toBeInTheDocument();
+    expect(screen.queryByText("항목구분 · 지출-운영비")).not.toBeInTheDocument();
+  });
 });
