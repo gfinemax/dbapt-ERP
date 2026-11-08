@@ -93,7 +93,7 @@ export function FinancePagination({ compact = false, hrefForPage, page, pageSize
   const disabledClass = `${linkClass} pointer-events-none text-[var(--color-stone)] opacity-40`;
 
   return (
-    <nav aria-label="은행 거래내역 페이지 이동" className={`flex items-center justify-between gap-2 ${compact ? "text-xs" : "text-sm"}`}>
+    <nav aria-label="거래내역 페이지 이동" className={`flex items-center justify-between gap-2 ${compact ? "text-xs" : "text-sm"}`}>
       {page > 1 ? <Link className={linkClass} href={hrefForPage(page - 1)}>이전</Link> : <span className={disabledClass}>이전</span>}
       <span className="whitespace-nowrap font-semibold text-[var(--color-stone)]">
         {totalCount ? `${from}–${to}건 · ${page}/${totalPages}` : "표시할 거래 없음"}

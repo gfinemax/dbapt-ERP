@@ -55,7 +55,7 @@ describe("bank account link settings route", () => {
     );
     expect(screen.getByRole("link", { name: "은행 거래내역으로 이동" })).toHaveAttribute(
       "href",
-      "/finance/bank-transactions",
+      "/finance/bank-transactions?origin=BANK_TRANSACTION",
     );
   });
 

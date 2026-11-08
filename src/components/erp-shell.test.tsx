@@ -271,7 +271,7 @@ describe("ErpShell", () => {
   it("links bank transaction upload from the bank-card workspace", () => {
     render(
       <ErpShell
-        activeDetailLabel="은행 거래내역"
+        activeDetailLabel="거래내역"
         activeLabel="회계/자금"
         activeWorkspaceLabel="은행·카드"
       >
@@ -283,11 +283,11 @@ describe("ErpShell", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("link", { name: "은행 거래내역" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "거래내역" })).toHaveAttribute(
       "href",
       "/finance/bank-transactions",
     );
-    expect(screen.getByRole("link", { name: "은행 거래내역" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "거래내역" })).toHaveAttribute(
       "aria-current",
       "page",
     );
@@ -320,7 +320,7 @@ describe("ErpShell", () => {
       "aria-current",
       "page",
     );
-    expect(screen.getByRole("link", { name: "은행 거래내역" })).not.toHaveAttribute(
+    expect(screen.getByRole("link", { name: "거래내역" })).not.toHaveAttribute(
       "aria-current",
     );
   });

@@ -106,15 +106,17 @@ export function BankTransactionListPage({
   const filterChips = buildFilterChips(filters, selectedAccount);
 
   return (
-    <ErpShell activeDetailLabel="통합 거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
+    <ErpShell activeDetailLabel="거래내역" activeLabel="회계/자금" activeWorkspaceLabel="은행·카드" logoutAction={logoutAction} userLabel={userLabel}>
       <div className="mx-auto flex max-w-[1480px] flex-col gap-4">
         <FinancePageHeader
           action={{ href: "/finance/bank-transactions/upload", label: "거래내역 업로드" }}
-          breadcrumb="회계/자금 · 은행·카드 · 통합 거래내역"
-          description="실제 통장거래와 외부납입 인정을 함께 조회하되 원본과 현금 영향을 분리해 관리합니다."
-          title="통합 거래내역"
+          breadcrumb="회계/자금 · 은행·카드 · 거래내역"
+          description="실제 통장거래와 외부납입 인정을 원본별로 구분하고 필요한 범위만 한 화면에서 조회합니다."
+          title="거래내역"
         />
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
+
+        <ActivityViewTabs filters={filters} />
 
         {activitySummary ? (
           <section aria-label="통합 거래 요약" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
@@ -159,9 +161,11 @@ export function BankTransactionListPage({
           />
 
           <FinanceToolbar>
-            <form className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_minmax(150px,190px)_minmax(180px,240px)_minmax(300px,auto)_auto_auto]" method="get">
+            <form className="grid gap-2 xl:grid-cols-[minmax(260px,1fr)_minmax(210px,280px)_minmax(300px,auto)_auto_auto]" method="get">
               {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
               {filters.sourceReconciliationStatus ? <input name="sourceReview" type="hidden" value="required" /> : null}
+              {filters.originType ? <input name="origin" type="hidden" value={filters.originType} /> : null}
+              {filters.reviewRequired ? <input name="view" type="hidden" value="review" /> : null}
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 거래 검색
                 <input
@@ -173,17 +177,9 @@ export function BankTransactionListPage({
                 />
               </label>
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
-                원본 구분
-                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.originType ?? ""} name="origin">
-                  <option value="">전체 원본</option>
-                  <option value="BANK_TRANSACTION">은행 통장거래</option>
-                  <option value="EXTERNAL_RECOGNITION">외부납입 인정</option>
-                </select>
-              </label>
-              <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 은행통장
-                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.bankAccountId ?? ""} name="accountId">
-                  <option value="">전체 계좌</option>
+                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)] disabled:bg-[var(--color-cloud-veil)] disabled:text-[var(--color-fog)]" defaultValue={filters.bankAccountId ?? ""} disabled={filters.originType === "EXTERNAL_RECOGNITION"} name="accountId">
+                  {filters.originType === "EXTERNAL_RECOGNITION" ? <option value="">외부납입 인정에는 적용 안 됨</option> : <option value="">전체 계좌</option>}
                   {bankAccounts.map((account) => <option key={account.id} value={account.id}>{bankAccountOptionLabel(account)}</option>)}
                 </select>
               </label>
@@ -439,14 +435,13 @@ export function BankTransactionListPage({
 }
 
 type FilterChip = {
-  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "originType" | "query" | "sourceReconciliationStatus";
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query" | "sourceReconciliationStatus";
   label: string;
 };
 
 function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?: RegisteredBankAccount): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.query) chips.push({ key: "query", label: `검색: ${filters.query}` });
-  if (filters.originType) chips.push({ key: "originType", label: filters.originType === "BANK_TRANSACTION" ? "은행 통장거래" : "외부납입 인정" });
   if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount ? bankAccountOptionLabel(selectedAccount) : "선택 계좌" });
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
@@ -464,9 +459,57 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
   if (filters.dateTo) params.set("to", filters.dateTo);
   if (filters.originType) params.set("origin", filters.originType);
   if (filters.classificationStatus) params.set("status", filters.classificationStatus);
+  if (filters.reviewRequired) params.set("view", "review");
   if (filters.sourceReconciliationStatus) params.set("sourceReview", "required");
   const query = params.toString();
   return `/finance/bank-transactions${query ? `?${query}` : ""}`;
+}
+
+function ActivityViewTabs({ filters }: { filters: BankTransactionListFilters }) {
+  const activeView = filters.reviewRequired
+    ? "review"
+    : filters.originType === "BANK_TRANSACTION"
+      ? "bank"
+      : filters.originType === "EXTERNAL_RECOGNITION"
+        ? "external"
+        : "all";
+  const items = [
+    { description: "은행 + 외부납입", label: "통합 거래내역", value: "all" },
+    { description: "실제 통장 입출금", label: "은행 거래내역", value: "bank" },
+    { description: "비현금·신탁 인정", label: "외부납입 인정", value: "external" },
+    { description: "미확인·보류·원본", label: "검토 필요", value: "review" },
+  ] as const;
+
+  return (
+    <nav aria-label="거래내역 구분" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+      {items.map((item) => {
+        const active = activeView === item.value;
+        return (
+          <Link
+            aria-current={active ? "page" : undefined}
+            className={`rounded-xl border px-4 py-3 text-center transition focus-visible:outline-2 focus-visible:outline-offset-2 ${active ? "border-[var(--color-green-ink)] bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "border-[var(--color-soft-border)] bg-white text-[var(--color-midnight-ink)] hover:bg-[var(--color-morning-tint)]"}`}
+            href={activityViewHref(item.value, filters)}
+            key={item.value}
+          >
+            <span className="block text-sm font-black">{item.label}</span>
+            <span className="mt-0.5 block text-xs text-[var(--color-stone)]">{item.description}</span>
+          </Link>
+        );
+      })}
+    </nav>
+  );
+}
+
+export function activityViewHref(view: "all" | "bank" | "external" | "review", filters: BankTransactionListFilters) {
+  const shared: BankTransactionListFilters = {
+    dateFrom: filters.dateFrom,
+    dateTo: filters.dateTo,
+    query: filters.query,
+  };
+  if (view === "bank") return bankTransactionPageHref(1, { ...shared, bankAccountId: filters.bankAccountId, originType: "BANK_TRANSACTION" });
+  if (view === "external") return bankTransactionPageHref(1, { ...shared, originType: "EXTERNAL_RECOGNITION" });
+  if (view === "review") return bankTransactionPageHref(1, { ...shared, reviewRequired: true });
+  return bankTransactionPageHref(1, shared);
 }
 
 function compactAccountName(account: RegisteredBankAccount) {

@@ -2,7 +2,7 @@ import { fireEvent, render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import { registeredAccountSubjects } from "@/features/basic-info/account-subject-data";
-import { BankTransactionListPage, bankTransactionPageHref } from "./bank-transaction-list-page";
+import { activityViewHref, BankTransactionListPage, bankTransactionPageHref } from "./bank-transaction-list-page";
 
 vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadgesAction: vi.fn().mockResolvedValue({}) }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
@@ -97,7 +97,7 @@ describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
     const main = screen.getByRole("main");
-    expect(screen.getByRole("heading", { level: 1, name: "통합 거래내역" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "거래내역" })).toBeInTheDocument();
     expect(screen.getByText("조회 결과")).toHaveTextContent("4,277건");
     expect(screen.getAllByText("51–100건 · 2/86")).toHaveLength(2);
     expect(screen.getByRole("link", { name: "거래내역 업로드" })).toHaveAttribute("href", "/finance/bank-transactions/upload");
@@ -163,7 +163,7 @@ describe("BankTransactionListPage", () => {
     />);
 
     expect(screen.getByRole("region", { name: "통합 거래 요약" })).toHaveTextContent("외부납입 인정30,000,000원1건 · 통장 입금 아님");
-    expect(screen.getByRole("combobox", { name: "원본 구분" })).toHaveValue("EXTERNAL_RECOGNITION");
+    expect(within(screen.getByRole("navigation", { name: "거래내역 구분" })).getByRole("link", { name: /외부납입 인정/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getAllByText("외부납입 인정 · 확정결손")).toHaveLength(2);
     expect(screen.getAllByText("비현금 인정").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" })).toHaveAttribute("href", "/finance/collections");
@@ -203,6 +203,25 @@ describe("BankTransactionListPage", () => {
     })).toBe(
       "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&origin=BANK_TRANSACTION&status=UNREVIEWED",
     );
+  });
+
+  it("switches between integrated, bank, external and review views without duplicating pages", () => {
+    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{ query: "송동환" }} pageData={pageData} statusCounts={statusCounts} />);
+
+    const views = screen.getByRole("navigation", { name: "거래내역 구분" });
+    expect(within(views).getByRole("link", { name: /통합 거래내역/ })).toHaveAttribute("aria-current", "page");
+    expect(within(views).getByRole("link", { name: /은행 거래내역/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&origin=BANK_TRANSACTION");
+    expect(within(views).getByRole("link", { name: /외부납입 인정/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&origin=EXTERNAL_RECOGNITION");
+    expect(within(views).getByRole("link", { name: /검토 필요/ })).toHaveAttribute("href", "/finance/bank-transactions?q=%EC%86%A1%EB%8F%99%ED%99%98&view=review");
+    expect(screen.queryByRole("combobox", { name: "원본 구분" })).not.toBeInTheDocument();
+  });
+
+  it("keeps only shared filters when changing primary views", () => {
+    const filters = { bankAccountId: "bank-1", classificationStatus: "CONFIRMED" as const, dateFrom: "2026-01-01", query: "KT", sourceReconciliationStatus: "SOURCE_REVIEW_REQUIRED" as const };
+    expect(activityViewHref("all", filters)).toBe("/finance/bank-transactions?q=KT&from=2026-01-01");
+    expect(activityViewHref("bank", filters)).toBe("/finance/bank-transactions?q=KT&accountId=bank-1&from=2026-01-01&origin=BANK_TRANSACTION");
+    expect(activityViewHref("external", filters)).toBe("/finance/bank-transactions?q=KT&from=2026-01-01&origin=EXTERNAL_RECOGNITION");
+    expect(activityViewHref("review", filters)).toBe("/finance/bank-transactions?q=KT&from=2026-01-01&view=review");
   });
 
   it("uses a compact seven-column table with a combined transaction detail column", () => {

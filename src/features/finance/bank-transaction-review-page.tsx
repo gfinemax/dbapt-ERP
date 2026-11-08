@@ -92,7 +92,7 @@ export function BankTransactionReviewPage({
                 추천값을 검토하고 사람이 선택한 거래만 계정과목으로 최종 확정해. 한 페이지에는 50건만 표시해.
               </p>
             </div>
-            <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold" href="/finance/bank-transactions">은행 거래내역으로 이동</Link>
+            <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold" href="/finance/bank-transactions?origin=BANK_TRANSACTION">은행 거래내역으로 이동</Link>
           </div>
           {accessError ? <p className="mt-4 rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
         </section>

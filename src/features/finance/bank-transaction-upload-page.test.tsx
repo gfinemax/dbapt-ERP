@@ -130,7 +130,7 @@ describe("BankTransactionUploadPage", () => {
     render(<BankTransactionUploadPage />);
 
     const detailMenu = screen.getByRole("navigation", { name: "회계/자금 상세 메뉴" });
-    expect(within(detailMenu).getByRole("link", { name: "은행 거래내역" })).toHaveAttribute("href", "/finance/bank-transactions");
+    expect(within(detailMenu).getByRole("link", { name: "거래내역" })).toHaveAttribute("href", "/finance/bank-transactions");
   });
 
   it("sends preview rows to the save action without creating vouchers", async () => {

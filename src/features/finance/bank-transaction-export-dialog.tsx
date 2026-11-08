@@ -18,7 +18,7 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
   const [open, setOpen] = useState(false);
   const [format, setFormat] = useState<"xlsx" | "pdf">("xlsx");
   const [columns, setColumns] = useState<BankTransactionExportColumnId[]>([...defaultBankTransactionExportColumns]);
-  const [title, setTitle] = useState("은행 거래내역");
+  const [title, setTitle] = useState("통합 거래내역");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const pdfTooLarge = format === "pdf" && totalCount > 1_000;

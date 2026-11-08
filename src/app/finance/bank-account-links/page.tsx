@@ -86,7 +86,7 @@ export default async function FinanceBankAccountLinksRoute({
             <Link className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold" href="/basic-info?section=bank-accounts">
               ERP 은행통장 등록
             </Link>
-            <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance/bank-transactions">
+            <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance/bank-transactions?origin=BANK_TRANSACTION">
               은행 거래내역으로 이동
             </Link>
           </div>

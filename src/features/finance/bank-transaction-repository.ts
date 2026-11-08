@@ -58,6 +58,7 @@ export type BankTransactionListFilters = {
   dateTo?: string;
   originType?: Exclude<FinancialActivityOrigin, "ALL">;
   query?: string;
+  reviewRequired?: boolean;
   sourceReconciliationStatus?: BankTransactionSourceReconciliationStatus;
 };
 
@@ -428,6 +429,15 @@ function normalizedBankTransactionSearch(value?: string) {
   return value?.replace(/[%_*,()]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function reviewRequiredOrFilter(transactionIds?: string[]) {
+  const sourceIds = (transactionIds ?? []).filter((value) => /^[A-Za-z0-9:_-]+$/.test(value));
+  const clauses = ["classification_status.in.(UNREVIEWED,DEFERRED)"];
+  if (sourceIds.length) {
+    clauses.push(`and(origin_type.eq.BANK_TRANSACTION,source_record_id.in.(${sourceIds.join(",")}))`);
+  }
+  return clauses.join(",");
+}
+
 export async function listBankTransactions(
   organizationId: string,
   requestedPage = 1,
@@ -441,7 +451,7 @@ export async function listBankTransactions(
     ? Math.min(requestedPageSize, 1_000)
     : bankTransactionPageSize;
   if (!supabase) return { page, pageSize, rows: [], totalCount: 0, totalPages: 1 };
-  if (transactionIds && transactionIds.length === 0) {
+  if (transactionIds && transactionIds.length === 0 && filters.sourceReconciliationStatus && !filters.reviewRequired) {
     return { page, pageSize, rows: [], totalCount: 0, totalPages: 1 };
   }
   const from = (page - 1) * pageSize;
@@ -451,7 +461,8 @@ export async function listBankTransactions(
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
   if (filters.originType) request = request.eq("origin_type", filters.originType);
   if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
-  if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
+  if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
+  else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
   const search = normalizedBankTransactionSearch(filters.query);
@@ -577,7 +588,7 @@ export async function countBankTransactionsByStatus(
     UNREVIEWED: 0,
   };
   if (!supabase) return emptyCounts;
-  if (transactionIds && transactionIds.length === 0) return emptyCounts;
+  if (transactionIds && transactionIds.length === 0 && filters.sourceReconciliationStatus && !filters.reviewRequired) return emptyCounts;
   const search = normalizedBankTransactionSearch(filters.query);
 
   const entries = await Promise.all([undefined, ...bankTransactionClassificationStatuses].map(async (status) => {
@@ -586,7 +597,8 @@ export async function countBankTransactionsByStatus(
       .eq("organization_id", organizationId);
     if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
     if (filters.originType) request = request.eq("origin_type", filters.originType);
-    if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
+    if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
+    else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
     if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%,uploaded_account_title.ilike.%${search}%,branch_name.ilike.%${search}%,classification_note.ilike.%${search}%,source_record_id.ilike.%${search}%`);
@@ -649,6 +661,7 @@ export async function loadFilteredFinancialActivitySummary(
       p_org: organizationId,
       p_origin_type: filters.originType ?? null,
       p_query: filters.query ?? null,
+      p_review_required: filters.reviewRequired ?? false,
       p_source_record_ids: transactionIds ?? null,
     });
   if (error) throw new Error(`검색 결과 합계를 불러오지 못했어: ${error.message}`);

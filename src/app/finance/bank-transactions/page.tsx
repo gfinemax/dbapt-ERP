@@ -30,7 +30,7 @@ const activityOrigins = new Set<Exclude<FinancialActivityOrigin, "ALL">>(["BANK_
 export default async function FinanceBankTransactionsRoute({
   searchParams,
 }: {
-  searchParams: Promise<{ accountId?: string; from?: string; origin?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string }>;
+  searchParams: Promise<{ accountId?: string; from?: string; origin?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string; view?: string }>;
 }) {
   const query = await searchParams;
   const parsedPage = Number.parseInt(query.page ?? "1", 10);
@@ -38,16 +38,18 @@ export default async function FinanceBankTransactionsRoute({
   const classificationStatus = classificationStatuses.has(query.status as BankTransactionClassificationStatus)
     ? query.status as BankTransactionClassificationStatus
     : undefined;
+  const reviewRequired = query.view === "review";
   const filters = {
     bankAccountId: query.accountId?.trim() || undefined,
     classificationStatus,
     dateFrom: validDate(query.from),
     dateTo: validDate(query.to),
-    originType: activityOrigins.has(query.origin as Exclude<FinancialActivityOrigin, "ALL">)
+    originType: !reviewRequired && activityOrigins.has(query.origin as Exclude<FinancialActivityOrigin, "ALL">)
       ? query.origin as Exclude<FinancialActivityOrigin, "ALL">
       : undefined,
     query: query.q?.trim().slice(0, 100) || undefined,
-    sourceReconciliationStatus: query.sourceReview === "required"
+    reviewRequired,
+    sourceReconciliationStatus: !reviewRequired && query.sourceReview === "required"
       ? "SOURCE_REVIEW_REQUIRED" as BankTransactionSourceReconciliationStatus
       : undefined,
   };
@@ -68,7 +70,7 @@ export default async function FinanceBankTransactionsRoute({
       : loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
     loadFinancialActivitySummary(actor.organization_id).catch(() => undefined),
   ]) : [[], [], undefined, undefined];
-  const sourceReviewTransactionIds = filters.sourceReconciliationStatus
+  const sourceReviewTransactionIds = filters.sourceReconciliationStatus || filters.reviewRequired
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
   const [pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary] = actor ? await Promise.all([
@@ -79,6 +81,7 @@ export default async function FinanceBankTransactionsRoute({
       dateTo: filters.dateTo,
       originType: filters.originType,
       query: filters.query,
+      reviewRequired: filters.reviewRequired,
       sourceReconciliationStatus: filters.sourceReconciliationStatus,
     }, sourceReviewTransactionIds).catch(() => emptyStatusCounts),
     filters.bankAccountId

@@ -44,7 +44,7 @@ export function LedgerBankTransactionDetail({ account, detail, erpBankAccount }:
             <Link className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-semibold" href="/finance/bank-account-links">
               계좌 목록으로
             </Link>
-            <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance/bank-transactions">
+            <Link className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-semibold text-white" href="/finance/bank-transactions?origin=BANK_TRANSACTION">
               은행 거래내역
             </Link>
           </div>
