@@ -104,10 +104,10 @@ describe("BankTransactionListPage", () => {
     expect(screen.queryByText("Ledger 계정과목 매핑 작업대")).not.toBeInTheDocument();
   });
 
-  it("shows only the first five account digits after each bank account name", () => {
+  it("shows the bank name and only the first five account digits in each account option", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
 
-    expect(screen.getByRole("option", { name: "우리은행 운영계좌 (10002)" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "우리은행 · 우리은행 운영계좌 (10002)" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: /1000200031006/ })).not.toBeInTheDocument();
   });
 
@@ -145,6 +145,7 @@ describe("BankTransactionListPage", () => {
     />);
 
     expect(screen.getByRole("link", { name: "검색: KT 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?accountId=bank-1&from=2026-09-01&status=RECOMMENDED");
+    expect(screen.getByRole("link", { name: "우리은행 · 우리은행 운영계좌 (10002) 필터 제거" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "추천 있음 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?q=KT&accountId=bank-1&from=2026-09-01");
   });
 
