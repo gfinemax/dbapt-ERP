@@ -66,6 +66,27 @@ const ledgerSourceSummary = {
   }],
 };
 
+const sourceReconciliationSummary = {
+  depositImpact: 0,
+  issueCount: 1,
+  issues: [{
+    bankAccountId: "bank-1",
+    bankTransactionId: "transaction-1",
+    comparedAt: "2026-11-08T10:00:00+09:00",
+    depositImpact: 0,
+    downstreamLinkLabels: [],
+    reason: "ERP에는 있지만 최신 Google 시트(시트1) 반영 배치의 어떤 행에도 연결되지 않았어.",
+    sourceDocumentId: "sheet-doc",
+    sourceSheet: "시트1",
+    sourceSystem: "dbapt-ledger",
+    sourceTransactionId: "3344",
+    transactedAt: "2021-03-23T09:52:00+09:00",
+    withdrawalImpact: 1000000,
+  }],
+  latestComparedAt: "2026-11-08T10:00:00+09:00",
+  withdrawalImpact: 1000000,
+};
+
 describe("BankTransactionListPage", () => {
   it("shows only the paged transaction list and links secondary workflows", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
@@ -146,5 +167,29 @@ describe("BankTransactionListPage", () => {
     expect(within(sourceAudit).getByText("1303")).toBeInTheDocument();
     expect(within(sourceAudit).getByText("2022-12-17 10:46:59")).toBeInTheDocument();
     expect(within(sourceAudit).getByText("예금결산이자")).toBeInTheDocument();
+  });
+
+  it("shows source reconciliation separately from account classification and links to the single issue", () => {
+    const reconciliationPage = {
+      ...pageData,
+      rows: [{ ...pageData.rows[0], description: "", sourceReconciliationIssue: sourceReconciliationSummary.issues[0] }],
+    };
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{}}
+      pageData={reconciliationPage}
+      selectedTransactionId="transaction-1"
+      sourceReconciliationSummary={sourceReconciliationSummary}
+      statusCounts={statusCounts}
+    />);
+
+    const alert = screen.getByRole("region", { name: "원본 대조 알림" });
+    expect(within(alert).getByText("원본 확인 필요 1건")).toBeInTheDocument();
+    expect(within(alert).getByText(/출금 1,000,000원/)).toBeInTheDocument();
+    expect(within(alert).getByRole("link", { name: "1건 바로 보기" })).toHaveAttribute("href", "/finance/bank-transactions?sourceReview=required");
+    expect(screen.getByRole("link", { name: "적요 없음" })).toBeInTheDocument();
+    const drawer = screen.getByRole("dialog", { name: "적요 없음" });
+    expect(within(drawer).getByRole("region", { name: "원본 대조 상태" })).toHaveTextContent("ERP 원본 ID3344");
+    expect(within(drawer).getByText("연결 없음")).toBeInTheDocument();
   });
 });

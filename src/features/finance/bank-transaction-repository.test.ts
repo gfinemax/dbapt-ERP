@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBankTransactionUid, mapBankTransactionToInsert, mapZeroAmountLedgerSource } from "./bank-transaction-repository";
+import { buildBankTransactionUid, deriveBankTransactionSourceReconciliationIssues, mapBankTransactionToInsert, mapZeroAmountLedgerSource } from "./bank-transaction-repository";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 describe("bank transaction repository mappers", () => {
@@ -74,5 +74,28 @@ describe("bank transaction repository mappers", () => {
       transactionTime: "10:46:59",
     });
     expect(mapZeroAmountLedgerSource({ payload: { deposit_amount: 1000, withdrawal_amount: 0 } })).toBeNull();
+  });
+
+  it("separates an ERP-only source review from matched, deferred and excluded transactions", () => {
+    const issues = deriveBankTransactionSourceReconciliationIssues({
+      downstreamLinks: new Map([["erp-only", []]]),
+      importRows: [{ batch_id: "batch-1", bank_transaction_id: "matched" }],
+      latestBatches: [{ bank_account_id: "bank-1", id: "batch-1", imported_at: "2026-11-08T10:00:00+09:00", source_document_id: "sheet-doc", source_sheet: "시트1" }],
+      transactions: [
+        { bank_account_id: "bank-1", classification_status: "UNREVIEWED", deposit_amount: 0, id: "matched", source_system: "dbapt-ledger", source_transaction_id: "100", transacted_at: "2021-03-24T09:52:00+09:00", withdrawal_amount: 1000000 },
+        { bank_account_id: "bank-1", classification_status: "DEFERRED", deposit_amount: 9000000, id: "duplicate", source_system: "dbapt-ledger", source_transaction_id: "200", transacted_at: "2022-12-01T08:03:00+09:00", withdrawal_amount: 0 },
+        { bank_account_id: "bank-1", classification_status: "EXCLUDED", deposit_amount: 0, id: "excluded", source_system: "dbapt-ledger", source_transaction_id: "300", transacted_at: "2022-01-01T08:03:00+09:00", withdrawal_amount: 1000 },
+        { bank_account_id: "bank-1", classification_status: "UNREVIEWED", deposit_amount: 0, id: "erp-only", source_system: "dbapt-ledger", source_transaction_id: "3344", transacted_at: "2021-03-23T09:52:00+09:00", withdrawal_amount: 1000000 },
+      ],
+    });
+
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      bankTransactionId: "erp-only",
+      depositImpact: 0,
+      sourceTransactionId: "3344",
+      withdrawalImpact: 1000000,
+    });
+    expect(issues[0].reason).toContain("최신 Google 시트(시트1)");
   });
 });

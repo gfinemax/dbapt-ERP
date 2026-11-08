@@ -47,7 +47,7 @@ export function BankTransactionDetailDrawer({ accountName, closeHref, transactio
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold text-[var(--color-deep-cobalt)]">은행거래 상세</p>
-            <h2 className="mt-2 text-2xl font-bold" id="bank-transaction-detail-title">{transaction.description}</h2>
+            <h2 className="mt-2 text-2xl font-bold" id="bank-transaction-detail-title">{transaction.description || "적요 없음"}</h2>
           </div>
           <Link ref={closeRef} className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-semibold" href={closeHref}>
             닫기
@@ -67,6 +67,21 @@ export function BankTransactionDetailDrawer({ accountName, closeHref, transactio
           <Detail label="추천 근거" value={transaction.recommendationReason ?? "관리자 확인 필요"} />
           <Detail label="관리 메모" value={transaction.memo || "메모 없음"} />
         </dl>
+
+        {transaction.sourceReconciliationIssue ? (
+          <section className="mt-8 rounded-xl border border-[var(--color-mustard)] bg-[var(--color-butter-soft)]/55 p-4" aria-label="원본 대조 상태">
+            <h3 className="font-bold text-[var(--color-midnight-ink)]">원본 확인 필요</h3>
+            <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">{transaction.sourceReconciliationIssue.reason}</p>
+            <dl className="mt-4 grid gap-3 text-sm">
+              <ReconciliationDetail label="ERP 원본 ID" value={transaction.sourceReconciliationIssue.sourceTransactionId} />
+              <ReconciliationDetail label="ERP 원본 종류" value={sourceSystemLabel(transaction.sourceReconciliationIssue.sourceSystem)} />
+              <ReconciliationDetail label="마지막 대조" value={`${formatDateTime(transaction.sourceReconciliationIssue.comparedAt)} · ${transaction.sourceReconciliationIssue.sourceSheet}`} />
+              <ReconciliationDetail label="집계 영향" value={reconciliationImpact(transaction.sourceReconciliationIssue.depositImpact, transaction.sourceReconciliationIssue.withdrawalImpact)} />
+              <ReconciliationDetail label="후속 연결" value={transaction.sourceReconciliationIssue.downstreamLinkLabels.length ? transaction.sourceReconciliationIssue.downstreamLinkLabels.join(" · ") : "연결 없음"} />
+            </dl>
+            <a className="mt-4 inline-block text-sm font-bold text-[var(--color-deep-cobalt)] underline" href={`https://docs.google.com/spreadsheets/d/${transaction.sourceReconciliationIssue.sourceDocumentId}/edit`} rel="noreferrer" target="_blank">대조한 Google 시트 열기</a>
+          </section>
+        ) : null}
 
         {transaction.sheetOverrides?.length ? (
           <section className="mt-8 rounded-xl border border-[var(--color-morning-tint)] bg-[var(--color-morning-tint)]/40 p-4" aria-label="Google 시트 보정 이력">
@@ -108,6 +123,22 @@ function Detail({ label, strong = false, value }: { label: string; strong?: bool
       <dd className={strong ? "text-lg font-bold" : "font-semibold"}>{value}</dd>
     </div>
   );
+}
+
+function ReconciliationDetail({ label, value }: { label: string; value: string }) {
+  return <div className="grid grid-cols-[100px_1fr] gap-2"><dt className="font-semibold text-[var(--color-stone)]">{label}</dt><dd className="font-bold">{value}</dd></div>;
+}
+
+function reconciliationImpact(depositAmount: number, withdrawalAmount: number) {
+  if (depositAmount) return `ERP 입금 합계가 시트보다 ${formatKrw(depositAmount)} 많음`;
+  if (withdrawalAmount) return `ERP 출금 합계가 시트보다 ${formatKrw(withdrawalAmount)} 많음`;
+  return "금액 영향 없음";
+}
+
+function sourceSystemLabel(value: string) {
+  if (value === "dbapt-ledger") return "Ledger 연계 원본";
+  if (value === "google-sheet") return "Google 시트 신규 원본";
+  return value || "ERP 원본";
 }
 
 function formatDateTime(value: string) {

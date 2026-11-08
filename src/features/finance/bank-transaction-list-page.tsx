@@ -15,6 +15,7 @@ import type {
   BankTransactionListFilters,
   BankTransactionListPage as BankTransactionPageData,
   BankTransactionStatusCounts,
+  BankTransactionSourceReconciliationSummary,
   LedgerBankSourceSummary,
 } from "./bank-transaction-repository";
 import { formatKrw } from "./finance-data";
@@ -27,6 +28,7 @@ type Props = {
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
   selectedTransactionId?: string;
+  sourceReconciliationSummary?: BankTransactionSourceReconciliationSummary;
   statusCounts?: BankTransactionStatusCounts;
   userLabel?: string;
 };
@@ -73,6 +75,7 @@ export function BankTransactionListPage({
   logoutAction,
   pageData,
   selectedTransactionId,
+  sourceReconciliationSummary,
   statusCounts = emptyStatusCounts,
   userLabel = "로그인 필요",
 }: Props) {
@@ -93,6 +96,26 @@ export function BankTransactionListPage({
         />
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
 
+        {sourceReconciliationSummary?.issueCount ? (
+          <section aria-label="원본 대조 알림" className="rounded-xl border border-[var(--color-mustard)] bg-[var(--color-butter-soft)]/55 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <p className="text-lg font-black text-[var(--color-midnight-ink)]">원본 확인 필요 {sourceReconciliationSummary.issueCount.toLocaleString("ko-KR")}건</p>
+                <p className="mt-1 text-sm leading-6 text-[var(--color-stone)]">ERP에는 있지만 최신 Google 시트 반영 배치와 연결되지 않은 거래야. 계정과목의 `미확인`과는 별도의 원본 대조 상태야.</p>
+                <p className="mt-1 text-sm font-semibold text-[var(--color-mustard)]">
+                  집계 영향 · 입금 {formatKrw(sourceReconciliationSummary.depositImpact)} · 출금 {formatKrw(sourceReconciliationSummary.withdrawalImpact)}
+                </p>
+              </div>
+              <Link
+                className={`rounded-full px-4 py-2 text-sm font-bold ${filters.sourceReconciliationStatus ? "bg-[var(--color-midnight-ink)] text-white" : "border border-[var(--color-mustard)] bg-white text-[var(--color-midnight-ink)]"}`}
+                href={bankTransactionPageHref(1, { ...filters, sourceReconciliationStatus: filters.sourceReconciliationStatus ? undefined : "SOURCE_REVIEW_REQUIRED" })}
+              >
+                {filters.sourceReconciliationStatus ? "전체 거래로 돌아가기" : `${sourceReconciliationSummary.issueCount.toLocaleString("ko-KR")}건 바로 보기`}
+              </Link>
+            </div>
+          </section>
+        ) : null}
+
         <section className="overflow-visible rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
           <FinanceStatusTabs
             items={statusTabLabels.map((item) => ({
@@ -107,6 +130,7 @@ export function BankTransactionListPage({
           <FinanceToolbar>
             <form className="grid gap-2 xl:grid-cols-[minmax(220px,1fr)_minmax(180px,260px)_minmax(300px,auto)_auto_auto]" method="get">
               {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
+              {filters.sourceReconciliationStatus ? <input name="sourceReview" type="hidden" value="required" /> : null}
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 거래 검색
                 <input
@@ -257,7 +281,7 @@ export function BankTransactionListPage({
                       {account ? compactAccountName(account) : "계좌 정보 없음"}
                     </td>
                     <td className="px-3 py-2.5">
-                      <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description}</Link>
+                      <Link className="font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-4" href={detailHref}>{transaction.description || "적요 없음"}</Link>
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
                     </td>
                     <td className="whitespace-nowrap px-3 py-2.5 text-right">
@@ -269,6 +293,7 @@ export function BankTransactionListPage({
                     <td className="px-3 py-2.5 font-semibold">{transaction.recommendedAccountSubjectName ?? "-"}</td>
                     <td className="px-3 py-2.5 text-center">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{classificationLabels[transaction.classificationStatus]}</span>
+                      {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}
                     </td>
                   </tr>
                 );
@@ -300,7 +325,7 @@ export function BankTransactionListPage({
 }
 
 type FilterChip = {
-  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query";
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query" | "sourceReconciliationStatus";
   label: string;
 };
 
@@ -311,6 +336,7 @@ function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?:
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
   if (filters.classificationStatus) chips.push({ key: "classificationStatus", label: classificationLabels[filters.classificationStatus] });
+  if (filters.sourceReconciliationStatus) chips.push({ key: "sourceReconciliationStatus", label: "원본 확인 필요" });
   return chips;
 }
 
@@ -322,6 +348,7 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
   if (filters.dateFrom) params.set("from", filters.dateFrom);
   if (filters.dateTo) params.set("to", filters.dateTo);
   if (filters.classificationStatus) params.set("status", filters.classificationStatus);
+  if (filters.sourceReconciliationStatus) params.set("sourceReview", "required");
   const query = params.toString();
   return `/finance/bank-transactions${query ? `?${query}` : ""}`;
 }

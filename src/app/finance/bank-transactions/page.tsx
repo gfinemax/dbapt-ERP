@@ -4,8 +4,10 @@ import { BankTransactionListPage } from "@/features/finance/bank-transaction-lis
 import {
   countBankTransactionsByStatus,
   loadLedgerBankSourceSummary,
+  loadBankTransactionSourceReconciliationSummary,
   listBankTransactions,
   type BankTransactionClassificationStatus,
+  type BankTransactionSourceReconciliationStatus,
   type BankTransactionStatusCounts,
 } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
@@ -21,7 +23,7 @@ const classificationStatuses = new Set<BankTransactionClassificationStatus>([
 export default async function FinanceBankTransactionsRoute({
   searchParams,
 }: {
-  searchParams: Promise<{ accountId?: string; from?: string; page?: string; q?: string; status?: string; to?: string; transactionId?: string }>;
+  searchParams: Promise<{ accountId?: string; from?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string }>;
 }) {
   const query = await searchParams;
   const parsedPage = Number.parseInt(query.page ?? "1", 10);
@@ -35,6 +37,9 @@ export default async function FinanceBankTransactionsRoute({
     dateFrom: validDate(query.from),
     dateTo: validDate(query.to),
     query: query.q?.trim().slice(0, 100) || undefined,
+    sourceReconciliationStatus: query.sourceReview === "required"
+      ? "SOURCE_REVIEW_REQUIRED" as BankTransactionSourceReconciliationStatus
+      : undefined,
   };
   let actor: Awaited<ReturnType<typeof requireExpenseActor>> | null = null;
   let accessError: string | undefined;
@@ -45,19 +50,31 @@ export default async function FinanceBankTransactionsRoute({
   }
 
   const emptyStatusCounts: BankTransactionStatusCounts = { ALL: 0, CONFIRMED: 0, DEFERRED: 0, EXCLUDED: 0, RECOMMENDED: 0, UNREVIEWED: 0 };
-  const [bankAccounts, pageData, statusCounts, ledgerSourceSummary] = actor ? await Promise.all([
+  const [bankAccounts, sourceReconciliationSummary] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
-    listBankTransactions(actor.organization_id, page, filters),
+    loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
+  ]) : [[], undefined];
+  const sourceReviewTransactionIds = filters.sourceReconciliationStatus
+    ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
+    : undefined;
+  const [pageData, statusCounts, ledgerSourceSummary] = actor ? await Promise.all([
+    listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds),
     countBankTransactionsByStatus(actor.organization_id, {
       bankAccountId: filters.bankAccountId,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
       query: filters.query,
-    }).catch(() => emptyStatusCounts),
+      sourceReconciliationStatus: filters.sourceReconciliationStatus,
+    }, sourceReviewTransactionIds).catch(() => emptyStatusCounts),
     filters.bankAccountId
       ? loadLedgerBankSourceSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined)
       : Promise.resolve(undefined),
-  ]) : [[], { page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined];
+  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined];
+  const issuesByTransaction = new Map(sourceReconciliationSummary?.issues.map((issue) => [issue.bankTransactionId, issue]) ?? []);
+  const pageDataWithReconciliation = {
+    ...pageData,
+    rows: pageData.rows.map((row) => ({ ...row, sourceReconciliationIssue: issuesByTransaction.get(row.id) })),
+  };
 
   return (
     <BankTransactionListPage
@@ -66,8 +83,9 @@ export default async function FinanceBankTransactionsRoute({
       filters={filters}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}
-      pageData={pageData}
+      pageData={pageDataWithReconciliation}
       selectedTransactionId={query.transactionId?.trim()}
+      sourceReconciliationSummary={sourceReconciliationSummary}
       statusCounts={statusCounts}
       userLabel={actor?.display_name}
     />

@@ -31,6 +31,7 @@ export type SupabaseBankTransactionRow = SupabaseBankTransactionInsert & {
 };
 
 export type BankTransactionClassificationStatus = "UNREVIEWED" | "RECOMMENDED" | "CONFIRMED" | "DEFERRED" | "EXCLUDED";
+export type BankTransactionSourceReconciliationStatus = "SOURCE_REVIEW_REQUIRED";
 
 export type BankTransactionReviewRow = {
   bankAccountId: string;
@@ -52,6 +53,7 @@ export type BankTransactionListFilters = {
   dateFrom?: string;
   dateTo?: string;
   query?: string;
+  sourceReconciliationStatus?: BankTransactionSourceReconciliationStatus;
 };
 
 export type BankTransactionStatusCounts = Record<BankTransactionClassificationStatus | "ALL", number>;
@@ -86,7 +88,31 @@ export type BankTransactionListRow = BankTransactionReviewRow & {
   memo?: string;
   originalDescription?: string;
   originalMemo?: string;
+  sourceReconciliationIssue?: BankTransactionSourceReconciliationIssue;
   sheetOverrides?: BankTransactionSheetOverride[];
+};
+
+export type BankTransactionSourceReconciliationIssue = {
+  bankAccountId: string;
+  bankTransactionId: string;
+  comparedAt: string;
+  depositImpact: number;
+  downstreamLinkLabels: string[];
+  reason: string;
+  sourceDocumentId: string;
+  sourceSheet: string;
+  sourceSystem: string;
+  sourceTransactionId: string;
+  transactedAt: string;
+  withdrawalImpact: number;
+};
+
+export type BankTransactionSourceReconciliationSummary = {
+  depositImpact: number;
+  issueCount: number;
+  issues: BankTransactionSourceReconciliationIssue[];
+  latestComparedAt: string | null;
+  withdrawalImpact: number;
 };
 
 export type BankTransactionSheetOverride = {
@@ -338,10 +364,14 @@ export async function listBankTransactions(
   organizationId: string,
   requestedPage = 1,
   filters: BankTransactionListFilters = {},
+  transactionIds?: string[],
 ): Promise<BankTransactionListPage> {
   const supabase = getSupabaseServerClient();
   const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? requestedPage : 1;
   if (!supabase) return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  if (transactionIds && transactionIds.length === 0) {
+    return { page, pageSize: bankTransactionPageSize, rows: [], totalCount: 0, totalPages: 1 };
+  }
   const from = (page - 1) * bankTransactionPageSize;
   let request = supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
     .select("id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,balance_amount,counterparty,branch_name,recommended_account_subject_id,recommended_account_subject_name,classification_status,recommendation_reason", { count: "exact" })
@@ -349,6 +379,7 @@ export async function listBankTransactions(
     .is("deleted_at", null);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
   if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
+  if (transactionIds) request = request.in("id", transactionIds);
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
   const search = normalizedBankTransactionSearch(filters.query);
@@ -433,6 +464,7 @@ async function loadLatestBankTransactionSheetOverrides(
 export async function countBankTransactionsByStatus(
   organizationId: string,
   filters: Omit<BankTransactionListFilters, "classificationStatus"> = {},
+  transactionIds?: string[],
 ): Promise<BankTransactionStatusCounts> {
   const supabase = getSupabaseServerClient();
   const emptyCounts: BankTransactionStatusCounts = {
@@ -444,6 +476,7 @@ export async function countBankTransactionsByStatus(
     UNREVIEWED: 0,
   };
   if (!supabase) return emptyCounts;
+  if (transactionIds && transactionIds.length === 0) return emptyCounts;
   const search = normalizedBankTransactionSearch(filters.query);
 
   const entries = await Promise.all([undefined, ...bankTransactionClassificationStatuses].map(async (status) => {
@@ -452,6 +485,7 @@ export async function countBankTransactionsByStatus(
       .eq("organization_id", organizationId)
       .is("deleted_at", null);
     if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
+    if (transactionIds) request = request.in("id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
     if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%`);
@@ -462,6 +496,179 @@ export async function countBankTransactionsByStatus(
   }));
 
   return { ...emptyCounts, ...Object.fromEntries(entries) };
+}
+
+type ReconciliationBatchRow = {
+  bank_account_id: string;
+  id: string;
+  imported_at: string;
+  source_document_id: string;
+  source_sheet: string;
+};
+
+type ReconciliationImportRow = {
+  bank_transaction_id: string | null;
+  batch_id: string;
+};
+
+type ReconciliationTransactionRow = {
+  bank_account_id: string;
+  classification_status: BankTransactionClassificationStatus;
+  deposit_amount: number | string | null;
+  id: string;
+  source_system: string | null;
+  source_transaction_id: string | null;
+  transacted_at: string;
+  withdrawal_amount: number | string | null;
+};
+
+export function deriveBankTransactionSourceReconciliationIssues(input: {
+  downstreamLinks?: Map<string, string[]>;
+  importRows: ReconciliationImportRow[];
+  latestBatches: ReconciliationBatchRow[];
+  transactions: ReconciliationTransactionRow[];
+}): BankTransactionSourceReconciliationIssue[] {
+  const batchByAccount = new Map(input.latestBatches.map((batch) => [batch.bank_account_id, batch]));
+  const matchedByBatch = new Map<string, Set<string>>();
+  for (const row of input.importRows) {
+    if (!row.bank_transaction_id) continue;
+    const matches = matchedByBatch.get(row.batch_id) ?? new Set<string>();
+    matches.add(row.bank_transaction_id);
+    matchedByBatch.set(row.batch_id, matches);
+  }
+
+  return input.transactions.flatMap((transaction) => {
+    const batch = batchByAccount.get(transaction.bank_account_id);
+    if (!batch || matchedByBatch.get(batch.id)?.has(transaction.id)) return [];
+    if (["DEFERRED", "EXCLUDED"].includes(transaction.classification_status)) return [];
+    return [{
+      bankAccountId: transaction.bank_account_id,
+      bankTransactionId: transaction.id,
+      comparedAt: batch.imported_at,
+      depositImpact: Number(transaction.deposit_amount) || 0,
+      downstreamLinkLabels: input.downstreamLinks?.get(transaction.id) ?? [],
+      reason: `ERP에는 있지만 최신 Google 시트(${batch.source_sheet}) 반영 배치의 어떤 행에도 연결되지 않았어. 실제 은행 거래 여부와 시트 누락 여부를 확인해줘.`,
+      sourceDocumentId: batch.source_document_id,
+      sourceSheet: batch.source_sheet,
+      sourceSystem: transaction.source_system ?? "ERP",
+      sourceTransactionId: transaction.source_transaction_id ?? transaction.id,
+      transactedAt: transaction.transacted_at,
+      withdrawalImpact: Number(transaction.withdrawal_amount) || 0,
+    }];
+  }).sort((left, right) => right.transactedAt.localeCompare(left.transactedAt));
+}
+
+export async function loadBankTransactionSourceReconciliationSummary(
+  organizationId: string,
+  bankAccountId?: string,
+): Promise<BankTransactionSourceReconciliationSummary> {
+  const empty = { depositImpact: 0, issueCount: 0, issues: [], latestComparedAt: null, withdrawalImpact: 0 };
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return empty;
+
+  let batchRequest = supabase.schema(bankTransactionRepositorySchema).from("bank_transaction_sheet_import_batches")
+    .select("id,bank_account_id,source_document_id,source_sheet,imported_at")
+    .eq("organization_id", organizationId)
+    .order("imported_at", { ascending: false });
+  if (bankAccountId) batchRequest = batchRequest.eq("bank_account_id", bankAccountId);
+  const { data: batchData, error: batchError } = await batchRequest;
+  if (batchError) {
+    if (["42P01", "PGRST205"].includes(batchError.code ?? "")) return empty;
+    throw new Error(`Google 시트 대조 배치를 불러오지 못했어: ${batchError.message}`);
+  }
+  const latestByAccount = new Map<string, ReconciliationBatchRow>();
+  for (const row of (batchData ?? []) as ReconciliationBatchRow[]) {
+    if (!latestByAccount.has(row.bank_account_id)) latestByAccount.set(row.bank_account_id, row);
+  }
+  const latestBatches = [...latestByAccount.values()];
+  if (!latestBatches.length) return empty;
+
+  const importRows = await readPagedReconciliationRows<ReconciliationImportRow>(async (from, to) => {
+    const result = await supabase.schema(bankTransactionRepositorySchema).from("bank_transaction_sheet_import_rows")
+      .select("batch_id,bank_transaction_id")
+      .in("batch_id", latestBatches.map((batch) => batch.id))
+      .range(from, to);
+    return { data: result.data as ReconciliationImportRow[] | null, error: result.error };
+  }, "Google 시트 연결 행");
+  const transactions = await readPagedReconciliationRows<ReconciliationTransactionRow>(async (from, to) => {
+    const result = await supabase.schema(bankTransactionRepositorySchema).from("bank_transactions")
+      .select("id,bank_account_id,transacted_at,deposit_amount,withdrawal_amount,classification_status,source_system,source_transaction_id")
+      .eq("organization_id", organizationId)
+      .in("bank_account_id", latestBatches.map((batch) => batch.bank_account_id))
+      .is("deleted_at", null)
+      .range(from, to);
+    return { data: result.data as ReconciliationTransactionRow[] | null, error: result.error };
+  }, "ERP 은행거래");
+  const provisional = deriveBankTransactionSourceReconciliationIssues({ importRows, latestBatches, transactions });
+  const downstreamLinks = await loadBankTransactionDownstreamLinks(organizationId, provisional.map((issue) => issue.bankTransactionId));
+  const issues = deriveBankTransactionSourceReconciliationIssues({ downstreamLinks, importRows, latestBatches, transactions });
+  return {
+    depositImpact: issues.reduce((sum, issue) => sum + issue.depositImpact, 0),
+    issueCount: issues.length,
+    issues,
+    latestComparedAt: issues.reduce<string | null>((latest, issue) => !latest || issue.comparedAt > latest ? issue.comparedAt : latest, null),
+    withdrawalImpact: issues.reduce((sum, issue) => sum + issue.withdrawalImpact, 0),
+  };
+}
+
+async function readPagedReconciliationRows<T>(
+  loadPage: (from: number, to: number) => Promise<{ data: T[] | null; error: { message: string } | null }>,
+  label: string,
+) {
+  const rows: T[] = [];
+  const pageSize = 1000;
+  for (let from = 0; ; from += pageSize) {
+    const { data, error } = await loadPage(from, from + pageSize - 1);
+    if (error) throw new Error(`${label}을 불러오지 못했어: ${error.message}`);
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < pageSize) return rows;
+  }
+}
+
+async function loadBankTransactionDownstreamLinks(organizationId: string, transactionIds: string[]) {
+  const result = new Map<string, string[]>();
+  if (!transactionIds.length) return result;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return result;
+  const add = (transactionId: string, label: string) => {
+    const labels = result.get(transactionId) ?? [];
+    if (!labels.includes(label)) labels.push(label);
+    result.set(transactionId, labels);
+  };
+  const definitions = [
+    ["finance", "vouchers", "bank_transaction_id", "전표"],
+    ["finance", "expense_resolutions", "bank_transaction_id", "지출결의"],
+    ["finance", "quick_expense_records", "bank_transaction_id", "간편지출"],
+    ["finance", "personal_reimbursements", "bank_transaction_id", "개인지출 정산"],
+    ["approval", "small_expenses", "bank_transaction_id", "소액지출"],
+    ["finance", "workflow_payments", "bank_transaction_id", "통합 지급"],
+    ["finance", "collection_receipt_allocations", "bank_transaction_id", "분담금 수납"],
+    ["finance", "collection_refunds", "bank_transaction_id", "환급"],
+  ] as const;
+  for (const [schema, table, column, label] of definitions) {
+    const { data, error } = await supabase.schema(schema).from(table)
+      .select(column)
+      .eq("organization_id", organizationId)
+      .in(column, transactionIds);
+    if (error) throw new Error(`은행거래 후속 연결(${label})을 확인하지 못했어: ${error.message}`);
+    for (const row of data ?? []) {
+      const transactionId = String((row as Record<string, unknown>)[column] ?? "");
+      if (transactionId) add(transactionId, label);
+    }
+  }
+  for (const column of ["withdrawal_id", "deposit_id"] as const) {
+    const { data, error } = await supabase.schema("finance").from("workflow_transfers")
+      .select(column)
+      .eq("organization_id", organizationId)
+      .in(column, transactionIds);
+    if (error) throw new Error(`은행거래 후속 연결(계좌이체)을 확인하지 못했어: ${error.message}`);
+    for (const row of data ?? []) {
+      const transactionId = String((row as Record<string, unknown>)[column] ?? "");
+      if (transactionId) add(transactionId, "계좌이체");
+    }
+  }
+  return result;
 }
 
 export async function listBankTransactionsForSubjectReview(
