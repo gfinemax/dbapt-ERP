@@ -13,6 +13,7 @@ describe("fixed certificate account subjects in financial activity", () => {
     expect(migration).toContain("batch.status='APPLIED'");
     expect(migration).toContain("assignment.account_subject_id as confirmed_account_subject_id");
     expect(migration).toContain("coalesce(subject.name,case x.accounting_treatment");
+    expect(migration).not.toContain("bank_transaction_effective_detail");
   });
 
   it("matches by stable root recognition ID and preserves every source table", () => {

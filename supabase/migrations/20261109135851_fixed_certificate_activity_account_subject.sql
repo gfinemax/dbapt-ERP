@@ -35,7 +35,12 @@ select
   null::text as source_root_record_id,
   null::text as linkage_status,
   '{}'::jsonb as source_payload,
-  finance.bank_transaction_effective_detail(b.organization_id,b.id) as transaction_detail
+  coalesce(
+    nullif(trim(b.memo),''),
+    nullif(trim(b.uploaded_account_title),''),
+    nullif(trim(b.description),''),
+    ''
+  ) as transaction_detail
 from finance.bank_transactions b
 where b.deleted_at is null
 union all
