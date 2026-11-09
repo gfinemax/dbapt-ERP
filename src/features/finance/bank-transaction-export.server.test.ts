@@ -68,19 +68,22 @@ describe("bank transaction export", () => {
       transactedAt: "2026-11-01T00:00:00+09:00", transactionKind: null,
     };
     const exportData = buildBankTransactionExportData({
-      accountSubjects: [], bankAccounts: [], columns: ["account", "originType", "sourceStatus", "amount"],
+      accountSubjects: [], bankAccounts: [], columns: ["account", "originType", "sourceStatus", "accountSubject", "amount"],
       filters: { externalRecognitionKind: "FIXED_CERTIFICATE", originType: "EXTERNAL_RECOGNITION" },
       rows: [
-        { ...externalBase, sourceKind: "dongil_fixed_certificate" },
+        { ...externalBase, confirmedAccountSubjectId: "contribution", confirmedAccountSubjectName: "분담금", sourceKind: "dongil_fixed_certificate" },
+        { ...externalBase, confirmedAccountSubjectId: "suspense", confirmedAccountSubjectName: "가수금", id: "external:fixed-suspense", sourceKind: "dongil_fixed_certificate" },
         { ...externalBase, id: "external:general", sourceKind: "dongil_other" },
       ],
     });
 
     expect(exportData.records[0]).toMatchObject({
       account: "동일건설 정액 필증 3천만원 원장",
+      accountSubject: "분담금",
       originType: "외부납입 인정 · 동일건설 정액 필증 3천만원",
     });
-    expect(exportData.records[1]).toMatchObject({ account: "일반 외부납입 원장", originType: "외부납입 인정 · 일반 외부납입" });
+    expect(exportData.records[1]).toMatchObject({ accountSubject: "가수금" });
+    expect(exportData.records[2]).toMatchObject({ account: "일반 외부납입 원장", accountSubject: "외부납입 인정 · 확정결손", originType: "외부납입 인정 · 일반 외부납입" });
     expect(bankTransactionFilterSummary(exportData.filters)).toContain("외부납입 구분 동일건설 정액 필증 3천만원");
   });
 });

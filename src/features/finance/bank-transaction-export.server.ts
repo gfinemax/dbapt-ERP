@@ -63,7 +63,7 @@ export function buildBankTransactionExportData(input: {
     return {
       account: isExternalRecognition ? `${externalRecognitionKindLabel(row.sourceKind)} 원장` : account ? `${account.bankName} · ${account.accountName} · ${account.accountNo}` : "계좌 정보 없음",
       accountingTreatment: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : "",
-      accountSubject: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : subject?.businessCategory ? `${subject.businessCategory} · ${subjectName}` : subjectName,
+      accountSubject: isExternalRecognition ? row.confirmedAccountSubjectName ?? accountingTreatmentLabel(row.accountingTreatment) : subject?.businessCategory ? `${subject.businessCategory} · ${subjectName}` : subjectName,
       adminNote: row.classificationNote ?? "",
       amount: signedAmount,
       balance: row.balanceAmount ?? "",

@@ -340,7 +340,7 @@ export function BankTransactionListPage({
                 const accountSubjectId = transaction.confirmedAccountSubjectId ?? transaction.recommendedAccountSubjectId;
                 const accountSubject = accountSubjectId ? accountSubjectsById.get(accountSubjectId) : undefined;
                 const accountSubjectLabel = isExternalRecognition
-                  ? externalAccountingLabel(transaction.accountingTreatment)
+                  ? transaction.confirmedAccountSubjectName ?? externalAccountingLabel(transaction.accountingTreatment)
                   : accountSubjectName && accountSubject?.businessCategory
                   ? `${accountSubject.businessCategory} · ${accountSubjectName}`
                   : accountSubjectName ?? "-";
@@ -380,7 +380,7 @@ export function BankTransactionListPage({
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle font-semibold">
                       {accountSubjectLabel}
-                      {isExternalRecognition ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">Ledger 원장 분류</span> : transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
+                      {isExternalRecognition ? <span className={`mt-0.5 block text-xs font-normal ${transaction.confirmedAccountSubjectName ? "text-[var(--color-green-ink)]" : "text-[var(--color-stone)]"}`}>{transaction.confirmedAccountSubjectName ? transaction.sourceKind === "dongil_fixed_certificate" ? "ERP 확정 · 정액필증 명단 대조" : "ERP 확정" : "Ledger 원장 분류"}</span> : transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
                     </td>
                     <td className="px-2 py-2.5 text-center align-middle">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{isExternalRecognition ? externalStatusLabel(transaction.recognitionStatus, transaction.accountingTreatment) : classificationLabels[transaction.classificationStatus]}</span>

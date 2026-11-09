@@ -206,6 +206,30 @@ describe("BankTransactionListPage", () => {
     expect(screen.getByRole("link", { name: "일반 외부납입 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION");
   });
 
+  it("shows applied fixed-certificate assignments as the ERP account subject", () => {
+    const assignedRow = {
+      amount: 30000000, balanceAmount: null, bankAccountId: "", branchName: "", cashImpact: "NON_CASH_RECOGNITION" as const,
+      classificationStatus: "CONFIRMED" as const, counterparty: "분담금 대상", description: "동일건설 정액 필증 3천만원", id: "external:contribution",
+      accountingTreatment: "confirmed_loss" as const, memo: "정액", originType: "EXTERNAL_RECOGNITION" as const, recognitionStatus: "ACTIVE" as const,
+      confirmedAccountSubjectId: "contribution-subject", confirmedAccountSubjectName: "분담금",
+      recommendedAccountSubjectId: null, recommendedAccountSubjectName: null, recommendationReason: null, sourceKind: "dongil_fixed_certificate",
+      transactedAt: "2026-11-01T00:00:00+09:00", transactionKind: null,
+    };
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{ externalRecognitionKind: "FIXED_CERTIFICATE", originType: "EXTERNAL_RECOGNITION" }}
+      pageData={{ page: 1, pageSize: 50, totalCount: 2, totalPages: 1, rows: [assignedRow, { ...assignedRow, counterparty: "가수금 대상", confirmedAccountSubjectId: "suspense-subject", confirmedAccountSubjectName: "가수금", id: "external:suspense" }] }}
+      statusCounts={{ ...statusCounts, ALL: 2, CONFIRMED: 2 }}
+    />);
+
+    const contributionRow = screen.getByText("분담금 대상").closest("tr");
+    const suspenseRow = screen.getByText("가수금 대상").closest("tr");
+    expect(within(contributionRow!).getByText("분담금")).toBeInTheDocument();
+    expect(within(suspenseRow!).getByText("가수금")).toBeInTheDocument();
+    expect(screen.getAllByText("ERP 확정 · 정액필증 명단 대조")).toHaveLength(2);
+    expect(screen.queryByText("외부납입 인정 · 확정결손")).not.toBeInTheDocument();
+  });
+
   it("shows totals for the full filtered result instead of only the visible page", () => {
     render(<BankTransactionListPage
       bankAccounts={bankAccounts}
