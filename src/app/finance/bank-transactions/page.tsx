@@ -5,6 +5,7 @@ import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
 import {
   countBankTransactionsByStatus,
+  loadExternalRecognitionBreakdown,
   loadFilteredFinancialActivitySummary,
   loadFinancialActivitySummary,
   loadLedgerBankSourceSummary,
@@ -15,6 +16,7 @@ import {
   type BankTransactionSourceReconciliationStatus,
   type BankTransactionStatusCounts,
   type FinancialActivityOrigin,
+  type ExternalRecognitionKind,
 } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 
@@ -26,11 +28,15 @@ const classificationStatuses = new Set<BankTransactionClassificationStatus>([
   "EXCLUDED",
 ]);
 const activityOrigins = new Set<Exclude<FinancialActivityOrigin, "ALL">>(["BANK_TRANSACTION", "EXTERNAL_RECOGNITION"]);
+const externalRecognitionKinds: Record<string, ExternalRecognitionKind> = {
+  fixed: "FIXED_CERTIFICATE",
+  general: "GENERAL",
+};
 
 export default async function FinanceBankTransactionsRoute({
   searchParams,
 }: {
-  searchParams: Promise<{ accountId?: string; from?: string; origin?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string; view?: string }>;
+  searchParams: Promise<{ accountId?: string; externalKind?: string; from?: string; origin?: string; page?: string; q?: string; sourceReview?: string; status?: string; to?: string; transactionId?: string; view?: string }>;
 }) {
   const query = await searchParams;
   const parsedPage = Number.parseInt(query.page ?? "1", 10);
@@ -39,14 +45,19 @@ export default async function FinanceBankTransactionsRoute({
     ? query.status as BankTransactionClassificationStatus
     : undefined;
   const reviewRequired = query.view === "review";
+  const originType = !reviewRequired && activityOrigins.has(query.origin as Exclude<FinancialActivityOrigin, "ALL">)
+    ? query.origin as Exclude<FinancialActivityOrigin, "ALL">
+    : undefined;
+  const externalRecognitionKind = originType === "EXTERNAL_RECOGNITION" && query.externalKind
+    ? externalRecognitionKinds[query.externalKind]
+    : undefined;
   const filters = {
     bankAccountId: query.accountId?.trim() || undefined,
     classificationStatus,
     dateFrom: validDate(query.from),
     dateTo: validDate(query.to),
-    originType: !reviewRequired && activityOrigins.has(query.origin as Exclude<FinancialActivityOrigin, "ALL">)
-      ? query.origin as Exclude<FinancialActivityOrigin, "ALL">
-      : undefined,
+    externalRecognitionKind,
+    originType,
     query: query.q?.trim().slice(0, 100) || undefined,
     reviewRequired,
     sourceReconciliationStatus: !reviewRequired && query.sourceReview === "required"
@@ -73,12 +84,13 @@ export default async function FinanceBankTransactionsRoute({
   const sourceReviewTransactionIds = filters.sourceReconciliationStatus || filters.reviewRequired
     ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
     : undefined;
-  const [pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary] = actor ? await Promise.all([
+  const [pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary, externalRecognitionBreakdown] = actor ? await Promise.all([
     listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds),
     countBankTransactionsByStatus(actor.organization_id, {
       bankAccountId: filters.bankAccountId,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
+      externalRecognitionKind: filters.externalRecognitionKind,
       originType: filters.originType,
       query: filters.query,
       reviewRequired: filters.reviewRequired,
@@ -91,7 +103,10 @@ export default async function FinanceBankTransactionsRoute({
       ? loadBankTransactionRulePreview(actor.organization_id, actor.user_id, query.transactionId.trim()).catch(() => undefined)
       : Promise.resolve(undefined),
     loadFilteredFinancialActivitySummary(actor.organization_id, filters, sourceReviewTransactionIds).catch(() => undefined),
-  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined, undefined];
+    filters.originType === "EXTERNAL_RECOGNITION"
+      ? loadExternalRecognitionBreakdown(actor.organization_id, filters).catch(() => undefined)
+      : Promise.resolve(undefined),
+  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined, undefined, undefined];
   const issuesByTransaction = new Map(sourceReconciliationSummary?.issues.map((issue) => [issue.bankTransactionId, issue]) ?? []);
   const pageDataWithReconciliation = {
     ...pageData,
@@ -106,6 +121,7 @@ export default async function FinanceBankTransactionsRoute({
       canExport={Boolean(actor?.permissions.includes("ADMIN"))}
       filters={filters}
       activitySummary={activitySummary}
+      externalRecognitionBreakdown={externalRecognitionBreakdown}
       filteredSummary={filteredSummary}
       logoutAction={actor ? reimbursementLogout : undefined}
       ledgerSourceSummary={ledgerSourceSummary}

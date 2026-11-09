@@ -129,6 +129,11 @@ describe("BankTransactionListPage", () => {
         trustHeldTotal: 0,
       }}
       bankAccounts={bankAccounts}
+      externalRecognitionBreakdown={{
+        all: { activeCount: 2, rowCount: 3, total: 60000000 },
+        fixed: { activeCount: 1, rowCount: 1, total: 30000000 },
+        general: { activeCount: 1, rowCount: 2, total: 30000000 },
+      }}
       filters={{ originType: "EXTERNAL_RECOGNITION" }}
       pageData={{
         page: 1,
@@ -155,6 +160,7 @@ describe("BankTransactionListPage", () => {
           recommendedAccountSubjectName: null,
           recommendationReason: null,
           sourceRecordId: "recognition-1",
+          sourceKind: "dongil_fixed_certificate",
           transactedAt: "2009-07-13T00:00:00+09:00",
           transactionKind: null,
         }],
@@ -168,7 +174,36 @@ describe("BankTransactionListPage", () => {
     expect(screen.getByText("필증 인정")).toBeInTheDocument();
     expect(screen.getAllByText("비현금 인정").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" })).toHaveAttribute("href", "/finance/collections");
+    const sourceTabs = screen.getByRole("navigation", { name: "외부납입 원본 구분" });
+    expect(within(sourceTabs).getByRole("link", { name: /전체 외부납입3건 · 인정 2건 · 60,000,000원/ })).toHaveAttribute("aria-current", "page");
+    expect(within(sourceTabs).getByRole("link", { name: /동일건설 정액 필증 3천만원1건 · 인정 1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=fixed");
+    expect(within(sourceTabs).getByRole("link", { name: /일반 외부납입2건 · 인정 1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=general");
+    expect(screen.getByText("정액필증 3천만원")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("classifies a 30 million won external recognition by source kind, not by amount", () => {
+    const fixedRow = {
+      amount: 30000000, balanceAmount: null, bankAccountId: "", branchName: "", cashImpact: "NON_CASH_RECOGNITION" as const,
+      classificationStatus: "CONFIRMED" as const, counterparty: "정액 대상", description: "동일건설 정액 필증 3천만원", id: "external:fixed",
+      accountingTreatment: "confirmed_loss" as const, memo: "정액", originType: "EXTERNAL_RECOGNITION" as const, recognitionStatus: "ACTIVE" as const,
+      recommendedAccountSubjectId: null, recommendedAccountSubjectName: null, recommendationReason: null, sourceKind: "dongil_fixed_certificate",
+      transactedAt: "2026-11-01T00:00:00+09:00", transactionKind: null,
+    };
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{ externalRecognitionKind: "GENERAL", originType: "EXTERNAL_RECOGNITION" }}
+      pageData={{ page: 1, pageSize: 50, totalCount: 2, totalPages: 1, rows: [fixedRow, { ...fixedRow, counterparty: "일반 대상", description: "일반 외부납입", id: "external:general", sourceKind: "dongil_other" }] }}
+      statusCounts={{ ...statusCounts, ALL: 2, CONFIRMED: 2 }}
+    />);
+
+    const fixedTableRow = screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" }).closest("tr");
+    const generalTableRow = screen.getByRole("link", { name: /^일반 외부납입$/ }).closest("tr");
+    expect(fixedTableRow).not.toBeNull();
+    expect(generalTableRow).not.toBeNull();
+    expect(within(fixedTableRow!).getByText("정액필증 3천만원")).toBeInTheDocument();
+    expect(within(generalTableRow!).getAllByText("일반 외부납입").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "일반 외부납입 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION");
   });
 
   it("shows totals for the full filtered result instead of only the visible page", () => {
@@ -205,6 +240,14 @@ describe("BankTransactionListPage", () => {
     })).toBe(
       "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&origin=BANK_TRANSACTION&status=UNREVIEWED",
     );
+  });
+
+  it("preserves the external recognition kind across pagination", () => {
+    expect(bankTransactionPageHref(2, {
+      externalRecognitionKind: "FIXED_CERTIFICATE",
+      originType: "EXTERNAL_RECOGNITION",
+      query: "필증",
+    })).toBe("/finance/bank-transactions?page=2&q=%ED%95%84%EC%A6%9D&origin=EXTERNAL_RECOGNITION&externalKind=fixed");
   });
 
   it("switches between integrated, bank, external and review views without duplicating pages", () => {

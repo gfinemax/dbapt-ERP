@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import type { RegisteredBankAccount } from "@/features/basic-info/business-partner-data";
 import { defaultBankTransactionExportColumns } from "./bank-transaction-export-columns";
-import { buildBankTransactionExportData, buildBankTransactionPdf, buildBankTransactionWorkbook } from "./bank-transaction-export.server";
+import { bankTransactionFilterSummary, buildBankTransactionExportData, buildBankTransactionPdf, buildBankTransactionWorkbook } from "./bank-transaction-export.server";
 import type { BankTransactionListRow } from "./bank-transaction-repository";
 
 const account: RegisteredBankAccount = {
@@ -57,5 +57,30 @@ describe("bank transaction export", () => {
     expect(document.getPageCount()).toBe(1);
     expect(row.amount).toBe(520000);
     expect(pdf.byteLength).toBeGreaterThan(10_000);
+  });
+
+  it("exports fixed certificates separately from same-amount general external recognitions", () => {
+    const externalBase: BankTransactionListRow = {
+      amount: 30000000, balanceAmount: null, bankAccountId: "", branchName: "", cashImpact: "NON_CASH_RECOGNITION",
+      classificationStatus: "CONFIRMED", counterparty: "외부납입 대상", description: "외부납입", id: "external:fixed",
+      accountingTreatment: "confirmed_loss", memo: "", originType: "EXTERNAL_RECOGNITION", recognitionStatus: "ACTIVE",
+      recommendedAccountSubjectId: null, recommendedAccountSubjectName: null, recommendationReason: null,
+      transactedAt: "2026-11-01T00:00:00+09:00", transactionKind: null,
+    };
+    const exportData = buildBankTransactionExportData({
+      accountSubjects: [], bankAccounts: [], columns: ["account", "originType", "sourceStatus", "amount"],
+      filters: { externalRecognitionKind: "FIXED_CERTIFICATE", originType: "EXTERNAL_RECOGNITION" },
+      rows: [
+        { ...externalBase, sourceKind: "dongil_fixed_certificate" },
+        { ...externalBase, id: "external:general", sourceKind: "dongil_other" },
+      ],
+    });
+
+    expect(exportData.records[0]).toMatchObject({
+      account: "동일건설 정액 필증 3천만원 원장",
+      originType: "외부납입 인정 · 동일건설 정액 필증 3천만원",
+    });
+    expect(exportData.records[1]).toMatchObject({ account: "일반 외부납입 원장", originType: "외부납입 인정 · 일반 외부납입" });
+    expect(bankTransactionFilterSummary(exportData.filters)).toContain("외부납입 구분 동일건설 정액 필증 3천만원");
   });
 });

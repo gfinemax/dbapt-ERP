@@ -23,6 +23,7 @@ import type {
   BankTransactionRulePreview,
   BankTransactionStatusCounts,
   BankTransactionSourceReconciliationSummary,
+  ExternalRecognitionBreakdown,
   FinancialActivitySummary,
   FilteredFinancialActivitySummary,
   LedgerBankSourceSummary,
@@ -37,6 +38,7 @@ type Props = {
   canExport?: boolean;
   filters: BankTransactionListFilters;
   filteredSummary?: FilteredFinancialActivitySummary;
+  externalRecognitionBreakdown?: ExternalRecognitionBreakdown;
   ledgerSourceSummary?: LedgerBankSourceSummary;
   logoutAction?: () => Promise<void>;
   pageData: BankTransactionPageData;
@@ -89,6 +91,7 @@ export function BankTransactionListPage({
   activitySummary,
   bankAccounts,
   canExport = false,
+  externalRecognitionBreakdown,
   filters,
   filteredSummary,
   ledgerSourceSummary,
@@ -121,6 +124,9 @@ export function BankTransactionListPage({
         {accessError ? <p className="rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold" role="alert">{accessError}</p> : null}
 
         <ActivityViewTabs filters={filters} />
+        {filters.originType === "EXTERNAL_RECOGNITION" ? (
+          <ExternalRecognitionKindTabs breakdown={externalRecognitionBreakdown} filters={filters} />
+        ) : null}
 
         {activitySummary ? (
           <section aria-label="통합 거래 요약" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
@@ -169,6 +175,7 @@ export function BankTransactionListPage({
               {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
               {filters.sourceReconciliationStatus ? <input name="sourceReview" type="hidden" value="required" /> : null}
               {filters.originType ? <input name="origin" type="hidden" value={filters.originType} /> : null}
+              {filters.externalRecognitionKind ? <input name="externalKind" type="hidden" value={externalRecognitionKindParam(filters.externalRecognitionKind)} /> : null}
               {filters.reviewRequired ? <input name="view" type="hidden" value="review" /> : null}
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 거래 검색
@@ -344,7 +351,7 @@ export function BankTransactionListPage({
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">{formatDate(transaction.transactedAt)}</td>
                     <td className="px-2 py-2.5 text-center align-middle font-semibold" title={account ? `${account.accountName} · ${account.accountNo}` : undefined}>
                       {isExternalRecognition ? (
-                        <><span className="block">외부납입 인정</span><span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">{cashImpactLabel(transaction.cashImpact)}</span></>
+                        <><span className="block">{externalRecognitionKindLabel(transaction.sourceKind)}</span><span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">{cashImpactLabel(transaction.cashImpact)}</span></>
                       ) : account ? compactAccountName(account) : "계좌 정보 없음"}
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle">
@@ -377,7 +384,7 @@ export function BankTransactionListPage({
                     </td>
                     <td className="px-2 py-2.5 text-center align-middle">
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{isExternalRecognition ? externalStatusLabel(transaction.recognitionStatus, transaction.accountingTreatment) : classificationLabels[transaction.classificationStatus]}</span>
-                      {isExternalRecognition ? <span className="mt-1 block text-xs font-semibold text-[var(--color-stone)]">외부납입 원본</span> : null}
+                      {isExternalRecognition ? <span className="mt-1 block text-xs font-semibold text-[var(--color-stone)]">{externalRecognitionKindLabel(transaction.sourceKind)} 원본</span> : null}
                       {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}
                     </td>
                   </tr>
@@ -415,7 +422,7 @@ export function BankTransactionListPage({
 }
 
 type FilterChip = {
-  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "query" | "sourceReconciliationStatus";
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "externalRecognitionKind" | "query" | "sourceReconciliationStatus";
   label: string;
 };
 
@@ -426,6 +433,7 @@ function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?:
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
   if (filters.classificationStatus) chips.push({ key: "classificationStatus", label: classificationLabels[filters.classificationStatus] });
+  if (filters.externalRecognitionKind) chips.push({ key: "externalRecognitionKind", label: filters.externalRecognitionKind === "FIXED_CERTIFICATE" ? "동일건설 정액 필증 3천만원" : "일반 외부납입" });
   if (filters.sourceReconciliationStatus) chips.push({ key: "sourceReconciliationStatus", label: "원본 확인 필요" });
   return chips;
 }
@@ -438,6 +446,7 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
   if (filters.dateFrom) params.set("from", filters.dateFrom);
   if (filters.dateTo) params.set("to", filters.dateTo);
   if (filters.originType) params.set("origin", filters.originType);
+  if (filters.externalRecognitionKind) params.set("externalKind", externalRecognitionKindParam(filters.externalRecognitionKind));
   if (filters.classificationStatus) params.set("status", filters.classificationStatus);
   if (filters.reviewRequired) params.set("view", "review");
   if (filters.sourceReconciliationStatus) params.set("sourceReview", "required");
@@ -480,6 +489,43 @@ function ActivityViewTabs({ filters }: { filters: BankTransactionListFilters }) 
   );
 }
 
+function ExternalRecognitionKindTabs({
+  breakdown,
+  filters,
+}: {
+  breakdown?: ExternalRecognitionBreakdown;
+  filters: BankTransactionListFilters;
+}) {
+  const items = [
+    { key: "all", kind: undefined, label: "전체 외부납입", summary: breakdown?.all },
+    { key: "fixed", kind: "FIXED_CERTIFICATE" as const, label: "동일건설 정액 필증 3천만원", summary: breakdown?.fixed },
+    { key: "general", kind: "GENERAL" as const, label: "일반 외부납입", summary: breakdown?.general },
+  ];
+  return (
+    <nav aria-label="외부납입 원본 구분" className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-morning-tint)]/35 p-2 md:grid-cols-3">
+      {items.map((item) => {
+        const active = filters.externalRecognitionKind === item.kind;
+        return (
+          <Link
+            aria-current={active ? "page" : undefined}
+            className={`rounded-lg border px-3 py-2.5 text-center transition ${active ? "border-[var(--color-deep-cobalt)] bg-white text-[var(--color-deep-cobalt)] shadow-sm" : "border-transparent bg-white/70 text-[var(--color-midnight-ink)] hover:border-[var(--color-soft-border)]"}`}
+            href={bankTransactionPageHref(1, { ...filters, externalRecognitionKind: item.kind })}
+            key={item.key}
+          >
+            <span className="block text-sm font-black">{item.label}</span>
+            <span className="mt-0.5 block text-xs text-[var(--color-stone)]">
+              {item.summary
+                ? `${item.summary.rowCount.toLocaleString("ko-KR")}건 · 인정 ${item.summary.activeCount.toLocaleString("ko-KR")}건 · ${formatKrw(item.summary.total)}`
+                : "원본 종류 기준"}
+            </span>
+          </Link>
+        );
+      })}
+      <p className="md:col-span-3 px-1 text-xs text-[var(--color-stone)]">취소·제외 원본은 건수에 남기고 인정 합계에서는 제외해.</p>
+    </nav>
+  );
+}
+
 export function activityViewHref(view: "all" | "bank" | "external" | "review", filters: BankTransactionListFilters) {
   const shared: BankTransactionListFilters = {
     dateFrom: filters.dateFrom,
@@ -490,6 +536,10 @@ export function activityViewHref(view: "all" | "bank" | "external" | "review", f
   if (view === "external") return bankTransactionPageHref(1, { ...shared, originType: "EXTERNAL_RECOGNITION" });
   if (view === "review") return bankTransactionPageHref(1, { ...shared, reviewRequired: true });
   return bankTransactionPageHref(1, shared);
+}
+
+function externalRecognitionKindParam(kind: NonNullable<BankTransactionListFilters["externalRecognitionKind"]>) {
+  return kind === "FIXED_CERTIFICATE" ? "fixed" : "general";
 }
 
 function compactAccountName(account: RegisteredBankAccount) {
@@ -573,6 +623,10 @@ function cashImpactLabel(value?: string) {
   if (value === "BANK_CASH") return "조합계좌 현금";
   if (value === "TRUST_HELD") return "신탁사 보관";
   return "비현금 인정";
+}
+
+function externalRecognitionKindLabel(sourceKind?: string | null) {
+  return sourceKind === "dongil_fixed_certificate" ? "정액필증 3천만원" : "일반 외부납입";
 }
 
 function externalAccountingLabel(value?: string | null) {

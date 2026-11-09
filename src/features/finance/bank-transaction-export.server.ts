@@ -61,7 +61,7 @@ export function buildBankTransactionExportData(input: {
     if (isExternalRecognition && row.recognitionStatus === "ACTIVE" && row.accountingTreatment === "trust_receipt") trustHeld += row.actualFundAmount ?? 0;
     const { date, time } = koreaDateTimeParts(row.transactedAt);
     return {
-      account: isExternalRecognition ? "외부납입 인정 원장" : account ? `${account.bankName} · ${account.accountName} · ${account.accountNo}` : "계좌 정보 없음",
+      account: isExternalRecognition ? `${externalRecognitionKindLabel(row.sourceKind)} 원장` : account ? `${account.bankName} · ${account.accountName} · ${account.accountNo}` : "계좌 정보 없음",
       accountingTreatment: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : "",
       accountSubject: isExternalRecognition ? accountingTreatmentLabel(row.accountingTreatment) : subject?.businessCategory ? `${subject.businessCategory} · ${subjectName}` : subjectName,
       adminNote: row.classificationNote ?? "",
@@ -72,9 +72,9 @@ export function buildBankTransactionExportData(input: {
       counterparty: row.counterparty || "",
       description: row.description || "",
       details: transactionDetails(row),
-      originType: isExternalRecognition ? "외부납입 인정" : "은행 통장거래",
+      originType: isExternalRecognition ? `외부납입 인정 · ${externalRecognitionKindLabel(row.sourceKind)}` : "은행 통장거래",
       sourceRecordId: row.sourceRecordId ?? row.id,
-      sourceStatus: isExternalRecognition ? "Ledger 외부납입 인정 원본" : row.sourceReconciliationIssue ? `원본 확인 필요 · ${row.sourceReconciliationIssue.reason}` : "원본 대조 이상 없음",
+      sourceStatus: isExternalRecognition ? `Ledger ${externalRecognitionKindLabel(row.sourceKind)} 원본` : row.sourceReconciliationIssue ? `원본 확인 필요 · ${row.sourceReconciliationIssue.reason}` : "원본 대조 이상 없음",
       transactionDate: date,
       transactionId: row.id,
       transactionKind: isExternalRecognition ? cashImpactLabel(row.cashImpact) : row.transactionKind ?? "구분 미확인",
@@ -105,6 +105,10 @@ function accountingTreatmentLabel(value?: string | null) {
   if (value === "confirmed_loss") return "외부납입 인정 · 확정결손";
   if (value === "trust_receipt") return "외부납입 인정 · 신탁사 보관 수납";
   return "외부납입 인정 · 회계 처리 검토";
+}
+
+function externalRecognitionKindLabel(sourceKind?: string | null) {
+  return sourceKind === "dongil_fixed_certificate" ? "동일건설 정액 필증 3천만원" : "일반 외부납입";
 }
 
 function cleanTitle(value?: string) {
@@ -176,6 +180,7 @@ export function bankTransactionFilterSummary(filters: BankTransactionListFilters
     filters.query ? `검색어 ${filters.query}` : "",
     filters.bankAccountId ? `계좌 ID ${filters.bankAccountId}` : "전체 계좌",
     filters.originType ? `원본 ${filters.originType === "BANK_TRANSACTION" ? "은행 통장거래" : "외부납입 인정"}` : "전체 원본",
+    filters.externalRecognitionKind ? `외부납입 구분 ${filters.externalRecognitionKind === "FIXED_CERTIFICATE" ? "동일건설 정액 필증 3천만원" : "일반 외부납입"}` : "",
     filters.dateFrom ? `시작일 ${filters.dateFrom}` : "",
     filters.dateTo ? `종료일 ${filters.dateTo}` : "",
     filters.classificationStatus ? `상태 ${statusLabels[filters.classificationStatus]}` : "",

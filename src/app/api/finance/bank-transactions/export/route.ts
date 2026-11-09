@@ -111,12 +111,16 @@ function normalizeFilters(value: unknown): BankTransactionListFilters {
   const input = value && typeof value === "object" ? value as Record<string, unknown> : {};
   const status = typeof input.classificationStatus === "string" && classificationStatuses.has(input.classificationStatus as BankTransactionClassificationStatus)
     ? input.classificationStatus as BankTransactionClassificationStatus : undefined;
+  const originType = input.originType === "BANK_TRANSACTION" || input.originType === "EXTERNAL_RECOGNITION" ? input.originType : undefined;
   return {
     bankAccountId: cleanString(input.bankAccountId, 100),
     classificationStatus: status,
     dateFrom: cleanDate(input.dateFrom),
     dateTo: cleanDate(input.dateTo),
-    originType: input.originType === "BANK_TRANSACTION" || input.originType === "EXTERNAL_RECOGNITION" ? input.originType : undefined,
+    externalRecognitionKind: originType === "EXTERNAL_RECOGNITION" && (input.externalRecognitionKind === "FIXED_CERTIFICATE" || input.externalRecognitionKind === "GENERAL")
+      ? input.externalRecognitionKind
+      : undefined,
+    originType,
     query: cleanString(input.query, 100),
     sourceReconciliationStatus: input.sourceReconciliationStatus === "SOURCE_REVIEW_REQUIRED" ? "SOURCE_REVIEW_REQUIRED" : undefined,
   };

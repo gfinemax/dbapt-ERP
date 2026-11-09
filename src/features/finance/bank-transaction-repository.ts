@@ -34,6 +34,7 @@ export type BankTransactionClassificationStatus = "UNREVIEWED" | "RECOMMENDED" |
 export type BankTransactionSourceReconciliationStatus = "SOURCE_REVIEW_REQUIRED";
 export type FinancialActivityOrigin = "ALL" | "BANK_TRANSACTION" | "EXTERNAL_RECOGNITION";
 export type FinancialActivityCashImpact = "BANK_CASH" | "NON_CASH_RECOGNITION" | "TRUST_HELD";
+export type ExternalRecognitionKind = "FIXED_CERTIFICATE" | "GENERAL";
 
 export type BankTransactionReviewRow = {
   bankAccountId: string;
@@ -56,6 +57,7 @@ export type BankTransactionListFilters = {
   classificationStatus?: BankTransactionClassificationStatus;
   dateFrom?: string;
   dateTo?: string;
+  externalRecognitionKind?: ExternalRecognitionKind;
   originType?: Exclude<FinancialActivityOrigin, "ALL">;
   query?: string;
   reviewRequired?: boolean;
@@ -133,6 +135,18 @@ export type FilteredFinancialActivitySummary = {
   externalRecognitionCount: number;
   externalRecognitionTotal: number;
   resultCount: number;
+};
+
+export type ExternalRecognitionGroupSummary = {
+  activeCount: number;
+  rowCount: number;
+  total: number;
+};
+
+export type ExternalRecognitionBreakdown = {
+  all: ExternalRecognitionGroupSummary;
+  fixed: ExternalRecognitionGroupSummary;
+  general: ExternalRecognitionGroupSummary;
 };
 
 export type BankTransactionSourceReconciliationIssue = {
@@ -524,6 +538,12 @@ export async function listBankTransactions(
     .eq("organization_id", organizationId);
   if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
   if (filters.originType) request = request.eq("origin_type", filters.originType);
+  if (filters.externalRecognitionKind === "FIXED_CERTIFICATE") {
+    request = request.eq("origin_type", "EXTERNAL_RECOGNITION").eq("source_kind", "dongil_fixed_certificate");
+  }
+  if (filters.externalRecognitionKind === "GENERAL") {
+    request = request.eq("origin_type", "EXTERNAL_RECOGNITION").neq("source_kind", "dongil_fixed_certificate");
+  }
   if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
   if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
   else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
@@ -714,6 +734,12 @@ export async function countBankTransactionsByStatus(
       .eq("organization_id", organizationId);
     if (filters.bankAccountId) request = request.eq("bank_account_id", filters.bankAccountId);
     if (filters.originType) request = request.eq("origin_type", filters.originType);
+    if (filters.externalRecognitionKind === "FIXED_CERTIFICATE") {
+      request = request.eq("origin_type", "EXTERNAL_RECOGNITION").eq("source_kind", "dongil_fixed_certificate");
+    }
+    if (filters.externalRecognitionKind === "GENERAL") {
+      request = request.eq("origin_type", "EXTERNAL_RECOGNITION").neq("source_kind", "dongil_fixed_certificate");
+    }
     if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
     else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
@@ -775,6 +801,7 @@ export async function loadFilteredFinancialActivitySummary(
       p_classification_status: filters.classificationStatus ?? null,
       p_date_from: filters.dateFrom ?? null,
       p_date_to: filters.dateTo ?? null,
+      p_external_recognition_kind: filters.externalRecognitionKind ?? null,
       p_org: organizationId,
       p_origin_type: filters.originType ?? null,
       p_query: filters.query ?? null,
@@ -790,6 +817,36 @@ export async function loadFilteredFinancialActivitySummary(
     externalRecognitionTotal: Number(value.external_recognition_total) || 0,
     resultCount: Number(value.result_count) || 0,
   };
+}
+
+export async function loadExternalRecognitionBreakdown(
+  organizationId: string,
+  filters: Pick<BankTransactionListFilters, "classificationStatus" | "dateFrom" | "dateTo" | "query"> = {},
+): Promise<ExternalRecognitionBreakdown> {
+  const emptyGroup = (): ExternalRecognitionGroupSummary => ({ activeCount: 0, rowCount: 0, total: 0 });
+  const emptyBreakdown: ExternalRecognitionBreakdown = {
+    all: emptyGroup(),
+    fixed: emptyGroup(),
+    general: emptyGroup(),
+  };
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return emptyBreakdown;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .rpc("external_recognition_breakdown", {
+      p_classification_status: filters.classificationStatus ?? null,
+      p_date_from: filters.dateFrom ?? null,
+      p_date_to: filters.dateTo ?? null,
+      p_org: organizationId,
+      p_query: filters.query ?? null,
+    });
+  if (error) throw new Error(`외부납입 구분 요약을 불러오지 못했어: ${error.message}`);
+  const value = recordValue(data);
+  const group = (prefix: "all" | "fixed" | "general"): ExternalRecognitionGroupSummary => ({
+    activeCount: Number(value[`${prefix}_active_count`]) || 0,
+    rowCount: Number(value[`${prefix}_row_count`]) || 0,
+    total: Number(value[`${prefix}_total`]) || 0,
+  });
+  return { all: group("all"), fixed: group("fixed"), general: group("general") };
 }
 
 type ReconciliationBatchRow = {
