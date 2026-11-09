@@ -67,6 +67,7 @@ describe("ErpShell", () => {
     ["보고서·공시", "보고서 현황", "/finance/reports"],
     ["기준정보", "은행계좌 관리", "/basic-info?section=bank-accounts"],
     ["연동·설정", "은행 거래 업로드", "/finance/bank-transactions/upload"],
+    ["연동·설정", "시스템 속도", "/finance/performance"],
   ])("renders %s with its own focused detail menu", (workspace, detail, href) => {
     render(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel={workspace} activeDetailLabel={detail}><p>본문</p></ErpShell>);
     expect(screen.getByRole("link", { name: workspace })).toHaveAttribute("aria-current", "page");

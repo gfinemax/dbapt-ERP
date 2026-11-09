@@ -140,6 +140,7 @@ export const financeWorkspaceMenus: FinanceWorkspaceMenu[] = [
       { group: "업무 설정", label: "지출 처리 기준", href: "/finance/expense-settings" },
       { group: "업무 설정", label: "신탁 집행 기준", href: "/finance/workflow-settings" },
       { group: "업무 설정", label: "운영 준비 점검", href: "/finance/readiness" },
+      { group: "업무 설정", label: "시스템 속도", href: "/finance/performance" },
       { group: "업무 설정", label: "기존 자료 정리", href: "/finance/data-cleanup" },
     ],
   },
