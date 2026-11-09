@@ -5,7 +5,7 @@ import type { ChangeEvent } from "react";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { ApprovalDocument } from "@/features/approval/approval-domain";
+import type { ApprovalDocumentCandidate } from "@/features/approval/approval-domain";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { ExpenseComplianceSettings, EvidenceKind, EvidenceStatus, ExpenseKind } from "./expense-compliance";
 import type { BankTransactionResolutionCandidate } from "./expense-compliance-repository";
@@ -115,7 +115,7 @@ export function ExpenseResolutionCreateModal({
 }: {
   bankTransactionCandidates: BankTransactionResolutionCandidate[];
   cardTransactionCandidates: CorporateCardTransactionCandidate[];
-  approvalDocuments: ApprovalDocument[];
+  approvalDocuments: ApprovalDocumentCandidate[];
   directExpenseSettings: ExpenseComplianceSettings;
   expenseDetails: OperatingExpenseDetail[];
   batchImportError: string;

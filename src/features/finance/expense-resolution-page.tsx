@@ -18,7 +18,7 @@ import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { buildDocumentPdfFileName } from "@/features/shared/document-print-filename";
 import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
-import type { ApprovalDocument } from "@/features/approval/approval-domain";
+import type { ApprovalDocumentCandidate } from "@/features/approval/approval-domain";
 import type { ExpenseComplianceSettings } from "./expense-compliance";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { evaluateDirectExpensePolicy, type DirectExpenseDecision, type ExpenseCreationSource } from "./direct-expense-policy";
@@ -2190,7 +2190,7 @@ export function ExpenseResolutionPage({
   initialNextResolutionNo?: string;
   initialBankTransactions?: BankTransactionResolutionCandidate[];
   initialCardTransactions?: CorporateCardTransactionCandidate[];
-  initialApprovalDocuments?: ApprovalDocument[];
+  initialApprovalDocuments?: ApprovalDocumentCandidate[];
   initialBudgetProfiles?: Record<string, BudgetProfile>;
   initialExpenseDetails?: OperatingExpenseDetail[];
   directExpenseSettings?: ExpenseComplianceSettings;

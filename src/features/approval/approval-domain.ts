@@ -98,6 +98,11 @@ export type ApprovalDocument = {
   attachments?: Array<{ fileName: string; fileSize: number; id: string }>;
 };
 
+export type ApprovalDocumentCandidate = Pick<
+  ApprovalDocument,
+  "amount" | "approvalStatus" | "budgetItem" | "counterpartyName" | "documentNo" | "id" | "projectName" | "title"
+>;
+
 export type ApprovalDraftLine = {
   accountSubjectName: string;
   budgetItem?: string;

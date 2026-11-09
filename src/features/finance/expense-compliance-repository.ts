@@ -119,11 +119,12 @@ export async function deleteExpenseFactConfirmation(id: string, resolutionId: st
   await writeComplianceAudit(resolutionId, "FACT_CONFIRMATION_DELETED", actorLabel, { id }, null);
 }
 
-export async function listUnresolvedWithdrawalTransactions(organizationId?: string): Promise<BankTransactionResolutionCandidate[]> {
+export async function listUnresolvedWithdrawalTransactions(organizationId?: string, limit = 200): Promise<BankTransactionResolutionCandidate[]> {
   const supabase = requireSupabase();
+  const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
   let query = supabase.schema("finance").from("bank_transactions")
     .select("id,transacted_at,withdrawal_amount,counterparty,description,bank_transaction_uid,resolution_status")
-    .gt("withdrawal_amount", 0).order("transacted_at", { ascending: false }).limit(200);
+    .is("deleted_at", null).gt("withdrawal_amount", 0).order("transacted_at", { ascending: false }).limit(boundedLimit);
   if (organizationId) query = query.eq("organization_id", organizationId);
   const { data, error } = await query;
   if (error) throw new Error(`통장거래 조회 실패: ${error.message}`);

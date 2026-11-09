@@ -5,6 +5,7 @@ import {
   meetingStatusForAmount,
   validateApprovalDraft,
   type ApprovalDocument,
+  type ApprovalDocumentCandidate,
   type ApprovalDraftInput,
   type ApprovalStep,
 } from "./approval-domain";
@@ -277,6 +278,35 @@ export async function listApprovalDocuments(organizationId?: string, documentId?
       contracts,
       payments,
     ), authorization: bindings.get(row.id) ?? null,
+  }));
+}
+
+export async function listApprovedApprovalDocumentCandidates(
+  organizationId?: string,
+  limit = 50,
+): Promise<ApprovalDocumentCandidate[]> {
+  const actor = await requireApprovalActor();
+  if (organizationId && organizationId !== actor.organization_id) throw new Error("다른 조합의 기안을 조회할 수 없습니다.");
+  const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 100);
+  const { data, error } = await requireClient()
+    .schema("approval")
+    .from("documents")
+    .select("id,document_no,title,counterparty_name,project_name,budget_item,amount,approval_status")
+    .eq("organization_id", actor.organization_id)
+    .eq("approval_status", "APPROVED")
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false })
+    .limit(boundedLimit);
+  if (error) throw new Error(`승인된 기안 후보를 불러오지 못했어: ${error.message}`);
+  return ((data ?? []) as Pick<DocumentRow, "amount" | "approval_status" | "budget_item" | "counterparty_name" | "document_no" | "id" | "project_name" | "title">[]).map((row) => ({
+    amount: Number(row.amount),
+    approvalStatus: row.approval_status,
+    budgetItem: row.budget_item ?? undefined,
+    counterpartyName: row.counterparty_name ?? undefined,
+    documentNo: row.document_no,
+    id: row.id,
+    projectName: row.project_name || undefined,
+    title: row.title,
   }));
 }
 

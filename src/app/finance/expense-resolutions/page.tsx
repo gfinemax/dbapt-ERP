@@ -8,7 +8,7 @@ import { getExpenseComplianceSettings } from "@/features/finance/expense-complia
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
-import { listApprovalDocuments } from "@/features/approval/approval-repository";
+import { listApprovedApprovalDocumentCandidates } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
 import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
@@ -30,7 +30,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialNextResolutionNo: string | undefined;
   let initialBankTransactions: Awaited<ReturnType<typeof listUnresolvedWithdrawalTransactions>> = [];
   let initialCardTransactions: Awaited<ReturnType<typeof listUnresolvedCorporateCardTransactions>> = [];
-  let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovalDocuments>> = [];
+  let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovedApprovalDocumentCandidates>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
   let initialBudgetProfiles = {};
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
@@ -38,10 +38,10 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
     listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer),
     entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
-    listApprovalDocuments(organizationId),
+    listApprovedApprovalDocumentCandidates(organizationId, 50),
     getExpenseComplianceSettings(organizationId),
-    listUnresolvedWithdrawalTransactions(organizationId),
-    listUnresolvedCorporateCardTransactions(organizationId),
+    listUnresolvedWithdrawalTransactions(organizationId, 50),
+    listUnresolvedCorporateCardTransactions(organizationId, 50),
     listExpenseBudgetProfiles(organizationId),
     listOperatingExpenseDetails(organizationId),
   ] as const);
@@ -65,7 +65,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     dataLoadError = quickResult.reason instanceof Error ? quickResult.reason.message : "간편지출 전환 원본을 불러오지 못했습니다.";
   }
 
-  if (approvalResult.status === "fulfilled") initialApprovalDocuments = approvalResult.value.filter((document) => document.approvalStatus === "APPROVED");
+  if (approvalResult.status === "fulfilled") initialApprovalDocuments = approvalResult.value;
   else console.warn(`[expense-resolutions] Approval data unavailable: ${approvalResult.reason instanceof Error ? approvalResult.reason.message : String(approvalResult.reason)}`);
   if (settingsResult.status === "fulfilled") directExpenseSettings = settingsResult.value ?? directExpenseSettings;
   else console.warn(`[expense-resolutions] Approval policy data unavailable: ${settingsResult.reason instanceof Error ? settingsResult.reason.message : String(settingsResult.reason)}`);

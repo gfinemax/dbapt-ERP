@@ -1,4 +1,4 @@
-export const expenseResolutionListPageSize = 50;
+export const expenseResolutionListPageSize = 25;
 
 export type ExpenseResolutionListRequest = {
   page: number;

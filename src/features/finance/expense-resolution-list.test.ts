@@ -7,6 +7,10 @@ import {
 } from "./expense-resolution-list";
 
 describe("expense resolution list navigation", () => {
+  it("keeps the initial hydration page intentionally small", () => {
+    expect(expenseResolutionListPageSize).toBe(25);
+  });
+
   it("normalizes invalid pages and bounds the server search query", () => {
     expect(parseExpenseResolutionListRequest({ page: "0", q: "  복사용지  " })).toEqual({
       page: 1,
