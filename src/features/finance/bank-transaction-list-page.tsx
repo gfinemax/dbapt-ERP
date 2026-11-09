@@ -338,20 +338,7 @@ export function BankTransactionListPage({
                   ? `${accountSubject.businessCategory} · ${accountSubjectName}`
                   : accountSubjectName ?? "-";
                 const detailHref = `${currentListHref}${currentListHref.includes("?") ? "&" : "?"}transactionId=${encodeURIComponent(transaction.id)}`;
-                const transactionDetails = (isExternalRecognition ? [
-                  ["원본", "Ledger 외부납입 인정"],
-                  ["현금 영향", cashImpactLabel(transaction.cashImpact)],
-                  ["회계 처리", externalAccountingLabel(transaction.accountingTreatment)],
-                  ["인정 사유", transaction.memo ?? ""],
-                  ["Ledger 원본 ID", transaction.sourceRecordId ?? ""],
-                ] : [
-                  ["항목구분", transaction.uploadedCategory ?? ""],
-                  ["업로드 계정항목", transaction.uploadedAccountTitle ?? ""],
-                  ["메모·비고", transaction.memo ?? ""],
-                  ["취급점", transaction.branchName ?? ""],
-                  ["원본 적요", transaction.originalDescription && transaction.originalDescription !== transaction.description ? transaction.originalDescription : ""],
-                  ["원본 메모", transaction.originalMemo && transaction.originalMemo !== transaction.memo ? transaction.originalMemo : ""],
-                ] satisfies Array<[string, string]>).filter(([, value]) => Boolean(value.trim()));
+                const transactionDetail = transaction.transactionDetail?.trim() || transaction.memo?.trim() || transaction.description?.trim() || "-";
                 return (
                   <tr className="h-[52px] bg-white/70 hover:bg-[var(--color-cloud-veil)]/60" key={transaction.id}>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">{formatDate(transaction.transactedAt)}</td>
@@ -369,25 +356,13 @@ export function BankTransactionListPage({
                       <p className="mt-0.5 text-xs text-[var(--color-stone)]">{transaction.counterparty || "-"}</p>
                     </td>
                     <td className="break-words px-2 py-2.5 text-center align-middle text-xs">
-                      {transactionDetails.length ? (
-                        <dl className="grid gap-0.5">
-                          {transactionDetails.map(([label, value]) => (
-                            <div key={label}>
-                              <dt className="inline font-semibold text-[var(--color-stone)]">{label} · </dt>
-                              <dd className="inline text-[var(--color-midnight-ink)]">{value}</dd>
-                            </div>
-                          ))}
-                        </dl>
-                      ) : <p className="text-[var(--color-fog)]">원본 참고정보 없음</p>}
-                      {!isExternalRecognition && transaction.classificationNote ? (
-                        <p className="mt-1 font-semibold text-[var(--color-green-ink)]">관리자 비고 · {transaction.classificationNote}</p>
-                      ) : !isExternalRecognition ? <p className="mt-1 text-[var(--color-stone)]">관리자 비고 없음</p> : null}
+                      <p className="line-clamp-2 text-sm leading-5 text-[var(--color-midnight-ink)]" title={transactionDetail}>{transactionDetail}</p>
                       {!isExternalRecognition ? <Link
-                        aria-label={`${transaction.description || "적요 없음"} 거래내역·관리자 비고 수정`}
+                        aria-label={`${transaction.description || "적요 없음"} 거래내역 수정`}
                         className="mt-1 inline-block font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-2"
                         href={detailHref}
                       >
-                        거래내역·비고 수정
+                        거래내역 수정
                       </Link> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">

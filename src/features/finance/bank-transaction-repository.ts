@@ -112,6 +112,7 @@ export type BankTransactionListRow = BankTransactionReviewRow & {
   sourceMemo?: string;
   sourceUploadedAccountTitle?: string;
   sourceUploadedCategory?: string;
+  transactionDetail?: string;
   uploadedAccountTitle?: string;
   uploadedCategory?: string;
 };
@@ -167,7 +168,7 @@ export type BankTransactionSheetOverride = {
   sourceValue: string;
 };
 
-export type BankTransactionDetailField = "BRANCH_NAME" | "MEMO" | "UPLOADED_ACCOUNT_TITLE" | "UPLOADED_CATEGORY";
+export type BankTransactionDetailField = "BRANCH_NAME" | "MEMO" | "TRANSACTION_DETAIL" | "UPLOADED_ACCOUNT_TITLE" | "UPLOADED_CATEGORY";
 
 export type BankTransactionDetailOverride = {
   actorLabel: string;
@@ -179,15 +180,15 @@ export type BankTransactionDetailOverride = {
 };
 
 export type BankTransactionDetailOverrideInput = {
-  fields: Record<BankTransactionDetailField, string>;
   reason: string;
+  transactionDetail: string;
   transactionId: string;
 };
 
 export type BankTransactionDetailOverrideResult = {
   changed_count: number;
   transaction_id: string;
-  values: Record<BankTransactionDetailField, string>;
+  values: { TRANSACTION_DETAIL: string };
 };
 
 export type BankTransactionListPage = {
@@ -457,6 +458,10 @@ function normalizedBankTransactionSearch(value?: string) {
   return value?.replace(/[%_*,()]/g, " ").replace(/\s+/g, " ").trim();
 }
 
+function firstNonBlank(...values: Array<string | null | undefined>) {
+  return values.find((value) => Boolean(value?.trim()))?.trim() ?? "";
+}
+
 function reviewRequiredOrFilter(transactionIds?: string[]) {
   const sourceIds = (transactionIds ?? []).filter((value) => /^[A-Za-z0-9:_-]+$/.test(value));
   const clauses = ["classification_status.in.(UNREVIEWED,DEFERRED)"];
@@ -464,6 +469,35 @@ function reviewRequiredOrFilter(transactionIds?: string[]) {
     clauses.push(`and(origin_type.eq.BANK_TRANSACTION,source_record_id.in.(${sourceIds.join(",")}))`);
   }
   return clauses.join(",");
+}
+
+function transactionSearchOrFilter(search: string, includeTransactionDetail: boolean) {
+  const clauses = [
+    `description.ilike.%${search}%`,
+    `counterparty.ilike.%${search}%`,
+    `memo.ilike.%${search}%`,
+    `uploaded_major_category.ilike.%${search}%`,
+    `uploaded_account_title.ilike.%${search}%`,
+    `branch_name.ilike.%${search}%`,
+    `classification_note.ilike.%${search}%`,
+    `source_record_id.ilike.%${search}%`,
+  ];
+  if (includeTransactionDetail) clauses.unshift(`transaction_detail.ilike.%${search}%`);
+  return clauses.join(",");
+}
+
+async function supportsBankTransactionDetailSearch(organizationId: string, search?: string) {
+  if (!search) return false;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return false;
+  const { error } = await supabase.schema(bankTransactionRepositorySchema)
+    .rpc("search_bank_transaction_detail_ids", { p_org: organizationId, p_query: search })
+    .limit(1);
+  if (error) {
+    if (["42883", "PGRST202"].includes(error.code ?? "")) return false;
+    throw new Error(`ERP 거래내역 검색에 실패했어: ${error.message}`);
+  }
+  return true;
 }
 
 export async function listBankTransactions(
@@ -483,6 +517,8 @@ export async function listBankTransactions(
     return { page, pageSize, rows: [], totalCount: 0, totalPages: 1 };
   }
   const from = (page - 1) * pageSize;
+  const search = normalizedBankTransactionSearch(filters.query);
+  const supportsDetailSearch = await supportsBankTransactionDetailSearch(organizationId, search);
   let request = supabase.schema(bankTransactionRepositorySchema).from("financial_activity_feed")
     .select("activity_id,origin_type,source_record_id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,activity_amount,balance_amount,counterparty,branch_name,uploaded_major_category,uploaded_account_title,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,classification_note,recommendation_reason,cash_impact,source_kind,accounting_treatment,recognition_status,actual_fund_amount,loss_amount,source_root_record_id,linkage_status", { count: "exact" })
     .eq("organization_id", organizationId);
@@ -493,8 +529,7 @@ export async function listBankTransactions(
   else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-  const search = normalizedBankTransactionSearch(filters.query);
-  if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%,uploaded_account_title.ilike.%${search}%,branch_name.ilike.%${search}%,classification_note.ilike.%${search}%,source_record_id.ilike.%${search}%`);
+  if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch));
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("activity_id", { ascending: false })
@@ -561,6 +596,14 @@ export async function listBankTransactions(
     sourceUploadedAccountTitle: row.uploaded_account_title ?? "",
     sourceUploadedCategory,
     transactedAt: row.transacted_at,
+    transactionDetail: firstNonBlank(
+      detailValue("TRANSACTION_DETAIL"),
+      detailValue("MEMO"),
+      sourceMemo,
+      detailValue("UPLOADED_ACCOUNT_TITLE"),
+      row.uploaded_account_title,
+      row.description,
+    ),
     transactionKind: row.origin_type === "BANK_TRANSACTION" ? row.transaction_kind : null,
     uploadedAccountTitle: detailValue("UPLOADED_ACCOUNT_TITLE") ?? row.uploaded_account_title ?? "",
     uploadedCategory: detailValue("UPLOADED_CATEGORY") ?? sourceUploadedCategory,
@@ -663,6 +706,7 @@ export async function countBankTransactionsByStatus(
   if (!supabase) return emptyCounts;
   if (transactionIds && transactionIds.length === 0 && filters.sourceReconciliationStatus && !filters.reviewRequired) return emptyCounts;
   const search = normalizedBankTransactionSearch(filters.query);
+  const supportsDetailSearch = await supportsBankTransactionDetailSearch(organizationId, search);
 
   const entries = await Promise.all([undefined, ...bankTransactionClassificationStatuses].map(async (status) => {
     let request = supabase.schema(bankTransactionRepositorySchema).from("financial_activity_feed")
@@ -674,7 +718,7 @@ export async function countBankTransactionsByStatus(
     else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-    if (search) request = request.or(`description.ilike.%${search}%,counterparty.ilike.%${search}%,memo.ilike.%${search}%,uploaded_major_category.ilike.%${search}%,uploaded_account_title.ilike.%${search}%,branch_name.ilike.%${search}%,classification_note.ilike.%${search}%,source_record_id.ilike.%${search}%`);
+    if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch));
     if (status) request = request.eq("classification_status", status);
     const { count, error } = await request;
     if (error) throw new Error(`은행거래 상태별 건수를 불러오지 못했어: ${error.message}`);
@@ -1041,7 +1085,7 @@ export async function saveBankTransactionDetailOverrides(
   if (!supabase) throw new Error("Supabase is not configured.");
   const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc("save_bank_transaction_detail_overrides", {
     p_actor: actorId,
-    p_fields: input.fields,
+    p_fields: { TRANSACTION_DETAIL: input.transactionDetail },
     p_org: organizationId,
     p_reason: input.reason,
     p_transaction_id: input.transactionId,

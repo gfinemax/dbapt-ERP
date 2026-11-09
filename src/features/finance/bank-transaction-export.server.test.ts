@@ -30,7 +30,7 @@ const row: BankTransactionListRow = {
   amount: 520000, balanceAmount: 1000000, bankAccountId: account.id, branchName: "신협중앙지점", classificationNote: "회의 식대",
   classificationStatus: "CONFIRMED", confirmedAccountSubjectId: subject.id, confirmedAccountSubjectName: subject.name, counterparty: "옛골식당",
   description: "옛골식당", id: "transaction-1", memo: "운영비 카드", recommendedAccountSubjectId: null, recommendedAccountSubjectName: null,
-  recommendationReason: null, transactedAt: "2026-11-03T03:37:00+09:00", transactionKind: "출금", uploadedAccountTitle: "복리후생비",
+  recommendationReason: null, transactedAt: "2026-11-03T03:37:00+09:00", transactionDetail: "운영위원 회의 식대", transactionKind: "출금", uploadedAccountTitle: "복리후생비",
   uploadedCategory: "지출-운영비",
 };
 
@@ -47,7 +47,7 @@ describe("bank transaction export", () => {
     expect(transactions[0]).toEqual(["거래일", "일시", "계좌", "적요", "거래내역", "금액", "계정과목"]);
     expect(transactions[1][3]).toBe("옛골식당");
     expect(transactions[1][5]).toBe(-520000);
-    expect(String(transactions[1][4])).toContain("항목구분: 지출-운영비");
+    expect(transactions[1][4]).toBe("운영위원 회의 식대");
     expect(String(transactions[1][6])).toContain("복리후생비(식대)");
   });
 

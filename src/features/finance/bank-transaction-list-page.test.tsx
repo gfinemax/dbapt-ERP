@@ -38,6 +38,7 @@ const pageData = {
     recommendationReason: "거래 적요 키워드로 추천함",
     memo: "9월 인터넷 요금",
     transactedAt: "2026-09-27T09:00:00+09:00",
+    transactionDetail: "9월 인터넷 요금",
     transactionKind: "출금" as const,
     uploadedAccountTitle: "통신비",
     uploadedCategory: "운영비",
@@ -163,7 +164,8 @@ describe("BankTransactionListPage", () => {
 
     expect(screen.getByRole("region", { name: "통합 거래 요약" })).toHaveTextContent("외부납입 인정30,000,000원1건 · 통장 입금 아님");
     expect(within(screen.getByRole("navigation", { name: "거래내역 구분" })).getByRole("link", { name: /외부납입 인정/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getAllByText("외부납입 인정 · 확정결손")).toHaveLength(2);
+    expect(screen.getAllByText("외부납입 인정 · 확정결손")).toHaveLength(1);
+    expect(screen.getByText("필증 인정")).toBeInTheDocument();
     expect(screen.getAllByText("비현금 인정").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" })).toHaveAttribute("href", "/finance/collections");
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -224,7 +226,7 @@ describe("BankTransactionListPage", () => {
     expect(activityViewHref("review", filters)).toBe("/finance/bank-transactions?q=KT&from=2026-01-01&view=review");
   });
 
-  it("uses a compact seven-column table with a combined transaction detail column", () => {
+  it("uses a compact seven-column table with one ERP transaction detail value", () => {
     render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{}} pageData={pageData} statusCounts={statusCounts} />);
 
     expect(screen.getAllByRole("columnheader")).toHaveLength(7);
@@ -239,12 +241,11 @@ describe("BankTransactionListPage", () => {
     expect(transactionRow).not.toBeNull();
     const transactionCells = within(transactionRow!).getAllByRole("cell");
     expect(transactionCells.every((cell) => cell.classList.contains("text-center"))).toBe(true);
-    expect(transactionCells[3]).toHaveTextContent("항목구분 · 운영비");
-    expect(transactionCells[3]).toHaveTextContent("업로드 계정항목 · 통신비");
-    expect(transactionCells[3]).toHaveTextContent("메모·비고 · 9월 인터넷 요금");
-    expect(transactionCells[3]).toHaveTextContent("취급점 · 대방동");
-    expect(transactionCells[3]).toHaveTextContent("관리자 비고 · KT 청구서와 대조 필요");
-    expect(within(transactionRow!).getByRole("link", { name: "인터넷 요금 거래내역·관리자 비고 수정" })).toHaveAttribute("href", "/finance/bank-transactions?page=2&transactionId=transaction-1");
+    expect(transactionCells[3]).toHaveTextContent("9월 인터넷 요금");
+    expect(transactionCells[3]).not.toHaveTextContent("항목구분");
+    expect(transactionCells[3]).not.toHaveTextContent("업로드 계정항목");
+    expect(transactionCells[3]).not.toHaveTextContent("관리자 비고");
+    expect(within(transactionRow!).getByRole("link", { name: "인터넷 요금 거래내역 수정" })).toHaveAttribute("href", "/finance/bank-transactions?page=2&transactionId=transaction-1");
     expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-2", "py-2.5", "text-center");
     expect(document.querySelector("table")).toHaveClass("min-w-[1040px]", "table-fixed");
     expect([...document.querySelectorAll("colgroup col")].map((column) => column.className)).toEqual([
@@ -365,15 +366,12 @@ describe("BankTransactionListPage", () => {
     expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();
   });
 
-  it("edits the combined transaction-detail column without changing source references", async () => {
+  it("edits one ERP transaction-detail value without changing source references", async () => {
     const saveDetailOverridesAction = vi.fn().mockResolvedValue({
-      changed_count: 3,
+      changed_count: 1,
       transaction_id: "transaction-1",
       values: {
-        BRANCH_NAME: "본점",
-        MEMO: "10월 통신비",
-        UPLOADED_ACCOUNT_TITLE: "통신비",
-        UPLOADED_CATEGORY: "운영비-통신",
+        TRANSACTION_DETAIL: "10월 통신비 납부",
       },
     });
     render(<BankTransactionListPage
@@ -392,23 +390,18 @@ describe("BankTransactionListPage", () => {
     const editor = within(drawer).getByRole("region", { name: "ERP 거래내역 편집" });
     expect(within(editor).getByRole("button", { name: "거래내역 저장" })).toBeDisabled();
 
-    fireEvent.change(within(editor).getByLabelText("항목구분 표시값"), { target: { value: "운영비-통신" } });
-    fireEvent.change(within(editor).getByLabelText("취급점 표시값"), { target: { value: "본점" } });
-    fireEvent.change(within(editor).getByLabelText("메모·비고 표시값"), { target: { value: "10월 통신비" } });
+    expect(within(editor).queryByLabelText("항목구분 표시값")).not.toBeInTheDocument();
+    expect(within(editor).queryByLabelText("취급점 표시값")).not.toBeInTheDocument();
+    fireEvent.change(within(editor).getByLabelText("거래내역"), { target: { value: "10월 통신비 납부" } });
     fireEvent.change(within(editor).getByLabelText("거래내역 수정 사유"), { target: { value: "통장 원문 대조" } });
     fireEvent.click(within(editor).getByRole("button", { name: "거래내역 저장" }));
 
     expect(saveDetailOverridesAction).toHaveBeenCalledWith({
-      fields: {
-        BRANCH_NAME: "본점",
-        MEMO: "10월 통신비",
-        UPLOADED_ACCOUNT_TITLE: "통신비",
-        UPLOADED_CATEGORY: "운영비-통신",
-      },
       reason: "통장 원문 대조",
+      transactionDetail: "10월 통신비 납부",
       transactionId: "transaction-1",
     });
-    expect(await within(editor).findByText("거래내역 3개 항목을 수정했어.")).toBeInTheDocument();
+    expect(await within(editor).findByText("거래내역을 수정했어.")).toBeInTheDocument();
     expect(source).toHaveTextContent("항목구분운영비");
   });
 
@@ -433,11 +426,12 @@ describe("BankTransactionListPage", () => {
           uploadedCategory: "지출-운영비",
         }],
       }}
+      selectedTransactionId="transaction-1"
       statusCounts={statusCounts}
     />);
 
     expect(screen.getByText("운영비 · 복리후생비(식대)")).toBeInTheDocument();
-    expect(screen.getByText("지출-운영비").closest("div")).toHaveTextContent("항목구분 · 지출-운영비");
+    expect(within(screen.getByRole("region", { name: "업로드 참고 정보" })).getByText("지출-운영비").closest("div")).toHaveTextContent("항목구분지출-운영비");
   });
 
   it("lets an administrator choose ordered Excel or PDF export columns for the current result", () => {

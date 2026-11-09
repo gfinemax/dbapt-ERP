@@ -92,23 +92,7 @@ export function buildBankTransactionExportData(input: {
 }
 
 function transactionDetails(row: BankTransactionListRow) {
-  if (row.originType === "EXTERNAL_RECOGNITION") {
-    return ([
-      ["원본", "Ledger 외부납입 인정"],
-      ["현금 영향", cashImpactLabel(row.cashImpact)],
-      ["회계 처리", accountingTreatmentLabel(row.accountingTreatment)],
-      ["인정 사유", row.memo ?? ""],
-      ["Ledger 원본 ID", row.sourceRecordId ?? ""],
-    ] satisfies Array<[string, string]>).filter(([, value]) => value.trim()).map(([label, value]) => `${label}: ${value.trim()}`).join("\n");
-  }
-  return ([
-    ["항목구분", row.uploadedCategory ?? ""],
-    ["업로드 계정항목", row.uploadedAccountTitle ?? ""],
-    ["메모·비고", row.memo ?? ""],
-    ["취급점", row.branchName ?? ""],
-    ["원본 적요", row.originalDescription && row.originalDescription !== row.description ? row.originalDescription : ""],
-    ["원본 메모", row.originalMemo && row.originalMemo !== row.memo ? row.originalMemo : ""],
-  ] satisfies Array<[string, string]>).filter(([, value]) => value.trim()).map(([label, value]) => `${label}: ${value.trim()}`).join("\n");
+  return row.transactionDetail?.trim() || row.memo?.trim() || row.description?.trim() || "";
 }
 
 function cashImpactLabel(value?: string) {
