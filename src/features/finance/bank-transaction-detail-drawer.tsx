@@ -8,6 +8,9 @@ import { Button } from "@/components/ui/button";
 import type { RegisteredAccountSubject } from "@/features/basic-info/account-subject-data";
 import type {
   BankTransactionListRow,
+  BankTransactionDetailField,
+  BankTransactionDetailOverrideInput,
+  BankTransactionDetailOverrideResult,
   BankTransactionReviewAction,
   BankTransactionReviewInput,
   BankTransactionReviewResult,
@@ -21,6 +24,7 @@ type Props = {
   accountSubjects: RegisteredAccountSubject[];
   closeHref: string;
   rulePreview?: BankTransactionRulePreview;
+  saveDetailOverridesAction?: (input: BankTransactionDetailOverrideInput) => Promise<BankTransactionDetailOverrideResult>;
   saveReviewAction?: (input: BankTransactionReviewInput) => Promise<BankTransactionReviewResult>;
   transaction: BankTransactionListRow;
 };
@@ -33,11 +37,28 @@ const classificationLabels = {
   UNREVIEWED: "미확인",
 } as const;
 
-export function BankTransactionDetailDrawer({ accountName, accountSubjects, closeHref, rulePreview, saveReviewAction, transaction }: Props) {
+type EditableDetails = BankTransactionDetailOverrideInput["fields"];
+
+function editableDetails(transaction: BankTransactionListRow): EditableDetails {
+  return {
+    BRANCH_NAME: transaction.branchName ?? "",
+    MEMO: transaction.memo ?? "",
+    UPLOADED_ACCOUNT_TITLE: transaction.uploadedAccountTitle ?? "",
+    UPLOADED_CATEGORY: transaction.uploadedCategory ?? "",
+  };
+}
+
+export function BankTransactionDetailDrawer({ accountName, accountSubjects, closeHref, rulePreview, saveDetailOverridesAction, saveReviewAction, transaction }: Props) {
   const router = useRouter();
   const closeRef = useRef<HTMLAnchorElement>(null);
   const [selectedSubjectId, setSelectedSubjectId] = useState(transaction.confirmedAccountSubjectId ?? transaction.recommendedAccountSubjectId ?? "");
   const [adminNote, setAdminNote] = useState(transaction.classificationNote ?? "");
+  const [savedDetails, setSavedDetails] = useState<EditableDetails>(() => editableDetails(transaction));
+  const [detailFields, setDetailFields] = useState<EditableDetails>(() => editableDetails(transaction));
+  const [detailReason, setDetailReason] = useState("");
+  const [detailSaving, setDetailSaving] = useState(false);
+  const [detailMessage, setDetailMessage] = useState<string | null>(null);
+  const [detailError, setDetailError] = useState<string | null>(null);
   const [ruleScope, setRuleScope] = useState<BankTransactionRuleScope>(rulePreview ? "MATCHING_AND_FUTURE" : "SINGLE");
   const [pendingAction, setPendingAction] = useState<BankTransactionReviewAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -59,7 +80,7 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
     .sort((left, right) => Number(Boolean(right.isPrimary)) - Number(Boolean(left.isPrimary)) || left.sortOrder - right.sortOrder || left.name.localeCompare(right.name, "ko-KR"));
 
   async function saveReview(action: BankTransactionReviewAction) {
-    if (!saveReviewAction || pendingAction) return;
+    if (!saveReviewAction || pendingAction || detailSaving) return;
     if (action === "CONFIRM" && !selectedSubjectId) {
       setError("확정할 계정과목을 먼저 선택해줘.");
       return;
@@ -85,6 +106,36 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
     }
   }
 
+  const hasDetailChanges = (Object.keys(detailFields) as BankTransactionDetailField[])
+    .some((field) => detailFields[field].trim() !== savedDetails[field].trim());
+
+  async function saveDetailOverrides() {
+    if (!saveDetailOverridesAction || detailSaving || pendingAction) return;
+    if (!hasDetailChanges) {
+      setDetailError("수정된 거래내역이 없어.");
+      return;
+    }
+    if (detailReason.trim().length < 2) {
+      setDetailError("수정 사유를 2자 이상 입력해줘.");
+      return;
+    }
+    setDetailSaving(true);
+    setDetailMessage(null);
+    setDetailError(null);
+    try {
+      const saved = await saveDetailOverridesAction({ fields: detailFields, reason: detailReason, transactionId: transaction.id });
+      setDetailFields(saved.values);
+      setSavedDetails(saved.values);
+      setDetailReason("");
+      setDetailMessage(saved.changed_count > 0 ? `거래내역 ${saved.changed_count.toLocaleString("ko-KR")}개 항목을 수정했어.` : "변경된 거래내역이 없어.");
+      router.refresh();
+    } catch (caught) {
+      setDetailError(caught instanceof Error ? caught.message : "ERP 거래내역을 저장하지 못했어.");
+    } finally {
+      setDetailSaving(false);
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-black/25" role="presentation">
       <Link aria-label="거래 상세 닫기" className="absolute inset-0" href={closeHref} />
@@ -98,7 +149,7 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
           <div>
             <p className="text-xs font-bold text-[var(--color-deep-cobalt)]">은행거래 검토</p>
             <h2 className="mt-2 text-2xl font-bold" id="bank-transaction-detail-title">{transaction.description || "적요 없음"}</h2>
-            <p className="mt-2 text-sm text-[var(--color-stone)]">업로드 원문을 참고해 ERP 계정과목과 관리자 비고를 기록해.</p>
+            <p className="mt-2 text-sm text-[var(--color-stone)]">업로드 원문을 참고해 ERP 거래내역·계정과목·관리자 비고를 기록해.</p>
           </div>
           <Link ref={closeRef} className="rounded-full border border-[var(--color-soft-border)] px-4 py-2 text-sm font-semibold" href={closeHref}>
             닫기
@@ -114,7 +165,7 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
             <Detail label="입출금" value={transaction.transactionKind ?? "미확정"} />
             <Detail label={amountLabel} value={formatKrw(transaction.amount)} strong />
             <Detail label="거래 후 잔액" value={transaction.balanceAmount === null ? "-" : formatKrw(transaction.balanceAmount)} />
-            <Detail label="거래처·거래점" value={[transaction.counterparty, transaction.branchName].filter(Boolean).join(" · ") || "-"} />
+            <Detail label="거래처·거래점" value={[transaction.counterparty, transaction.sourceBranchName ?? transaction.branchName].filter(Boolean).join(" · ") || "-"} />
           </dl>
         </section>
 
@@ -122,11 +173,38 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
           <h3 className="font-bold text-[var(--color-deep-cobalt)]">업로드 참고 정보</h3>
           <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">시트의 항목구분·메모는 추천 참고자료야. ERP 계정과목을 자동 확정하지는 않아.</p>
           <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
-            <ReferenceDetail label="항목구분" value={transaction.uploadedCategory || "없음"} />
-            <ReferenceDetail label="업로드 계정항목" value={transaction.uploadedAccountTitle || "없음"} />
-            <ReferenceDetail label="업로드 메모" value={transaction.memo || "없음"} wide />
+            <ReferenceDetail label="항목구분" value={(transaction.sourceUploadedCategory ?? transaction.uploadedCategory) || "없음"} />
+            <ReferenceDetail label="업로드 계정항목" value={(transaction.sourceUploadedAccountTitle ?? transaction.uploadedAccountTitle) || "없음"} />
+            <ReferenceDetail label="업로드 메모" value={(transaction.sourceMemo ?? transaction.memo) || "없음"} wide />
             {transaction.originalDescription && transaction.originalDescription !== transaction.description ? <ReferenceDetail label="은행 원본 적요" value={transaction.originalDescription} wide /> : null}
           </dl>
+        </section>
+
+        <section aria-label="ERP 거래내역 편집" className="mt-5 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 shadow-sm">
+          <h3 className="font-bold">ERP 거래내역 편집</h3>
+          <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">목록의 거래내역 컬럼에 표시되는 값만 수정해. 은행·Ledger·업로드 원문은 그대로 보존하고 수정 이력을 남겨.</p>
+          {saveDetailOverridesAction ? (
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              <DetailInput field="UPLOADED_CATEGORY" label="항목구분 표시값" onChange={(field, value) => setDetailFields((current) => ({ ...current, [field]: value }))} value={detailFields.UPLOADED_CATEGORY} />
+              <DetailInput field="UPLOADED_ACCOUNT_TITLE" label="계정항목 표시값" onChange={(field, value) => setDetailFields((current) => ({ ...current, [field]: value }))} value={detailFields.UPLOADED_ACCOUNT_TITLE} />
+              <DetailInput field="BRANCH_NAME" label="취급점 표시값" onChange={(field, value) => setDetailFields((current) => ({ ...current, [field]: value }))} value={detailFields.BRANCH_NAME} />
+              <label className="grid gap-1.5 text-sm font-semibold sm:col-span-2">
+                메모·비고 표시값
+                <textarea aria-label="메모·비고 표시값" className="min-h-20 resize-y rounded-lg border border-[var(--color-soft-border)] px-3 py-2 font-normal" maxLength={2000} onChange={(event) => setDetailFields((current) => ({ ...current, MEMO: event.target.value }))} value={detailFields.MEMO} />
+              </label>
+              <label className="grid gap-1.5 text-sm font-semibold sm:col-span-2">
+                수정 사유
+                <input aria-label="거래내역 수정 사유" className="h-11 rounded-lg border border-[var(--color-soft-border)] px-3 font-normal" maxLength={500} onChange={(event) => setDetailReason(event.target.value)} placeholder="원문 대조 결과나 수정 근거를 입력해줘." value={detailReason} />
+              </label>
+              {detailMessage ? <p className="rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)] sm:col-span-2" role="status">{detailMessage}</p> : null}
+              {detailError ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)] sm:col-span-2" role="alert">{detailError}</p> : null}
+              <div className="flex justify-end sm:col-span-2">
+                <Button disabled={detailSaving || Boolean(pendingAction) || !hasDetailChanges} onClick={() => void saveDetailOverrides()} size="sm" type="button">{detailSaving ? "저장 중..." : "거래내역 저장"}</Button>
+              </div>
+            </div>
+          ) : (
+            <p className="mt-4 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm text-[var(--color-stone)]">조회 권한으로 접속했어. 거래내역 표시값 수정은 관리자만 할 수 있어.</p>
+          )}
         </section>
 
         <section aria-label="ERP 계정과목 검토" className="mt-5 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 shadow-sm">
@@ -186,10 +264,10 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
               {message ? <p className="rounded-lg bg-[var(--color-sprout)] px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]" role="status">{message}</p> : null}
               {error ? <p className="rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{error}</p> : null}
               <div className="flex flex-wrap justify-end gap-2">
-                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("NOTE")} size="sm" type="button" variant="outline">{pendingAction === "NOTE" ? "저장 중..." : "비고만 저장"}</Button>
-                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("DEFER")} size="sm" type="button" variant="outline">{pendingAction === "DEFER" ? "저장 중..." : "검토 보류"}</Button>
-                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("EXCLUDE")} size="sm" type="button" variant="outline">{pendingAction === "EXCLUDE" ? "저장 중..." : "제외"}</Button>
-                <Button disabled={Boolean(pendingAction)} onClick={() => saveReview("CONFIRM")} size="sm" type="button">{pendingAction === "CONFIRM" ? "확정 중..." : ruleScope === "SINGLE" ? "이 거래 저장·확정" : "선택 범위 저장·확정"}</Button>
+                <Button disabled={Boolean(pendingAction) || detailSaving} onClick={() => saveReview("NOTE")} size="sm" type="button" variant="outline">{pendingAction === "NOTE" ? "저장 중..." : "비고만 저장"}</Button>
+                <Button disabled={Boolean(pendingAction) || detailSaving} onClick={() => saveReview("DEFER")} size="sm" type="button" variant="outline">{pendingAction === "DEFER" ? "저장 중..." : "검토 보류"}</Button>
+                <Button disabled={Boolean(pendingAction) || detailSaving} onClick={() => saveReview("EXCLUDE")} size="sm" type="button" variant="outline">{pendingAction === "EXCLUDE" ? "저장 중..." : "제외"}</Button>
+                <Button disabled={Boolean(pendingAction) || detailSaving} onClick={() => saveReview("CONFIRM")} size="sm" type="button">{pendingAction === "CONFIRM" ? "확정 중..." : ruleScope === "SINGLE" ? "이 거래 저장·확정" : "선택 범위 저장·확정"}</Button>
               </div>
             </div>
           ) : (
@@ -230,9 +308,37 @@ export function BankTransactionDetailDrawer({ accountName, accountSubjects, clos
             </div>
           </section>
         ) : null}
+
+        {transaction.detailOverrides?.length ? (
+          <section className="mt-5 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/45 p-4" aria-label="ERP 거래내역 수정 이력">
+            <h3 className="font-bold">ERP 거래내역 수정 이력</h3>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">최근 수정부터 표시해. 원본 값은 변경되지 않았어.</p>
+            <div className="mt-4 space-y-3">
+              {transaction.detailOverrides.map((override, index) => (
+                <div className="rounded-lg bg-white p-3 text-sm" key={`${override.fieldName}-${override.createdAt}-${index}`}>
+                  <p className="font-bold">{detailFieldLabel(override.fieldName)}</p>
+                  <p className="mt-1 text-[var(--color-stone)]">이전 · {override.previousValue || "값 없음"}</p>
+                  <p className="mt-1 font-semibold">수정 · {override.value || "값 없음"}</p>
+                  <p className="mt-2 text-xs text-[var(--color-stone)]">{override.reason} · {override.actorLabel} · {formatDateTime(override.createdAt)}</p>
+                </div>
+              ))}
+            </div>
+          </section>
+        ) : null}
       </aside>
     </div>
   );
+}
+
+function DetailInput({ field, label, onChange, value }: { field: BankTransactionDetailField; label: string; onChange: (field: BankTransactionDetailField, value: string) => void; value: string }) {
+  return <label className="grid gap-1.5 text-sm font-semibold">{label}<input aria-label={label} className="h-11 rounded-lg border border-[var(--color-soft-border)] px-3 font-normal" maxLength={200} onChange={(event) => onChange(field, event.target.value)} value={value} /></label>;
+}
+
+function detailFieldLabel(fieldName: BankTransactionDetailField) {
+  if (fieldName === "UPLOADED_CATEGORY") return "항목구분";
+  if (fieldName === "UPLOADED_ACCOUNT_TITLE") return "계정항목";
+  if (fieldName === "BRANCH_NAME") return "취급점";
+  return "메모·비고";
 }
 
 function reviewSuccessMessage(action: BankTransactionReviewAction, saved: BankTransactionReviewResult) {

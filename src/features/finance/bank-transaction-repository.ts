@@ -95,6 +95,7 @@ export type BankTransactionListRow = BankTransactionReviewRow & {
   branchName: string;
   cashImpact?: FinancialActivityCashImpact;
   classificationNote?: string;
+  detailOverrides?: BankTransactionDetailOverride[];
   linkageStatus?: string | null;
   lossAmount?: number;
   memo?: string;
@@ -107,6 +108,10 @@ export type BankTransactionListRow = BankTransactionReviewRow & {
   sourceRootRecordId?: string | null;
   sourceReconciliationIssue?: BankTransactionSourceReconciliationIssue;
   sheetOverrides?: BankTransactionSheetOverride[];
+  sourceBranchName?: string;
+  sourceMemo?: string;
+  sourceUploadedAccountTitle?: string;
+  sourceUploadedCategory?: string;
   uploadedAccountTitle?: string;
   uploadedCategory?: string;
 };
@@ -160,6 +165,29 @@ export type BankTransactionSheetOverride = {
   sourceRow: number;
   sourceSheet: string;
   sourceValue: string;
+};
+
+export type BankTransactionDetailField = "BRANCH_NAME" | "MEMO" | "UPLOADED_ACCOUNT_TITLE" | "UPLOADED_CATEGORY";
+
+export type BankTransactionDetailOverride = {
+  actorLabel: string;
+  createdAt: string;
+  fieldName: BankTransactionDetailField;
+  previousValue: string;
+  reason: string;
+  value: string;
+};
+
+export type BankTransactionDetailOverrideInput = {
+  fields: Record<BankTransactionDetailField, string>;
+  reason: string;
+  transactionId: string;
+};
+
+export type BankTransactionDetailOverrideResult = {
+  changed_count: number;
+  transaction_id: string;
+  values: Record<BankTransactionDetailField, string>;
 };
 
 export type BankTransactionListPage = {
@@ -485,19 +513,26 @@ export async function listBankTransactions(
   const bankSourceIds = (data ?? [])
     .filter((row) => row.origin_type === "BANK_TRANSACTION")
     .map((row) => row.source_record_id);
-  const overrideMap = await loadLatestBankTransactionSheetOverrides(organizationId, bankSourceIds);
+  const [sheetOverrideMap, detailOverrideMap] = await Promise.all([
+    loadLatestBankTransactionSheetOverrides(organizationId, bankSourceIds),
+    loadBankTransactionDetailOverrides(organizationId, bankSourceIds),
+  ]);
   const rows = (data ?? []).map((row) => {
-    const overrides = overrideMap.get(row.source_record_id) ?? [];
+    const overrides = sheetOverrideMap.get(row.source_record_id) ?? [];
+    const detailOverrides = detailOverrideMap.get(row.source_record_id) ?? [];
     const categoryOverride = overrides.find((override) => override.fieldName === "ACCOUNT_CATEGORY");
     const descriptionOverride = overrides.find((override) => override.fieldName === "DESCRIPTION");
     const memoOverride = overrides.find((override) => override.fieldName === "MEMO");
+    const detailValue = (fieldName: BankTransactionDetailField) => detailOverrides.find((override) => override.fieldName === fieldName)?.value;
+    const sourceMemo = memoOverride?.sourceValue ?? row.memo ?? "";
+    const sourceUploadedCategory = categoryOverride?.sourceValue ?? row.uploaded_major_category ?? "";
     return ({
     accountingTreatment: row.accounting_treatment,
     actualFundAmount: Number(row.actual_fund_amount) || 0,
     amount: Number(row.activity_amount) || 0,
     balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
     bankAccountId: row.bank_account_id ?? "",
-    branchName: row.branch_name ?? "",
+    branchName: detailValue("BRANCH_NAME") ?? row.branch_name ?? "",
     cashImpact: row.cash_impact,
     classificationNote: row.classification_note ?? "",
     classificationStatus: row.classification_status,
@@ -505,10 +540,11 @@ export async function listBankTransactions(
     confirmedAccountSubjectName: row.confirmed_account_subject_id ? confirmedSubjectNames.get(row.confirmed_account_subject_id) ?? null : null,
     counterparty: row.counterparty ?? "",
     description: descriptionOverride?.sourceValue ?? row.description,
+    detailOverrides,
     id: row.activity_id,
     linkageStatus: row.linkage_status,
     lossAmount: Number(row.loss_amount) || 0,
-    memo: memoOverride?.sourceValue ?? row.memo ?? "",
+    memo: detailValue("MEMO") ?? sourceMemo,
     originalDescription: row.description,
     originalMemo: row.memo ?? "",
     originType: row.origin_type,
@@ -517,13 +553,17 @@ export async function listBankTransactions(
     recommendedAccountSubjectName: row.recommended_account_subject_name,
     recommendationReason: row.recommendation_reason,
     sheetOverrides: overrides,
+    sourceBranchName: row.branch_name ?? "",
     sourceKind: row.source_kind,
     sourceRecordId: row.source_record_id,
     sourceRootRecordId: row.source_root_record_id,
+    sourceMemo,
+    sourceUploadedAccountTitle: row.uploaded_account_title ?? "",
+    sourceUploadedCategory,
     transactedAt: row.transacted_at,
     transactionKind: row.origin_type === "BANK_TRANSACTION" ? row.transaction_kind : null,
-    uploadedAccountTitle: row.uploaded_account_title ?? "",
-    uploadedCategory: categoryOverride?.sourceValue ?? row.uploaded_major_category ?? "",
+    uploadedAccountTitle: detailValue("UPLOADED_ACCOUNT_TITLE") ?? row.uploaded_account_title ?? "",
+    uploadedCategory: detailValue("UPLOADED_CATEGORY") ?? sourceUploadedCategory,
   }); }) as BankTransactionListRow[];
   const totalCount = count ?? rows.length;
   return {
@@ -533,6 +573,39 @@ export async function listBankTransactions(
     totalCount,
     totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
   };
+}
+
+async function loadBankTransactionDetailOverrides(
+  organizationId: string,
+  transactionIds: string[],
+): Promise<Map<string, BankTransactionDetailOverride[]>> {
+  const result = new Map<string, BankTransactionDetailOverride[]>();
+  if (!transactionIds.length) return result;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return result;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .from("bank_transaction_detail_overrides")
+    .select("id,bank_transaction_id,field_name,previous_value,value,reason,actor_label,created_at")
+    .eq("organization_id", organizationId)
+    .in("bank_transaction_id", transactionIds)
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false });
+  if (error) {
+    if (["42P01", "PGRST205"].includes(error.code ?? "")) return result;
+    throw new Error(`ERP 거래내역 수정 이력을 불러오지 못했어: ${error.message}`);
+  }
+  for (const row of data ?? []) {
+    const override: BankTransactionDetailOverride = {
+      actorLabel: row.actor_label,
+      createdAt: row.created_at,
+      fieldName: row.field_name,
+      previousValue: row.previous_value,
+      reason: row.reason,
+      value: row.value,
+    };
+    result.set(row.bank_transaction_id, [...(result.get(row.bank_transaction_id) ?? []), override]);
+  }
+  return result;
 }
 
 async function loadLatestBankTransactionSheetOverrides(
@@ -957,6 +1030,24 @@ export async function saveBankTransactionReview(
   const result = (data as BankTransactionReviewResult[] | null)?.[0];
   if (!result) throw new Error("저장된 은행거래 검토 결과를 확인하지 못했어.");
   return result;
+}
+
+export async function saveBankTransactionDetailOverrides(
+  organizationId: string,
+  actorId: string,
+  input: BankTransactionDetailOverrideInput,
+): Promise<BankTransactionDetailOverrideResult> {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).rpc("save_bank_transaction_detail_overrides", {
+    p_actor: actorId,
+    p_fields: input.fields,
+    p_org: organizationId,
+    p_reason: input.reason,
+    p_transaction_id: input.transactionId,
+  });
+  if (error) throw new Error(`ERP 거래내역 저장에 실패했어: ${error.message}`);
+  return data as BankTransactionDetailOverrideResult;
 }
 
 export async function loadBankTransactionRulePreview(

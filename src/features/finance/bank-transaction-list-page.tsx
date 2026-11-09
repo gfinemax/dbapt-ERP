@@ -14,6 +14,8 @@ import { BankTransactionDetailDrawer } from "./bank-transaction-detail-drawer";
 import { BankTransactionExportDialog } from "./bank-transaction-export-dialog";
 import type {
   BankTransactionClassificationStatus,
+  BankTransactionDetailOverrideInput,
+  BankTransactionDetailOverrideResult,
   BankTransactionListFilters,
   BankTransactionListPage as BankTransactionPageData,
   BankTransactionReviewInput,
@@ -40,6 +42,7 @@ type Props = {
   pageData: BankTransactionPageData;
   rulePreview?: BankTransactionRulePreview;
   selectedTransactionId?: string;
+  saveDetailOverridesAction?: (input: BankTransactionDetailOverrideInput) => Promise<BankTransactionDetailOverrideResult>;
   saveReviewAction?: (input: BankTransactionReviewInput) => Promise<BankTransactionReviewResult>;
   sourceReconciliationSummary?: BankTransactionSourceReconciliationSummary;
   statusCounts?: BankTransactionStatusCounts;
@@ -93,6 +96,7 @@ export function BankTransactionListPage({
   pageData,
   rulePreview,
   selectedTransactionId,
+  saveDetailOverridesAction,
   saveReviewAction,
   sourceReconciliationSummary,
   statusCounts = emptyStatusCounts,
@@ -379,11 +383,11 @@ export function BankTransactionListPage({
                         <p className="mt-1 font-semibold text-[var(--color-green-ink)]">관리자 비고 · {transaction.classificationNote}</p>
                       ) : !isExternalRecognition ? <p className="mt-1 text-[var(--color-stone)]">관리자 비고 없음</p> : null}
                       {!isExternalRecognition ? <Link
-                        aria-label={`${transaction.description || "적요 없음"} 관리자 비고 ${transaction.classificationNote ? "수정" : "작성"}`}
+                        aria-label={`${transaction.description || "적요 없음"} 거래내역·관리자 비고 수정`}
                         className="mt-1 inline-block font-bold text-[var(--color-deep-cobalt)] underline decoration-dotted underline-offset-2"
                         href={detailHref}
                       >
-                        {transaction.classificationNote ? "비고 수정" : "비고 작성"}
+                        거래내역·비고 수정
                       </Link> : null}
                     </td>
                     <td className="whitespace-nowrap px-2 py-2.5 text-center align-middle">
@@ -426,6 +430,7 @@ export function BankTransactionListPage({
           closeHref={currentListHref}
           key={selectedTransaction.id}
           rulePreview={rulePreview}
+          saveDetailOverridesAction={saveDetailOverridesAction}
           saveReviewAction={saveReviewAction}
           transaction={selectedTransaction}
         />

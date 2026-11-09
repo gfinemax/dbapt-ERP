@@ -244,7 +244,7 @@ describe("BankTransactionListPage", () => {
     expect(transactionCells[3]).toHaveTextContent("메모·비고 · 9월 인터넷 요금");
     expect(transactionCells[3]).toHaveTextContent("취급점 · 대방동");
     expect(transactionCells[3]).toHaveTextContent("관리자 비고 · KT 청구서와 대조 필요");
-    expect(within(transactionRow!).getByRole("link", { name: "인터넷 요금 관리자 비고 수정" })).toHaveAttribute("href", "/finance/bank-transactions?page=2&transactionId=transaction-1");
+    expect(within(transactionRow!).getByRole("link", { name: "인터넷 요금 거래내역·관리자 비고 수정" })).toHaveAttribute("href", "/finance/bank-transactions?page=2&transactionId=transaction-1");
     expect(screen.getByText("2026-09-27 09:00").closest("td")).toHaveClass("px-2", "py-2.5", "text-center");
     expect(document.querySelector("table")).toHaveClass("min-w-[1040px]", "table-fixed");
     expect([...document.querySelectorAll("colgroup col")].map((column) => column.className)).toEqual([
@@ -363,6 +363,53 @@ describe("BankTransactionListPage", () => {
       transactionId: "transaction-1",
     });
     expect(await within(drawer).findByText("계정과목과 관리자 비고를 확정했어.")).toBeInTheDocument();
+  });
+
+  it("edits the combined transaction-detail column without changing source references", async () => {
+    const saveDetailOverridesAction = vi.fn().mockResolvedValue({
+      changed_count: 3,
+      transaction_id: "transaction-1",
+      values: {
+        BRANCH_NAME: "본점",
+        MEMO: "10월 통신비",
+        UPLOADED_ACCOUNT_TITLE: "통신비",
+        UPLOADED_CATEGORY: "운영비-통신",
+      },
+    });
+    render(<BankTransactionListPage
+      bankAccounts={bankAccounts}
+      filters={{}}
+      pageData={pageData}
+      saveDetailOverridesAction={saveDetailOverridesAction}
+      selectedTransactionId="transaction-1"
+      statusCounts={statusCounts}
+    />);
+
+    const drawer = screen.getByRole("dialog", { name: "인터넷 요금" });
+    const source = within(drawer).getByRole("region", { name: "업로드 참고 정보" });
+    expect(source).toHaveTextContent("항목구분운영비");
+    expect(source).toHaveTextContent("업로드 메모9월 인터넷 요금");
+    const editor = within(drawer).getByRole("region", { name: "ERP 거래내역 편집" });
+    expect(within(editor).getByRole("button", { name: "거래내역 저장" })).toBeDisabled();
+
+    fireEvent.change(within(editor).getByLabelText("항목구분 표시값"), { target: { value: "운영비-통신" } });
+    fireEvent.change(within(editor).getByLabelText("취급점 표시값"), { target: { value: "본점" } });
+    fireEvent.change(within(editor).getByLabelText("메모·비고 표시값"), { target: { value: "10월 통신비" } });
+    fireEvent.change(within(editor).getByLabelText("거래내역 수정 사유"), { target: { value: "통장 원문 대조" } });
+    fireEvent.click(within(editor).getByRole("button", { name: "거래내역 저장" }));
+
+    expect(saveDetailOverridesAction).toHaveBeenCalledWith({
+      fields: {
+        BRANCH_NAME: "본점",
+        MEMO: "10월 통신비",
+        UPLOADED_ACCOUNT_TITLE: "통신비",
+        UPLOADED_CATEGORY: "운영비-통신",
+      },
+      reason: "통장 원문 대조",
+      transactionId: "transaction-1",
+    });
+    expect(await within(editor).findByText("거래내역 3개 항목을 수정했어.")).toBeInTheDocument();
+    expect(source).toHaveTextContent("항목구분운영비");
   });
 
   it("shows the ERP business category with the account subject while keeping source metadata separate", () => {

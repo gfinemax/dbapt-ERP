@@ -11,8 +11,8 @@ import {
   type ApplyBankSheetEnrichmentInput,
 } from "@/features/finance/bank-transaction-sheet-enrichment-repository";
 import type { BankSheetSourceRow } from "@/features/finance/bank-transaction-sheet-enrichment";
-import type { BankTransactionReviewInput, BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
-import { confirmBankTransactionSubjects, createBankTransactionsInSupabase, saveBankTransactionReview } from "@/features/finance/bank-transaction-repository";
+import type { BankTransactionDetailOverrideInput, BankTransactionReviewInput, BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
+import { confirmBankTransactionSubjects, createBankTransactionsInSupabase, saveBankTransactionDetailOverrides, saveBankTransactionReview } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
@@ -93,6 +93,15 @@ export async function saveBankTransactionReviewAction(input: BankTransactionRevi
   const saved = await saveBankTransactionReview(actor.organization_id, actor.user_id, input);
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/bank-unmatched");
+  revalidatePath("/finance/reports");
+  revalidatePath("/finance/exp");
+  return saved;
+}
+
+export async function saveBankTransactionDetailOverridesAction(input: BankTransactionDetailOverrideInput) {
+  const actor = await requireExpenseActor("ADMIN");
+  const saved = await saveBankTransactionDetailOverrides(actor.organization_id, actor.user_id, input);
+  revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/reports");
   revalidatePath("/finance/exp");
   return saved;

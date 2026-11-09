@@ -1,5 +1,5 @@
 import { reimbursementLogout } from "@/app/finance/reimbursements/actions";
-import { saveBankTransactionReviewAction } from "@/app/finance/bank-transactions/actions";
+import { saveBankTransactionDetailOverridesAction, saveBankTransactionReviewAction } from "@/app/finance/bank-transactions/actions";
 import { listAccountSubjectsFromSupabase } from "@/features/basic-info/account-subject-repository";
 import { listBankAccountsFromSupabase } from "@/features/basic-info/bank-account-repository";
 import { BankTransactionListPage } from "@/features/finance/bank-transaction-list-page";
@@ -112,6 +112,7 @@ export default async function FinanceBankTransactionsRoute({
       pageData={pageDataWithReconciliation}
       rulePreview={rulePreview}
       selectedTransactionId={query.transactionId?.trim()}
+      saveDetailOverridesAction={actor?.permissions.includes("ADMIN") ? saveBankTransactionDetailOverridesAction : undefined}
       saveReviewAction={actor?.permissions.includes("ADMIN") ? saveBankTransactionReviewAction : undefined}
       sourceReconciliationSummary={sourceReconciliationSummary}
       statusCounts={statusCounts}
