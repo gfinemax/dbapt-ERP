@@ -95,6 +95,71 @@ export type CollectionBankCandidate = {
   amount: number;
   available_amount?: number;
 };
+export type FixedCertificateAssignmentBatch = {
+  id: string;
+  status: "PREVIEW" | "APPLIED" | "CANCELLED";
+  source_document_id: string;
+  source_sheet_id: number;
+  source_sheet_name: string;
+  source_range: string;
+  source_hash: string;
+  source_signature: string;
+  reference_count: number;
+  contribution_account_subject_id: string;
+  suspense_account_subject_id: string;
+  created_by_label: string;
+  created_at: string;
+  applied_at: string | null;
+  apply_reason: string | null;
+  lock_version: number;
+};
+export type FixedCertificateAssignmentRow = {
+  sheet_row_number: number;
+  sheet_name_snapshot: string;
+  source_root_recognition_id: string | null;
+  external_member_id: string | null;
+  erp_name_snapshot: string | null;
+  source_version: number | null;
+  match_status: "EXACT" | "MANUAL" | "UNRESOLVED";
+};
+export type FixedCertificateAssignmentCandidate = {
+  source_root_recognition_id: string;
+  external_member_id: string;
+  member_name_snapshot: string;
+  source_version: number;
+  status: "ACTIVE" | "CANCELLED";
+  member_group: string | null;
+  member_status: string | null;
+};
+export type FixedCertificateAccountAssignment = {
+  source_root_recognition_id: string;
+  external_member_id: string;
+  member_name_snapshot: string;
+  source_version: number;
+  source_status: "ACTIVE" | "CANCELLED";
+  assignment_category: "CONTRIBUTION" | "SUSPENSE";
+  account_subject_id: string;
+  assignment_basis: "GOOGLE_SHEET_EXACT" | "GOOGLE_SHEET_MANUAL" | "NOT_IN_GOOGLE_SHEET";
+};
+export type FixedCertificateAssignmentWorkspace = {
+  batch: FixedCertificateAssignmentBatch;
+  summary: {
+    fixed_count: number;
+    exact_count: number;
+    manual_count: number;
+    unresolved_count: number;
+    contribution_count: number;
+    suspense_count: number;
+    active_contribution_count: number;
+    active_suspense_count: number;
+    contribution_amount: number;
+    suspense_amount: number;
+    is_stale: boolean;
+  };
+  rows: FixedCertificateAssignmentRow[];
+  candidates: FixedCertificateAssignmentCandidate[];
+  assignments: FixedCertificateAccountAssignment[];
+};
 export type CollectionLedgerWorkspace = {
   assessments: CollectionAssessment[];
   allocations: CollectionAllocation[];
@@ -105,6 +170,7 @@ export type CollectionLedgerWorkspace = {
   import_batches: CollectionAssessmentImportSummary[];
   ledger_sync?: LedgerContributionSyncStatus;
   ledger_external_recognition_sync?: LedgerExternalRecognitionSyncStatus;
+  fixed_certificate_assignment?: FixedCertificateAssignmentWorkspace | null;
   viewer: { user_id: string; permissions: ReimbursementPermission[] };
 };
 export type CollectionLedgerResult = { id: string; status: string; lock_version: number };
@@ -144,6 +210,83 @@ function importResult(value: unknown): CollectionAssessmentImportPreview {
   for (const key of ["row_count", "create_count", "update_count", "unchanged_count", "error_count"])
     if (!Number.isSafeInteger(Number(value[key]))) throw new Error("부과자료 집계 결과를 확인하지 못했어.");
   return value as CollectionAssessmentImportPreview;
+}
+
+function fixedCertificateAssignmentResult(value: unknown): FixedCertificateAssignmentWorkspace {
+  if (!record(value) || !record(value.batch) || !record(value.summary)
+    || typeof value.batch.id !== "string" || !Array.isArray(value.rows)
+    || !Array.isArray(value.candidates) || !Array.isArray(value.assignments)) {
+    throw new Error("정액 필증 계정과목 대조 결과를 확인하지 못했어.");
+  }
+  const summary = value.summary;
+  const countKeys = ["fixed_count", "exact_count", "manual_count", "unresolved_count", "contribution_count", "suspense_count"];
+  if (countKeys.some((key) => !Number.isSafeInteger(Number(summary[key])))) {
+    throw new Error("정액 필증 계정과목 대조 집계를 확인하지 못했어.");
+  }
+  return value as FixedCertificateAssignmentWorkspace;
+}
+
+async function requireFixedCertificateActor() {
+  const member = await requireReimbursementIdentity();
+  if (!member.active || !["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission))) {
+    throw new Error("정액 필증 계정과목 대조 권한이 필요합니다.");
+  }
+  return member;
+}
+
+export async function previewFixedCertificateAssignment(input: {
+  sourceDocumentId: string;
+  sourceSheetId: number;
+  sourceSheetName: string;
+  sourceRange: string;
+  sourceHash: string;
+  names: Array<{ row_number: number; name: string }>;
+}) {
+  const member = await requireFixedCertificateActor();
+  const { data, error } = await reimbursementDb().schema("finance").rpc("fixed_certificate_assignment_preview", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_source_document_id: input.sourceDocumentId,
+    p_source_sheet_id: input.sourceSheetId,
+    p_source_sheet_name: input.sourceSheetName,
+    p_source_range: input.sourceRange,
+    p_source_hash: input.sourceHash,
+    p_names: input.names,
+  });
+  if (error) throw new Error(error.message);
+  return fixedCertificateAssignmentResult(data);
+}
+
+export async function mapFixedCertificateAssignment(batchId: string, sheetRowNumber: number, sourceRootRecognitionId: string | null) {
+  const member = await requireFixedCertificateActor();
+  if (!batchId || !Number.isInteger(sheetRowNumber) || sheetRowNumber < 4 || sheetRowNumber > 119) {
+    throw new Error("대조할 116명 명단 행을 확인해줘.");
+  }
+  const { data, error } = await reimbursementDb().schema("finance").rpc("fixed_certificate_assignment_map", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_batch: batchId,
+    p_sheet_row_number: sheetRowNumber,
+    p_source_root_recognition_id: sourceRootRecognitionId?.trim() || null,
+  });
+  if (error) throw new Error(error.message);
+  return fixedCertificateAssignmentResult(data);
+}
+
+export async function applyFixedCertificateAssignment(batchId: string, reason: string, operationKey: string) {
+  const member = await requireFixedCertificateActor();
+  if (!batchId || reason.trim().length < 2 || reason.trim().length > 500 || !operationKey.trim() || operationKey.length > 200) {
+    throw new Error("적용할 미리보기와 사유를 확인해줘.");
+  }
+  const { data, error } = await reimbursementDb().schema("finance").rpc("fixed_certificate_assignment_apply", {
+    p_org: member.organization_id,
+    p_actor: member.user_id,
+    p_batch: batchId,
+    p_reason: reason.trim(),
+    p_operation_key: operationKey,
+  });
+  if (error) throw new Error(error.message);
+  return fixedCertificateAssignmentResult(data);
 }
 
 async function requireAssessmentImportActor() {
@@ -215,17 +358,23 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
   if (!member.active || !staffPermissions.some((permission) => hasReimbursementPermission(member, permission)))
     throw new Error("수납·환급 원장 조회 권한이 필요합니다.");
   const canImport = ["ADMIN", "APPROVE", "CLOSE"].some((permission) => hasReimbursementPermission(member, permission as ReimbursementPermission));
-  const [ledgerResponse, historyResponse, syncStatus, externalRecognitionSyncStatus] = await Promise.all([
+  const [ledgerResponse, historyResponse, syncStatus, externalRecognitionSyncStatus, fixedCertificateResponse] = await Promise.all([
     reimbursementDb().schema("finance").rpc("collection_ledger_read", { p_org: member.organization_id, p_actor: member.user_id }),
     canImport
       ? reimbursementDb().schema("finance").rpc("collection_assessment_import_history", { p_org: member.organization_id, p_actor: member.user_id, p_batch: null })
       : Promise.resolve({ data: { batches: [], selected: null }, error: null }),
     loadLedgerContributionSyncStatus(),
     loadLedgerExternalRecognitionSyncStatus(),
+    canImport
+      ? reimbursementDb().schema("finance").rpc("fixed_certificate_assignment_read", { p_org: member.organization_id, p_actor: member.user_id })
+      : Promise.resolve({ data: null, error: null }),
   ]);
   const { data, error } = ledgerResponse;
   if (error) throw new Error(error.message);
   if (historyResponse.error) throw new Error(historyResponse.error.message);
+  if (fixedCertificateResponse.error && !["PGRST202", "42883"].includes(fixedCertificateResponse.error.code ?? "")) {
+    throw new Error(fixedCertificateResponse.error.message);
+  }
   const keys = ["assessments", "allocations", "external_recognitions", "refunds", "deposit_candidates", "withdrawal_candidates"] as const;
   if (!record(data) || keys.some((key) => !Array.isArray(data[key]))) throw new Error("수납·환급 원장 조회 결과를 확인해주세요.");
   const sourceById = new Map(syncStatus.sources.map((source) => [source.id, source]));
@@ -241,6 +390,9 @@ export async function loadCollectionLedger(): Promise<CollectionLedgerWorkspace>
     import_batches: importHistory(historyResponse.data).batches,
     ledger_sync: syncStatus,
     ledger_external_recognition_sync: externalRecognitionSyncStatus,
+    fixed_certificate_assignment: fixedCertificateResponse.data
+      ? fixedCertificateAssignmentResult(fixedCertificateResponse.data)
+      : null,
     viewer: { user_id: member.user_id, permissions: [...member.permissions] },
   };
 }

@@ -3,7 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createHash } from "node:crypto";
 import { parseCollectionAssessmentCsv } from "@/features/finance/collection-assessment-csv";
-import { applyCollectionAssessmentImport, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, previewCollectionAssessmentImport, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
+import { applyCollectionAssessmentImport, applyFixedCertificateAssignment, cancelCollectionAssessmentImport, loadCollectionAssessmentImport, mapFixedCertificateAssignment, previewCollectionAssessmentImport, previewFixedCertificateAssignment, runCollectionLedger, type CollectionLedgerCommand } from "@/features/finance/collection-ledger-repository";
+import { loadFixedCertificateReferenceNames } from "@/features/finance/fixed-certificate-assignment-source";
 import { syncLedgerContributionAssessments } from "@/features/finance/ledger-contribution-sync";
 import { syncLedgerExternalContributionRecognitions } from "@/features/finance/ledger-external-recognition-sync";
 import { pushLedgerAllocationFeedback } from "@/features/finance/ledger-allocation-feedback";
@@ -56,5 +57,31 @@ export async function loadCollectionAssessmentCsv(batchId: string) {
 export async function cancelCollectionAssessmentCsv(batchId: string, reason: string, operationKey: string) {
   const result = await cancelCollectionAssessmentImport(batchId, reason, operationKey);
   revalidatePath("/finance/collections");
+  return result;
+}
+
+export async function previewFixedCertificateAssignmentFromGoogleSheet() {
+  const reference = await loadFixedCertificateReferenceNames();
+  const result = await previewFixedCertificateAssignment({
+    sourceDocumentId: reference.documentId,
+    sourceSheetId: reference.sheetId,
+    sourceSheetName: reference.sheetName,
+    sourceRange: reference.range,
+    sourceHash: reference.sourceHash,
+    names: reference.names,
+  });
+  revalidatePath("/finance/collections");
+  return result;
+}
+
+export async function updateFixedCertificateAssignmentMatch(batchId: string, sheetRowNumber: number, sourceRootRecognitionId: string | null) {
+  const result = await mapFixedCertificateAssignment(batchId, sheetRowNumber, sourceRootRecognitionId);
+  revalidatePath("/finance/collections");
+  return result;
+}
+
+export async function confirmFixedCertificateAccountAssignments(batchId: string, reason: string, operationKey: string) {
+  const result = await applyFixedCertificateAssignment(batchId, reason, operationKey);
+  for (const path of ["/finance/collections", "/finance/month-close", "/finance/workspace", "/reports"]) revalidatePath(path);
   return result;
 }

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: () => ({ schema: () => ({ rpc: mocks.rpc }) }) }));
-import { applyCollectionAssessmentImport, loadCollectionLedger, previewCollectionAssessmentImport, runCollectionLedger } from "./collection-ledger-repository";
+import { applyCollectionAssessmentImport, applyFixedCertificateAssignment, loadCollectionLedger, mapFixedCertificateAssignment, previewCollectionAssessmentImport, previewFixedCertificateAssignment, runCollectionLedger } from "./collection-ledger-repository";
 
 beforeEach(() => {
   mocks.identity.mockReset().mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["ADMIN"] });
@@ -12,6 +12,8 @@ beforeEach(() => {
       ? { data: { state: null, unresolved_issues: [], sources: [] }, error: null }
     : name === "ledger_external_recognition_sync_status"
       ? { data: { state: null, unresolved_issues: [], source_count: 0 }, error: null }
+    : name === "fixed_certificate_assignment_read"
+      ? { data: null, error: null }
     : { data: { assessments: [], allocations: [], external_recognitions: [], refunds: [], deposit_candidates: [], withdrawal_candidates: [] }, error: null });
 });
 describe("collection ledger repository", () => {
@@ -45,6 +47,32 @@ describe("collection ledger repository", () => {
   it("does not allow a payment-only actor to import assessments", async () => {
     mocks.identity.mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["PAY"] });
     await expect(previewCollectionAssessmentImport({ fileName: "rows.csv", contentHash: "a".repeat(64), rows: [] })).rejects.toThrow("등록 권한");
+    expect(mocks.rpc).not.toHaveBeenCalled();
+  });
+
+  it("previews, manually maps, and applies fixed certificate account assignments with server identity", async () => {
+    const result = {
+      batch: { id: "fixed-batch", status: "PREVIEW" },
+      summary: { fixed_count: 137, exact_count: 103, manual_count: 0, unresolved_count: 13, contribution_count: 103, suspense_count: 34 },
+      rows: [], candidates: [], assignments: [],
+    };
+    mocks.rpc.mockResolvedValue({ data: result, error: null });
+    await previewFixedCertificateAssignment({
+      sourceDocumentId: "sheet", sourceSheetId: 72846910, sourceSheetName: "조합원연명부(116명)",
+      sourceRange: "B4:B119", sourceHash: "a".repeat(64), names: [{ row_number: 4, name: "홍길동" }],
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith("fixed_certificate_assignment_preview", expect.objectContaining({ p_org: "org", p_actor: "actor", p_source_range: "B4:B119" }));
+
+    await mapFixedCertificateAssignment("fixed-batch", 4, "root-1");
+    expect(mocks.rpc).toHaveBeenCalledWith("fixed_certificate_assignment_map", expect.objectContaining({ p_batch: "fixed-batch", p_sheet_row_number: 4, p_source_root_recognition_id: "root-1" }));
+
+    await applyFixedCertificateAssignment("fixed-batch", "116명 명단 대조", "operation-key");
+    expect(mocks.rpc).toHaveBeenCalledWith("fixed_certificate_assignment_apply", expect.objectContaining({ p_batch: "fixed-batch", p_reason: "116명 명단 대조", p_operation_key: "operation-key" }));
+  });
+
+  it("does not expose fixed certificate assignment operations to payment-only actors", async () => {
+    mocks.identity.mockResolvedValue({ user_id: "actor", organization_id: "org", active: true, permissions: ["PAY"] });
+    await expect(mapFixedCertificateAssignment("fixed-batch", 4, "root-1")).rejects.toThrow("대조 권한");
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 });
