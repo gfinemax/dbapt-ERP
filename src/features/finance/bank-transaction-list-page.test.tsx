@@ -261,8 +261,9 @@ describe("BankTransactionListPage", () => {
       dateTo: "2026-09-30",
       query: "인터넷",
       originType: "BANK_TRANSACTION",
+      transactionKind: "출금",
     })).toBe(
-      "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&accountId=bank-1&from=2026-09-01&to=2026-09-30&origin=BANK_TRANSACTION&status=UNREVIEWED",
+      "/finance/bank-transactions?page=3&q=%EC%9D%B8%ED%84%B0%EB%84%B7&kind=%EC%B6%9C%EA%B8%88&accountId=bank-1&from=2026-09-01&to=2026-09-30&origin=BANK_TRANSACTION&status=UNREVIEWED",
     );
   });
 
@@ -513,5 +514,14 @@ describe("BankTransactionListPage", () => {
     fireEvent.click(within(dialog).getByRole("radio", { name: "PDF" }));
     expect(within(dialog).getByText(/PDF는 1,000건까지 지원해/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "PDF 내려받기" })).toBeDisabled();
+  });
+
+  it("defaults to all cash directions and can filter withdrawals", () => {
+    render(<BankTransactionListPage bankAccounts={bankAccounts} filters={{ transactionKind: "출금" }} pageData={pageData} statusCounts={statusCounts} />);
+
+    expect(screen.getByRole("combobox", { name: "입출금 구분" })).toHaveValue("출금");
+    expect(screen.getByRole("option", { name: "전체 입출금" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "출금 필터 제거" })).toHaveAttribute("href", "/finance/bank-transactions");
+    expect(screen.getByPlaceholderText("적요·거래처·조합원 검색")).toBeInTheDocument();
   });
 });

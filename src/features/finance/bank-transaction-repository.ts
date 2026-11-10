@@ -62,6 +62,7 @@ export type BankTransactionListFilters = {
   query?: string;
   reviewRequired?: boolean;
   sourceReconciliationStatus?: BankTransactionSourceReconciliationStatus;
+  transactionKind?: "입금" | "출금";
 };
 
 export type BankTransactionStatusCounts = Record<BankTransactionClassificationStatus | "ALL", number>;
@@ -485,7 +486,25 @@ function reviewRequiredOrFilter(transactionIds?: string[]) {
   return clauses.join(",");
 }
 
-function transactionSearchOrFilter(search: string, includeTransactionDetail: boolean) {
+async function linkedRefundWithdrawalIds(organizationId: string, search: string) {
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return [];
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema).from("collection_refunds")
+    .select("bank_transaction_id")
+    .eq("organization_id", organizationId)
+    .eq("status", "PAID")
+    .not("bank_transaction_id", "is", null)
+    .ilike("member_name_snapshot", `%${search}%`)
+    .limit(500);
+  if (error) throw new Error(`조합원 환급 출금 연결을 불러오지 못했어: ${error.message}`);
+  return [...new Set((data ?? []).map((row) => row.bank_transaction_id).filter(Boolean))] as string[];
+}
+
+export function transactionSearchOrFilter(
+  search: string,
+  includeTransactionDetail: boolean,
+  linkedWithdrawalIds: string[] = [],
+) {
   const clauses = [
     `description.ilike.%${search}%`,
     `counterparty.ilike.%${search}%`,
@@ -497,6 +516,9 @@ function transactionSearchOrFilter(search: string, includeTransactionDetail: boo
     `source_record_id.ilike.%${search}%`,
   ];
   if (includeTransactionDetail) clauses.unshift(`transaction_detail.ilike.%${search}%`);
+  if (linkedWithdrawalIds.length) {
+    clauses.push(`and(origin_type.eq.BANK_TRANSACTION,source_record_id.in.(${linkedWithdrawalIds.join(",")}))`);
+  }
   return clauses.join(",");
 }
 
@@ -532,7 +554,10 @@ export async function listBankTransactions(
   }
   const from = (page - 1) * pageSize;
   const search = normalizedBankTransactionSearch(filters.query);
-  const supportsDetailSearch = await supportsBankTransactionDetailSearch(organizationId, search);
+  const [supportsDetailSearch, linkedWithdrawalIds] = await Promise.all([
+    supportsBankTransactionDetailSearch(organizationId, search),
+    search ? linkedRefundWithdrawalIds(organizationId, search) : Promise.resolve([]),
+  ]);
   let request = supabase.schema(bankTransactionRepositorySchema).from("financial_activity_feed")
     .select("activity_id,origin_type,source_record_id,bank_account_id,transacted_at,transaction_kind,description,memo,deposit_amount,withdrawal_amount,activity_amount,balance_amount,counterparty,branch_name,uploaded_major_category,uploaded_account_title,recommended_account_subject_id,recommended_account_subject_name,confirmed_account_subject_id,classification_status,classification_note,recommendation_reason,cash_impact,source_kind,accounting_treatment,recognition_status,actual_fund_amount,loss_amount,source_root_record_id,linkage_status", { count: "exact" })
     .eq("organization_id", organizationId);
@@ -545,11 +570,12 @@ export async function listBankTransactions(
     request = request.eq("origin_type", "EXTERNAL_RECOGNITION").neq("source_kind", "dongil_fixed_certificate");
   }
   if (filters.classificationStatus) request = request.eq("classification_status", filters.classificationStatus);
+  if (filters.transactionKind) request = request.eq("transaction_kind", filters.transactionKind);
   if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
   else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
   if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
   if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-  if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch));
+  if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch, linkedWithdrawalIds));
   const { count, data, error } = await request
     .order("transacted_at", { ascending: false })
     .order("activity_id", { ascending: false })
@@ -726,7 +752,10 @@ export async function countBankTransactionsByStatus(
   if (!supabase) return emptyCounts;
   if (transactionIds && transactionIds.length === 0 && filters.sourceReconciliationStatus && !filters.reviewRequired) return emptyCounts;
   const search = normalizedBankTransactionSearch(filters.query);
-  const supportsDetailSearch = await supportsBankTransactionDetailSearch(organizationId, search);
+  const [supportsDetailSearch, linkedWithdrawalIds] = await Promise.all([
+    supportsBankTransactionDetailSearch(organizationId, search),
+    search ? linkedRefundWithdrawalIds(organizationId, search) : Promise.resolve([]),
+  ]);
 
   const entries = await Promise.all([undefined, ...bankTransactionClassificationStatuses].map(async (status) => {
     let request = supabase.schema(bankTransactionRepositorySchema).from("financial_activity_feed")
@@ -740,11 +769,12 @@ export async function countBankTransactionsByStatus(
     if (filters.externalRecognitionKind === "GENERAL") {
       request = request.eq("origin_type", "EXTERNAL_RECOGNITION").neq("source_kind", "dongil_fixed_certificate");
     }
+    if (filters.transactionKind) request = request.eq("transaction_kind", filters.transactionKind);
     if (filters.reviewRequired) request = request.or(reviewRequiredOrFilter(transactionIds));
     else if (transactionIds) request = request.eq("origin_type", "BANK_TRANSACTION").in("source_record_id", transactionIds);
     if (filters.dateFrom) request = request.gte("transacted_at", `${filters.dateFrom}T00:00:00+09:00`);
     if (filters.dateTo) request = request.lte("transacted_at", `${filters.dateTo}T23:59:59.999+09:00`);
-    if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch));
+    if (search) request = request.or(transactionSearchOrFilter(search, supportsDetailSearch, linkedWithdrawalIds));
     if (status) request = request.eq("classification_status", status);
     const { count, error } = await request;
     if (error) throw new Error(`은행거래 상태별 건수를 불러오지 못했어: ${error.message}`);

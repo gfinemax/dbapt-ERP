@@ -171,7 +171,7 @@ export function BankTransactionListPage({
           />
 
           <FinanceToolbar>
-            <form className="grid gap-2 xl:grid-cols-[minmax(260px,1fr)_minmax(210px,280px)_minmax(300px,auto)_auto_auto]" method="get">
+            <form className="grid gap-2 xl:grid-cols-[minmax(240px,1fr)_minmax(130px,170px)_minmax(190px,250px)_minmax(300px,auto)_auto_auto]" method="get">
               {filters.classificationStatus ? <input name="status" type="hidden" value={filters.classificationStatus} /> : null}
               {filters.sourceReconciliationStatus ? <input name="sourceReview" type="hidden" value="required" /> : null}
               {filters.originType ? <input name="origin" type="hidden" value={filters.originType} /> : null}
@@ -183,9 +183,17 @@ export function BankTransactionListPage({
                   className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]"
                   defaultValue={filters.query ?? ""}
                   name="q"
-                  placeholder="적요·거래처 검색"
+                  placeholder="적요·거래처·조합원 검색"
                   type="search"
                 />
+              </label>
+              <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
+                입출금 구분
+                <select className="h-10 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm text-[var(--color-midnight-ink)]" defaultValue={filters.transactionKind ?? ""} name="kind">
+                  <option value="">전체 입출금</option>
+                  <option value="입금">입금</option>
+                  <option value="출금">출금</option>
+                </select>
               </label>
               <label className="grid gap-1 text-xs font-semibold text-[var(--color-stone)]">
                 은행통장
@@ -422,13 +430,14 @@ export function BankTransactionListPage({
 }
 
 type FilterChip = {
-  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "externalRecognitionKind" | "query" | "sourceReconciliationStatus";
+  key: "bankAccountId" | "classificationStatus" | "dateFrom" | "dateTo" | "externalRecognitionKind" | "query" | "sourceReconciliationStatus" | "transactionKind";
   label: string;
 };
 
 function buildFilterChips(filters: BankTransactionListFilters, selectedAccount?: RegisteredBankAccount): FilterChip[] {
   const chips: FilterChip[] = [];
   if (filters.query) chips.push({ key: "query", label: `검색: ${filters.query}` });
+  if (filters.transactionKind) chips.push({ key: "transactionKind", label: filters.transactionKind });
   if (filters.bankAccountId) chips.push({ key: "bankAccountId", label: selectedAccount ? bankAccountOptionLabel(selectedAccount) : "선택 계좌" });
   if (filters.dateFrom) chips.push({ key: "dateFrom", label: `시작: ${filters.dateFrom}` });
   if (filters.dateTo) chips.push({ key: "dateTo", label: `종료: ${filters.dateTo}` });
@@ -442,6 +451,7 @@ export function bankTransactionPageHref(page: number, filters: BankTransactionLi
   const params = new URLSearchParams();
   if (page > 1) params.set("page", String(page));
   if (filters.query) params.set("q", filters.query);
+  if (filters.transactionKind) params.set("kind", filters.transactionKind);
   if (filters.bankAccountId) params.set("accountId", filters.bankAccountId);
   if (filters.dateFrom) params.set("from", filters.dateFrom);
   if (filters.dateTo) params.set("to", filters.dateTo);
@@ -531,9 +541,10 @@ export function activityViewHref(view: "all" | "bank" | "external" | "review", f
     dateFrom: filters.dateFrom,
     dateTo: filters.dateTo,
     query: filters.query,
+    transactionKind: filters.transactionKind,
   };
   if (view === "bank") return bankTransactionPageHref(1, { ...shared, bankAccountId: filters.bankAccountId, originType: "BANK_TRANSACTION" });
-  if (view === "external") return bankTransactionPageHref(1, { ...shared, originType: "EXTERNAL_RECOGNITION" });
+  if (view === "external") return bankTransactionPageHref(1, { ...shared, originType: "EXTERNAL_RECOGNITION", transactionKind: undefined });
   if (view === "review") return bankTransactionPageHref(1, { ...shared, reviewRequired: true });
   return bankTransactionPageHref(1, shared);
 }

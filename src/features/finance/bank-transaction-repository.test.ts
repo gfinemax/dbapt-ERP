@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildBankTransactionUid, deriveBankTransactionSourceReconciliationIssues, mapBankTransactionToInsert, mapZeroAmountLedgerSource } from "./bank-transaction-repository";
+import { buildBankTransactionUid, deriveBankTransactionSourceReconciliationIssues, mapBankTransactionToInsert, mapZeroAmountLedgerSource, transactionSearchOrFilter } from "./bank-transaction-repository";
 import type { ParsedBankTransactionRow } from "./bank-transaction-import";
 
 describe("bank transaction repository mappers", () => {
@@ -119,5 +119,13 @@ describe("bank transaction repository mappers", () => {
     });
 
     expect(issues.map((issue) => issue.bankTransactionId)).toEqual(["in-period-unlinked"]);
+  });
+});
+
+describe("bank transaction member search", () => {
+  it("includes linked paid-refund withdrawals beside text matches", () => {
+    expect(transactionSearchOrFilter("송동환", false, ["withdrawal-1", "withdrawal-2"])).toContain(
+      "and(origin_type.eq.BANK_TRANSACTION,source_record_id.in.(withdrawal-1,withdrawal-2))",
+    );
   });
 });
