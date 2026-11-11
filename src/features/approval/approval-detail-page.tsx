@@ -24,6 +24,7 @@ import type { ReimbursementMember } from "@/features/finance/reimbursement-domai
 import { canDecideApproval, isApprovalAuthor } from "./approval-access-model";
 import { ApprovalCommandForm } from "./approval-command-form";
 import { ApprovalMutationFields } from "./approval-mutation-fields";
+import { expenseResolutionHref } from "@/features/finance/expense-entry";
 
 export function ApprovalDetailPage({
   document,
@@ -36,6 +37,9 @@ export function ApprovalDetailPage({
   const author = isApprovalAuthor(document, viewer);
   const bound = !!document.authorization?.drafter_user_id && document.authorization.steps.length === document.approvalSteps.length && document.authorization.steps.length > 0;
   const actorLabel = viewer?.display_name ?? "";
+  const directExecution = document.executionLinks?.find(
+    (link) => link.kind === "EXPENSE" && !link.contractPaymentId,
+  );
   const current = document.approvalSteps.find(
     (step) => step.status === "PENDING",
   );
@@ -153,12 +157,16 @@ export function ApprovalDetailPage({
                   승인금액 {document.amount.toLocaleString("ko-KR")}원 ·
                   집행예정액 {document.reservedAmount.toLocaleString("ko-KR")}원
                 </p>
-                {document.expenseResolutionId ? (
+                {directExecution || document.expenseResolutionId ? (
                   <Link
                     className="mt-3 inline-block font-bold text-[var(--color-deep-cobalt)]"
-                    href="/finance/exp"
+                    href={expenseResolutionHref({
+                      resolutionId:
+                        directExecution?.expenseResolutionId ??
+                        document.expenseResolutionId!,
+                    })}
                   >
-                    연결된 지출결의서 보기 →
+                    연결된 회계·자금 업무 보기 →
                   </Link>
                 ) : null}
               </Card>
@@ -323,41 +331,50 @@ export function ApprovalDetailPage({
                   ).toLocaleString("ko-KR")}
                   원
                 </p>
-                {document.contractPayments?.map((payment) => (
-                  <form
-                    action={createContractPaymentExpenseAction}
-                    className="mt-3 rounded-xl border border-[var(--color-soft-border)] p-3"
-                    key={payment.id}
-                  >
-                    <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
-                  <input name="id" type="hidden" value={document.id} />
-                    <input name="paymentId" type="hidden" value={payment.id} />
-                    <input
-                      name="actorLabel"
-                      type="hidden"
-                      value={actorLabel}
-                    />
-                    <p className="text-xs font-bold">
-                      {payment.dueDate ?? "일자 미정"} ·{" "}
-                      {payment.amount.toLocaleString("ko-KR")}원
-                    </p>
-                    <p className="mt-1 text-xs text-[var(--color-stone)]">
-                      {payment.status}
-                    </p>
-                    {admin && payment.status === "SCHEDULED" ? (
-                      <button className="mt-2 w-full rounded-full bg-[var(--color-deep-cobalt)] px-3 py-2 text-xs font-bold text-white">
-                        지출결의서 생성
-                      </button>
-                    ) : payment.expenseResolutionId ? (
-                      <Link
-                        className="mt-2 inline-block text-xs font-bold text-[var(--color-deep-cobalt)]"
-                        href="/finance/exp"
-                      >
-                        결의서 보기 →
-                      </Link>
-                    ) : null}
-                  </form>
-                ))}
+                {document.contractPayments?.map((payment) => {
+                  const execution = document.executionLinks?.find(
+                    (link) => link.contractPaymentId === payment.id,
+                  );
+                  return (
+                    <form
+                      action={createContractPaymentExpenseAction}
+                      className="mt-3 rounded-xl border border-[var(--color-soft-border)] p-3"
+                      key={payment.id}
+                    >
+                      <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
+                      <input name="id" type="hidden" value={document.id} />
+                      <input name="paymentId" type="hidden" value={payment.id} />
+                      <input
+                        name="actorLabel"
+                        type="hidden"
+                        value={actorLabel}
+                      />
+                      <p className="text-xs font-bold">
+                        {payment.dueDate ?? "일자 미정"} ·{" "}
+                        {payment.amount.toLocaleString("ko-KR")}원
+                      </p>
+                      <p className="mt-1 text-xs text-[var(--color-stone)]">
+                        {payment.status}
+                      </p>
+                      {admin && ((!execution && payment.status === "SCHEDULED") || (execution && !execution.workflowTransactionId)) ? (
+                        <button className="mt-2 w-full rounded-full bg-[var(--color-deep-cobalt)] px-3 py-2 text-xs font-bold text-white">
+                          {execution ? "통합 자금 거래 연결하기" : "회계·자금으로 넘기기"}
+                        </button>
+                      ) : execution || payment.expenseResolutionId ? (
+                        <Link
+                          className="mt-2 inline-block text-xs font-bold text-[var(--color-deep-cobalt)]"
+                          href={expenseResolutionHref({
+                            resolutionId:
+                              execution?.expenseResolutionId ??
+                              payment.expenseResolutionId!,
+                          })}
+                        >
+                          연결 업무 보기 →
+                        </Link>
+                      ) : null}
+                    </form>
+                  );
+                })}
               </Card>
             ) : null}
             <Card title="결재선">
@@ -402,8 +419,9 @@ export function ApprovalDetailPage({
             (document.meetingStatus === "NOT_REQUIRED" ||
               document.meetingStatus === "APPROVED") &&
             (document.documentType !== "CONTRACT" ||
-              !document.paymentSchedule?.length) ? (
-              <Card title="회계 연결">
+              !document.paymentSchedule?.length) &&
+            !directExecution?.workflowTransactionId ? (
+              <Card title="회계·자금 연결">
                 <form action={createLinkedExpenseAction} className="space-y-3">
                   <ApprovalMutationFields key={document.authorization?.version ?? 0} version={document.authorization?.version ?? 0} />
                   <input name="id" type="hidden" value={document.id} />
@@ -418,8 +436,13 @@ export function ApprovalDetailPage({
                     />
                   </label>
                   <button className="w-full rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-bold text-white">
-                    지출결의서 생성
+                    {directExecution ? "통합 자금 거래 연결하기" : "회계·자금으로 넘기기"}
                   </button>
+                  <p className="text-xs leading-5 text-[var(--color-stone)]">
+                    {directExecution
+                      ? "기존 지출결의는 바꾸지 않고 통합 자금 거래만 이어 붙여."
+                      : "지출결의와 통합 자금 거래를 함께 만들지만 실제 지급이나 전표 확정은 하지 않아."}
+                  </p>
                 </form>
               </Card>
             ) : null}

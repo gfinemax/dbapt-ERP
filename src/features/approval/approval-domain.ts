@@ -41,6 +41,15 @@ export type ApprovalStep = {
   actedAt?: string;
 };
 
+export type ApprovalExecutionLink = {
+  contractPaymentId?: string;
+  expenseResolutionId: string;
+  id: string;
+  kind: "EXPENSE" | "CONTRACT_PAYMENT";
+  status: "HANDED_OFF" | "PAID" | "VOUCHER_POSTED" | "CLOSED" | "REVIEW_REQUIRED";
+  workflowTransactionId?: string;
+};
+
 export type ApprovalDocument = {
   authorization?: import("./approval-authorization").ApprovalAuthorization | null;
   amount: number;
@@ -55,6 +64,7 @@ export type ApprovalDocument = {
   documentType: ApprovalDocumentType;
   drafterLabel: string;
   executionStatus: ExecutionStatus;
+  executionLinks?: ApprovalExecutionLink[];
   expenseResolutionId?: string;
   desiredExecutionDate?: string;
   paymentDueDate?: string;

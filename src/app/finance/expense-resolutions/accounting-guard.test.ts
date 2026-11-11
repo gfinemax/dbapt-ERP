@@ -21,3 +21,28 @@ it.each(["VOUCHER_CREATE", "VOUCHER_CONFIRM", "VOUCHER_CANCEL"] as const)("block
   expect(mocks.guard).toHaveBeenCalledWith("original");
   expect(mocks.schema).not.toHaveBeenCalled();
 });
+
+it("routes integrated payments to the canonical payment workspace before creating a legacy operation", async () => {
+  const query = {
+    eq: vi.fn(),
+    from: vi.fn(),
+    maybeSingle: vi.fn().mockResolvedValue({ data: { id: "workflow" }, error: null }),
+    select: vi.fn(),
+  };
+  query.from.mockReturnValue(query);
+  query.select.mockReturnValue(query);
+  query.eq.mockReturnValue(query);
+  mocks.schema.mockReturnValue(query);
+
+  await expect(transitionExpenseDisbursementAction({
+    command: "PAYMENT_COMPLETE",
+    resolutionId: "integrated-resolution",
+    idempotencyKey: "attempt",
+    actorLabel: "forged",
+    expectedPaymentStatus: "지급대기",
+  })).rejects.toThrow("지급관리·수입지출 전표관리");
+
+  expect(query.from).toHaveBeenCalledTimes(1);
+  expect(query.from).toHaveBeenCalledWith("workflow_transactions");
+  expect(mocks.guard).not.toHaveBeenCalled();
+});

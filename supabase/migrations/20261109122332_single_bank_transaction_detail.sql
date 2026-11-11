@@ -146,7 +146,7 @@ begin
     if field_record.key='TRANSACTION_DETAIL' and next_value='' then
       raise exception '거래내역을 입력해줘.';
     end if;
-    if length(next_value) > case when field_record.key in ('MEMO','TRANSACTION_DETAIL') then 2000 else 200 end then
+    if length(next_value) > (case when field_record.key in ('MEMO','TRANSACTION_DETAIL') then 2000 else 200 end) then
       raise exception '거래내역 입력 길이를 확인해줘.';
     end if;
 

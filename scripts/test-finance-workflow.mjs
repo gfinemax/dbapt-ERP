@@ -71,6 +71,15 @@ const schemaQuery = await readFile(
   path.join(root, "supabase/schema.sql"),
   "utf8",
 );
+// schema.sql is the current snapshot while the runner intentionally replays
+// historical migrations. Restore the pre-Ledger source constraint so the
+// compatibility migration can verify its original baseline before the later
+// Ledger migration expands it again.
+const historicalMigrationBaseline = `
+alter table finance.account_subjects drop constraint if exists account_subjects_source_check;
+alter table finance.account_subjects add constraint account_subjects_source_check
+check (source in ('운영비 예산안','수지분석표','직접등록'));
+`;
 const migrationQueries = await Promise.all(
   (await readdir(path.join(root, "supabase/migrations")))
     .filter((f) => f.endsWith(".sql"))
@@ -96,6 +105,7 @@ const testFiles = [
   "advance_settlement_lifecycle.sql",
   "legacy_expense_authorization.sql",
   "approval_document_authorization.sql",
+  "approval_finance_handoff.sql",
   "expense_classification_axes.sql",
   "quick_expense_resolution_conversion.sql",
   "trust_operating_fund_periods.sql",
@@ -154,6 +164,7 @@ try {
   assert(ready, "isolated database startup");
   await sql(bootstrap);
   await sql(schemaQuery);
+  await sql(historicalMigrationBaseline);
   for (const query of migrationQueries) {
     if (query.trim()) await sql(query);
   }
@@ -174,7 +185,7 @@ try {
 insert into core.organizations(id,name,status) values('${org}','Concurrent test','active');
 insert into auth.users(id) values('${actor}');
 insert into finance.reimbursement_members values('${org}','${actor}','Test admin',array['ADMIN'],true);
-insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type,usage_status) values('${acct}','${org}','Test','Test','CONCURRENT','운영계좌','사용');
+insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type,usage_status,opened_at) values('${acct}','${org}','Test','Test','CONCURRENT','운영계좌','사용',current_date);
 insert into finance.bank_transactions(id,organization_id,bank_account_id,transacted_at,description,withdrawal_amount,deposit_amount) values('${bank}','${org}','${acct}',now()-interval '1 second','Test withdrawal',1000,0);
 insert into finance.expense_resolutions(id,organization_id,resolution_no,author_label,approval_status,payment_status,total_payment_amount,resolution_data) values('${source}','${org}','CONCURRENT','Test','승인완료','지급대기',100,'{}');
 select finance.workflow_command('${org}','${actor}','ENROLL','{"source_kind":"RESOLUTION","source_id":"${source}"}','fixture-enroll');
