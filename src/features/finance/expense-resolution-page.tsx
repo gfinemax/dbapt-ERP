@@ -309,6 +309,7 @@ export type ManagedExpenseResolution = {
   settlementAmount?: number;
   pettyCashTransactions?: PettyCashTransaction[];
   complianceWarnings?: string[];
+  workflowTransactionId?: string;
 };
 
 export type EvidenceType = "세금계산서" | "계산서" | "영수증" | "현금영수증" | "이체확인증" | "계약서" | "견적서" | "의결서" | "기타";
@@ -3437,6 +3438,10 @@ export function ExpenseResolutionPage({
 
   async function runDisbursementTransition(resolution: ManagedExpenseResolution, command: DisbursementTransitionRequest["command"], extra: Partial<DisbursementTransitionRequest> = {}) {
     setSaveError("");
+    if (resolution.workflowTransactionId) {
+      setSaveError("통합 연결된 건의 실제 지급과 전표는 지급관리·수입지출 전표관리에서 처리해줘.");
+      return null;
+    }
     try {
       const request = {
         actorLabel: currentUserName,
@@ -4003,14 +4008,14 @@ export function ExpenseResolutionPage({
           onClose={closeDetailModal}
           onCancelApproval={() => cancelApproval(selectedDetail.id)}
           onCancelVoucher={() => cancelVoucher(selectedDetail.id)}
-          onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
-          onCreateVoucher={() => createVoucher(selectedDetail.id)}
+          onConfirmVoucher={selectedDetail.workflowTransactionId ? undefined : () => confirmVoucher(selectedDetail.id)}
+          onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
           onDelete={isLegacySmallExpenseResolution(selectedDetail) ? undefined : () => removeResolution(selectedDetail.id)}
           onEdit={!isLegacySmallExpenseResolution(selectedDetail) && (viewer ? canEditExpense(selectedDetail, viewer) : selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus)) ? () => openEditModal(selectedDetail) : undefined}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
-          onProcessPayment={() => openPaymentModal(selectedDetail)}
+          onProcessPayment={selectedDetail.workflowTransactionId ? undefined : () => openPaymentModal(selectedDetail)}
           onReject={() => rejectResolution(selectedDetail.id)}
           onRequestApproval={() => requestApproval(selectedDetail.id)}
           resolution={selectedDetail}
@@ -4161,14 +4166,14 @@ export function ExpenseResolutionDetailModal({
   onCancelApproval?: () => void;
   onCancelVoucher?: () => void;
   onClose: () => void;
-  onConfirmVoucher: () => void;
+  onConfirmVoucher?: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
   onDelete?: () => void;
   onEdit?: () => void;
-  onCreateVoucher: () => void;
+  onCreateVoucher?: () => void;
   onPrintArchive: () => void;
   onPrintPreview: () => void;
-  onProcessPayment: () => void;
+  onProcessPayment?: () => void;
   onReject: () => void;
   onRequestApproval: () => void;
   resolution: ManagedExpenseResolution;
@@ -4192,7 +4197,7 @@ export function ExpenseResolutionDetailModal({
   }
 
   function handlePayment() {
-    onProcessPayment();
+    onProcessPayment?.();
   }
 
   function handleRequestApproval() {
@@ -4233,6 +4238,16 @@ export function ExpenseResolutionDetailModal({
         </div>
 
         <div className="grid max-h-[72vh] gap-5 overflow-y-auto bg-[var(--color-sky-wash)]/45 p-6 xl:grid-cols-2">
+          {resolution.workflowTransactionId ? (
+            <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-950 xl:col-span-2">
+              <p className="font-bold">통합 회계·자금 업무에 연결됨</p>
+              <p className="mt-1 leading-6">이 화면에서는 결의와 증빙을 확인하고, 실제 지급과 전표 확정은 각각 전용 원장에서 처리해.</p>
+              <div className="mt-3 flex flex-wrap gap-4 font-semibold underline">
+                <Link href="/finance/payments">지급관리로 이동</Link>
+                <Link href="/finance">수입·지출 전표관리로 이동</Link>
+              </div>
+            </div>
+          ) : null}
           {resolution.resolutionType === "BATCH" ? (
             <>
               <DetailSection title="프로젝트 일괄 지출결의 요약" wide>
@@ -4559,15 +4574,15 @@ export function ExpenseResolutionDetailModal({
               </Button>
             </>
           ) : null}
-          {resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus) ? (
+          {onProcessPayment && resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus) ? (
             <><Button className="rounded-full" onClick={onCancelApproval} variant="outline">승인취소</Button><Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handlePayment}>지급처리</Button></>
           ) : null}
-          {resolution.paymentStatus === "지급완료" && !resolution.voucherNo ? (
+          {onCreateVoucher && resolution.paymentStatus === "지급완료" && !resolution.voucherNo ? (
             <Button className="rounded-full" onClick={onCreateVoucher} variant="outline">
               전표초안 생성
             </Button>
           ) : null}
-          {resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안" ? (
+          {onConfirmVoucher && resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안" ? (
             <Button className="rounded-full" onClick={onConfirmVoucher} variant="outline">
               전표확정
             </Button>

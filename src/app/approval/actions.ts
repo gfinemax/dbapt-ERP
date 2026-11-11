@@ -20,6 +20,7 @@ import {
 } from "@/features/approval/approval-repository";
 import type { ApprovalDocumentType } from "@/features/approval/approval-domain";
 import { getOrganizationApprovalSteps } from "@/features/approval/organization-approval-line";
+import { expenseResolutionHref } from "@/features/finance/expense-entry";
 
 function text(formData: FormData, key: string) {
   return String(formData.get(key) ?? "").trim();
@@ -154,10 +155,16 @@ export async function decideApprovalAction(
 
 export async function createLinkedExpenseAction(formData: FormData) {
   const id = text(formData, "id");
-  await createExpenseDraftFromApproval(id, text(formData, "actorLabel"));
+  const result = await createExpenseDraftFromApproval(
+    id,
+    text(formData, "actorLabel"),
+    commandContext(formData),
+  );
   revalidatePath(`/approval/${id}`);
-  revalidatePath("/finance/exp");
-  redirect("/finance/exp");
+  revalidatePath("/finance/expenses");
+  revalidatePath("/finance/payments");
+  revalidatePath("/finance/expense-resolutions");
+  redirect(expenseResolutionHref({ resolutionId: result.expenseResolutionId }));
 }
 
 export async function createMeetingAgendaAction(formData: FormData) {
@@ -196,14 +203,17 @@ export async function createContractAction(formData: FormData) {
 }
 export async function createContractPaymentExpenseAction(formData: FormData) {
   const id = text(formData, "id");
-  await createContractPaymentExpense(
+  const result = await createContractPaymentExpense(
     id,
     text(formData, "paymentId"),
     text(formData, "actorLabel"),
+    commandContext(formData),
   );
   revalidatePath(`/approval/${id}`);
-  revalidatePath("/finance/exp");
-  redirect("/finance/exp");
+  revalidatePath("/finance/expenses");
+  revalidatePath("/finance/payments");
+  revalidatePath("/finance/expense-resolutions");
+  redirect(expenseResolutionHref({ resolutionId: result.expenseResolutionId }));
 }
 
 export async function updateApprovalAction(formData: FormData) {

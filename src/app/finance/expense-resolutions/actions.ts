@@ -504,6 +504,18 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
     await assertLegacyVoucherEditable(input.resolutionId);
   }
 
+  const { data: integratedTransaction, error: integratedError } = await supabase
+    .schema("finance")
+    .from("workflow_transactions")
+    .select("id")
+    .eq("organization_id", actor.organization_id)
+    .eq("source_kind", "RESOLUTION")
+    .eq("source_id", input.resolutionId)
+    .maybeSingle();
+  if (integratedError) throw new Error(`통합 회계·자금 연결 확인 실패: ${integratedError.message}`);
+  if (integratedTransaction)
+    throw new Error("통합 연결된 건의 실제 지급과 전표는 지급관리·수입지출 전표관리에서 처리해주세요.");
+
   const operation = {
     command: input.command,
     idempotency_key: input.idempotencyKey,

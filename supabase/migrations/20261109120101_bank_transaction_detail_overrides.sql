@@ -71,7 +71,7 @@ begin
 
   for field_record in select key,value from jsonb_each_text(p_fields) loop
     next_value := trim(coalesce(field_record.value,''));
-    if length(next_value) > case when field_record.key='MEMO' then 2000 else 200 end then
+    if length(next_value) > (case when field_record.key='MEMO' then 2000 else 200 end) then
       raise exception '거래내역 입력 길이를 확인해줘.';
     end if;
 

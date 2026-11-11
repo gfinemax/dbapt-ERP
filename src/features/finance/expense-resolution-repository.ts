@@ -316,6 +316,7 @@ async function hydrateExpenseResolutionRows(
     { data: itemData, error: itemError },
     { data: allocationData, error: allocationError },
     { data: evidenceData, error: evidenceError },
+    { data: workflowData, error: workflowError },
   ] = await Promise.all([
     supabase.schema("finance").from("expense_authorization_bindings")
       .select("resolution_id,author_user_id,steps,version")
@@ -339,13 +340,26 @@ async function hydrateExpenseResolutionRows(
       .select("id,resolution_id,item_id,evidence_type,storage_bucket,storage_path,original_filename,content_type,file_size,ocr_status,ocr_data,uploaded_by_label,uploaded_at")
       .in("resolution_id", resolutionIds)
       .order("uploaded_at", { ascending: true }),
+    supabase
+      .schema("finance")
+      .from("workflow_transactions")
+      .select("id,source_id")
+      .eq("organization_id", actor.organization_id)
+      .eq("source_kind", "RESOLUTION")
+      .in("source_id", resolutionIds),
   ]);
   if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
   if (itemError) throw new Error(`Failed to list expense resolution items: ${itemError.message}`);
   if (allocationError) throw new Error(`Failed to list expense account allocations: ${allocationError.message}`);
   if (evidenceError) throw new Error(`Failed to list expense evidence: ${evidenceError.message}`);
+  if (workflowError) throw new Error(`Failed to list integrated expense links: ${workflowError.message}`);
   const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
-  const resolutions = sourceRows.map(row => ({ ...row.resolution_data, authorization: bindingMap.get(row.resolution_data.id) ?? null }));
+  const workflowMap = new Map(((workflowData ?? []) as { id: string; source_id: string }[]).map(item => [item.source_id, item.id]));
+  const resolutions = sourceRows.map(row => ({
+    ...row.resolution_data,
+    authorization: bindingMap.get(row.resolution_data.id) ?? null,
+    workflowTransactionId: workflowMap.get(row.resolution_data.id),
+  }));
   return hydrateExpenseResolutionChildren(
     resolutions,
     (itemData ?? []) as ExpenseResolutionItemRow[],

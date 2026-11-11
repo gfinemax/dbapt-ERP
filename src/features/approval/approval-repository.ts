@@ -7,6 +7,7 @@ import {
   type ApprovalDocument,
   type ApprovalDocumentCandidate,
   type ApprovalDraftInput,
+  type ApprovalExecutionLink,
   type ApprovalStep,
 } from "./approval-domain";
 import {
@@ -105,6 +106,15 @@ type ContractPaymentRow = {
   scheduled_date: string | null;
   status: "SCHEDULED" | "REQUESTED" | "PAID" | "CANCELLED";
 };
+type ExecutionLinkRow = {
+  contract_payment_id: string | null;
+  document_id: string;
+  execution_kind: ApprovalExecutionLink["kind"];
+  expense_resolution_id: string;
+  id: string;
+  status: ApprovalExecutionLink["status"];
+  workflow_transaction_id: string | null;
+};
 function hydrate(
   row: DocumentRow,
   steps: StepRow[],
@@ -112,6 +122,7 @@ function hydrate(
   attachments: AttachmentRow[] = [],
   contracts: ContractRow[] = [],
   contractPayments: ContractPaymentRow[] = [],
+  executionLinks: ExecutionLinkRow[] = [],
 ): ApprovalDocument {
   const contract = contracts.find((item) => item.document_id === row.id);
   const payments = contract
@@ -140,6 +151,16 @@ function hydrate(
     documentType: row.document_type,
     drafterLabel: row.drafter_label,
     executionStatus: row.execution_status,
+    executionLinks: executionLinks
+      .filter((item) => item.document_id === row.id)
+      .map((item) => ({
+        contractPaymentId: item.contract_payment_id ?? undefined,
+        expenseResolutionId: item.expense_resolution_id,
+        id: item.id,
+        kind: item.execution_kind,
+        status: item.status,
+        workflowTransactionId: item.workflow_transaction_id ?? undefined,
+      })),
     expenseResolutionId: row.expense_resolution_id ?? undefined,
     id: row.id,
     meetingId: row.meeting_id ?? undefined,
@@ -223,7 +244,7 @@ export async function listApprovalDocuments(organizationId?: string, documentId?
   if (stepError)
     throw new Error(`결재선을 불러오지 못했어: ${stepError.message}`);
   const ids = rows.map((row) => row.id);
-  const [auditResult, attachmentResult] = await Promise.all([
+  const [auditResult, attachmentResult, executionLinkResult] = await Promise.all([
     client
       .schema("approval")
       .from("audit_logs")
@@ -235,10 +256,16 @@ export async function listApprovalDocuments(organizationId?: string, documentId?
       .from("attachments")
       .select("id,document_id,original_filename,file_size")
       .in("document_id", ids),
+    client
+      .schema("approval")
+      .from("document_execution_links")
+      .select("id,document_id,execution_kind,contract_payment_id,expense_resolution_id,workflow_transaction_id,status")
+      .in("document_id", ids)
+      .order("created_at"),
   ]);
-  if (auditResult.error || attachmentResult.error)
+  if (auditResult.error || attachmentResult.error || executionLinkResult.error)
     throw new Error(
-      `기안 이력을 불러오지 못했어: ${auditResult.error?.message ?? attachmentResult.error?.message}`,
+      `기안 이력을 불러오지 못했어: ${auditResult.error?.message ?? attachmentResult.error?.message ?? executionLinkResult.error?.message}`,
     );
   const contractResult = await client
     .schema("approval")
@@ -277,6 +304,7 @@ export async function listApprovalDocuments(organizationId?: string, documentId?
       (attachmentResult.data ?? []) as AttachmentRow[],
       contracts,
       payments,
+      (executionLinkResult.data ?? []) as ExecutionLinkRow[],
     ), authorization: bindings.get(row.id) ?? null,
   }));
 }
@@ -469,16 +497,38 @@ export async function submitApprovalDocument(id: string, context: ApprovalComman
 
 export async function createExpenseDraftFromApproval(
   id: string,
-  actorLabel: string,
+  _actorLabel: string,
+  context: ApprovalCommandContext,
 ) {
   const actor = await requireApprovalActor("ADMIN");
   await requireApprovalRecord(id);
-  actorLabel = actor.display_name;
   const document = await getApprovalDocument(id);
   if (!document) throw new Error("기안 문서를 찾지 못했어.");
+  return handoffApprovalToFinance(document, actor, undefined, context);
+}
+
+type FinanceHandoffResult = {
+  contractPaymentId?: string;
+  executionLinkId: string;
+  expenseResolutionId: string;
+  workflowTransactionId: string;
+};
+type ApprovalContractPayment = NonNullable<ApprovalDocument["contractPayments"]>[number];
+
+async function handoffApprovalToFinance(
+  document: ApprovalDocument,
+  actor: Awaited<ReturnType<typeof requireApprovalActor>>,
+  payment: ApprovalContractPayment | undefined,
+  context: ApprovalCommandContext,
+): Promise<FinanceHandoffResult> {
+  if (!context?.key || !Number.isInteger(context.expectedVersion) || context.expectedVersion < 0)
+    throw new Error("기안 버전과 처리키가 필요합니다.");
   const today = new Date().toLocaleDateString("en-CA", {
     timeZone: "Asia/Seoul",
   });
+  const isContractPayment = !!payment;
+  const amount = payment?.amount ?? document.amount;
+  const subject = isContractPayment ? `${document.title} 분할지급` : document.title;
   const base: ExpenseResolution = {
     accountHolder: document.counterpartyName ?? "미지정",
     accountNumber: "",
@@ -487,44 +537,75 @@ export async function createExpenseDraftFromApproval(
     bankName: "미지정",
     budgetItem: document.budgetItem ?? "미지정",
     createdAt: today,
-    createdBy: document.drafterLabel,
-    createdByTitle: document.departmentLabel,
+    createdBy: isContractPayment ? actor.display_name : document.drafterLabel,
+    createdByTitle: isContractPayment ? "계약담당" : document.departmentLabel,
     evidenceFiles: [],
     expenseType: document.budgetItem ?? "기타",
     history: [
       {
         actionAt: `${today} 00:00`,
-        actionLabel: `기안 ${document.documentNo}에서 생성`,
+        actionLabel: `기안 ${document.documentNo}에서 회계·자금으로 인계`,
         actionType: "CREATED",
-        actorName: actorLabel,
+        actorName: actor.display_name,
         actorTitle: "",
-        id: `approval-${id}`,
+        id: `approval-${document.id}`,
       },
     ],
-    id: `approval-expense-${id}`,
+    id: isContractPayment
+      ? `contract-payment-${payment.id}`
+      : `approval-expense-${document.id}`,
     paymentStatus: "BEFORE_PAYMENT",
-    plannedPaymentDate: today,
-    projectName: "",
-    reason: document.purpose,
+    plannedPaymentDate: payment?.dueDate ?? today,
+    projectName: document.projectName ?? "",
+    reason: isContractPayment
+      ? `기안 ${document.documentNo} 계약 분할지급`
+      : document.purpose,
     resolutionNo: "생성중",
     settlementStatus: "NOT_REQUIRED",
-    subject: document.title,
-    supplyAmount: document.amount,
-    totalAmount: document.amount,
+    subject,
+    supplyAmount: amount,
+    totalAmount: amount,
     vatAmount: 0,
     vendorName: document.counterpartyName ?? "미지정",
   };
-  const client = requireClient();
-  const { data, error } = await client
+  const { data, error } = await requireClient()
     .schema("approval")
-    .rpc("create_expense_draft", {
-      p_actor_label: actorLabel,
-      p_document_id: id,
-      p_resolution_data: { ...toManagedExpenseResolutionDraft(base), approvalDocumentId: id, approvalDocumentNo: document.documentNo, creationSource: "APPROVAL_LINKED", directExpenseDecision: "ALLOWED", directExpenseReasons: ["승인된 기안에서 생성된 지출결의입니다."] },
+    .rpc("handoff_to_finance", {
+      p_actor: actor.user_id,
+      p_contract_payment_id: payment?.id ?? null,
+      p_document_id: document.id,
+      p_expected_version: context.expectedVersion,
+      p_key: context.key,
+      p_org: actor.organization_id,
+      p_resolution_data: {
+        ...toManagedExpenseResolutionDraft(base),
+        approvalDocumentId: document.id,
+        approvalDocumentNo: document.documentNo,
+        creationSource: isContractPayment ? "CONTRACT_PAYMENT" : "APPROVAL_LINKED",
+        directExpenseDecision: "ALLOWED",
+        directExpenseReasons: [
+          isContractPayment
+            ? "승인된 계약기안의 분할지급입니다."
+            : "승인된 기안에서 생성된 지출결의입니다.",
+        ],
+      },
     });
   if (error)
-    throw new Error(`지출결의서 초안을 만들지 못했어: ${error.message}`);
-  return data as string;
+    throw new Error(`회계·자금 업무로 넘기지 못했어: ${error.message}`);
+  const result = data as {
+    contract_payment_id: string | null;
+    execution_link_id: string;
+    expense_resolution_id: string;
+    workflow_transaction_id: string;
+  } | null;
+  if (!result?.execution_link_id || !result.expense_resolution_id || !result.workflow_transaction_id)
+    throw new Error("회계·자금 연결 결과를 확인하지 못했어. 같은 처리키로 다시 확인해줘.");
+  return {
+    contractPaymentId: result.contract_payment_id ?? undefined,
+    executionLinkId: result.execution_link_id,
+    expenseResolutionId: result.expense_resolution_id,
+    workflowTransactionId: result.workflow_transaction_id,
+  };
 }
 
 export async function createMeetingAgenda(
@@ -592,56 +673,18 @@ export async function createContractFromApproval(
 export async function createContractPaymentExpense(
   documentId: string,
   paymentId: string,
-  actorLabel: string,
+  _actorLabel: string,
+  context: ApprovalCommandContext,
 ) {
   const actor = await requireApprovalActor("ADMIN");
   await requireApprovalRecord(documentId);
-  actorLabel = actor.display_name;
   const document = await getApprovalDocument(documentId);
   const payment = document?.contractPayments?.find(
     (item) => item.id === paymentId,
   );
   if (!document || !payment)
     throw new Error("계약 분할지급 일정을 찾지 못했어.");
-  const today = new Date().toLocaleDateString("en-CA", {
-    timeZone: "Asia/Seoul",
-  });
-  const base: ExpenseResolution = {
-    accountHolder: document.counterpartyName ?? "미지정",
-    accountNumber: "",
-    approvalLines: createDefaultApprovalLines(),
-    approvalStatus: "DRAFT",
-    bankName: "미지정",
-    budgetItem: document.budgetItem ?? "미지정",
-    createdAt: today,
-    createdBy: actorLabel,
-    createdByTitle: "계약담당",
-    evidenceFiles: [],
-    expenseType: document.budgetItem ?? "계약비",
-    history: [],
-    id: `contract-payment-${paymentId}`,
-    paymentStatus: "BEFORE_PAYMENT",
-    plannedPaymentDate: payment.dueDate ?? today,
-    projectName: document.projectName,
-    reason: `기안 ${document.documentNo} 계약 분할지급`,
-    resolutionNo: "생성중",
-    settlementStatus: "NOT_REQUIRED",
-    subject: `${document.title} 분할지급`,
-    supplyAmount: payment.amount,
-    totalAmount: payment.amount,
-    vatAmount: 0,
-    vendorName: document.counterpartyName ?? "미지정",
-  };
-  const { data, error } = await requireClient()
-    .schema("approval")
-    .rpc("create_contract_payment_expense", {
-      p_actor_label: actorLabel,
-      p_payment_id: paymentId,
-      p_resolution_data: { ...toManagedExpenseResolutionDraft(base), approvalDocumentId: documentId, approvalDocumentNo: document.documentNo, creationSource: "CONTRACT_PAYMENT", directExpenseDecision: "ALLOWED", directExpenseReasons: ["승인된 계약기안의 분할지급입니다."] },
-    });
-  if (error)
-    throw new Error(`분할지급 지출결의서를 만들지 못했어: ${error.message}`);
-  return data as string;
+  return handoffApprovalToFinance(document, actor, payment, context);
 }
 
 export async function updateApprovalDocument(id: string, actorLabel: string, changes: {
