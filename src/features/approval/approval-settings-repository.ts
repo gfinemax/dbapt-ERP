@@ -1,4 +1,5 @@
 import { budgetUsed, type ReimbursementBudget } from "@/features/finance/reimbursement-domain";
+import type { ReimbursementMember } from "@/features/finance/reimbursement-domain";
 import { getSupabaseServerClient } from "@/lib/supabase/server";
 import type { BudgetMappingStatus, OperatingExpenseDetail } from "@/features/finance/operating-budget-classification";
 
@@ -30,6 +31,56 @@ export type ApprovalBudgetOption = {
   recordedAmount?: number;
   planItemLabel?: string;
   planSection?: string;
+  baseApprovedAmount?: number;
+  baseMonthlyBudgetAmount?: number;
+  annualAdjustmentAmount?: number;
+  monthlyAdjustmentAmount?: number;
+};
+export type BudgetPlanVersion = {
+  approved_at: string | null;
+  authority_reference: string;
+  created_at: string;
+  fiscal_year: number;
+  id: string;
+  notes: string;
+  revision: number;
+  status: "DRAFT" | "SUBMITTED" | "ACTIVE" | "ARCHIVED" | "REJECTED";
+  title: string;
+};
+export type BudgetPlanItem = {
+  approved_amount: number;
+  budget_code: string | null;
+  budget_item: string;
+  calculation_basis: string;
+  id: string;
+  mapping_note: string;
+  mapping_status: "CONFIRMED" | "POLICY_REVIEW";
+  monthly_amount: number;
+  plan_id: string;
+  plan_item_label: string | null;
+  plan_section: string | null;
+  sort_order: number;
+};
+export type BudgetAdjustment = {
+  adjustment_no: string;
+  adjustment_type: "TRANSFER" | "RESERVE_USE" | "SUPPLEMENT" | "REDUCTION";
+  amount: number;
+  approved_at: string | null;
+  authority_reference: string;
+  decision_note: string;
+  effective_month: string;
+  fiscal_year: number;
+  id: string;
+  reason: string;
+  requested_at: string;
+  source_budget_id: string | null;
+  status: "DRAFT" | "SUBMITTED" | "APPROVED" | "REJECTED" | "CANCELLED";
+  target_budget_id: string | null;
+};
+export type BudgetGovernance = {
+  adjustments: BudgetAdjustment[];
+  items: BudgetPlanItem[];
+  plans: BudgetPlanVersion[];
 };
 export type ApprovalLineRule = {
   documentType: "GENERAL" | "EXPENSE" | "CONTRACT" | null;
@@ -161,9 +212,9 @@ export async function listApprovalBudgets(organizationId?: string): Promise<Appr
     const current=row.fiscal_year===currentYear;
     const reservedAmount=current?Number(total.reserved_amount):0;
     const monthlyUsedAmount=current?budgetUsed(total):0;
-    const monthlyBudgetAmount=Number(row.monthly_amount);
+    const monthlyBudgetAmount=Number(total.monthly_amount??row.monthly_amount);
     return {
-      approvedAmount:Number(row.approved_amount),
+      approvedAmount:Number(total.approved_amount??row.approved_amount),
       availableAmount:monthlyBudgetAmount-reservedAmount-monthlyUsedAmount,
       budgetItem:row.budget_item, calculationBasis:row.calculation_basis||undefined,
       budgetCode:row.budget_code||undefined,planSection:row.plan_section||undefined,planItemLabel:row.plan_item_label||undefined,
@@ -174,43 +225,60 @@ export async function listApprovalBudgets(organizationId?: string): Promise<Appr
       pendingAmount:current?Number(total.pending_amount??0):0,
       unpaidAmount:current?Number(total.unpaid_amount):0,
       unresolvedCount:Number(total.unresolved_count??0),
+      baseApprovedAmount:Number(total.base_approved_amount??row.approved_amount),
+      baseMonthlyBudgetAmount:Number(total.base_monthly_amount??row.monthly_amount),
+      annualAdjustmentAmount:Number(total.annual_adjustment_amount??0),
+      monthlyAdjustmentAmount:Number(total.monthly_adjustment_amount??0),
     };
   });
 }
 
-export async function saveApprovalBudget(input: {
-  approvedAmount: number;
-  budgetItem: string;
-  executedAmount: number;
-  fiscalYear: number;
-  monthlyBudgetAmount: number;
-  organizationId?: string;
-}) {
-  if (!input.organizationId) throw new Error("예산을 저장할 조직이 없어.");
-  if (
-    !input.budgetItem.trim() ||
-    input.approvedAmount < 0 ||
-    input.executedAmount < 0 ||
-    input.monthlyBudgetAmount < 0
-  )
-    throw new Error("예산 입력값을 확인해줘.");
-  const { error } = await client()
-    .schema("approval")
-    .from("budgets")
-    .upsert(
-      {
-        approved_amount: input.approvedAmount,
-        budget_item: input.budgetItem.trim(),
-        executed_amount: input.executedAmount,
-        fiscal_year: input.fiscalYear,
-        monthly_amount: input.monthlyBudgetAmount,
-        organization_id: input.organizationId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "organization_id,fiscal_year,budget_item" },
-    );
-  if (error) throw new Error(`예산을 저장하지 못했어: ${error.message}`);
+export async function listBudgetGovernance(organizationId?: string): Promise<BudgetGovernance> {
+  if (!organizationId) return { adjustments: [], items: [], plans: [] };
+  const api=client().schema("approval");
+  const [planResult,adjustmentResult]=await Promise.all([
+    api.from("budget_plan_versions")
+      .select("id,fiscal_year,revision,status,title,authority_reference,notes,approved_at,created_at")
+      .eq("organization_id",organizationId)
+      .order("fiscal_year",{ascending:false})
+      .order("revision",{ascending:false}),
+    api.from("budget_adjustments")
+      .select("id,fiscal_year,adjustment_no,adjustment_type,status,source_budget_id,target_budget_id,effective_month,amount,reason,authority_reference,decision_note,requested_at,approved_at")
+      .eq("organization_id",organizationId)
+      .order("requested_at",{ascending:false})
+      .limit(100),
+  ]);
+  if(planResult.error) throw new Error(`연도별 예산안을 불러오지 못했어: ${planResult.error.message}`);
+  if(adjustmentResult.error) throw new Error(`예산변경 내역을 불러오지 못했어: ${adjustmentResult.error.message}`);
+  const planIds=(planResult.data??[]).map(plan=>plan.id);
+  const itemResult=planIds.length
+    ? await api.from("budget_plan_version_items")
+      .select("id,plan_id,budget_code,budget_item,plan_section,plan_item_label,mapping_status,mapping_note,approved_amount,monthly_amount,calculation_basis,sort_order")
+      .in("plan_id",planIds).order("sort_order").order("budget_item")
+    : {data:[],error:null};
+  if(itemResult.error) throw new Error(`예산안 항목을 불러오지 못했어: ${itemResult.error.message}`);
+  return {
+    adjustments:(adjustmentResult.data??[]).map(row=>({...row,amount:Number(row.amount)})) as BudgetAdjustment[],
+    items:(itemResult.data??[]).map(row=>({...row,approved_amount:Number(row.approved_amount),monthly_amount:Number(row.monthly_amount)})) as BudgetPlanItem[],
+    plans:(planResult.data??[]) as BudgetPlanVersion[],
+  };
 }
+
+export async function runBudgetGovernanceCommand(
+  member: ReimbursementMember,
+  command: string,
+  data: Record<string,unknown>,
+) {
+  const {data:result,error}=await client().schema("approval").rpc("budget_governance_command",{
+    p_org:member.organization_id,
+    p_actor:member.user_id,
+    p_command:command,
+    p_data:data,
+  });
+  if(error) throw new Error(error.code==="23505"?"같은 연도·예산코드의 자료가 이미 있습니다.":error.message);
+  return result;
+}
+
 export async function listApprovalLineRules(organizationId?: string): Promise<ApprovalLineRule[]> {
   let query = client()
     .schema("approval")

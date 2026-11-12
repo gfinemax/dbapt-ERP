@@ -93,6 +93,7 @@ const testFiles = [
   "automatic_reimbursement_period.sql",
   "unified_monthly_budget.sql",
   "unified_budget_partial_reservation.sql",
+  "annual_budget_governance.sql",
   "fund_workflow.sql",
   "trust_request_versions.sql",
   "payment_workspace.sql",
