@@ -9,6 +9,10 @@ import {
 } from "@/features/finance/bank-transaction-export.server";
 import { normalizeBankTransactionExportColumns } from "@/features/finance/bank-transaction-export-columns";
 import {
+  createBankTransactionGoogleSpreadsheet,
+  GoogleSheetsConfigurationError,
+} from "@/features/finance/google-sheets-export.server";
+import {
   listBankTransactions,
   loadBankTransactionSourceReconciliationSummary,
   type BankTransactionClassificationStatus,
@@ -33,8 +37,8 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json() as Record<string, unknown>;
-    const format = body.format === "pdf" ? "pdf" : body.format === "xlsx" ? "xlsx" : null;
-    if (!format) return Response.json({ message: "내보내기 형식을 엑셀 또는 PDF로 선택해줘." }, { status: 400 });
+    const format = body.format === "pdf" ? "pdf" : body.format === "xlsx" ? "xlsx" : body.format === "google_sheets" ? "google_sheets" : null;
+    if (!format) return Response.json({ message: "내보내기 형식을 엑셀, PDF 또는 구글 스프레드시트로 선택해줘." }, { status: 400 });
     const columns = normalizeBankTransactionExportColumns(body.columns);
     if (format === "pdf" && columns.length > 10) {
       return Response.json({ message: "PDF는 읽기 편하도록 컬럼을 10개 이하로 선택해줘. 더 많은 컬럼은 엑셀을 이용해줘." }, { status: 422 });
@@ -57,9 +61,10 @@ export async function POST(request: NextRequest) {
       rows,
       title: typeof body.title === "string" ? body.title : undefined,
     });
-    const file = format === "pdf" ? await buildBankTransactionPdf(data) : await buildBankTransactionWorkbook(data);
     const stamp = koreaFileStamp(data.generatedAt);
-    const fileName = `bank-transactions-${stamp}.${format}`;
+    const spreadsheet = format === "google_sheets" ? await createBankTransactionGoogleSpreadsheet(data) : null;
+    const fileName = spreadsheet ? `${spreadsheet.title} (${spreadsheet.spreadsheetId})` : `bank-transactions-${stamp}.${format}`;
+    const file = format === "pdf" ? await buildBankTransactionPdf(data) : format === "xlsx" ? await buildBankTransactionWorkbook(data) : null;
     const { error: auditError } = await expenseDb().schema("finance").from("bank_transaction_export_audit_logs").insert({
       actor_id: actor.user_id,
       actor_label: actor.display_name,
@@ -73,6 +78,10 @@ export async function POST(request: NextRequest) {
       withdrawal_total: data.totals.withdrawal,
     });
     if (auditError) throw new Error(`내보내기 감사 이력을 저장하지 못했어: ${auditError.message}`);
+    if (spreadsheet) {
+      return Response.json(spreadsheet, { headers: { "Cache-Control": "private, no-store" } });
+    }
+    if (!file) throw new Error("내보내기 파일을 만들지 못했어.");
     return new Response(new Uint8Array(file), {
       headers: {
         "Cache-Control": "private, no-store",
@@ -83,7 +92,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "거래내역을 내보내지 못했어.";
-    const status = message.includes("건을 초과") ? 422 : 500;
+    const status = error instanceof GoogleSheetsConfigurationError ? 503 : message.includes("건을 초과") ? 422 : 500;
     console.error("Failed to export bank transactions", error);
     return Response.json({ message }, { status });
   }

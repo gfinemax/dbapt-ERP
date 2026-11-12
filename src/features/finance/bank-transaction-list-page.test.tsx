@@ -511,6 +511,10 @@ describe("BankTransactionListPage", () => {
     expect(within(dialog).getAllByRole("checkbox", { checked: true })).toHaveLength(7);
     expect(within(dialog).getByText("거래일 → 일시 → 계좌 → 적요 → 거래내역 → 금액 → 계정과목")).toBeInTheDocument();
     expect(within(dialog).getByText("관리자 비고").parentElement).toHaveTextContent("내부정보");
+    expect(within(dialog).getByRole("radio", { name: "구글 스프레드시트" })).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("radio", { name: "구글 스프레드시트" }));
+    expect(within(dialog).getByText(/Google 공유 드라이브 폴더에 새 스프레드시트를 만들어/)).toBeInTheDocument();
+    expect(within(dialog).getByRole("button", { name: "스프레드시트 만들기" })).toBeEnabled();
     fireEvent.click(within(dialog).getByRole("radio", { name: "PDF" }));
     expect(within(dialog).getByText(/PDF는 1,000건까지 지원해/)).toBeInTheDocument();
     expect(within(dialog).getByRole("button", { name: "PDF 내려받기" })).toBeDisabled();

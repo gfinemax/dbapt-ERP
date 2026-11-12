@@ -10,7 +10,10 @@ import {
   bankTransactionExportColumnLabel,
   type BankTransactionExportColumnId,
 } from "./bank-transaction-export-columns";
+import { bankTransactionFilterSummary, bankTransactionStatusLabels } from "./bank-transaction-export-summary";
 import type { BankTransactionListFilters, BankTransactionListRow } from "./bank-transaction-repository";
+
+export { bankTransactionFilterSummary } from "./bank-transaction-export-summary";
 
 export type BankTransactionExportRecord = Record<BankTransactionExportColumnId, string | number>;
 
@@ -22,14 +25,6 @@ export type BankTransactionExportData = {
   title: string;
   totals: { confirmedLoss: number; deposit: number; externalRecognition: number; trustHeld: number; withdrawal: number };
 };
-
-const statusLabels = {
-  CONFIRMED: "확정",
-  DEFERRED: "검토 보류",
-  EXCLUDED: "제외",
-  RECOMMENDED: "추천 있음",
-  UNREVIEWED: "미확인",
-} as const;
 
 export function buildBankTransactionExportData(input: {
   accountSubjects: RegisteredAccountSubject[];
@@ -68,7 +63,7 @@ export function buildBankTransactionExportData(input: {
       amount: signedAmount,
       balance: row.balanceAmount ?? "",
       cashImpact: cashImpactLabel(row.cashImpact),
-      classificationStatus: statusLabels[row.classificationStatus],
+      classificationStatus: bankTransactionStatusLabels[row.classificationStatus],
       counterparty: row.counterparty || "",
       description: row.description || "",
       details: transactionDetails(row),
@@ -173,20 +168,6 @@ function excelColumnWidth(column: BankTransactionExportColumnId) {
     classificationStatus: 14, counterparty: 22, description: 24, details: 52, originType: 18, sourceRecordId: 38,
     sourceStatus: 36, transactionDate: 13, transactionId: 38, transactionKind: 14, transactionTime: 12,
   } satisfies Record<BankTransactionExportColumnId, number>)[column];
-}
-
-export function bankTransactionFilterSummary(filters: BankTransactionListFilters) {
-  const parts = [
-    filters.query ? `검색어 ${filters.query}` : "",
-    filters.bankAccountId ? `계좌 ID ${filters.bankAccountId}` : "전체 계좌",
-    filters.originType ? `원본 ${filters.originType === "BANK_TRANSACTION" ? "은행 통장거래" : "외부납입 인정"}` : "전체 원본",
-    filters.externalRecognitionKind ? `외부납입 구분 ${filters.externalRecognitionKind === "FIXED_CERTIFICATE" ? "동일건설 정액 필증 3천만원" : "일반 외부납입"}` : "",
-    filters.dateFrom ? `시작일 ${filters.dateFrom}` : "",
-    filters.dateTo ? `종료일 ${filters.dateTo}` : "",
-    filters.classificationStatus ? `상태 ${statusLabels[filters.classificationStatus]}` : "",
-    filters.sourceReconciliationStatus ? "원본 확인 필요" : "",
-  ].filter(Boolean);
-  return parts.join(" · ") || "전체 거래";
 }
 
 const pdfColumnWeights: Record<BankTransactionExportColumnId, number> = {

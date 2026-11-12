@@ -16,11 +16,12 @@ type Props = {
 
 export function BankTransactionExportDialog({ filters, totalCount }: Props) {
   const [open, setOpen] = useState(false);
-  const [format, setFormat] = useState<"xlsx" | "pdf">("xlsx");
+  const [format, setFormat] = useState<"xlsx" | "pdf" | "google_sheets">("xlsx");
   const [columns, setColumns] = useState<BankTransactionExportColumnId[]>([...defaultBankTransactionExportColumns]);
   const [title, setTitle] = useState("통합 거래내역");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [spreadsheet, setSpreadsheet] = useState<{ title: string; url: string } | null>(null);
   const pdfTooLarge = format === "pdf" && totalCount > 1_000;
   const orderedColumns = useMemo(() => columns.map((id) => bankTransactionExportColumns.find((column) => column.id === id)).filter(Boolean), [columns]);
 
@@ -39,8 +40,21 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
     });
   }
 
+  function selectFormat(nextFormat: "xlsx" | "pdf" | "google_sheets") {
+    setFormat(nextFormat);
+    setError("");
+    setSpreadsheet(null);
+  }
+
+  function openDialog() {
+    setError("");
+    setSpreadsheet(null);
+    setOpen(true);
+  }
+
   async function download() {
     setError("");
+    setSpreadsheet(null);
     if (!columns.length) { setError("내보낼 컬럼을 한 개 이상 선택해줘."); return; }
     if (format === "pdf" && columns.length > 10) { setError("PDF는 컬럼을 10개 이하로 선택해줘."); return; }
     if (pdfTooLarge) { setError("PDF는 1,000건까지 만들 수 있어. 검색 조건을 좁히거나 엑셀을 선택해줘."); return; }
@@ -54,6 +68,11 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
       if (!response.ok) {
         const payload = await response.json().catch(() => ({})) as { message?: string };
         throw new Error(payload.message || "파일을 만들지 못했어.");
+      }
+      if (format === "google_sheets") {
+        const result = await response.json() as { title: string; url: string };
+        setSpreadsheet(result);
+        return;
       }
       const blob = await response.blob();
       const fallback = `bank-transactions.${format}`;
@@ -74,7 +93,7 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
 
   return (
     <>
-      <button className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-bold text-[var(--color-midnight-ink)]" onClick={() => setOpen(true)} type="button">
+      <button className="rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-bold text-[var(--color-midnight-ink)]" onClick={openDialog} type="button">
         검색 결과 내보내기
       </button>
       {open ? (
@@ -85,8 +104,9 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
               <button aria-label="닫기" className="rounded-lg border px-3 py-1.5 font-bold" onClick={() => setOpen(false)} type="button">닫기</button>
             </div>
             <label className="mt-5 grid gap-1 text-sm font-bold">보고서 제목<input className="h-10 rounded-lg border border-[var(--color-soft-border)] px-3 font-normal" maxLength={80} onChange={(event) => setTitle(event.target.value)} value={title} /></label>
-            <fieldset className="mt-4"><legend className="text-sm font-bold">파일 형식</legend><div className="mt-2 flex gap-4"><label className="flex items-center gap-2"><input checked={format === "xlsx"} name="format" onChange={() => setFormat("xlsx")} type="radio" />엑셀(.xlsx)</label><label className="flex items-center gap-2"><input checked={format === "pdf"} name="format" onChange={() => setFormat("pdf")} type="radio" />PDF</label></div></fieldset>
+            <fieldset className="mt-4"><legend className="text-sm font-bold">내보내기 형식</legend><div className="mt-2 flex flex-wrap gap-x-4 gap-y-2"><label className="flex items-center gap-2"><input checked={format === "xlsx"} name="format" onChange={() => selectFormat("xlsx")} type="radio" />엑셀(.xlsx)</label><label className="flex items-center gap-2"><input checked={format === "pdf"} name="format" onChange={() => selectFormat("pdf")} type="radio" />PDF</label><label className="flex items-center gap-2"><input checked={format === "google_sheets"} name="format" onChange={() => selectFormat("google_sheets")} type="radio" />구글 스프레드시트</label></div></fieldset>
             {pdfTooLarge ? <p className="mt-2 rounded-lg bg-[var(--color-butter-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-mustard)]">PDF는 1,000건까지 지원해. 검색 조건을 좁히거나 엑셀로 내보내줘.</p> : null}
+            {format === "google_sheets" ? <p className="mt-2 rounded-lg bg-[var(--color-morning-tint)]/50 px-3 py-2 text-sm font-semibold text-[var(--color-green-ink)]">관리자가 지정한 Google 공유 드라이브 폴더에 새 스프레드시트를 만들어.</p> : null}
             <fieldset className="mt-5"><legend className="text-sm font-bold">내보낼 컬럼과 순서</legend><p className="mt-1 text-xs text-[var(--color-stone)]">기본값은 거래일·일시·계좌·적요·거래내역·금액·계정과목이야.</p>
               <div className="mt-2 grid gap-2 sm:grid-cols-2">
                 {bankTransactionExportColumns.map((column) => {
@@ -101,7 +121,8 @@ export function BankTransactionExportDialog({ filters, totalCount }: Props) {
             </fieldset>
             <div className="mt-4 rounded-lg bg-[var(--color-cloud-veil)] px-3 py-2 text-sm"><strong>선택 순서:</strong> {orderedColumns.map((column) => column?.label).join(" → ") || "선택 없음"}</div>
             {error ? <p className="mt-3 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">{error}</p> : null}
-            <div className="mt-5 flex justify-end gap-2"><button className="rounded-lg border px-4 py-2 font-bold" onClick={() => setOpen(false)} type="button">취소</button><button className="rounded-lg bg-[var(--color-pressed-charcoal)] px-4 py-2 font-bold text-white disabled:opacity-50" disabled={busy || !columns.length || pdfTooLarge} onClick={download} type="button">{busy ? "파일 만드는 중…" : `${format === "pdf" ? "PDF" : "엑셀"} 내려받기`}</button></div>
+            {spreadsheet ? <div className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[var(--color-green-ink)] bg-[var(--color-morning-tint)]/50 px-3 py-3" role="status"><span className="text-sm font-semibold">{spreadsheet.title} 스프레드시트를 만들었어.</span><a className="rounded-lg bg-[var(--color-green-ink)] px-3 py-2 text-sm font-bold text-white" href={spreadsheet.url} rel="noreferrer" target="_blank">스프레드시트 열기</a></div> : null}
+            <div className="mt-5 flex justify-end gap-2"><button className="rounded-lg border px-4 py-2 font-bold" onClick={() => setOpen(false)} type="button">{spreadsheet ? "닫기" : "취소"}</button><button className="rounded-lg bg-[var(--color-pressed-charcoal)] px-4 py-2 font-bold text-white disabled:opacity-50" disabled={busy || !columns.length || pdfTooLarge} onClick={download} type="button">{busy ? (format === "google_sheets" ? "스프레드시트 만드는 중…" : "파일 만드는 중…") : format === "google_sheets" ? "스프레드시트 만들기" : `${format === "pdf" ? "PDF" : "엑셀"} 내려받기`}</button></div>
           </section>
         </div>
       ) : null}

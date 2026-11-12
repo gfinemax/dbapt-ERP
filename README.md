@@ -16,6 +16,21 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+### Google Sheets export
+
+Bank transaction search results can be exported to a Google spreadsheet. Enable the Google Drive
+and Google Sheets APIs for a service account, add that service account as a member of the destination
+Google Workspace shared drive, and set these server-side environment variables:
+
+```env
+GOOGLE_SERVICE_ACCOUNT_EMAIL=erp-export@example.iam.gserviceaccount.com
+GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
+GOOGLE_SHEETS_FOLDER_ID=shared-drive-folder-id
+```
+
+The export creates `거래내역` and `내보내기 정보` sheets in that folder. Apply the matching
+Supabase migration before enabling the option so `GOOGLE_SHEETS` audit entries are accepted.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
