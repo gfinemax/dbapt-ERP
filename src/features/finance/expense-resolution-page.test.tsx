@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -105,6 +105,23 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).queryByRole("columnheader", { name: "실제 지출자" })).not.toBeInTheDocument();
     fireEvent.click(within(dialog).getByRole("button", { name: "1번 지출 상세 펼치기" }));
     expect(within(dialog).getByText("조합 운영계좌")).toBeInTheDocument();
+  });
+
+  it("connects contextual approval controls inside the approval inspector", async () => {
+    vi.useRealTimers();
+    const requestApproval = vi.fn(async () => true);
+    render(<ExpenseResolutionDetailModal
+      onApprove={() => undefined}
+      onClose={() => undefined}
+      onPrintArchive={() => undefined}
+      onPrintPreview={() => undefined}
+      onReject={() => undefined}
+      onRequestApproval={requestApproval}
+      resolution={expenseResolutionFixture({ approvalLine: [{ approver: "장현재", order: 1, role: "담당자", status: "결재대기" }] })}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "결재 시작 · 승인요청" }));
+    await waitFor(() => expect(requestApproval).toHaveBeenCalledOnce());
   });
 
   it("shows the server total and navigates between result pages", () => {

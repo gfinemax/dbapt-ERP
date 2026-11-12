@@ -2457,6 +2457,7 @@ export function ExpenseResolutionPage({
 
   function closeDetailModal() {
     setSelectedDetailId(null);
+    setSaveError("");
   }
 
   function exportAllExpenseResolutions() {
@@ -3404,12 +3405,14 @@ export function ExpenseResolutionPage({
 
   async function approveResolution(id: string) {
     const resolution = resolutions.find((item) => item.id === id);
-    if (resolution?.currentApprover) await runApprovalTransition(resolution, "APPROVE", currentUserName);
+    if (resolution?.currentApprover) return runApprovalTransition(resolution, "APPROVE", currentUserName);
+    return false;
   }
 
   async function requestApproval(id: string) {
     const resolution = resolutions.find((item) => item.id === id);
-    if (resolution) await runApprovalTransition(resolution, "REQUEST", resolution.author);
+    if (resolution) return runApprovalTransition(resolution, "REQUEST", resolution.author);
+    return false;
   }
 
   async function cancelApproval(id: string) {
@@ -3875,7 +3878,7 @@ export function ExpenseResolutionPage({
                             <button
                               aria-label="상세보기"
                               className="order-last rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
-                              onClick={() => setSelectedDetailId(resolution.id)}
+                              onClick={() => { setSaveError(""); setSelectedDetailId(resolution.id); }}
                               type="button"
                             >
                               상세
@@ -3895,7 +3898,7 @@ export function ExpenseResolutionPage({
                               <>
                                 <button
                                   className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => setSelectedDetailId(resolution.id)}
+                                  onClick={() => { setSaveError(""); setSelectedDetailId(resolution.id); }}
                                   type="button"
                                 >
                                   결재하기
@@ -4019,6 +4022,7 @@ export function ExpenseResolutionPage({
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
+          actionError={saveError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
@@ -4198,18 +4202,30 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
 }
 
 function ExpenseResolutionDetailWorkspace({
+  actionError,
   approvalLine,
+  canApprove,
   evidenceRows,
   isCorporateCardPayment,
+  isApprovalActionPending,
+  onApprove,
   onCreateFactConfirmation,
+  onReject,
+  onRequestApproval,
   resolution,
   timelineItems,
   transferReceiptAttached,
 }: {
+  actionError?: string;
   approvalLine: ApprovalStep[];
+  canApprove: boolean;
   evidenceRows: ReturnType<typeof getEvidenceRows>;
   isCorporateCardPayment: boolean;
+  isApprovalActionPending: boolean;
+  onApprove: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
+  onReject: () => void;
+  onRequestApproval: () => void;
   resolution: ManagedExpenseResolution;
   timelineItems: ExpenseResolutionHistoryItem[];
   transferReceiptAttached: string;
@@ -4381,6 +4397,24 @@ function ExpenseResolutionDetailWorkspace({
               </li>
             ))}
           </ol>
+          <div className="mt-3 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/55 p-3">
+            {resolution.approvalStatus === "작성중" ? (
+              <Button className="w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onRequestApproval}>
+                {isApprovalActionPending ? "승인요청 처리 중" : "결재 시작 · 승인요청"}
+              </Button>
+            ) : null}
+            {resolution.approvalStatus === "승인대기" && canApprove ? (
+              <div className="grid grid-cols-2 gap-2">
+                <Button className="rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onApprove}>{isApprovalActionPending ? "처리 중" : "승인"}</Button>
+                <Button className="rounded-lg text-[var(--color-tangerine)]" disabled={isApprovalActionPending} onClick={onReject} variant="outline">반려</Button>
+              </div>
+            ) : null}
+            {resolution.approvalStatus === "승인대기" && !canApprove ? (
+              <p className="text-xs font-semibold leading-5 text-[var(--color-stone)]">현재 결재자는 <strong className="text-[var(--color-midnight-ink)]">{resolution.currentApprover ?? approvalLine.find((step) => step.status === "결재대기")?.approver ?? "지정 결재자"}</strong>입니다. 해당 결재자 계정에서 승인·반려할 수 있습니다.</p>
+            ) : null}
+            {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">모든 결재가 완료되었습니다. 지급 단계로 진행할 수 있습니다.</p> : null}
+            {actionError ? <p role="alert" className="mt-2 rounded-md bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700">{actionError}</p> : null}
+          </div>
         </section>
 
         <section className="mt-4 border-t border-[var(--color-soft-border)] pt-4" aria-labelledby="budget-inspector-title">
@@ -4440,6 +4474,7 @@ function InspectorRow({ emphasized = false, label, value }: { emphasized?: boole
 }
 
 export function ExpenseResolutionDetailModal({
+  actionError,
   canApprove = false,
   onApprove,
   onCancelApproval,
@@ -4457,8 +4492,9 @@ export function ExpenseResolutionDetailModal({
   onRequestApproval,
   resolution,
 }: {
+  actionError?: string;
   canApprove?: boolean;
-  onApprove: () => void;
+  onApprove: () => boolean | void | Promise<boolean | void>;
   onCancelApproval?: () => void;
   onCancelVoucher?: () => void;
   onClose: () => void;
@@ -4471,13 +4507,14 @@ export function ExpenseResolutionDetailModal({
   onPrintPreview: () => void;
   onProcessPayment?: () => void;
   onReject: () => void;
-  onRequestApproval: () => void;
+  onRequestApproval: () => boolean | void | Promise<boolean | void>;
   resolution: ManagedExpenseResolution;
 }) {
   const evidenceRows = getEvidenceRows(resolution);
   const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
   const approvalLine = getDisplayApprovalLine(resolution);
   const [historySort, setHistorySort] = useState<"asc" | "desc">("asc");
+  const [isApprovalActionPending, setIsApprovalActionPending] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
   const timelineItems = [...resolution.history].sort((first, second) =>
@@ -4485,8 +4522,10 @@ export function ExpenseResolutionDetailModal({
   );
   const transferReceiptAttached = resolution.paymentStatus === "지급완료" || resolution.transferReceiptStatus ? "첨부" : "미첨부";
 
-  function handleApprove() {
-    onApprove();
+  async function handleApprove() {
+    if (isApprovalActionPending) return;
+    setIsApprovalActionPending(true);
+    try { await onApprove(); } finally { setIsApprovalActionPending(false); }
   }
 
   function handleReject() {
@@ -4497,8 +4536,10 @@ export function ExpenseResolutionDetailModal({
     onProcessPayment?.();
   }
 
-  function handleRequestApproval() {
-    onRequestApproval();
+  async function handleRequestApproval() {
+    if (isApprovalActionPending) return;
+    setIsApprovalActionPending(true);
+    try { await onRequestApproval(); } finally { setIsApprovalActionPending(false); }
   }
 
   function handlePrintPreview() {
@@ -4541,10 +4582,16 @@ export function ExpenseResolutionDetailModal({
 
         {compactExpenseDetailLayoutEnabled ? (
           <ExpenseResolutionDetailWorkspace
+            actionError={actionError}
             approvalLine={approvalLine}
+            canApprove={canApprove}
             evidenceRows={evidenceRows}
             isCorporateCardPayment={isCorporateCardPayment}
+            isApprovalActionPending={isApprovalActionPending}
+            onApprove={() => { void handleApprove(); }}
             onCreateFactConfirmation={onCreateFactConfirmation}
+            onReject={handleReject}
+            onRequestApproval={() => { void handleRequestApproval(); }}
             resolution={resolution}
             timelineItems={timelineItems}
             transferReceiptAttached={transferReceiptAttached}
@@ -4881,8 +4928,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.approvalStatus === "작성중" ? (
             <>
               {onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">수정</Button> : null}
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handleRequestApproval}>
-                승인요청
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={() => { void handleRequestApproval(); }}>
+                {isApprovalActionPending ? "처리 중" : "승인요청"}
               </Button>
             </>
           ) : null}
@@ -4891,8 +4938,8 @@ export function ExpenseResolutionDetailModal({
           ) : null}
           {resolution.approvalStatus === "승인대기" && canApprove ? (
             <>
-              <Button className="rounded-full" onClick={handleApprove} variant="outline">
-                승인
+              <Button className="rounded-full" disabled={isApprovalActionPending} onClick={() => { void handleApprove(); }} variant="outline">
+                {isApprovalActionPending ? "처리 중" : "승인"}
               </Button>
               <Button className="rounded-full text-[var(--color-tangerine)]" onClick={handleReject} variant="outline">
                 반려
