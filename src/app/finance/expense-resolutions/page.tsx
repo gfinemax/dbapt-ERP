@@ -35,14 +35,19 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialBudgetProfiles = {};
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   const organizationId = viewer.organization_id;
+  const resolutionPromise = listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer);
+  const budgetPromise = resolutionPromise.then((result) => listExpenseBudgetProfiles(
+    organizationId,
+    Array.from(new Set((result?.items ?? []).map((item) => item.budgetSnapshot?.budgetPeriod).filter((period): period is string => Boolean(period)))),
+  ));
   const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
-    listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer),
+    resolutionPromise,
     entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
     listApprovedApprovalDocumentCandidates(organizationId, 50),
     getExpenseComplianceSettings(organizationId),
     listUnresolvedWithdrawalTransactions(organizationId, 50),
     listUnresolvedCorporateCardTransactions(organizationId, 50),
-    listExpenseBudgetProfiles(organizationId),
+    budgetPromise,
     listOperatingExpenseDetails(organizationId),
   ] as const);
 

@@ -183,10 +183,13 @@ export async function addMeetingRule(input: {
   if (error) throw new Error(`의결규칙을 저장하지 못했어: ${error.message}`);
 }
 
-export async function listApprovalBudgets(organizationId?: string): Promise<ApprovalBudgetOption[]> {
+export async function listApprovalBudgets(organizationId?: string, budgetPeriod?: string): Promise<ApprovalBudgetOption[]> {
   const api = client();
   const now = new Date();
-  const currentMonthStart = `${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(now)}-01T00:00:00+09:00`;
+  const requestedPeriod = /^\d{4}-(0[1-9]|1[0-2])$/.test(budgetPeriod ?? "")
+    ? budgetPeriod
+    : new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Seoul", year: "numeric", month: "2-digit" }).format(now);
+  const currentMonthStart = `${requestedPeriod}-01T00:00:00+09:00`;
   const currentYear = Number(currentMonthStart.slice(0, 4));
   let query = api
     .schema("approval")

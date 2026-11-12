@@ -27,6 +27,7 @@ import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, Expen
 import { isTaxiCardTransaction, type CorporateCardReconciliationStatus, type CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
 import { recommendExpenseBudget, recommendOperatingExpenseDetail, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
+import { isBudgetProfilePeriodKey, resolveBudgetProfile } from "./budget-profile-lookup";
 import { calculateBatchEvidenceSettlement } from "./expense-batch-settlement";
 import { getEmployeeAdvanceSourceFacts, isEmployeeAdvanceSettlementSource, validateEmployeeAdvanceSelection } from "./expense-advance-source";
 import {
@@ -638,7 +639,7 @@ function getBudgetCheckStatus(remainingBudgetAmount: number, budgetUsageRate: nu
 }
 
 function createBudgetSnapshot(budgetItem: string, requestAmount: number, requestedBudgetPeriod: string | undefined, budgetProfiles: Record<string, BudgetProfile>): BudgetSnapshot {
-  const selectedProfile = budgetProfiles[budgetItem];
+  const selectedProfile = resolveBudgetProfile(budgetItem, requestedBudgetPeriod, budgetProfiles);
   const profile = selectedProfile ?? {
     budgetPeriod: requestedBudgetPeriod ?? getCurrentDateIso().slice(0, 7),
     calculationBasis: "예산항목을 선택해 주세요.",
@@ -1337,6 +1338,13 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution, budget
   const batchSummary = summarizeBatchItems(expenseItems);
   const resolutionType = resolution.resolutionType ?? "SINGLE";
   const initialVoucherNo = resolution.voucherNo ?? (resolution.paymentStatus === "PAID" ? "지출-2026-0001" : undefined);
+  const liveBudgetProfile = resolveBudgetProfile(resolution.budgetItem, resolution.budgetPeriod, budgetProfiles);
+  const liveBudgetSnapshot = createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount, resolution.budgetPeriod, budgetProfiles);
+  const shouldRefreshEmptyBudgetSnapshot = Boolean(
+    liveBudgetProfile
+    && (resolution.monthlyBudgetAmount ?? 0) <= 0
+    && liveBudgetProfile.monthlyBudgetAmount > 0,
+  );
   const managedResolution: ManagedExpenseResolution = {
     id: resolution.id,
     resolutionNo: resolution.resolutionNo,
@@ -1396,25 +1404,25 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution, budget
     advanceReason: resolution.advanceReason,
     postApprovalReason: resolution.postApprovalReason,
     budgetSnapshot:
-      resolution.monthlyBudgetAmount !== undefined
+      resolution.monthlyBudgetAmount !== undefined && !shouldRefreshEmptyBudgetSnapshot
         ? {
             budgetCheckStatus: toBudgetCheckStatus(resolution.budgetCheckStatus),
-            calculationBasis: resolution.calculationBasis ?? budgetProfiles[resolution.budgetItem]?.calculationBasis ?? "-",
+            calculationBasis: resolution.calculationBasis ?? liveBudgetProfile?.calculationBasis ?? "-",
             budgetPeriod: resolution.budgetPeriod ?? "2026-07",
             budgetUsageRate: resolution.budgetUsageRate ?? 0,
             currentRequestAmount: resolution.currentRequestAmount ?? resolution.totalAmount,
             currentAnnualBudgetAmount:
-              resolution.currentAnnualBudgetAmount ?? budgetProfiles[resolution.budgetItem]?.currentAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
+              resolution.currentAnnualBudgetAmount ?? liveBudgetProfile?.currentAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
             expectedUsedAmount: resolution.expectedUsedAmount ?? resolution.totalAmount,
             monthlyBudgetAmount: resolution.monthlyBudgetAmount,
             paymentWaitingAmount: resolution.paymentWaitingAmount ?? 0,
             pendingApprovalAmount: resolution.pendingApprovalAmount ?? 0,
             previousAnnualBudgetAmount:
-              resolution.previousAnnualBudgetAmount ?? budgetProfiles[resolution.budgetItem]?.previousAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
+              resolution.previousAnnualBudgetAmount ?? liveBudgetProfile?.previousAnnualBudgetAmount ?? resolution.monthlyBudgetAmount * 12,
             remainingBudgetAmount: resolution.remainingBudgetAmount ?? 0,
             usedAmount: resolution.usedAmount ?? 0,
           }
-        : createBudgetSnapshot(resolution.budgetItem, resolution.totalAmount, resolution.budgetPeriod, budgetProfiles),
+        : liveBudgetSnapshot,
     printRecords: toPrintRecords(resolution.printRecords),
     rejectionReason: resolution.rejectionReason,
     history: resolution.history.map(toHistoryItem),
@@ -5459,7 +5467,7 @@ export function SingleExpenseItemsEditor({ items, onAdd, onChange, onDelete }: {
 export function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommendation, onAdd, onChange, onDelete, totalAmount }: { allocations: AccountAllocation[]; allocationTotal: number; budgetRecommendation: ExpenseBudgetRecommendation | null; onAdd: () => void; onChange: (id: string, key: keyof AccountAllocation, value: string) => void; onDelete: (id: string) => void; totalAmount: number }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
   const budgetItemOptions = Array.from(new Set([
-    ...Object.keys(budgetProfiles),
+    ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
     budgetRecommendation?.budgetItem ?? "",
     ...allocations.map((allocation) => allocation.budgetItem),
   ].filter(Boolean)));

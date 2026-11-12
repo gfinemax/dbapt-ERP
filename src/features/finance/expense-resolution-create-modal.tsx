@@ -12,6 +12,7 @@ import type { BankTransactionResolutionCandidate } from "./expense-compliance-re
 import { findCorporateCardMatchCandidates, isTaxiCardTransaction, type CorporateCardTransactionCandidate } from "./corporate-card-transaction";
 import { evaluateDirectExpensePolicy } from "./direct-expense-policy";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
+import { isBudgetProfilePeriodKey } from "./budget-profile-lookup";
 import { getEmployeeAdvanceSourceFacts } from "./expense-advance-source";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import { expenseResolutionTypeOptions, formatExpenseResolutionAmount, type ExpenseResolutionType } from "./expense-resolution-data";
@@ -163,7 +164,7 @@ export function ExpenseResolutionCreateModal({
   const budgetProfiles = useContext(BudgetProfilesContext);
   const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
-    ...Object.keys(budgetProfiles),
+    ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
     formState.budgetItem,
     ...formState.accountAllocations.map((allocation) => allocation.budgetItem),
   ].filter(Boolean)));
@@ -1265,7 +1266,7 @@ function BatchExpenseItemsSection({
   onReviewBatchBudget: (itemNo: number) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
-  const batchBudgetItemOptions = Object.keys(budgetProfiles);
+  const batchBudgetItemOptions = Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key));
   return (
     <section className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
