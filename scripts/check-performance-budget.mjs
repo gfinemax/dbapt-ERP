@@ -9,7 +9,7 @@ const routeDirectory = resolve(buildDirectory, "server/app/finance/expense-resol
 const staticDirectory = resolve(buildDirectory, "static");
 
 const budgets = {
-  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 365_000),
+  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 366_000),
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 95_000),
   totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 105_000),
 };

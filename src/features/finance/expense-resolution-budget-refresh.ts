@@ -7,12 +7,19 @@ export function refreshOpenExpenseResolutionBudgetSnapshots(
 ): ManagedExpenseResolution[] {
   return resolutions.map((resolution): ManagedExpenseResolution => {
     const stored = resolution.budgetSnapshot;
-    if (resolution.approvalStatus === "승인완료" || stored.monthlyBudgetAmount > 0 || stored.currentAnnualBudgetAmount > 0) return resolution;
+    if (resolution.approvalStatus === "승인완료") return resolution;
     const profile = resolveBudgetProfile(resolution.budgetItem, stored.budgetPeriod, budgetProfiles);
     if (!profile || (profile.monthlyBudgetAmount <= 0 && profile.currentAnnualBudgetAmount <= 0)) return resolution;
+    const currentIncluded = Boolean(
+      profile.budgetId
+      && resolution.budgetId === profile.budgetId
+      && resolution.budgetMonth === `${stored.budgetPeriod}-01`
+      && (resolution.approvalStatus === "작성중" || resolution.approvalStatus === "승인대기"),
+    );
     const expectedUsedAmount = profile.usedAmount
-      + (profile.reservedAmount ?? (profile.pendingApprovalAmount + profile.paymentWaitingAmount))
-      + resolution.totalPaymentAmount;
+      + (profile.reservedAmount ?? profile.paymentWaitingAmount)
+      + profile.pendingApprovalAmount
+      + ((resolution.approvalStatus === "작성중" || resolution.approvalStatus === "승인대기") && !currentIncluded ? resolution.totalPaymentAmount : 0);
     const remainingBudgetAmount = profile.monthlyBudgetAmount - expectedUsedAmount;
     const budgetUsageRate = profile.monthlyBudgetAmount > 0
       ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1))

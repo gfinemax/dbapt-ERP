@@ -17,6 +17,8 @@ describe("expense resolution repository", () => {
       author: "오학동 사무장",
       currentApprover: "장현제 부장",
       approvalStatus: "승인대기",
+      budgetId: "00000000-0000-4000-8000-000000000001",
+      budgetMonth: "2026-01-01",
       paymentStatus: "지급전",
       totalPaymentAmount: 50000,
     } as unknown as ManagedExpenseResolution;
@@ -27,6 +29,8 @@ describe("expense resolution repository", () => {
       author_label: resolution.author,
       current_approver_label: resolution.currentApprover,
       approval_status: resolution.approvalStatus,
+      budget_id: resolution.budgetId,
+      budget_month: resolution.budgetMonth,
       payment_status: resolution.paymentStatus,
       resolution_mode: "SINGLE",
       expense_timing: "ADVANCE",

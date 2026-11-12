@@ -4,6 +4,7 @@ import { budgetProfilePeriodKey } from "./budget-profile-lookup";
 
 function toBudgetProfile(budget: Awaited<ReturnType<typeof listApprovalBudgets>>[number], budgetPeriod: string): BudgetProfile {
   return {
+    budgetId: budget.id,
     budgetPeriod,
     calculationBasis: budget.calculationBasis ?? "",
     currentAnnualBudgetAmount: budget.approvedAmount,

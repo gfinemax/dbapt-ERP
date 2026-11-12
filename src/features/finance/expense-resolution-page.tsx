@@ -103,6 +103,7 @@ export type ExpenseResolutionHistoryItem = {
 };
 
 export type BudgetSnapshot = {
+  budgetId?: string;
   reservedAmount?: number;
   unresolvedCount?: number;
   budgetCheckStatus: BudgetCheckStatus;
@@ -213,6 +214,8 @@ export type ManagedExpenseResolution = {
   approvalStatus: ApprovalStatus;
   author: string;
   budgetItem: string;
+  budgetId?: string;
+  budgetMonth?: string;
   createdAt: string;
   currentApprover?: string;
   evidenceAttached: boolean;
@@ -664,7 +667,16 @@ function getBudgetCheckStatus(remainingBudgetAmount: number, budgetUsageRate: nu
   return "정상";
 }
 
-function createBudgetSnapshot(budgetItem: string, requestAmount: number, requestedBudgetPeriod: string | undefined, budgetProfiles: Record<string, BudgetProfile>): BudgetSnapshot {
+function createBudgetSnapshot(
+  budgetItem: string,
+  requestAmount: number,
+  requestedBudgetPeriod: string | undefined,
+  budgetProfiles: Record<string, BudgetProfile>,
+  currentBudgetId?: string,
+  currentBudgetMonth?: string,
+  currentApprovalStatus?: ApprovalStatus,
+  currentResolutionAmount = 0,
+): BudgetSnapshot {
   const selectedProfile = resolveBudgetProfile(budgetItem, requestedBudgetPeriod, budgetProfiles);
   const profile = selectedProfile ?? {
     budgetPeriod: requestedBudgetPeriod ?? getCurrentDateIso().slice(0, 7),
@@ -677,7 +689,13 @@ function createBudgetSnapshot(budgetItem: string, requestAmount: number, request
     usedAmount: 0,
   };
   const currentRequestAmount = requestAmount;
-  const expectedUsedAmount = profile.usedAmount + (profile.reservedAmount ?? (profile.pendingApprovalAmount + profile.paymentWaitingAmount)) + currentRequestAmount;
+  const currentIncludedAmount = selectedProfile?.budgetId
+    && currentBudgetId === selectedProfile.budgetId
+    && currentBudgetMonth === `${requestedBudgetPeriod}-01`
+    && (currentApprovalStatus === "작성중" || currentApprovalStatus === "승인대기")
+    ? currentResolutionAmount
+    : 0;
+  const expectedUsedAmount = profile.usedAmount + (profile.reservedAmount ?? profile.paymentWaitingAmount) + profile.pendingApprovalAmount - currentIncludedAmount + currentRequestAmount;
   const remainingBudgetAmount = selectedProfile ? profile.monthlyBudgetAmount - expectedUsedAmount : 0;
   const budgetUsageRate = selectedProfile && profile.monthlyBudgetAmount > 0 ? Number(((expectedUsedAmount / profile.monthlyBudgetAmount) * 100).toFixed(1)) : 0;
 
@@ -2341,12 +2359,22 @@ export function ExpenseResolutionPage({
   const accountAllocationTotal = formState.accountAllocations.reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
   const formBatchSummary = summarizeBatchItems(formState.batchItems);
   const effectiveFormTotalAmount = formState.resolutionType === "BATCH" ? formBatchSummary.totalAmount : formTotalAmount;
-  const formBudgetSnapshot = createBudgetSnapshot(formState.budgetItem, formTotalAmount, formState.budgetPeriod, initialBudgetProfiles);
+  const formEditingResolution = editingResolutionId ? resolutions.find((resolution) => resolution.id === editingResolutionId) : undefined;
+  const formBudgetSnapshot = createBudgetSnapshot(
+    formState.budgetItem,
+    formTotalAmount,
+    formState.budgetPeriod,
+    initialBudgetProfiles,
+    formEditingResolution?.budgetId,
+    formEditingResolution?.budgetMonth,
+    formEditingResolution?.approvalStatus,
+    formEditingResolution?.totalPaymentAmount,
+  );
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
-  const tabItems = useMemo(() => getResolutionTabItems(resolutions, viewer), [resolutions, viewer]);
+  const tabItems = getResolutionTabItems(resolutions, viewer);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
   const clientSearchQuery = initialListPage && deferredSearchQuery === initialListPage.query ? "" : deferredSearchQuery;
-  const visibleResolutions = useMemo(() => filterExpenseResolutions(activeTabItem.resolutions, {
+  const visibleResolutions = filterExpenseResolutions(activeTabItem.resolutions, {
     approvalStatus: approvalFilter,
     dateFrom: dateFromFilter,
     dateTo: dateToFilter,
@@ -2361,7 +2389,7 @@ export function ExpenseResolutionPage({
     vendor: vendorFilter,
     pettyCashBatch: pettyCashBatchFilter,
     query: clientSearchQuery,
-  }), [accountTitleFilter, activeTabItem.resolutions, approvalFilter, bankLinkedFilter, clientSearchQuery, dateFromFilter, dateToFilter, evidenceStatusFilter, expenseKindFilter, overdueOnly, paymentFilter, pettyCashBatchFilter, postApprovalFilter, spenderFilter, vendorFilter]);
+  });
   const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
   const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
   const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
@@ -3198,6 +3226,16 @@ export function ExpenseResolutionPage({
     const batchSummary = summarizeBatchItems(formState.batchItems);
     const isBatch = formState.resolutionType === "BATCH";
     const totalPaymentAmount = isBatch ? batchSummary.totalAmount : formTotalAmount;
+    const editingResolution = editingResolutionId ? resolutions.find((resolution) => resolution.id === editingResolutionId) : undefined;
+    const itemBudgetProfiles = isBatch
+      ? batchSummary.items.map((item) => resolveBudgetProfile(item.budgetItem, formState.budgetPeriod, initialBudgetProfiles))
+      : [];
+    const resolutionBudgetProfile = isBatch
+      ? itemBudgetProfiles.length > 0
+        && itemBudgetProfiles.every((profile) => profile?.budgetId && profile.budgetId === itemBudgetProfiles[0]?.budgetId)
+        ? itemBudgetProfiles[0]
+        : undefined
+      : resolveBudgetProfile(formState.budgetItem, formState.budgetPeriod, initialBudgetProfiles);
     const linkedApproval = initialApprovalDocuments.find((document) => document.id === formState.approvalDocumentId);
     const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
     if (mode === "approval-request") {
@@ -3289,6 +3327,8 @@ export function ExpenseResolutionPage({
       expenseType: isBatch ? batchSummary.representativeExpenseType : formState.expenseType,
       operationExpenseDetail: formState.operationExpenseDetail,
       expenseDetailId: formState.expenseDetailId || undefined,
+      budgetId: resolutionBudgetProfile?.budgetId,
+      budgetMonth: resolutionBudgetProfile?.budgetId ? `${formState.budgetPeriod}-01` : undefined,
       budgetItem: isBatch ? "프로젝트 일괄 예산" : formState.budgetItem,
       budgetOverReason: formState.budgetOverReason,
       vendorName: isBatch ? batchSummary.representativeVendorName : formState.vendorName || "거래처 미입력",
@@ -3339,7 +3379,7 @@ export function ExpenseResolutionPage({
       originalResolutionId: formState.expenseTiming === "SETTLEMENT" ? formState.originalResolutionId : undefined,
       settlementDueDate: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementDueDate : undefined,
       settlementManager: formState.executionMethod === "EMPLOYEE_ADVANCE" ? formState.settlementManager : undefined,
-      budgetSnapshot: isBatch ? createBudgetSnapshot(formState.budgetItem, batchSummary.totalAmount, formState.budgetPeriod, initialBudgetProfiles) : formBudgetSnapshot,
+      budgetSnapshot: isBatch ? createBudgetSnapshot(formState.budgetItem, batchSummary.totalAmount, formState.budgetPeriod, initialBudgetProfiles, editingResolution?.budgetId, editingResolution?.budgetMonth, editingResolution?.approvalStatus, editingResolution?.totalPaymentAmount) : formBudgetSnapshot,
       printRecords: [],
       memo: formState.memo,
       history: [
@@ -3358,7 +3398,6 @@ export function ExpenseResolutionPage({
       ],
     };
 
-    const editingResolution = editingResolutionId ? resolutions.find((resolution) => resolution.id === editingResolutionId) : undefined;
     const resolutionToSave: ManagedExpenseResolution = editingResolution
       ? {
                 ...editingResolution,
@@ -4331,7 +4370,7 @@ function ExpenseResolutionDetailWorkspace({
                 <CompactMetric label="지출" value={`${itemCount}건`} />
                 <CompactMetric label="월 예산" value={budgetLinked ? formatExpenseResolutionAmount(budget.monthlyBudgetAmount) : "연결 필요"} />
                 <CompactMetric label="이번 결의" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} />
-                <CompactMetric label="결의 후 잔액" value={budgetLinked ? formatExpenseResolutionAmount(budget.remainingBudgetAmount) : "확인 필요"} />
+                <CompactMetric label="월 예상 잔액" value={budgetLinked ? formatExpenseResolutionAmount(budget.remainingBudgetAmount) : "확인 필요"} />
                 <CompactMetric label="집행률" value={budgetLinked ? `${usageRate}%` : "-"} />
               </dl>
             ) : null}
@@ -4478,7 +4517,8 @@ function ExpenseResolutionDetailWorkspace({
                 <InspectorRow label="예산항목" value={resolution.budgetItem || "-"} />
                 <InspectorRow label="월 예산" value={formatExpenseResolutionAmount(budget.monthlyBudgetAmount)} />
                 <InspectorRow emphasized label="이번 결의" value={formatExpenseResolutionAmount(budget.currentRequestAmount)} />
-                <InspectorRow emphasized label="결의 후 잔액" value={formatExpenseResolutionAmount(budget.remainingBudgetAmount)} />
+                <InspectorRow emphasized label="월 예상 누계" value={formatExpenseResolutionAmount(budget.expectedUsedAmount)} />
+                <InspectorRow emphasized label="월 예상 잔액" value={formatExpenseResolutionAmount(budget.remainingBudgetAmount)} />
                 <InspectorRow label="집행률" value={`${usageRate}%`} />
               </dl>
               <div aria-label={`예산 집행률 ${usageRate}%`} className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--color-cloud-veil)]"><div className={`h-full rounded-full ${usageRate >= 100 ? "bg-red-500" : usageRate >= 80 ? "bg-amber-500" : "bg-green-500"}`} style={{ width: `${progressWidth}%` }} /></div>
@@ -4770,7 +4810,8 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="승인대기액" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.pendingApprovalAmount)} />
             <DetailItem label="지급대기액" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.paymentWaitingAmount)} />
             <DetailItem label="이번 결의금액" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.currentRequestAmount)} />
-            <DetailItem label="결의 후 잔여예산" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.remainingBudgetAmount)} />
+            <DetailItem label="월 예상 누계" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.expectedUsedAmount)} />
+            <DetailItem label="월 예상 잔여예산" value={formatExpenseResolutionAmount(resolution.budgetSnapshot.remainingBudgetAmount)} />
             <DetailItem label="집행률" value={`${resolution.budgetSnapshot.budgetUsageRate}%`} />
             <DetailItem label="예산검토" value={<Badge value={resolution.budgetSnapshot.budgetCheckStatus} />} />
           </DetailSection>

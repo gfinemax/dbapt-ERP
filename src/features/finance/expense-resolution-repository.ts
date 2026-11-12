@@ -90,6 +90,8 @@ export function mapExpenseResolutionToUpsert(resolution: ManagedExpenseResolutio
     settlement_amount: resolution.settlementAmount ?? (resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? resolution.totalPaymentAmount : null),
     settlement_completed_at: resolution.settlementCompletedAt || null,
     bank_transaction_id: resolution.bankTransactionId || null,
+    budget_id: resolution.budgetId || null,
+    budget_month: resolution.budgetMonth || null,
     resolution_data: resolution,
     updated_at: new Date().toISOString(),
   };
