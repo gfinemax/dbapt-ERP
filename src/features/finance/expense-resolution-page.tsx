@@ -564,7 +564,8 @@ export const legacyOperatingExpenseDetailOptions = [
 
 export type BudgetProfile = Omit<BudgetSnapshot, "budgetCheckStatus" | "budgetUsageRate" | "currentRequestAmount" | "expectedUsedAmount" | "remainingBudgetAmount">;
 
-export const BudgetProfilesContext = createContext<Record<string, BudgetProfile>>({});
+const emptyBudgetProfiles: Record<string, BudgetProfile> = {};
+export const BudgetProfilesContext = createContext<Record<string, BudgetProfile>>(emptyBudgetProfiles);
 
 const OperatingBudgetPrintModal = dynamic(
   () => import("./operating-budget-print-modal").then((module) => module.OperatingBudgetPrintModal),
@@ -690,6 +691,32 @@ function createBudgetSnapshot(budgetItem: string, requestAmount: number, request
     expectedUsedAmount,
     remainingBudgetAmount,
   };
+}
+
+export function refreshOpenExpenseResolutionBudgetSnapshot(
+  resolution: ManagedExpenseResolution,
+  budgetProfiles: Record<string, BudgetProfile>,
+) {
+  const snapshot = resolution.budgetSnapshot;
+  const hasStoredBudgetAmount = snapshot.monthlyBudgetAmount > 0 || snapshot.currentAnnualBudgetAmount > 0;
+  if (resolution.approvalStatus === "승인완료" || hasStoredBudgetAmount || !resolution.budgetItem.trim()) return resolution;
+  if (!resolveBudgetProfile(resolution.budgetItem, snapshot.budgetPeriod, budgetProfiles)) return resolution;
+  return {
+    ...resolution,
+    budgetSnapshot: createBudgetSnapshot(
+      resolution.budgetItem,
+      resolution.totalPaymentAmount,
+      snapshot.budgetPeriod,
+      budgetProfiles,
+    ),
+  };
+}
+
+function refreshOpenExpenseResolutionBudgetSnapshots(
+  resolutions: ManagedExpenseResolution[],
+  budgetProfiles: Record<string, BudgetProfile>,
+) {
+  return resolutions.map((resolution) => refreshOpenExpenseResolutionBudgetSnapshot(resolution, budgetProfiles));
 }
 
 function createBatchExpenseItem(itemNo: number, overrides: Partial<BatchExpenseItem> = {}): BatchExpenseItem {
@@ -2210,7 +2237,7 @@ export function ExpenseResolutionPage({
   initialBankTransactions = [],
   initialCardTransactions = [],
   initialApprovalDocuments = [],
-  initialBudgetProfiles = {},
+  initialBudgetProfiles = emptyBudgetProfiles,
   initialExpenseDetails = [],
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
@@ -2263,7 +2290,7 @@ export function ExpenseResolutionPage({
   const currentUserName = viewer?.display_name ?? `${currentUser.name} ${currentUser.title}`;
   const uploadEvidenceRequest = uploadEvidence ?? uploadExpenseEvidenceViaRoute;
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
-    initialResolutions ?? [],
+    refreshOpenExpenseResolutionBudgetSnapshots(initialResolutions ?? [], initialBudgetProfiles),
   );
   const initialBankDraft = initialBankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
   const [isLocalStorageHydrated, setIsLocalStorageHydrated] = useState(false);
@@ -2384,14 +2411,16 @@ export function ExpenseResolutionPage({
       }
     }
     const restoreTimer = window.setTimeout(() => {
-      if (initialResolutions !== undefined) setResolutions(initialResolutions);
+      if (initialResolutions !== undefined) {
+        setResolutions(refreshOpenExpenseResolutionBudgetSnapshots(initialResolutions, initialBudgetProfiles));
+      }
       else if (storedResolutions) setResolutions(storedResolutions);
       setIsLocalStorageHydrated(true);
     }, 0);
     return () => {
       window.clearTimeout(restoreTimer);
     };
-  }, [initialResolutions, persistResolution, dataLoadError]);
+  }, [initialResolutions, initialBudgetProfiles, persistResolution, dataLoadError]);
 
   useEffect(() => {
     if (isLocalStorageHydrated && initialResolutions === undefined && !persistResolution && !dataLoadError) {

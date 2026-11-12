@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintPersonName, refreshOpenExpenseResolutionBudgetSnapshot, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -88,6 +88,31 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("heading", { name: "예산 판단" })).toBeInTheDocument();
     expect(within(dialog).getByText("예산 연결이 필요합니다. 잘못된 0원 대신 연결 상태를 먼저 확인해주세요.")).toBeInTheDocument();
     expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
+  });
+
+  it("refreshes an unresolved zero budget snapshot from the matching live budget", async () => {
+    const resolution = expenseResolutionFixture({
+      approvalStatus: "작성중",
+      budgetItem: "운영비 > 복리후생비(식대)",
+      budgetSnapshot: { budgetCheckStatus: "주의", budgetPeriod: "2026-01", budgetUsageRate: 0, calculationBasis: "2026년도 총회 승인 운영비 예산안", currentAnnualBudgetAmount: 0, currentRequestAmount: 252_000, expectedUsedAmount: 252_000, monthlyBudgetAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, remainingBudgetAmount: 0, usedAmount: 0 },
+      totalPaymentAmount: 252_000,
+    });
+    const budgetProfiles = {
+      복리후생비: { budgetPeriod: "2026-01", calculationBasis: "식비 등", currentAnnualBudgetAmount: 7_800_000, monthlyBudgetAmount: 650_000, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, reservedAmount: 0, usedAmount: 0 },
+    };
+
+    render(<ExpenseResolutionPage initialBudgetProfiles={budgetProfiles} initialResolutions={[resolution]} />);
+    await act(async () => vi.runOnlyPendingTimersAsync());
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    expect(within(dialog).queryByText(/예산 연결이 필요합니다/)).not.toBeInTheDocument();
+    expect(within(dialog).getAllByText("650,000원").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("398,000원").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("38.8%").length).toBeGreaterThan(0);
+    expect(within(dialog).getAllByText("정상").length).toBeGreaterThan(0);
+
+    const approved = { ...resolution, approvalStatus: "승인완료" as const };
+    expect(refreshOpenExpenseResolutionBudgetSnapshot(approved, budgetProfiles)).toBe(approved);
   });
 
   it("shows 장현제 as 이사 on an unresolved legacy approval line", () => {
