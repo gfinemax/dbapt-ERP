@@ -90,6 +90,23 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
   });
 
+  it("shows 장현제 as 이사 on an unresolved legacy approval line", () => {
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({
+      approvalLine: [
+        { approver: "장현제", order: 1, role: "담당자", status: "결재대기" },
+        { approver: "오학동", order: 2, role: "사무국장", status: "대기" },
+        { approver: "안동연", order: 3, role: "조합장", status: "대기" },
+      ],
+      approvalStatus: "승인대기",
+      currentApprover: "장현제 담당자",
+    })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    expect(within(dialog).getByText("장현제").parentElement).toHaveTextContent("장현제이사");
+    expect(within(dialog).queryByText("담당자")).not.toBeInTheDocument();
+  });
+
   it("compresses multiple expenses and expands one row on demand", () => {
     const items = [batchExpenseItem(1, 18_000), batchExpenseItem(2, 36_000)];
     render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({

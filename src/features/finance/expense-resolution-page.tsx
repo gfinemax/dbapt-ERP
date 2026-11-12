@@ -17,7 +17,7 @@ import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-rep
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { buildDocumentPdfFileName } from "@/features/shared/document-print-filename";
-import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
+import { getOrganizationApproverDisplayRole, getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
 import type { ApprovalDocumentCandidate } from "@/features/approval/approval-domain";
 import type { ExpenseComplianceSettings } from "./expense-compliance";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
@@ -1738,11 +1738,18 @@ function getNextResolutionNoForLoadedPage(resolutions: ManagedExpenseResolution[
 }
 
 function getDisplayApprovalLine(resolution: ManagedExpenseResolution) {
-  return resolution.approvalLine.map((step) =>
-    getApproverLabel(step) === resolution.currentApprover && step.status === "대기"
-      ? { ...step, status: "결재대기" as const }
-      : step,
-  );
+  const useCurrentOrganizationRole = ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus);
+  return resolution.approvalLine.map((step) => {
+    const currentApprover = getApproverLabel(step) === resolution.currentApprover;
+    const role = useCurrentOrganizationRole
+      ? getOrganizationApproverDisplayRole(step.approver, step.role)
+      : step.role;
+    return {
+      ...step,
+      role,
+      status: currentApprover && step.status === "대기" ? "결재대기" as const : step.status,
+    };
+  });
 }
 
 function getRelatedVoucherNo(resolution: ManagedExpenseResolution) {
