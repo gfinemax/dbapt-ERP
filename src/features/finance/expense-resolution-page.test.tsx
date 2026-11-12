@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -32,6 +32,11 @@ describe("ExpenseResolutionPage", () => {
   it("turns stale Server Action errors into a refresh instruction", () => {
     expect(getEvidenceUploadErrorMessage(new Error("An error occurred in the Server Components render. A digest property is included.")))
       .toBe("화면이 새 버전으로 업데이트되었습니다. 새로고침한 후 증빙파일을 다시 선택해 주세요.");
+  });
+
+  it("turns masked approval Server Action errors into an actionable instruction", () => {
+    expect(getApprovalTransitionErrorMessage(new Error("An error occurred in the Server Components render. A digest property is included.")))
+      .toBe("승인처리 중 서버 오류가 발생했습니다. 새로고침 후 계정 연결 상태를 확인해 주세요.");
   });
 
   it("formats approval dates with month, day, and time", () => {
@@ -117,11 +122,39 @@ describe("ExpenseResolutionPage", () => {
       onPrintPreview={() => undefined}
       onReject={() => undefined}
       onRequestApproval={requestApproval}
-      resolution={expenseResolutionFixture({ approvalLine: [{ approver: "장현재", order: 1, role: "담당자", status: "결재대기" }] })}
+      resolution={expenseResolutionFixture({
+        approvalLine: [{ approver: "장현재", order: 1, role: "담당자", status: "결재대기" }],
+        authorization: { author_user_id: "author-user", steps: [{ approver_user_id: "approver-user", legacy_step: { approver: "장현재", order: 1, role: "담당자" }, order: 1 }], version: 1 },
+      })}
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "결재 시작 · 승인요청" }));
     await waitFor(() => expect(requestApproval).toHaveBeenCalledOnce());
+  });
+
+  it("blocks approval requests and links to account setup when approver accounts are missing", () => {
+    const requestApproval = vi.fn();
+    render(<ExpenseResolutionDetailModal
+      onApprove={() => undefined}
+      onClose={() => undefined}
+      onPrintArchive={() => undefined}
+      onPrintPreview={() => undefined}
+      onReject={() => undefined}
+      onRequestApproval={requestApproval}
+      resolution={expenseResolutionFixture({
+        approvalLine: [
+          { approver: "장현제", order: 1, role: "담당자", status: "결재대기" },
+          { approver: "오학동", order: 2, role: "사무국장", status: "대기" },
+          { approver: "안동연", order: 3, role: "조합장", status: "대기" },
+        ],
+        authorization: { author_user_id: "author-user", steps: [], version: 1 },
+      })}
+    />);
+
+    expect(screen.getByText("작성자 연결됨 · 결재자 0/3명")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "계정 연결 화면 열기" })).toHaveAttribute("href", "/finance/expense-authorizations");
+    expect(screen.getByRole("button", { name: "계정 연결 필요" })).toBeDisabled();
+    expect(requestApproval).not.toHaveBeenCalled();
   });
 
   it("shows the server total and navigates between result pages", () => {

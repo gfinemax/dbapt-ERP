@@ -321,6 +321,32 @@ export type ManagedExpenseResolution = {
   workflowTransactionId?: string;
 };
 
+export function getExpenseAuthorizationReadiness(resolution: ManagedExpenseResolution) {
+  const expectedApproverCount = resolution.approvalLine.length;
+  const linkedOrders = new Set(
+    (resolution.authorization?.steps ?? [])
+      .filter((step) => step.approver_user_id && step.order >= 1 && step.order <= expectedApproverCount)
+      .map((step) => step.order),
+  );
+  const linkedApproverCount = linkedOrders.size;
+  const authorLinked = Boolean(resolution.authorization?.author_user_id);
+
+  return {
+    authorLinked,
+    expectedApproverCount,
+    linkedApproverCount,
+    ready: authorLinked && expectedApproverCount > 0 && linkedApproverCount === expectedApproverCount,
+  };
+}
+
+export function getApprovalTransitionErrorMessage(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/Server Components render|digest property/i.test(message)) {
+    return "승인처리 중 서버 오류가 발생했습니다. 새로고침 후 계정 연결 상태를 확인해 주세요.";
+  }
+  return message || "결재 상태를 변경하지 못했습니다.";
+}
+
 export type EvidenceType = "세금계산서" | "계산서" | "영수증" | "현금영수증" | "이체확인증" | "계약서" | "견적서" | "의결서" | "기타";
 
 function mapEvidenceTypeToComplianceKind(value: string): EvidenceKind {
@@ -3383,6 +3409,13 @@ export function ExpenseResolutionPage({
 
   async function runApprovalTransition(resolution: ManagedExpenseResolution, command: ApprovalWorkflowCommand, actorLabel: string, reason?: string) {
     setSaveError("");
+    const authorization = getExpenseAuthorizationReadiness(resolution);
+    if (!authorization.ready) {
+      setSaveError(
+        `결재 계정 연결이 필요합니다. 작성자 ${authorization.authorLinked ? "연결됨" : "미연결"} · 결재자 ${authorization.linkedApproverCount}/${authorization.expectedApproverCount}명. 결재자 로그인 계정을 등록한 뒤 작성자·결재선 계정 연결을 완료해 주세요.`,
+      );
+      return false;
+    }
     try {
       const transitioned = transitionApproval
         ? await transitionApproval({
@@ -3398,7 +3431,7 @@ export function ExpenseResolutionPage({
       setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
       return true;
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "결재 상태를 변경하지 못했습니다.");
+      setSaveError(getApprovalTransitionErrorMessage(error));
       return false;
     }
   }
@@ -4237,6 +4270,7 @@ function ExpenseResolutionDetailWorkspace({
   const itemCount = isMultipleExpense ? expenseItems.length : 1;
   const budget = resolution.budgetSnapshot;
   const budgetLinked = budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
+  const authorization = getExpenseAuthorizationReadiness(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
   const progressWidth = Math.min(100, usageRate);
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
@@ -4399,9 +4433,18 @@ function ExpenseResolutionDetailWorkspace({
           </ol>
           <div className="mt-3 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/55 p-3">
             {resolution.approvalStatus === "작성중" ? (
-              <Button className="w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onRequestApproval}>
-                {isApprovalActionPending ? "승인요청 처리 중" : "결재 시작 · 승인요청"}
-              </Button>
+              authorization.ready ? (
+                <Button className="w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onRequestApproval}>
+                  {isApprovalActionPending ? "승인요청 처리 중" : "결재 시작 · 승인요청"}
+                </Button>
+              ) : (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-950">
+                  <p className="font-black">승인요청 전 계정 연결이 필요합니다.</p>
+                  <p className="mt-1 font-semibold">작성자 {authorization.authorLinked ? "연결됨" : "미연결"} · 결재자 {authorization.linkedApproverCount}/{authorization.expectedApproverCount}명</p>
+                  <p className="mt-1">결재자 로그인 계정을 등록한 뒤 각 결재 순서에 연결해 주세요.</p>
+                  <Link className="mt-2 inline-flex rounded-md border border-amber-300 bg-white px-2.5 py-1 font-black text-amber-950 hover:bg-amber-100" href="/finance/expense-authorizations">계정 연결 화면 열기</Link>
+                </div>
+              )
             ) : null}
             {resolution.approvalStatus === "승인대기" && canApprove ? (
               <div className="grid grid-cols-2 gap-2">
@@ -4513,6 +4556,7 @@ export function ExpenseResolutionDetailModal({
   const evidenceRows = getEvidenceRows(resolution);
   const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
   const approvalLine = getDisplayApprovalLine(resolution);
+  const authorization = getExpenseAuthorizationReadiness(resolution);
   const [historySort, setHistorySort] = useState<"asc" | "desc">("asc");
   const [isApprovalActionPending, setIsApprovalActionPending] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
@@ -4928,8 +4972,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.approvalStatus === "작성중" ? (
             <>
               {onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">수정</Button> : null}
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={() => { void handleRequestApproval(); }}>
-                {isApprovalActionPending ? "처리 중" : "승인요청"}
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending || !authorization.ready} onClick={() => { void handleRequestApproval(); }} title={!authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
+                {isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
               </Button>
             </>
           ) : null}
