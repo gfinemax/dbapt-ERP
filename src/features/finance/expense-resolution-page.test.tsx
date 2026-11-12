@@ -2,11 +2,22 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: navigation.push }) }));
+
+function batchExpenseItem(itemNo: number, totalAmount: number): BatchExpenseItem {
+  return {
+    accountTitle: "복리후생비(식대)", allocatedBudget: totalAmount, budgetItem: "운영비 > 복리후생비(식대)", budgetStatus: "NORMAL",
+    currentRequestAmount: totalAmount, description: "업무식대", actualSpender: "조합 운영계좌", businessPurpose: "사무국 업무 수행",
+    evidenceFileName: `${itemNo}.pdf`, evidenceKind: "SIMPLE_RECEIPT", evidenceStatus: "QUALIFIED", evidenceType: "영수증", executedAmount: 0,
+    expenseDate: `2026-01-${String(itemNo + 6).padStart(2, "0")}`, expenseType: "운영비", id: `batch-${itemNo}`, itemNo,
+    itemTitle: "업무식대", memo: "", overBudgetAmount: 0, overBudgetReason: "", paymentMethod: "계좌이체", paymentStatus: "지급전",
+    remainingBudget: 650_000 - totalAmount, supplyAmount: String(totalAmount), totalAmount, vatAmount: "0", vendorName: "옛골식당",
+  };
+}
 
 async function getExpenseResolutionDialog(name: "간편지출을 정식결의로 전환" | "지출결의서 수정" | "지출결의서 작성") {
   await act(async () => {
@@ -59,6 +70,41 @@ describe("ExpenseResolutionPage", () => {
     expect(within(listTable).queryByRole("columnheader", { name: "증빙" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "작성 양식" })).not.toBeInTheDocument();
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
+  });
+
+  it("shows an approval-focused single-expense detail workspace", () => {
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+
+    expect(within(dialog).getByText("단일 지출")).toHaveClass("text-white");
+    expect(within(dialog).getByRole("heading", { name: "결재 진행" })).toBeInTheDocument();
+    expect(within(dialog).getByRole("heading", { name: "예산 판단" })).toBeInTheDocument();
+    expect(within(dialog).getByText("예산 연결이 필요합니다. 잘못된 0원 대신 연결 상태를 먼저 확인해주세요.")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
+  });
+
+  it("compresses multiple expenses and expands one row on demand", () => {
+    const items = [batchExpenseItem(1, 18_000), batchExpenseItem(2, 36_000)];
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({
+      budgetItem: "운영비 > 복리후생비(식대)",
+      budgetSnapshot: { budgetCheckStatus: "정상", budgetPeriod: "2026-01", budgetUsageRate: 8.3, calculationBasis: "총회 승인 운영비", currentAnnualBudgetAmount: 7_800_000, currentRequestAmount: 54_000, expectedUsedAmount: 54_000, monthlyBudgetAmount: 650_000, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, remainingBudgetAmount: 596_000, usedAmount: 0 },
+      expenseItems: items,
+      itemCount: items.length,
+      representativeVendorName: "옛골식당",
+      resolutionType: "BATCH",
+      totalPaymentAmount: 54_000,
+    })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+
+    expect(within(dialog).getByText("다건 지출")).toHaveClass("text-white");
+    expect(within(dialog).getByRole("columnheader", { name: "예산귀속" })).toBeInTheDocument();
+    expect(within(dialog).queryByRole("columnheader", { name: "실제 지출자" })).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "1번 지출 상세 펼치기" }));
+    expect(within(dialog).getByText("조합 운영계좌")).toBeInTheDocument();
   });
 
   it("shows the server total and navigates between result pages", () => {
@@ -123,7 +169,7 @@ describe("ExpenseResolutionPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
     const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
-    expect(within(detailDialog).getAllByText("기존 소액 일괄결의 · 조회 전용")).toHaveLength(2);
+    expect(within(detailDialog).getByText("기존 소액 일괄결의 · 조회 전용")).toBeInTheDocument();
     expect(within(detailDialog).queryByRole("button", { name: "수정" })).not.toBeInTheDocument();
     expect(within(detailDialog).queryByRole("button", { name: "삭제" })).not.toBeInTheDocument();
   });

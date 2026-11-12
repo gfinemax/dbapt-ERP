@@ -118,3 +118,67 @@ final result: passed
 final result: blocked
 
 Blocker: browser access host unavailable for rendered screenshot capture and side-by-side visual comparison.
+
+## Expense resolution detail adaptive review workspace
+
+**Source visual truth**
+
+- `C:\Users\dbapt\.codex\generated_images\01a1cce4-55d7-7d41-b464-3e44daaf49de\exec-83bb3dab-5ea5-4d0b-9dba-f84f9035b7af.png`
+- Source pixels: 1488 × 1058
+- Intended CSS viewport: desktop modal at approximately 1440 × 1024
+- Density normalization: not completed because an implementation capture was unavailable
+
+**Implementation evidence**
+
+- Route: `/finance/expense-resolutions?resolutionId=er_2026_0008`
+- Local preview: started on port 4173
+- Implementation screenshot: unavailable
+- Browser-rendered viewport: unavailable
+- State intended for comparison: multi-expense resolution, 12 rows, draft approval state
+
+**Findings**
+
+- [P1] Browser-rendered comparison is unavailable.
+  - Location: complete expense-resolution detail modal.
+  - Evidence: the in-app browser access host returned `The browser access host is unavailable` when the local preview was opened.
+  - Impact: typography, exact spacing, responsive overflow, focus order, and same-viewport fidelity cannot be confirmed from code and build output alone.
+  - Fix: capture the deployed or local authenticated route at 1440 × 1024 and compare it side by side with the source visual.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: blocked pending browser capture.
+- Spacing and layout rhythm: blocked pending browser capture.
+- Colors and visual tokens: existing ERP CSS tokens are used; visual fidelity remains unconfirmed.
+- Image quality and asset fidelity: no raster product assets are used in this business UI; Lucide icons remain consistent with the existing application.
+- Copy and content: implemented with Korean ERP labels and live resolution data; automated tests passed.
+
+**Full-view comparison evidence**
+
+- Source visual opened and inspected.
+- Implementation full-view capture could not be produced by the unavailable browser host.
+
+**Focused region comparison evidence**
+
+- Not performed because no implementation screenshot was available.
+
+**Primary interactions checked**
+
+- Automated component tests cover opening the detail dialog, approval request actions, edit/re-request, print menus, and legacy read-only behavior.
+- New detail tabs, row expansion, collapsible metadata, and overflow deletion menu require browser interaction verification.
+- Browser console errors could not be checked.
+
+**Comparison history**
+
+- Initial implementation: build and 41 focused tests passed.
+- Visual iteration: blocked before the first rendered comparison; no visual fixes were claimed.
+
+**Implementation checklist**
+
+- Capture the implementation at 1440 × 1024 in the authenticated expense-resolution state.
+- Verify all 12 rows fit without horizontal scrolling.
+- Verify the right decision inspector and bottom actions remain visible.
+- Test single-expense and multi-expense variants.
+- Test keyboard focus, tab controls, row expansion, and menu dismissal.
+- Compare typography, spacing, colors, and copy against the source visual.
+
+final result: blocked
