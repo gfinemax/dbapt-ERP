@@ -11,6 +11,7 @@ import { defaultExpenseComplianceSettings } from "@/features/finance/expense-com
 import { listApprovedApprovalDocumentCandidates } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
 import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
+import { refreshOpenExpenseResolutionBudgetSnapshots } from "@/features/finance/expense-resolution-budget-refresh";
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { loadQuickExpenseConversionDraft, type QuickExpenseConversionDraft } from "@/features/finance/quick-expense-conversion-repository";
 import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
@@ -78,7 +79,10 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   else console.warn(`[expense-resolutions] Bank transaction data unavailable: ${bankResult.reason instanceof Error ? bankResult.reason.message : String(bankResult.reason)}`);
   if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
   else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
-  if (budgetResult.status === "fulfilled") initialBudgetProfiles = budgetResult.value;
+  if (budgetResult.status === "fulfilled") {
+    initialBudgetProfiles = budgetResult.value;
+    initialResolutions = refreshOpenExpenseResolutionBudgetSnapshots(initialResolutions, initialBudgetProfiles);
+  }
   else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
   if (detailResult.status === "fulfilled") initialExpenseDetails = detailResult.value;
   else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
