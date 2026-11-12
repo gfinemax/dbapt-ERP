@@ -125,6 +125,7 @@ export type BatchExpenseItem = {
   allocatedBudget: number;
   budgetItem: string;
   budgetStatus: BatchBudgetStatus;
+  bankTransactionId?: string;
   currentRequestAmount: number;
   description: string;
   actualSpender: string;
@@ -300,6 +301,13 @@ export type ManagedExpenseResolution = {
   evidenceStatus?: EvidenceStatus;
   missingEvidenceReason?: string;
   bankTransactionId?: string;
+  bankTransactions?: Array<{
+    amount: number;
+    description: string;
+    id: string;
+    itemId: string;
+    transactionDate: string;
+  }>;
   cardTransactionId?: string;
   cardLastFour?: string;
   cardReconciliationStatus?: CorporateCardReconciliationStatus;

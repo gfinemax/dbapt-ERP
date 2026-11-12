@@ -1058,6 +1058,17 @@ async function loadBankTransactionDownstreamLinks(organizationId: string, transa
       if (transactionId) add(transactionId, label);
     }
   }
+  const { data: groupedResolutionLinks, error: groupedResolutionLinkError } = await supabase
+    .schema("finance")
+    .from("expense_resolution_bank_transactions")
+    .select("bank_transaction_id")
+    .eq("organization_id", organizationId)
+    .in("bank_transaction_id", transactionIds);
+  if (groupedResolutionLinkError) throw new Error(`은행거래 후속 연결(일괄 지출결의)을 확인하지 못했어: ${groupedResolutionLinkError.message}`);
+  for (const row of groupedResolutionLinks ?? []) {
+    const transactionId = String(row.bank_transaction_id ?? "");
+    if (transactionId) add(transactionId, "지출결의");
+  }
   for (const column of ["withdrawal_id", "deposit_id"] as const) {
     const { data, error } = await supabase.schema("finance").from("workflow_transfers")
       .select(column)
