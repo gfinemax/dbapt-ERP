@@ -77,16 +77,21 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
   });
 
-  it("shows an approval-focused single-expense detail workspace", () => {
+  it("shows an approval-focused single-expense detail workspace", async () => {
     render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    await act(async () => {
+      await import("./expense-budget-inspector");
+      await vi.runOnlyPendingTimersAsync();
+    });
     const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
 
     expect(within(dialog).getByText("단일 지출")).toHaveClass("text-white");
     expect(within(dialog).getByRole("heading", { name: "결재 진행" })).toBeInTheDocument();
     expect(within(dialog).getByRole("heading", { name: "예산 판단" })).toBeInTheDocument();
-    expect(within(dialog).getByText("예산 연결이 필요합니다. 잘못된 0원 대신 연결 상태를 먼저 확인해주세요.")).toBeInTheDocument();
+    expect(within(dialog).getAllByText("예산 미편성")).toHaveLength(2);
+    expect(within(dialog).getByText("공식 예산이 없습니다. 예산 편성·조정 후 항목과 귀속월을 연결해주세요.")).toBeInTheDocument();
     expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
   });
 

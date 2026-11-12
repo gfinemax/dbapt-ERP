@@ -585,6 +585,11 @@ const ExpenseResolutionCreateModal = dynamic(
   },
 );
 
+const ExpenseBudgetInspector = dynamic(
+  () => import("./expense-budget-inspector").then((module) => module.ExpenseBudgetInspector),
+  { ssr: false },
+);
+
 type ResolutionTabKey = "all" | "mine" | "approvalInbox" | "rejected" | "paymentWaiting" | "partialPaid" | "paid" | "hold" | "voucherCreated";
 export type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";
 
@@ -4105,6 +4110,7 @@ export function ExpenseResolutionPage({
         <ExpenseResolutionDetailModal
           actionError={saveError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
+          linkedApproval={initialApprovalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
           onCancelApproval={() => cancelApproval(selectedDetail.id)}
@@ -4289,6 +4295,7 @@ function ExpenseResolutionDetailWorkspace({
   evidenceRows,
   isCorporateCardPayment,
   isApprovalActionPending,
+  linkedApproval,
   onApprove,
   onCreateFactConfirmation,
   onReject,
@@ -4303,6 +4310,7 @@ function ExpenseResolutionDetailWorkspace({
   evidenceRows: ReturnType<typeof getEvidenceRows>;
   isCorporateCardPayment: boolean;
   isApprovalActionPending: boolean;
+  linkedApproval?: ApprovalDocumentCandidate;
   onApprove: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
   onReject: () => void;
@@ -4320,7 +4328,6 @@ function ExpenseResolutionDetailWorkspace({
   const budgetLinked = budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
   const authorization = getExpenseAuthorizationReadiness(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
-  const progressWidth = Math.min(100, usageRate);
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
 
   const viewOptions: Array<{ label: string; value: ExpenseDetailView }> = [
@@ -4508,23 +4515,7 @@ function ExpenseResolutionDetailWorkspace({
           </div>
         </section>
 
-        <section className="mt-4 border-t border-[var(--color-soft-border)] pt-4" aria-labelledby="budget-inspector-title">
-          <div className="flex items-center justify-between gap-2"><h3 className="text-base font-black" id="budget-inspector-title">예산 판단</h3><Badge value={budgetLinked ? budget.budgetCheckStatus : "예산항목 선택 필요"} /></div>
-          {budgetLinked ? (
-            <>
-              <dl className="mt-3 grid gap-2 text-sm">
-                <InspectorRow label="예산기간" value={budget.budgetPeriod} />
-                <InspectorRow label="예산항목" value={resolution.budgetItem || "-"} />
-                <InspectorRow label="월 예산" value={formatExpenseResolutionAmount(budget.monthlyBudgetAmount)} />
-                <InspectorRow emphasized label="이번 결의" value={formatExpenseResolutionAmount(budget.currentRequestAmount)} />
-                <InspectorRow emphasized label="월 예상 누계" value={formatExpenseResolutionAmount(budget.expectedUsedAmount)} />
-                <InspectorRow emphasized label="월 예상 잔액" value={formatExpenseResolutionAmount(budget.remainingBudgetAmount)} />
-                <InspectorRow label="집행률" value={`${usageRate}%`} />
-              </dl>
-              <div aria-label={`예산 집행률 ${usageRate}%`} className="mt-3 h-2.5 overflow-hidden rounded-full bg-[var(--color-cloud-veil)]"><div className={`h-full rounded-full ${usageRate >= 100 ? "bg-red-500" : usageRate >= 80 ? "bg-amber-500" : "bg-green-500"}`} style={{ width: `${progressWidth}%` }} /></div>
-            </>
-          ) : <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm font-semibold text-amber-900">예산 연결이 필요합니다. 잘못된 0원 대신 연결 상태를 먼저 확인해주세요.</p>}
-        </section>
+        <ExpenseBudgetInspector approvalDocumentId={resolution.approvalDocumentId} approvalDocumentNo={resolution.approvalDocumentNo} budget={budget} budgetItem={resolution.budgetItem} budgetOverReason={resolution.budgetOverReason} linkedApproval={linkedApproval} />
 
         <section className="mt-4 border-t border-[var(--color-soft-border)] pt-4" aria-labelledby="payment-inspector-title">
           <h3 className="text-base font-black" id="payment-inspector-title">지급 · 증빙</h3>
@@ -4568,6 +4559,7 @@ function InspectorRow({ emphasized = false, label, value }: { emphasized?: boole
 export function ExpenseResolutionDetailModal({
   actionError,
   canApprove = false,
+  linkedApproval,
   onApprove,
   onCancelApproval,
   onCancelVoucher,
@@ -4586,6 +4578,7 @@ export function ExpenseResolutionDetailModal({
 }: {
   actionError?: string;
   canApprove?: boolean;
+  linkedApproval?: ApprovalDocumentCandidate;
   onApprove: () => boolean | void | Promise<boolean | void>;
   onCancelApproval?: () => void;
   onCancelVoucher?: () => void;
@@ -4681,6 +4674,7 @@ export function ExpenseResolutionDetailModal({
             evidenceRows={evidenceRows}
             isCorporateCardPayment={isCorporateCardPayment}
             isApprovalActionPending={isApprovalActionPending}
+            linkedApproval={linkedApproval}
             onApprove={() => { void handleApprove(); }}
             onCreateFactConfirmation={onCreateFactConfirmation}
             onReject={handleReject}

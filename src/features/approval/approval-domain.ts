@@ -110,7 +110,7 @@ export type ApprovalDocument = {
 
 export type ApprovalDocumentCandidate = Pick<
   ApprovalDocument,
-  "amount" | "approvalStatus" | "budgetItem" | "counterpartyName" | "documentNo" | "id" | "projectName" | "title"
+  "amount" | "approvalStatus" | "budgetItem" | "counterpartyName" | "documentNo" | "executionStatus" | "id" | "isOutOfBudget" | "meetingStatus" | "projectName" | "reservedAmount" | "title"
 >;
 
 export type ApprovalDraftLine = {

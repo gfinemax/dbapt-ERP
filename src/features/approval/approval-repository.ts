@@ -319,21 +319,36 @@ export async function listApprovedApprovalDocumentCandidates(
   const { data, error } = await requireClient()
     .schema("approval")
     .from("documents")
-    .select("id,document_no,title,counterparty_name,project_name,budget_item,amount,approval_status")
+    .select("id,document_no,title,counterparty_name,project_name,budget_item,amount,approval_status,is_out_of_budget,meeting_status,execution_status")
     .eq("organization_id", actor.organization_id)
     .eq("approval_status", "APPROVED")
     .is("deleted_at", null)
     .order("updated_at", { ascending: false })
     .limit(boundedLimit);
   if (error) throw new Error(`승인된 기안 후보를 불러오지 못했어: ${error.message}`);
-  return ((data ?? []) as Pick<DocumentRow, "amount" | "approval_status" | "budget_item" | "counterparty_name" | "document_no" | "id" | "project_name" | "title">[]).map((row) => ({
+  const rows = (data ?? []) as Pick<DocumentRow, "amount" | "approval_status" | "budget_item" | "counterparty_name" | "document_no" | "execution_status" | "id" | "is_out_of_budget" | "meeting_status" | "project_name" | "title">[];
+  const documentIds = rows.map((row) => row.id);
+  const reservationResult = documentIds.length
+    ? await requireClient().schema("approval").from("budget_reservations").select("document_id,amount,released_amount,status").in("document_id", documentIds)
+    : { data: [], error: null };
+  if (reservationResult.error) throw new Error(`기안 예산예약을 불러오지 못했어: ${reservationResult.error.message}`);
+  const activeReservedAmounts = new Map<string, number>();
+  for (const reservation of (reservationResult.data ?? []) as Array<{ amount: number; document_id: string; released_amount: number; status: string }>) {
+    if (reservation.status !== "ACTIVE") continue;
+    activeReservedAmounts.set(reservation.document_id, (activeReservedAmounts.get(reservation.document_id) ?? 0) + Math.max(0, Number(reservation.amount) - Number(reservation.released_amount)));
+  }
+  return rows.map((row) => ({
     amount: Number(row.amount),
     approvalStatus: row.approval_status,
     budgetItem: row.budget_item ?? undefined,
     counterpartyName: row.counterparty_name ?? undefined,
     documentNo: row.document_no,
+    executionStatus: row.execution_status,
     id: row.id,
+    isOutOfBudget: row.is_out_of_budget,
+    meetingStatus: row.meeting_status,
     projectName: row.project_name || undefined,
+    reservedAmount: activeReservedAmounts.get(row.id) ?? 0,
     title: row.title,
   }));
 }
