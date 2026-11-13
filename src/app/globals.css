@@ -178,14 +178,13 @@
 /* Ledger 외부 납입 인정 원장: 헤더와 값을 같은 축에 두고 열 간격을 조밀하게 유지한다. */
 #external-recognition-ledger-panel table {
   width: 100%;
-  min-width: 64rem;
+  min-width: 58rem;
   table-layout: fixed;
 }
 
 #external-recognition-ledger-panel th,
 #external-recognition-ledger-panel td {
-  padding-right: 0.25rem !important;
-  padding-left: 0.25rem !important;
+  padding: 0.625rem 0.5rem !important;
   text-align: center !important;
   vertical-align: middle;
 }

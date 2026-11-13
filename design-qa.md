@@ -117,6 +117,99 @@ final result: passed
 
 final result: blocked
 
+## External recognition desktop density refinement
+
+**Source visual truth**
+
+- User-provided ERP screenshot and focused top-menu crop in the conversation.
+- Target: desktop content area with the report/decision history treated as the fourth peer-level workflow menu.
+
+**Implementation evidence**
+
+- Route used for review: temporary local QA route rendering `CollectionLedgerPage` with representative data; removed after review.
+- Browser: native Chrome at the user's current desktop window and 110% browser zoom.
+- Evidence: full-page and focused in-session captures inspected through computer use; the capture surface did not expose a reusable local file path.
+
+**Findings and fixes**
+
+- [P1 fixed] The four workflow menus wrapped into a 2 x 2 grid at the actual content width. The desktop breakpoint now keeps all four menus on one row and reduces tab height, icon size, and horizontal padding.
+- [P1 fixed] The filter reset label wrapped vertically in a narrow automatic column. It is now a compact icon button with an accessible label and tooltip.
+- [P2 fixed] Header, sync card, section shell, filter area, and summary cards used more vertical space than the reference. Their padding and inter-section rhythm were reduced while retaining readable grouping.
+- [P2 fixed] Ledger cells were overly loose for the available viewport. The table minimum width and cell padding were tuned to show denser rows without removing audit details.
+
+**Primary interactions checked**
+
+- Switched from `전체 관리대장` to `보고·의결 이력`; the fourth item remains a peer-level selected tab and updates the workspace heading.
+- Entered `김초연` in search; summary values and ledger results narrowed immediately, and the reset control enabled.
+- Focused component suite: 13/13 passed.
+- ESLint for the modified component and test: passed.
+- No Next.js runtime error overlay or accessibility-tree warning was observed during the browser review.
+
+**Comparison history**
+
+- Initial browser pass exposed menu wrapping and the vertically broken reset label.
+- Second pass confirmed a one-row workflow menu, compact filter toolbar, single-row five-metric summary, and denser ledger rows at the same desktop window size.
+
+final result: passed
+
+## External recognition workspace hierarchy
+
+**Source visual truth**
+
+- User-provided external-recognition management screenshots in the current conversation; the attachment was not exposed as a local filesystem path.
+- Source pixels: unavailable from the conversation attachment API.
+- Intended CSS viewport: desktop ERP workspace matching the supplied wide layout.
+- Density normalization: unavailable because neither source metadata nor an implementation screenshot could be captured.
+
+**Implementation evidence**
+
+- Route: `/finance/collections`
+- Implementation: `src/features/finance/collection-ledger-page.tsx`
+- Local preview: started on port 4173.
+- Implementation screenshot and browser viewport: unavailable because both the in-app and Chrome browser access hosts returned `The browser access host is unavailable`.
+- State intended for comparison: `전체 관리대장` selected, general external-recognition source selected, no search/status filter.
+
+**Findings**
+
+- [P1] Browser-rendered comparison is unavailable.
+  - Location: full external-recognition workspace.
+  - Evidence: local preview started successfully, but the browser host rejected both in-app and Chrome tab creation.
+  - Impact: exact typography, column density, responsive wrapping, and screenshot-to-implementation visual fidelity cannot be confirmed.
+  - Fix: capture `/finance/collections` at the supplied desktop width and compare it beside the source screenshot.
+
+**Required fidelity surfaces**
+
+- Fonts and typography: source-level review only. Existing Pretendard/Noto Sans KR application stack and established ERP type scale are reused.
+- Spacing and layout rhythm: source-level review only. The implementation follows the requested hierarchy of top-level workflow tabs, summary, filters, and table.
+- Colors and visual tokens: source-level review only. Existing ERP green, paper, cloud, border, and shadow tokens are reused.
+- Image quality and asset fidelity: no raster content is required; navigation and utility affordances use the application's existing icon library.
+- Copy and content: verified by component tests, including `보고·의결 이력` as one of four equal top-level tabs.
+
+**Full-view comparison evidence**
+
+- Source screenshot was inspected from the conversation.
+- Browser-rendered implementation evidence is unavailable, so full-view comparison is blocked.
+
+**Focused region comparison evidence**
+
+- Source top-menu crop was inspected from the conversation.
+- Component semantics verify a four-item top-level tablist in the requested order, but a same-size rendered crop is unavailable.
+
+**Primary interactions checked**
+
+- Component tests cover top-level menu selection and the report/decision history hierarchy.
+- Existing tests cover source tabs, member filters, sorting, cancellation history, empty states, and accounting summaries.
+- Focused suite: 13/13 passed.
+- ESLint and diff checks: passed.
+- Browser console: unavailable because browser access was blocked.
+
+**Comparison history**
+
+- Initial implementation reorganized the workspace into top-level workflow tabs, a single summary surface, search/status filters, and a persistent ledger table.
+- Visual iteration could not begin because no implementation screenshot was available.
+
+final result: blocked
+
 Blocker: browser access host unavailable for rendered screenshot capture and side-by-side visual comparison.
 
 ## Expense resolution detail adaptive review workspace

@@ -14,6 +14,20 @@ const workspace: CollectionLedgerWorkspace = {
   viewer: { user_id: "admin", permissions: ["ADMIN"] },
 };
 describe("collection ledger page", () => {
+  it("keeps report and decision history at the same top navigation level", () => {
+    render(<CollectionLedgerPage workspace={workspace} mode="collections" />);
+    const navigation = screen.getByRole("tablist", { name: "외부 납입 인정 상위 메뉴" });
+    const tabs = within(navigation).getAllByRole("tab");
+
+    expect(tabs).toHaveLength(4);
+    expect(within(navigation).getByRole("tab", { name: /전체 관리대장/ })).toHaveAttribute("aria-selected", "true");
+    const historyTab = within(navigation).getByRole("tab", { name: /보고·의결 이력/ });
+    expect(historyTab).toHaveAttribute("aria-selected", "false");
+
+    fireEvent.click(historyTab);
+    expect(historyTab).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByRole("tabpanel", { name: "보고·의결 이력 결과" })).toBeInTheDocument();
+  });
   it("shows authoritative ID separately from the display snapshot and the remaining balance", () => {
     render(<CollectionLedgerPage workspace={workspace} mode="collections" />);
     expect(screen.getByText(/peopleon-42/)).toBeInTheDocument();
