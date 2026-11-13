@@ -13,6 +13,19 @@ export type CorporateCardTransactionCandidate = {
 };
 
 export type CorporateCardReconciliationStatus = "PENDING" | "MATCHED";
+export type CorporateCardSettlementMode = "BANK_DIRECT" | "CARD_BILLING";
+export type CorporateCardVerificationSource = "BANK_TRANSACTION" | "CARD_TRANSACTION";
+
+export function isBankVerifiedCorporateCard(input: {
+  bankTransactionId?: string;
+  bankTransactions?: Array<{ id: string }>;
+  cardSettlementMode?: CorporateCardSettlementMode;
+  cardVerificationSource?: CorporateCardVerificationSource;
+}) {
+  return input.cardSettlementMode === "BANK_DIRECT"
+    && input.cardVerificationSource === "BANK_TRANSACTION"
+    && Boolean(input.bankTransactionId || input.bankTransactions?.length);
+}
 
 export type CorporateCardMatchCandidate = CorporateCardTransactionCandidate & {
   dateDifferenceDays: number;

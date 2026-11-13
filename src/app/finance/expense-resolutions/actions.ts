@@ -27,6 +27,7 @@ import type { ManagedExpenseResolution } from "@/features/finance/expense-resolu
 import { evaluateDirectExpensePolicy } from "@/features/finance/direct-expense-policy";
 import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-small-expense";
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
+import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
 
 const expenseEvidenceBucket = "expense-evidence";
 
@@ -468,7 +469,11 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
         itemCount: current.resolutionType === "BATCH" ? current.expenseItems.length : current.singleItems?.length ?? 0 });
       if (validation.errors.length) throw new Error(validation.errors.join(" "));
     }
-    if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
+    if (current.expenseBurdenType === "CORPORATE_CARD" && current.cardSettlementMode === "BANK_DIRECT") {
+      if (!isBankVerifiedCorporateCard(current)) throw new Error("법인 체크카드의 통장 건별출금 내역을 연결한 후 승인요청할 수 있습니다.");
+    } else if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) {
+      throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
+    }
     if (current.approvalDocumentId) await assertExpenseRelatedRow("documents", current.approvalDocumentId, actor, "approval");
     await validateDirectExpenseGovernance(current, settings);
   }

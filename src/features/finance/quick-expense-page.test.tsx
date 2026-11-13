@@ -102,6 +102,24 @@ describe("QuickExpensePage", () => {
     expect(screen.getByText("간편처리 완료")).toBeInTheDocument();
   });
 
+  it("records a corporate debit card from the bank transaction without re-entering card data", async () => {
+    const persistRecord = vi.fn(async (input) => ({ ...input, createdAt: "2026-08-27T12:00:00+09:00", directExpenseDecision: "ALLOWED" as const, directExpenseReasons: [], id: "quick-card-bank-1", recordStatus: "RECORDED" as const }));
+    render(<QuickExpensePage initialBankTransactions={[{ counterparty: "KT", description: "인터넷", id: "bank-card-1", resolutionStatus: "UNRESOLVED", transactedAt: "2026-08-27T09:00:00+09:00", withdrawalAmount: 55000 }]} initialCardTransactions={[]} initialExpenseDetails={details} initialRecords={[]} persistRecord={persistRecord} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "법인카드" }));
+    fireEvent.click(screen.getByRole("button", { name: "통장 건별출금 · 체크카드" }));
+    fireEvent.change(screen.getByLabelText("법인 체크카드 통장 건별출금"), { target: { value: "bank-card-1" } });
+    fireEvent.change(screen.getByLabelText("사용내용"), { target: { value: "조합 사무실 인터넷 요금" } });
+    fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
+
+    await waitFor(() => expect(persistRecord).toHaveBeenCalledWith(expect.objectContaining({
+      bankTransactionId: "bank-card-1",
+      corporateCardTransactionId: undefined,
+      paymentMethod: "CORPORATE_CARD",
+      sourceType: "BANK_TRANSACTION",
+    })));
+  });
+
   it("supports manual cash usage records", () => {
     render(<QuickExpensePage initialBankTransactions={[]} initialCardTransactions={[]} initialRecords={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "현금" }));

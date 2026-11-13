@@ -24,7 +24,7 @@ import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { evaluateDirectExpensePolicy, type DirectExpenseDecision, type ExpenseCreationSource } from "./direct-expense-policy";
 import { validateExpenseCompliance, type EvidenceKind, type EvidenceStatus, type ExpenseKind, type PettyCashTransaction } from "./expense-compliance";
 import type { BankTransactionResolutionCandidate, ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
-import { isTaxiCardTransaction, type CorporateCardReconciliationStatus, type CorporateCardTransactionCandidate } from "./corporate-card-transaction";
+import { isBankVerifiedCorporateCard, isTaxiCardTransaction, type CorporateCardReconciliationStatus, type CorporateCardSettlementMode, type CorporateCardTransactionCandidate, type CorporateCardVerificationSource } from "./corporate-card-transaction";
 import type { BusinessPartnerOcrInput, BusinessPartnerRegistrationResult } from "@/features/basic-info/business-partner-data";
 import { recommendExpenseBudget, recommendOperatingExpenseDetail, type ExpenseBudgetRecommendation } from "./expense-budget-recommendation";
 import { isBudgetProfilePeriodKey, resolveBudgetProfile } from "./budget-profile-lookup";
@@ -315,6 +315,8 @@ export type ManagedExpenseResolution = {
   cardTransactionId?: string;
   cardLastFour?: string;
   cardReconciliationStatus?: CorporateCardReconciliationStatus;
+  cardSettlementMode?: CorporateCardSettlementMode;
+  cardVerificationSource?: CorporateCardVerificationSource;
   bankTransactionUid?: string;
   settlementRecipient?: string;
   settlementCompletedAt?: string;
@@ -387,9 +389,12 @@ export type ResolutionFormState = {
   evidenceStatus: EvidenceStatus;
   missingEvidenceReason: string;
   bankTransactionId: string;
+  bankTransactions: NonNullable<ManagedExpenseResolution["bankTransactions"]>;
   cardTransactionId: string;
   cardLastFour: string;
   cardReconciliationStatus: CorporateCardReconciliationStatus;
+  cardSettlementMode: CorporateCardSettlementMode;
+  cardVerificationSource?: CorporateCardVerificationSource;
   settlementRecipient: string;
   settlementCompletedAt: string;
   accountHolder: string;
@@ -1501,9 +1506,12 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     evidenceStatus: resolution.evidenceStatus ?? "NONE",
     missingEvidenceReason: resolution.missingEvidenceReason ?? "",
     bankTransactionId: resolution.bankTransactionId ?? "",
+    bankTransactions: resolution.bankTransactions?.map((transaction) => ({ ...transaction })) ?? [],
     cardTransactionId: resolution.cardTransactionId ?? "",
     cardLastFour: resolution.cardLastFour ?? "",
     cardReconciliationStatus: resolution.cardReconciliationStatus ?? (resolution.cardTransactionId ? "MATCHED" : "PENDING"),
+    cardSettlementMode: resolution.cardSettlementMode ?? (resolution.cardTransactionId ? "CARD_BILLING" : "BANK_DIRECT"),
+    cardVerificationSource: resolution.cardVerificationSource ?? (resolution.cardTransactionId ? "CARD_TRANSACTION" : undefined),
     settlementRecipient: resolution.settlementRecipient ?? resolution.accountHolder,
     settlementCompletedAt: resolution.settlementCompletedAt ?? "",
     accountHolder: resolution.accountHolder,
@@ -1542,8 +1550,8 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     executionMethod: resolution.executionMethod ?? "VENDOR_DIRECT",
     expenseBurdenType: resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
     inputMethod: normalizeInputMethod(resolution),
-    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId || resolution.bankTransactionId ? "BUDGET_DIRECT" : "NONE",
-    quickPaymentMethod: resolution.cardReconciliationStatus || resolution.cardTransactionId
+    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId || resolution.bankTransactionId || resolution.bankTransactions?.length ? "BUDGET_DIRECT" : "NONE",
+    quickPaymentMethod: resolution.expenseBurdenType === "CORPORATE_CARD" || resolution.cardReconciliationStatus || resolution.cardTransactionId
       ? "CORPORATE_CARD"
       : resolution.bankTransactionId
         ? "BANK_TRANSFER"
@@ -1602,9 +1610,12 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     evidenceStatus: "NONE",
     missingEvidenceReason: "",
     bankTransactionId: "",
+    bankTransactions: [],
     cardTransactionId: "",
     cardLastFour: "",
     cardReconciliationStatus: "PENDING",
+    cardSettlementMode: "CARD_BILLING",
+    cardVerificationSource: undefined,
     settlementRecipient: "",
     settlementCompletedAt: "",
     resolutionNo: nextNo,
@@ -1672,13 +1683,15 @@ function createQuickExpenseConversionFormState(source: QuickExpenseConversionDra
   const base = createFormState(nextNo, source.occurredDate, authorLabel);
   const evidenceKind: EvidenceKind = source.evidenceKind === "CARD_TRANSACTION" ? "CARD_RECEIPT"
     : source.evidenceKind === "RECEIPT" ? "SIMPLE_RECEIPT"
-      : source.evidenceKind === "ALTERNATIVE" ? "OTHER_ALTERNATIVE" : "NONE";
+      : source.evidenceKind === "BANK_TRANSFER" ? "BANK_TRANSFER"
+        : source.evidenceKind === "ALTERNATIVE" ? "OTHER_ALTERNATIVE" : "NONE";
   const evidenceStatus: EvidenceStatus = ["QUALIFIED", "GENERAL", "ALTERNATIVE"].includes(source.evidenceStatus)
     ? source.evidenceStatus as EvidenceStatus : "NONE";
   const expenseBurdenType: ExpenseBurdenType = source.paymentMethod === "CORPORATE_CARD" ? "CORPORATE_CARD"
     : ["BANK_TRANSFER", "AUTO_DEBIT"].includes(source.paymentMethod) ? "ORGANIZATION_PAID"
       : source.paymentMethod === "CASH" ? "CASH" : "EMPLOYEE_PREPAID";
   const expenseKind: ExpenseKind = source.paymentMethod === "PERSONAL_PREPAID" ? "PERSONAL_REIMBURSEMENT" : "GENERAL";
+  const isBankVerifiedCard = source.paymentMethod === "CORPORATE_CARD" && Boolean(source.bankTransactionId);
   const amount = String(source.amount);
   return {
     ...base,
@@ -1691,9 +1704,18 @@ function createQuickExpenseConversionFormState(source: QuickExpenseConversionDra
     expenseBurdenType,
     expenseKind,
     approvalSkipReason: source.approvalSkipReason,
-    bankTransactionId: source.bankTransactionId ?? "",
+    bankTransactionId: isBankVerifiedCard ? "" : source.bankTransactionId ?? "",
+    bankTransactions: isBankVerifiedCard && source.bankTransactionId ? [{
+      amount: source.amount,
+      description: source.usageDescription,
+      id: source.bankTransactionId,
+      itemId: `quick-bank-${source.bankTransactionId}`,
+      transactionDate: source.occurredDate,
+    }] : [],
     cardTransactionId: source.cardTransactionId ?? "",
-    cardReconciliationStatus: source.cardTransactionId ? "MATCHED" : "PENDING",
+    cardReconciliationStatus: source.cardTransactionId || isBankVerifiedCard ? "MATCHED" : "PENDING",
+    cardSettlementMode: isBankVerifiedCard ? "BANK_DIRECT" : "CARD_BILLING",
+    cardVerificationSource: isBankVerifiedCard ? "BANK_TRANSACTION" : source.cardTransactionId ? "CARD_TRANSACTION" : undefined,
     budgetItem: source.budgetItem,
     expenseDetailId: source.expenseDetailId ?? "",
     operationExpenseDetail: source.usageDescription,
@@ -2087,54 +2109,13 @@ function getPrintValidationWarnings(resolution: ManagedExpenseResolution) {
 }
 
 function getEvidenceRows(resolution: ManagedExpenseResolution) {
-  if (resolution.evidenceMaterials.length === 0) {
-    return [
-      {
-        amount: resolution.totalPaymentAmount,
-        attachedAt: "-",
-        evidenceType: resolution.evidenceType ?? "기타",
-        fileName: "첨부 대기",
-        issuer: resolution.vendorName,
-      },
-    ];
-  }
-
-  return resolution.evidenceMaterials.map((material, index) => ({
+  return (resolution.evidenceFiles ?? []).map((file) => ({
     amount: resolution.totalPaymentAmount,
-    attachedAt: resolution.evidenceAttached ? resolution.createdAt : "-",
-    evidenceType: normalizeEvidenceType(material),
-    fileName: `${resolution.resolutionNo}-${index + 1}-${material}.pdf`,
+    attachedAt: file.uploadedAt,
+    evidenceType: file.evidenceType,
+    fileName: file.fileName,
     issuer: resolution.vendorName,
   }));
-}
-
-function normalizeEvidenceType(material: string): EvidenceType {
-  if (material.includes("세금계산서")) {
-    return "세금계산서";
-  }
-  if (material.includes("계산서")) {
-    return "계산서";
-  }
-  if (material.includes("현금영수증")) {
-    return "현금영수증";
-  }
-  if (material.includes("영수증")) {
-    return "영수증";
-  }
-  if (material.includes("이체확인증")) {
-    return "이체확인증";
-  }
-  if (material.includes("계약")) {
-    return "계약서";
-  }
-  if (material.includes("견적")) {
-    return "견적서";
-  }
-  if (material.includes("의결") || material.includes("회의")) {
-    return "의결서";
-  }
-
-  return "기타";
 }
 
 export function Badge({ value }: { value: string }) {
@@ -2540,7 +2521,7 @@ export function ExpenseResolutionPage({
     if (key === "expenseDetailId") expenseDetailSelectionRef.current = value ? "MANUAL" : "AUTO";
     setFormState((current) => {
       const normalizedValue = key === "vendorName" && typeof value === "string" ? normalizeVendorName(value) : value;
-      const nextState = { ...current, [key]: normalizedValue };
+      const nextState = { ...current, [key]: normalizedValue } as ResolutionFormState;
       if (key === "createdAt" && typeof value === "string" && (!current.plannedPaymentDate || current.plannedPaymentDate === current.createdAt)) {
         nextState.plannedPaymentDate = value;
       }
@@ -2557,7 +2538,7 @@ export function ExpenseResolutionPage({
           accountAllocations: current.accountAllocations.map((allocation, index) => index === 0 ? { ...allocation, accountTitle: category === "택시" || category === "주차" || category === "통행료" ? "여비교통비" : allocation.accountTitle, budgetItem: category === "택시" || category === "주차" || category === "통행료" ? "운영비 > 여비교통비" : allocation.budgetItem } : allocation),
           approvalSkipReason: "승인 예산 내 일상 지출",
           accountHolder: "",
-          cardReconciliationStatus: current.cardTransactionId ? "MATCHED" : "PENDING",
+          cardReconciliationStatus: current.cardTransactionId || isBankVerifiedCorporateCard(current) ? "MATCHED" : "PENDING",
           creationSource: "DIRECT",
           evidenceKind: "CARD_RECEIPT",
           evidenceStatus: "QUALIFIED",
@@ -2578,12 +2559,17 @@ export function ExpenseResolutionPage({
       }
 
       if (key === "quickPaymentMethod" && typeof value === "string") {
+        const keepsBankVerifiedCard = value === "CORPORATE_CARD" && current.cardSettlementMode === "BANK_DIRECT";
         const common = {
           ...nextState,
           approvalSkipReason: value === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출",
           bankTransactionId: value === "BANK_TRANSFER" || value === "AUTO_DEBIT" ? current.bankTransactionId : "",
-          cardReconciliationStatus: value === "CORPORATE_CARD" ? (current.cardTransactionId ? "MATCHED" as const : "PENDING" as const) : "PENDING" as const,
+          bankTransactions: keepsBankVerifiedCard ? current.bankTransactions : [],
+          cardReconciliationStatus: value === "CORPORATE_CARD" ? (current.cardTransactionId || keepsBankVerifiedCard && current.bankTransactions.length ? "MATCHED" as const : "PENDING" as const) : "PENDING" as const,
           cardTransactionId: value === "CORPORATE_CARD" ? current.cardTransactionId : "",
+          cardVerificationSource: value === "CORPORATE_CARD"
+            ? current.cardTransactionId ? "CARD_TRANSACTION" as const : keepsBankVerifiedCard && current.bankTransactions.length ? "BANK_TRANSACTION" as const : undefined
+            : undefined,
           creationSource: "DIRECT" as const,
           expenseTiming: "REIMBURSEMENT" as const,
           inputMethod: "MANUAL" as const,
@@ -2596,9 +2582,49 @@ export function ExpenseResolutionPage({
         return { ...common, evidenceKind: "CASH_RECEIPT", evidenceStatus: "QUALIFIED", executionMethod: "AUTHORIZATION_ONLY", expenseBurdenType: "CASH", expenseKind: "GENERAL", reason: current.reason.trim() || "승인 예산 내 현금 지출" };
       }
 
+      if (key === "cardSettlementMode" && typeof value === "string") {
+        if (value === "BANK_DIRECT") {
+          return {
+            ...nextState,
+            bankTransactionId: "",
+            cardTransactionId: "",
+            cardLastFour: current.cardLastFour,
+            cardReconciliationStatus: current.bankTransactions.length ? "MATCHED" : "PENDING",
+            cardSettlementMode: "BANK_DIRECT",
+            cardVerificationSource: current.bankTransactions.length ? "BANK_TRANSACTION" : undefined,
+            evidenceKind: "BANK_TRANSFER",
+            evidenceStatus: current.evidenceFiles.length ? current.evidenceStatus : "ALTERNATIVE",
+            missingEvidenceReason: current.evidenceFiles.length ? current.missingEvidenceReason : "법인 체크카드 통장 건별출금 내역으로 결제 확인",
+          };
+        }
+        return {
+          ...nextState,
+          bankTransactionId: "",
+          bankTransactions: [],
+          cardReconciliationStatus: current.cardTransactionId ? "MATCHED" : "PENDING",
+          cardSettlementMode: "CARD_BILLING",
+          cardVerificationSource: current.cardTransactionId ? "CARD_TRANSACTION" : undefined,
+          evidenceKind: current.cardTransactionId ? current.evidenceKind : "CARD_RECEIPT",
+          evidenceStatus: current.cardTransactionId ? current.evidenceStatus : "QUALIFIED",
+        };
+      }
+
+      if (key === "bankTransactions" && Array.isArray(value)) {
+        const bankTransactions = value as ResolutionFormState["bankTransactions"];
+        const hasBankLinks = bankTransactions.length > 0;
+        return {
+          ...nextState,
+          bankTransactionId: "",
+          bankTransactions,
+          cardReconciliationStatus: hasBankLinks ? "MATCHED" : "PENDING",
+          cardSettlementMode: "BANK_DIRECT",
+          cardVerificationSource: hasBankLinks ? "BANK_TRANSACTION" : undefined,
+        };
+      }
+
       if (key === "cardTransactionId" && typeof value === "string") {
         const transaction = initialCardTransactions.find((candidate) => candidate.id === value);
-        if (!transaction) return { ...nextState, cardLastFour: "", cardReconciliationStatus: "PENDING" };
+        if (!transaction) return { ...nextState, cardLastFour: "", cardReconciliationStatus: "PENDING", cardVerificationSource: undefined };
         const expenseDate = transaction.approvedAt.slice(0, 10);
         const category = isTaxiCardTransaction(transaction) ? "택시" : current.quickExpenseCategory;
         const isTransport = category === "택시" || category === "주차" || category === "통행료";
@@ -2612,6 +2638,8 @@ export function ExpenseResolutionPage({
           cardTransactionId: transaction.id,
           cardLastFour: transaction.cardLastFour,
           cardReconciliationStatus: "MATCHED",
+          cardSettlementMode: "CARD_BILLING",
+          cardVerificationSource: "CARD_TRANSACTION",
           evidenceKind: "OTHER_ALTERNATIVE",
           evidenceStatus: "ALTERNATIVE",
           expenseBurdenType: "CORPORATE_CARD",
@@ -3307,9 +3335,14 @@ export function ExpenseResolutionPage({
       evidenceStatus: formState.evidenceStatus,
       missingEvidenceReason: formState.missingEvidenceReason || undefined,
       bankTransactionId: formState.bankTransactionId || undefined,
+      bankTransactions: formState.bankTransactions.length ? formState.bankTransactions : undefined,
       cardTransactionId: formState.cardTransactionId || undefined,
       cardLastFour: formState.cardLastFour || undefined,
-      cardReconciliationStatus: formState.cardTransactionId ? "MATCHED" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? "PENDING" : undefined,
+      cardReconciliationStatus: formState.cardTransactionId || formState.cardSettlementMode === "BANK_DIRECT" && formState.bankTransactions.length
+        ? "MATCHED"
+        : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? "PENDING" : undefined,
+      cardSettlementMode: formState.quickPaymentMethod === "CORPORATE_CARD" ? formState.cardSettlementMode : undefined,
+      cardVerificationSource: formState.quickPaymentMethod === "CORPORATE_CARD" ? formState.cardVerificationSource : undefined,
       settlementRecipient: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementRecipient || formState.advancePayer : undefined,
       settlementCompletedAt: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? formState.settlementCompletedAt || undefined : undefined,
       settlementAmount: formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? totalPaymentAmount : undefined,
@@ -3919,7 +3952,7 @@ export function ExpenseResolutionPage({
                           <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
                           {resolution.actualExpenseDate ? <p className="mt-0.5 text-xs text-[var(--color-stone)]">지출 {resolution.actualExpenseDate}</p> : null}
                           <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : isLegacySmallExpenseResolution(resolution) ? "기존자료" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
-                          {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">카드내역 매칭완료</p> : null}
+                          {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">{resolution.cardVerificationSource === "BANK_TRANSACTION" ? "통장거래 확인완료" : "카드내역 매칭완료"}</p> : null}
                         </td>
                         <td className="px-4 py-3 align-top">
                           <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} title={getResolutionSubject(resolution)} type="button">
@@ -4523,7 +4556,8 @@ function ExpenseResolutionDetailWorkspace({
             <InspectorRow label="지급상태" value={resolution.paymentStatus} />
             <InspectorRow label="지급예정" value={resolution.plannedPaymentDate || "미정"} />
             <InspectorRow label="증빙자료" value={evidenceRows.length ? `${evidenceRows.length}/${itemCount} 첨부` : "미첨부"} />
-            {isCorporateCardPayment ? <InspectorRow label="결제수단" value="공용 법인카드" /> : null}
+            {resolution.bankTransactions?.length ? <InspectorRow label="통장거래" value={`${resolution.bankTransactions.length}/${itemCount} 연결`} /> : resolution.bankTransactionId ? <InspectorRow label="통장거래" value="1건 연결" /> : null}
+            {isCorporateCardPayment ? <InspectorRow label="결제수단" value={resolution.cardSettlementMode === "BANK_DIRECT" ? "법인카드 · 통장 건별출금" : "법인카드 · 카드사 합계청구"} /> : null}
           </dl>
         </section>
 
@@ -4784,7 +4818,7 @@ export function ExpenseResolutionDetailModal({
           </DetailSection>
 
           <DetailSection title={isCorporateCardPayment ? "법인카드 결제정보" : "지급정보"}>
-            {isCorporateCardPayment ? <><DetailItem label="결제수단" value="공용 법인카드" /><DetailItem label="별도 지급" value="없음" /><DetailItem label="카드번호" value={resolution.cardLastFour ? `끝 ${resolution.cardLastFour}` : "카드내역 연결대기"} /></> : <><DetailItem label="지급은행" value={resolution.paymentBank || "-"} /><DetailItem label="지급계좌번호" value={resolution.paymentAccountNo || "-"} /><DetailItem label="예금주" value={resolution.accountHolder || "-"} /></>}
+            {isCorporateCardPayment ? <><DetailItem label="결제수단" value={resolution.cardSettlementMode === "BANK_DIRECT" ? "법인 체크카드 · 통장 건별출금" : "법인 신용카드 · 카드사 합계청구"} /><DetailItem label="확인 원본" value={resolution.cardVerificationSource === "BANK_TRANSACTION" ? `통장거래 ${resolution.bankTransactions?.length ?? (resolution.bankTransactionId ? 1 : 0)}건` : resolution.cardTransactionId ? "카드 승인내역" : "연결대기"} /><DetailItem label="카드번호" value={resolution.cardLastFour ? `끝 ${resolution.cardLastFour}` : "미입력"} /></> : <><DetailItem label="지급은행" value={resolution.paymentBank || "-"} /><DetailItem label="지급계좌번호" value={resolution.paymentAccountNo || "-"} /><DetailItem label="예금주" value={resolution.accountHolder || "-"} /></>}
             <DetailItem label="지급예정일" value={resolution.plannedPaymentDate || "-"} />
             <DetailItem label="지급일" value={resolution.paidAt ?? "-"} />
             <DetailItem label="업무유형" value={getExpenseTimingLabel(normalizeExpenseTiming(resolution))} />
@@ -5255,7 +5289,7 @@ function ExpenseResolutionPrintPreviewModal({
     printExpenseItems.slice(7 + pageIndex * 12, 7 + (pageIndex + 1) * 12),
   );
   const totalPrintPages = 1 + continuationPages.length + evidencePrintPages.length;
-  const evidenceCount = resolution.evidenceMaterials.length + resolution.expenseItems.filter((item) => item.evidenceFileName).length;
+  const evidenceCount = resolution.evidenceFiles?.length ?? 0;
   const attachedEvidenceTypes = Array.from(new Set(
     (resolution.evidenceFiles ?? [])
       .map((file) => file.ocrData.normalizedEvidenceType || file.evidenceType)
@@ -5263,7 +5297,7 @@ function ExpenseResolutionPrintPreviewModal({
   ));
   const evidenceSummary = isBatchResolution
     ? Array.from(new Set(resolution.expenseItems.map((item) => item.evidenceType).filter(Boolean))).join(", ") || "증빙 미첨부"
-    : attachedEvidenceTypes.join(", ") || resolution.evidenceType || resolution.evidenceMaterials.join(", ") || "증빙 미첨부";
+    : attachedEvidenceTypes.join(", ") || "증빙 미첨부";
   const evidenceText = evidenceCount > 0 ? `${evidenceSummary} ${evidenceCount}건` : "증빙 미첨부";
   const evidenceConnectionError = (resolution.evidenceFiles?.length ?? 0) > 0 && !createEvidenceDownloadUrl
     ? "증빙 원본을 출력할 수 있도록 연결되지 않았습니다."

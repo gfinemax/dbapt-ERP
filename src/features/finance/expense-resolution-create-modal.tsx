@@ -175,6 +175,55 @@ export function ExpenseResolutionCreateModal({
     const recommendedIds = new Set(cardMatchCandidates.map((candidate) => candidate.id));
     return [...cardMatchCandidates, ...cardTransactionCandidates.filter((transaction) => !recommendedIds.has(transaction.id))];
   }, [cardMatchCandidates, cardTransactionCandidates]);
+  const bankTransactionById = useMemo(() => new Map(bankTransactionCandidates.map((transaction) => [transaction.id, transaction])), [bankTransactionCandidates]);
+  const selectedBankTransactionIds = useMemo(() => new Set(formState.bankTransactions.map((transaction) => transaction.id)), [formState.bankTransactions]);
+  const toggleCorporateCardBankTransaction = (transaction: BankTransactionResolutionCandidate) => {
+    const selected = selectedBankTransactionIds.has(transaction.id);
+    const candidates = selected
+      ? formState.bankTransactions.filter((item) => item.id !== transaction.id).map((item) => ({
+          ...item,
+          candidate: bankTransactionById.get(item.id),
+        }))
+      : [...formState.bankTransactions.map((item) => ({
+          ...item,
+          candidate: bankTransactionById.get(item.id),
+        })), {
+          amount: transaction.withdrawalAmount,
+          candidate: transaction,
+          description: transaction.description,
+          id: transaction.id,
+          itemId: `bank-card-item-${transaction.id}`,
+          transactionDate: transaction.transactedAt.slice(0, 10),
+        }];
+    const links = candidates.map((item) => ({
+      amount: item.amount,
+      description: item.description,
+      id: item.id,
+      itemId: item.itemId,
+      transactionDate: item.transactionDate,
+    }));
+    const selectedCandidates = candidates.map((item) => item.candidate).filter((item): item is BankTransactionResolutionCandidate => Boolean(item));
+    const total = links.reduce((sum, item) => sum + item.amount, 0);
+    const dates = links.map((item) => item.transactionDate).sort();
+    const counterparties = Array.from(new Set(selectedCandidates.map((item) => item.counterparty || item.description).filter(Boolean)));
+    onChange("bankTransactions", links);
+    onChange("singleItems", links.length ? links.map((item) => createSingleExpenseItem({
+      id: item.itemId,
+      itemName: item.description || "법인 체크카드 사용",
+      quantity: "1",
+      taxCategory: "NO_VAT",
+      unitPrice: String(item.amount),
+    })) : [createSingleExpenseItem()]);
+    onChange("accountAllocations", [createAccountAllocation({
+      amount: total ? String(total) : "",
+      budgetItem: formState.budgetItem,
+      description: links.length ? `법인 체크카드 통장출금 ${links.length}건` : "",
+    })]);
+    onChange("actualExpenseDate", dates.at(-1) ?? "");
+    onChange("plannedPaymentDate", dates.at(-1) ?? formState.plannedPaymentDate);
+    onChange("vendorName", counterparties.length === 1 ? counterparties[0]! : counterparties.length > 1 ? `법인카드 사용처 ${counterparties.length}곳` : "");
+    onChange("reason", links.length ? `법인 체크카드 통장 건별출금 ${links.length}건` : formState.reason);
+  };
   const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
   const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
@@ -550,20 +599,52 @@ export function ExpenseResolutionCreateModal({
                   value={formState.quickPaymentMethod}
                 />
                 {formState.quickPaymentMethod === "CORPORATE_CARD" ? <>
-                <label className="grid gap-2 text-sm font-bold">
-                  <span>법인카드 승인내역</span>
-                  <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
-                    <option value="">아직 카드내역이 없음 · 연결대기로 임시등록</option>
-                    {displayedCardTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{cardMatchCandidates.some((candidate) => candidate.id === transaction.id) ? "추천 · " : ""}{transaction.approvedAt.slice(0, 10)} · {transaction.merchantName} · {transaction.amount.toLocaleString("ko-KR")}원 · {transaction.cardName} 끝 {transaction.cardLastFour}{isTaxiCardTransaction(transaction) ? " · 택시 자동분류" : ""}</option>)}
-                  </select>
-                  {cardTransactionCandidates.length ? <span className="text-xs font-semibold text-[var(--color-stone)]">미결의 승인내역 {cardTransactionCandidates.length}건 · 이미 결의서에 연결된 거래는 표시하지 않습니다.</span> : <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)]">불러온 미결의 카드 승인내역이 없습니다. 카드 내역 동기화 후 다시 확인해주세요.</span>}
-                </label>
-                <div className={`rounded-lg border px-4 py-3 text-sm ${formState.cardTransactionId ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
-                  <p className="font-bold">{formState.cardTransactionId ? "카드 승인내역 매칭완료" : "카드 승인내역 연결대기"}</p>
-                  <p className="mt-1 text-xs font-semibold">{formState.cardTransactionId ? "선택한 승인내역과 하나의 기록으로 통합해 중복 비용처리를 방지합니다." : "지금은 업무 목적만 임시등록합니다. 별도 지급·확정전표는 만들지 않고, 카드내역이 들어오면 날짜·금액으로 추천합니다."}</p>
-                </div>
-                {!formState.cardTransactionId ? <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} /> : null}
-                {!formState.cardTransactionId && cardMatchCandidates.length ? <div className="rounded-lg border border-[var(--color-deep-cobalt)]/25 bg-white px-4 py-3 text-sm"><p className="font-bold text-[var(--color-deep-cobalt)]">일치 가능성이 높은 카드내역 {cardMatchCandidates.length}건</p><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">금액과 결제일(±2일)이 일치합니다. 위 목록의 ‘추천’ 거래를 선택해 통합해주세요.</p></div> : null}
+                <QuestionChoiceGroup
+                  label="카드대금이 통장에서 어떻게 출금되나요?"
+                  onChange={(value) => onChange("cardSettlementMode", value as ResolutionFormState["cardSettlementMode"])}
+                  options={[
+                    { label: "건별로 바로 출금 · 체크카드", value: "BANK_DIRECT" },
+                    { label: "카드사에서 합계 청구 · 신용카드", value: "CARD_BILLING" },
+                  ]}
+                  value={formState.cardSettlementMode}
+                />
+                {formState.cardSettlementMode === "BANK_DIRECT" ? <>
+                  <fieldset className="grid gap-2 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-white p-4">
+                    <legend className="px-1 text-sm font-bold">통장 건별출금 선택</legend>
+                    <p className="text-xs font-semibold text-[var(--color-stone)]">카드 데이터를 다시 입력하지 않고 통장 원본의 날짜·금액·사용처를 사용합니다.</p>
+                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                      {bankTransactionCandidates.map((transaction) => {
+                        const checked = selectedBankTransactionIds.has(transaction.id);
+                        const linkedElsewhere = Boolean(transaction.linkedResolutionId && transaction.linkedResolutionNo !== formState.resolutionNo);
+                        return <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${linkedElsewhere ? "cursor-not-allowed bg-slate-50 text-slate-400" : "cursor-pointer bg-white"}`} key={transaction.id}>
+                          <input checked={checked} disabled={linkedElsewhere} onChange={() => toggleCorporateCardBankTransaction(transaction)} type="checkbox" />
+                          <span><strong>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원</strong><br/><span className="text-xs">{transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</span></span>
+                        </label>;
+                      })}
+                    </div>
+                    {!bankTransactionCandidates.length ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">선택할 통장 출금거래가 없습니다. 은행 거래를 먼저 불러와주세요.</p> : null}
+                  </fieldset>
+                  <div className={`rounded-lg border px-4 py-3 text-sm ${formState.bankTransactions.length ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
+                    <p className="font-bold">{formState.bankTransactions.length ? `통장 건별출금 ${formState.bankTransactions.length}건 확인완료` : "통장 건별출금 연결대기"}</p>
+                    <p className="mt-1 text-xs font-semibold">카드 승인내역을 다시 입력하지 않으며, 연결한 통장거래는 다른 지출에 중복 사용할 수 없습니다.</p>
+                  </div>
+                  <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} />
+                </> : <>
+                  <label className="grid gap-2 text-sm font-bold">
+                    <span>법인카드 승인내역</span>
+                    <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
+                      <option value="">아직 카드내역이 없음 · 연결대기로 임시등록</option>
+                      {displayedCardTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{cardMatchCandidates.some((candidate) => candidate.id === transaction.id) ? "추천 · " : ""}{transaction.approvedAt.slice(0, 10)} · {transaction.merchantName} · {transaction.amount.toLocaleString("ko-KR")}원 · {transaction.cardName} 끝 {transaction.cardLastFour}{isTaxiCardTransaction(transaction) ? " · 택시 자동분류" : ""}</option>)}
+                    </select>
+                    {cardTransactionCandidates.length ? <span className="text-xs font-semibold text-[var(--color-stone)]">미결의 승인내역 {cardTransactionCandidates.length}건 · 이미 결의서에 연결된 거래는 표시하지 않습니다.</span> : <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)]">불러온 미결의 카드 승인내역이 없습니다. 카드 내역 동기화 후 다시 확인해주세요.</span>}
+                  </label>
+                  <div className={`rounded-lg border px-4 py-3 text-sm ${formState.cardTransactionId ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
+                    <p className="font-bold">{formState.cardTransactionId ? "카드 승인내역 매칭완료" : "카드 승인내역 연결대기"}</p>
+                    <p className="mt-1 text-xs font-semibold">{formState.cardTransactionId ? "선택한 승인내역과 하나의 기록으로 통합해 중복 비용처리를 방지합니다." : "카드사 합계청구는 개별 사용내역을 확인해야 승인요청할 수 있습니다."}</p>
+                  </div>
+                  {!formState.cardTransactionId ? <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} /> : null}
+                  {!formState.cardTransactionId && cardMatchCandidates.length ? <div className="rounded-lg border border-[var(--color-deep-cobalt)]/25 bg-white px-4 py-3 text-sm"><p className="font-bold text-[var(--color-deep-cobalt)]">일치 가능성이 높은 카드내역 {cardMatchCandidates.length}건</p><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">금액과 결제일(±2일)이 일치합니다. 위 목록의 ‘추천’ 거래를 선택해 통합해주세요.</p></div> : null}
+                </>}
                 <QuestionChoiceGroup
                   label="어떤 비용인가요?"
                   onChange={(value) => onChange("quickExpenseCategory", value as ResolutionFormState["quickExpenseCategory"])}
@@ -1233,11 +1314,11 @@ export function ExpenseResolutionCreateModal({
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
+            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? "카드 사용 임시등록" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId)} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId))} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? (formState.cardSettlementMode === "BANK_DIRECT" ? "통장거래 연결 후 승인" : "카드내역 연결 후 승인") : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>

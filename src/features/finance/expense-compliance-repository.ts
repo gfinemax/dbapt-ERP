@@ -131,8 +131,15 @@ export async function listUnresolvedWithdrawalTransactions(organizationId?: stri
   const ids = (data ?? []).map((row) => row.id);
   const { data: links, error: linkError } = ids.length ? await supabase.schema("finance").from("expense_resolutions").select("id,resolution_no,bank_transaction_id").in("bank_transaction_id", ids).is("deleted_at", null) : { data: [], error: null };
   if (linkError) throw new Error(`통장거래 연결상태 조회 실패: ${linkError.message}`);
+  const { data: groupedLinks, error: groupedLinkError } = ids.length ? await supabase.schema("finance").from("expense_resolution_bank_transactions").select("bank_transaction_id,resolution_id").in("bank_transaction_id", ids) : { data: [], error: null };
+  if (groupedLinkError) throw new Error(`통장거래 일괄 연결상태 조회 실패: ${groupedLinkError.message}`);
+  const groupedResolutionIds = Array.from(new Set((groupedLinks ?? []).map((link) => link.resolution_id)));
+  const { data: groupedResolutions, error: groupedResolutionError } = groupedResolutionIds.length ? await supabase.schema("finance").from("expense_resolutions").select("id,resolution_no").in("id", groupedResolutionIds).is("deleted_at", null) : { data: [], error: null };
+  if (groupedResolutionError) throw new Error(`일괄 지출결의 연결상태 조회 실패: ${groupedResolutionError.message}`);
   return (data ?? []).map((row) => {
-    const linked = (links ?? []).find((item) => item.bank_transaction_id === row.id);
+    const groupedLink = (groupedLinks ?? []).find((item) => item.bank_transaction_id === row.id);
+    const linked = (links ?? []).find((item) => item.bank_transaction_id === row.id)
+      ?? (groupedResolutions ?? []).find((item) => item.id === groupedLink?.resolution_id);
     return { bankTransactionUid: row.bank_transaction_uid ?? undefined, counterparty: row.counterparty ?? undefined, description: row.description, id: row.id, linkedResolutionId: linked?.id, linkedResolutionNo: linked?.resolution_no, resolutionStatus: row.resolution_status, transactedAt: row.transacted_at, withdrawalAmount: Number(row.withdrawal_amount) };
   });
 }

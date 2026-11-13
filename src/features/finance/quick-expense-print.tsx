@@ -23,7 +23,10 @@ export function getQuickExpensePrintNumber(record: QuickExpenseRecord) {
 }
 
 export function getQuickExpenseTransactionLabel(record: QuickExpenseRecord) {
-  if (record.paymentMethod === "CORPORATE_CARD") return record.corporateCardTransactionId ? "법인카드 승인내역 연결" : "법인카드 승인내역 미연결";
+  if (record.paymentMethod === "CORPORATE_CARD") {
+    if (record.bankTransactionId) return "법인 체크카드 · 통장 건별출금 연결";
+    return record.corporateCardTransactionId ? "법인카드 승인내역 연결" : "법인카드 승인내역 미연결";
+  }
   if (record.paymentMethod === "BANK_TRANSFER" || record.paymentMethod === "AUTO_DEBIT") return record.bankTransactionId ? "통장 출금거래 연결" : "통장 출금거래 미연결";
   if (record.paymentMethod === "CASH") return "현금 직접지출";
   return "개인 선결제 정산 참조";

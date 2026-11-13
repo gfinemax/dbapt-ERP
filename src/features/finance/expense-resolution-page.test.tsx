@@ -95,6 +95,29 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
   });
 
+  it("does not count bank descriptions as uploaded evidence files", async () => {
+    const items = Array.from({ length: 12 }, (_, index) => batchExpenseItem(index + 1, 18_000));
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({
+      evidenceAttached: false,
+      evidenceFiles: [],
+      evidenceMaterials: items.map((item) => `조합계좌 출금내역 ${item.expenseDate}`),
+      expenseItems: items,
+      itemCount: items.length,
+      resolutionType: "BATCH",
+      totalPaymentAmount: 216_000,
+    })]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    await act(async () => {
+      await import("./expense-budget-inspector");
+      await vi.runOnlyPendingTimersAsync();
+    });
+    const dialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    expect(within(dialog).getByRole("button", { name: "증빙 0건" })).toBeInTheDocument();
+    expect(within(dialog).getAllByText("미첨부").length).toBeGreaterThan(0);
+    expect(within(dialog).queryByText("12/12 첨부")).not.toBeInTheDocument();
+  });
+
   it("shows 장현제 as 이사 on an unresolved legacy approval line", () => {
     render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({
       approvalLine: [
@@ -529,6 +552,34 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("카카오T 택시비");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(18500);
     expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
+  });
+
+  it("creates a corporate debit-card draft from bank withdrawals without card transaction input", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    render(<ExpenseResolutionPage initialBankTransactions={[
+      { counterparty: "옛골식당", description: "옛골식당", id: "bank-card-1", resolutionStatus: "UNRESOLVED", transactedAt: "2026-01-07T12:00:00+09:00", withdrawalAmount: 18000 },
+      { counterparty: "옛골식당", description: "옛골식당", id: "bank-card-2", resolutionStatus: "UNRESOLVED", transactedAt: "2026-01-08T12:00:00+09:00", withdrawalAmount: 36000 },
+    ]} initialResolutions={[]} persistResolution={persistResolution} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = await getExpenseResolutionDialog("지출결의서 작성");
+
+    fireEvent.click(within(dialog).getByRole("button", { name: "예산 내 간편지출" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "건별로 바로 출금 · 체크카드" }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /2026-01-07 · 18,000원/ }));
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /2026-01-08 · 36,000원/ }));
+    expect(within(dialog).getByText("통장 건별출금 2건 확인완료")).toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
+
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledWith(expect.objectContaining({
+      bankTransactions: expect.arrayContaining([expect.objectContaining({ id: "bank-card-1" }), expect.objectContaining({ id: "bank-card-2" })]),
+      cardReconciliationStatus: "MATCHED",
+      cardSettlementMode: "BANK_DIRECT",
+      cardTransactionId: undefined,
+      cardVerificationSource: "BANK_TRANSACTION",
+      expenseBurdenType: "CORPORATE_CARD",
+      totalPaymentAmount: 54000,
+    })));
   });
 
   it("connects a bank withdrawal through the budget-direct quick expense flow", async () => {

@@ -37,6 +37,10 @@ describe("validateQuickExpenseRecord", () => {
     expect(validateQuickExpenseRecord({ ...validInput, bankTransactionId: undefined, paymentMethod: "CORPORATE_CARD", sourceType: "MANUAL" }).errors).toEqual([]);
   });
 
+  it("accepts a corporate debit card verified by its bank transaction", () => {
+    expect(validateQuickExpenseRecord({ ...validInput, paymentMethod: "CORPORATE_CARD", sourceType: "BANK_TRANSACTION" }).errors).toEqual([]);
+  });
+
   it("requires a reason when a receipt is replaced with alternative evidence", () => {
     expect(validateQuickExpenseRecord({ ...validInput, evidenceStatus: "ALTERNATIVE", missingEvidenceReason: "" }).errors).toContain("영수증 미첨부 사유가 필요합니다.");
     expect(validateQuickExpenseRecord({ ...validInput, evidenceStatus: "ALTERNATIVE", missingEvidenceReason: "영수증 분실" }).errors).toEqual([]);
