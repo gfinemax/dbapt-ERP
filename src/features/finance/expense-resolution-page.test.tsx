@@ -78,7 +78,7 @@ describe("ExpenseResolutionPage", () => {
   });
 
   it("shows an approval-focused single-expense detail workspace", async () => {
-    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ budgetOverReason: undefined, totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
     await act(async () => {
