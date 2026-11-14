@@ -2,21 +2,23 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import Page from "./page";
-const mocks = vi.hoisted(() => ({ identity: vi.fn(), documents: vi.fn(), resolutions: vi.fn(), small: vi.fn(), workspace: vi.fn() }));
+const mocks = vi.hoisted(() => ({ budgetView: vi.fn(), identity: vi.fn(), documents: vi.fn(), resolutions: vi.fn(), small: vi.fn(), workspace: vi.fn() }));
 vi.mock("@/components/erp-shell", () => ({ ErpShell: ({ children }: { children: ReactNode }) => <div>{children}</div> }));
 vi.mock("@/features/finance/reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("@/features/finance/reimbursement-login", () => ({ ReimbursementLogin: () => <p>로그인 필요</p> }));
 vi.mock("@/features/approval/approval-repository", () => ({ listApprovalDocuments: mocks.documents }));
 vi.mock("@/features/finance/expense-resolution-repository", () => ({ listExpenseResolutionsFromSupabase: mocks.resolutions }));
+vi.mock("@/features/finance/expense-resolution-budget-view", () => ({ loadExpenseResolutionBudgetView: mocks.budgetView }));
 vi.mock("@/features/approval/small-expense-repository", () => ({ loadSmallExpenseWorkspace: mocks.workspace }));
 vi.mock("@/features/approval/small-expense-inbox", () => ({ loadSmallExpenseInbox: mocks.small }));
 vi.mock("@/features/approval/small-expense-page", () => ({ SmallExpensePage: ({ mode }: { mode: string }) => <p>소액 화면 {mode}</p> }));
-vi.mock("@/features/finance/expense-approval-inbox-page", () => ({ ExpenseApprovalInboxPage: ({ initialDetailId }: { initialDetailId: string }) => <p>결의 상세 {initialDetailId}</p> }));
+vi.mock("@/features/finance/expense-approval-inbox-page", () => ({ ExpenseApprovalInboxPage: ({ budgetLookupStatuses, initialDetailId, initialResolutions }: { budgetLookupStatuses: Record<string, string>; initialDetailId: string; initialResolutions: Array<{ budgetSnapshot?: { monthlyBudgetAmount?: number }; id: string }> }) => <div><p>결의 상세 {initialDetailId}</p><p>예산 상태 {budgetLookupStatuses[initialDetailId] ?? "-"} · {initialResolutions.find((item) => item.id === initialDetailId)?.budgetSnapshot?.monthlyBudgetAmount ?? "-"}</p></div> }));
 vi.mock("@/app/finance/expense-resolutions/actions", () => ({ transitionExpenseApprovalAction: vi.fn() }));
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.identity.mockResolvedValue({ user_id: "chair", organization_id: "org", display_name: "조합장", permissions: ["APPROVE"], active: true });
   mocks.documents.mockResolvedValue([]); mocks.resolutions.mockResolvedValue([]); mocks.small.mockResolvedValue([]);
+  mocks.budgetView.mockImplementation(async (resolutions) => ({ budgetProfiles: {}, lookupStatuses: {}, resolutions }));
 });
 describe("통합 결재함", () => {
   it("다른 유형 조회가 실패해도 지난달 소액 확인 원본으로 이동한다", async () => {
@@ -35,6 +37,15 @@ describe("통합 결재함", () => {
   it("지출 상세 원본 ID를 전달한다", async () => {
     render(await Page({ searchParams: Promise.resolve({ type: "expense", id: "original-1" }) }));
     expect(screen.getByText("결의 상세 original-1")).toBeInTheDocument();
+  });
+  it("지출 결재함에도 공식 예산으로 보정한 결의서를 전달한다", async () => {
+    const raw = { id: "original-1", approvalLine: [], approvalStatus: "작성중", budgetSnapshot: { budgetPeriod: "2026-01", monthlyBudgetAmount: 0 } };
+    const enriched = { ...raw, budgetSnapshot: { ...raw.budgetSnapshot, monthlyBudgetAmount: 650000 } };
+    mocks.resolutions.mockResolvedValue([raw]);
+    mocks.budgetView.mockResolvedValue({ budgetProfiles: {}, lookupStatuses: { "original-1": "LINKED" }, resolutions: [enriched] });
+    render(await Page({ searchParams: Promise.resolve({ type: "expense", id: "original-1" }) }));
+    expect(mocks.budgetView).toHaveBeenCalledWith([raw], "org");
+    expect(screen.getByText("예산 상태 LINKED · 650000")).toBeInTheDocument();
   });
   it("소액 확인 화면은 지정 월의 같은 원본을 review 모드로 연다", async () => {
     mocks.workspace.mockResolvedValue({ rows: [] });

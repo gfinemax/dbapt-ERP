@@ -14,6 +14,7 @@ import {
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest } from "./expense-approval-workflow";
+import type { ExpenseBudgetLookupStatus } from "./expense-resolution-budget-view";
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -30,7 +31,7 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ viewer, dataLoadError, initialResolutions, transitionApproval, embedded = false, initialDetailId }: { embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, budgetDataError, budgetLookupStatuses = {}, dataLoadError, initialResolutions, transitionApproval, embedded = false, initialDetailId }: { budgetDataError?: string; budgetLookupStatuses?: Record<string, ExpenseBudgetLookupStatus>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
   const busy = useRef(false);
@@ -231,6 +232,8 @@ export function ExpenseApprovalInboxPage({ viewer, dataLoadError, initialResolut
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
+          budgetDataError={budgetDataError}
+          budgetLookupStatus={budgetLookupStatuses[selectedDetail.id]}
           canApprove={!processing && !!viewer && canApproveExpense(selectedDetail, viewer)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={() => setSelectedDetailId(null)}

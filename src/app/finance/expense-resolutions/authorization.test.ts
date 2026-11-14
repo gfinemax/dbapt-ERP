@@ -64,7 +64,7 @@ it("deletes fact drafts through the same versioned command", async () => {
   expect(mocks.commit).toHaveBeenCalledWith("FACT_DELETE", "r", fixture().resolution, { input: { id: "fact-id", resolutionId: "r" }, expected_binding_version: 2 }, expect.any(String));
 });
 
-it("keeps the January budget after requesting approval and refreshes committed totals", async () => {
+it("uses the live January budget for approval without overwriting the stored source snapshot", async () => {
   const access = fixture();
   const resolution = expenseResolutionFixture({
     id: "r", author: "author", approvalStatus: "작성중", currentApprover: undefined,
@@ -73,14 +73,15 @@ it("keeps the January budget after requesting approval and refreshes committed t
   });
   resolution.budgetSnapshot = { ...resolution.budgetSnapshot, budgetPeriod: "2026-01", monthlyBudgetAmount: 0, currentAnnualBudgetAmount: 0 };
   mocks.access.mockResolvedValue({ ...access, actor: { ...access.actor, user_id: "author" }, resolution });
-  const profile = { budgetId: "budget-jan", budgetPeriod: "2026-01", calculationBasis: "approved budget", currentAnnualBudgetAmount: 7800000, monthlyBudgetAmount: 650000, usedAmount: 0, reservedAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0 };
+  const profile = { budgetId: "budget-jan", budgetPeriod: "2026-01", calculationBasis: "approved budget", currentAnnualBudgetAmount: 7800000, monthlyBudgetAmount: 650000, usedAmount: 0, reservedAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 252000, previousAnnualBudgetAmount: 0 };
   const key = budgetProfilePeriodKey("benefits", "2026-01");
   mocks.budgets.mockResolvedValueOnce({ [key]: profile }).mockResolvedValueOnce({ [key]: { ...profile, pendingApprovalAmount: 335000 } });
-  mocks.transition.mockImplementation(({ resolution: current }) => ({ ...current, approvalStatus: "승인대기" }));
+  mocks.transition.mockImplementation(({ resolution: current }) => ({ ...current, approvalStatus: "승인대기", history: [...current.history, { actorName: "old" }] }));
   mocks.commit.mockImplementation(async (_command, _id, _expected, payload) => payload.after);
   const result = await transitionExpenseApprovalAction({ ...request, command: "REQUEST", expectedStatus: "작성중", expectedCurrentApprover: undefined });
   expect(mocks.budgets).toHaveBeenNthCalledWith(1, "org", ["2026-01"]);
-  expect(mocks.commit.mock.calls[0][3].after.budgetSnapshot.monthlyBudgetAmount).toBe(650000);
+  expect(mocks.commit.mock.calls[0][3].after.budgetSnapshot.monthlyBudgetAmount).toBe(0);
+  expect(mocks.commit.mock.calls[0][3].after.history.at(-1).budgetDecision).toMatchObject({ lookupStatus: "LINKED", monthlyBudgetAmount: 650000, remainingBudgetAmount: 398000, source: "OFFICIAL_BUDGET" });
   expect(result.budgetSnapshot).toMatchObject({ budgetPeriod: "2026-01", monthlyBudgetAmount: 650000, currentAnnualBudgetAmount: 7800000, expectedUsedAmount: 335000, remainingBudgetAmount: 315000 });
   mocks.budgets.mockResolvedValueOnce({ [key]: profile }).mockRejectedValueOnce(new Error("temporary read failure"));
   const warning = vi.spyOn(console, "warn").mockImplementation(() => {});

@@ -29,8 +29,7 @@ import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-smal
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
 import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
 
-import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
-import { refreshOpenExpenseResolutionBudgetSnapshots } from "@/features/finance/expense-resolution-budget-refresh";
+import { createExpenseBudgetDecisionSnapshot, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
 const expenseEvidenceBucket = "expense-evidence";
 
@@ -469,8 +468,15 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   const settings = await getExpenseComplianceSettings(actor.organization_id);
   const isFinal = index === current.approvalLine.length - 1;
   const budgetPeriod = current.budgetSnapshot?.budgetPeriod;
-  const budgetProfiles = budgetPeriod ? await listExpenseBudgetProfiles(actor.organization_id, [budgetPeriod]) : {};
-  const workflowCurrent = budgetPeriod ? refreshOpenExpenseResolutionBudgetSnapshots([current], budgetProfiles)[0] : current;
+  const needsBudgetDecision = input.command === "REQUEST" || input.command === "APPROVE";
+  const budgetView = needsBudgetDecision && budgetPeriod
+    ? await loadExpenseResolutionBudgetView([current], actor.organization_id)
+    : undefined;
+  const liveBudgetResolution = budgetView?.resolutions[0] ?? current;
+  const budgetLookupStatus = budgetView?.lookupStatuses[current.id];
+  const budgetDecision = budgetLookupStatus
+    ? createExpenseBudgetDecisionSnapshot(liveBudgetResolution, budgetLookupStatus)
+    : undefined;
   if (input.command === "REQUEST" || input.command === "APPROVE" && isFinal) {
     if (input.command === "REQUEST") {
       const validation = validateExpenseResolutionWorkflow({ ...current,
@@ -494,8 +500,9 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   }
   // UUID authorizes execution. Legacy labels are used only by the compatibility state calculator.
   const legacyLabel = input.command === "REQUEST" ? current.author : input.command === "CANCEL" ? actor.display_name : current.currentApprover!;
-  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: workflowCurrent, settings: settings ?? undefined });
+  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: current, settings: settings ?? undefined });
   const history = transitioned.history.map((item, i) => i < current.history.length ? item : { ...item, actorName: actor.display_name, actorTitle: "" });
+  if (budgetDecision && history[current.history.length]) history[current.history.length] = { ...history[current.history.length], budgetDecision };
   const saved = await commitExpenseCommand("APPROVAL", input.resolutionId, current, {
     command: input.command, after: { ...transitioned, history }, reason: input.reason,
     expected_binding_version: binding.version,
@@ -504,17 +511,19 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   revalidatePath("/finance/approval-inbox");
   revalidatePath("/approval/inbox");
   revalidatePath("/finance/workspace");
+  const savedWithCheckedBudget = budgetView
+    ? { ...saved, budgetSnapshot: liveBudgetResolution.budgetSnapshot }
+    : saved;
   // Refresh totals after the command updates approval reservations.
   // Optional reads must not report a completed command as failed.
   if (budgetPeriod && saved.approvalStatus !== "승인완료") {
     try {
-      const latestProfiles = await listExpenseBudgetProfiles(actor.organization_id, [budgetPeriod]);
-      return refreshOpenExpenseResolutionBudgetSnapshots([saved], latestProfiles)[0];
+      return (await loadExpenseResolutionBudgetView([saved], actor.organization_id)).resolutions[0];
     } catch (error) {
       console.warn("[expense-approval] Budget refresh after successful transition failed", error);
     }
   }
-  return saved as ManagedExpenseResolution;
+  return savedWithCheckedBudget as ManagedExpenseResolution;
 }
 
 export async function transitionExpenseDisbursementAction(input: DisbursementTransitionRequest) {

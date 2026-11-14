@@ -10,8 +10,7 @@ import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovedApprovalDocumentCandidates } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
-import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
-import { refreshOpenExpenseResolutionBudgetSnapshots } from "@/features/finance/expense-resolution-budget-refresh";
+import { loadExpenseResolutionBudgetView, type ExpenseBudgetLookupStatus } from "@/features/finance/expense-resolution-budget-view";
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { loadQuickExpenseConversionDraft, type QuickExpenseConversionDraft } from "@/features/finance/quick-expense-conversion-repository";
 import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
@@ -34,13 +33,12 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovedApprovalDocumentCandidates>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
   let initialBudgetProfiles = {};
+  let initialBudgetLookupStatuses: Record<string, ExpenseBudgetLookupStatus> = {};
+  let budgetDataError: string | undefined;
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   const organizationId = viewer.organization_id;
   const resolutionPromise = listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer);
-  const budgetPromise = resolutionPromise.then((result) => listExpenseBudgetProfiles(
-    organizationId,
-    Array.from(new Set((result?.items ?? []).map((item) => item.budgetSnapshot?.budgetPeriod).filter((period): period is string => Boolean(period)))),
-  ));
+  const budgetPromise = resolutionPromise.then((result) => loadExpenseResolutionBudgetView(result?.items ?? [], organizationId));
   const [resolutionResult, quickResult, approvalResult, settingsResult, bankResult, cardResult, budgetResult, detailResult] = await Promise.allSettled([
     resolutionPromise,
     entry.quickExpenseId ? loadQuickExpenseConversionDraft(entry.quickExpenseId) : Promise.resolve(undefined),
@@ -80,10 +78,14 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   if (cardResult.status === "fulfilled") initialCardTransactions = cardResult.value;
   else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
   if (budgetResult.status === "fulfilled") {
-    initialBudgetProfiles = budgetResult.value;
-    initialResolutions = refreshOpenExpenseResolutionBudgetSnapshots(initialResolutions, initialBudgetProfiles);
+    initialBudgetProfiles = budgetResult.value.budgetProfiles;
+    initialBudgetLookupStatuses = budgetResult.value.lookupStatuses;
+    initialResolutions = budgetResult.value.resolutions;
   }
-  else console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
+  else {
+    console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
+    budgetDataError = "공식 예산을 불러오지 못했습니다. 예산 미편성으로 판단하지 말고 잠시 후 새로고침해주세요.";
+  }
   if (detailResult.status === "fulfilled") initialExpenseDetails = detailResult.value;
   else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
   return (
@@ -107,6 +109,8 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}
       initialBudgetProfiles={initialBudgetProfiles}
+      initialBudgetLookupStatuses={initialBudgetLookupStatuses}
+      budgetDataError={budgetDataError}
       initialExpenseDetails={initialExpenseDetails}
       directExpenseSettings={directExpenseSettings}
       persistResolution={saveExpenseResolutionAction}
