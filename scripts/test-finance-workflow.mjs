@@ -112,6 +112,7 @@ const testFiles = [
   "trust_operating_fund_periods.sql",
   "user_quick_menu_preferences.sql",
   "collection_ledger_bridge.sql",
+  "bank_post_approval_budget_guard.sql",
 ];
 const requestedTests = process.argv.slice(2);
 testFiles.push("budget_unknown_month_review.sql");
