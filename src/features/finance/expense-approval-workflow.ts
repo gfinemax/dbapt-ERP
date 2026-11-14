@@ -15,6 +15,14 @@ export type ApprovalTransitionRequest = {
   resolutionId: string;
 };
 
+export type BatchApprovalTransitionRequest = {
+  idempotencyKey: string;
+  items: Array<Pick<ApprovalTransitionRequest,
+    "expectedAuthorizationVersion" | "expectedCurrentApprover" | "expectedStatus" | "resolutionId">>;
+  reason: string;
+  referenceDate: string;
+};
+
 export type ApprovalWorkflowInput = {
   actorLabel: string;
   command: ApprovalWorkflowCommand;
@@ -28,7 +36,7 @@ export class ApprovalWorkflowError extends Error {}
 
 export function transitionExpenseApproval({ actorLabel, command, reason, resolution, settings, transitionedAt = currentSeoulDateTime() }: ApprovalWorkflowInput) {
   if (command === "REQUEST") return requestApproval(resolution, actorLabel, transitionedAt, settings);
-  if (command === "APPROVE") return approveCurrentStep(resolution, actorLabel, transitionedAt);
+  if (command === "APPROVE") return approveCurrentStep(resolution, actorLabel, transitionedAt, reason);
   if (command === "CANCEL") return cancelFinalApproval(resolution, actorLabel, reason, transitionedAt);
   return rejectCurrentStep(resolution, actorLabel, reason, transitionedAt);
 }
@@ -77,7 +85,7 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
   };
 }
 
-function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string) {
+function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string, reason?: string) {
   assertCurrentApprover(resolution, actorLabel);
   const currentStepIndex = resolution.approvalLine.findIndex((step) => getApproverLabel(step) === actorLabel);
   if (currentStepIndex < 0) throw new ApprovalWorkflowError("현재 결재자를 결재선에서 찾을 수 없습니다.");
@@ -89,7 +97,7 @@ function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: st
     return step;
   });
   const nextStep = approvalLine[currentStepIndex + 1];
-  const approvedHistory = createHistory(transitionedAt, "결재승인", "APPROVED", actorLabel, `${actorLabel} 승인`);
+  const approvedHistory = createHistory(transitionedAt, "결재승인", "APPROVED", actorLabel, reason?.trim() || `${actorLabel} 승인`);
   if (nextStep) {
     return { ...resolution, approvalLine, currentApprover: getApproverLabel(nextStep), history: [...resolution.history, approvedHistory] };
   }

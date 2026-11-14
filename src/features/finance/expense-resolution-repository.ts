@@ -388,6 +388,34 @@ export async function commitExpenseCommand(command: string, id: string, expected
   return { ...data, authorization: await expenseBinding(id, actor) } as ManagedExpenseResolution;
 }
 
+export async function commitExpenseApprovalBatch(
+  items: Array<{ id: string; expected: ManagedExpenseResolution; payload: Record<string, unknown> }>,
+  key: string,
+) {
+  const actor = await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았습니다.");
+  const { data, error } = await supabase.schema("finance").rpc("legacy_expense_approval_batch", {
+    p_org: actor.organization_id,
+    p_actor: actor.user_id,
+    p_items: items.map((item) => ({
+      id: item.id,
+      expected: stripExpenseAuthorization(item.expected),
+      payload: item.payload,
+    })),
+    p_key: key,
+  });
+  if (error) throw new Error(error.message);
+  const results = (data as { results?: ManagedExpenseResolution[] } | null)?.results;
+  if (!Array.isArray(results) || results.length !== items.length) {
+    throw new Error("일괄 결재 처리 결과를 확인하지 못했습니다.");
+  }
+  return Promise.all(results.map(async (resolution) => ({
+    ...resolution,
+    authorization: await expenseBinding(resolution.id, actor),
+  } as ManagedExpenseResolution)));
+}
+
 export function stripExpenseAuthorization(resolution: ManagedExpenseResolution) {
   const result = { ...resolution };
   delete result.authorization;

@@ -14,7 +14,7 @@ import {
   ExpenseResolutionPrintPreviewModal,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
-import type { ApprovalTransitionRequest } from "./expense-approval-workflow";
+import type { ApprovalTransitionRequest, BatchApprovalTransitionRequest } from "./expense-approval-workflow";
 import type { DisbursementTransitionRequest, DisbursementTransitionResult } from "./expense-disbursement-workflow";
 
 function Badge({ value }: { value: string }) {
@@ -32,7 +32,7 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<DisbursementTransitionResult> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionBatchApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionBatchApproval?: (input: BatchApprovalTransitionRequest) => Promise<ManagedExpenseResolution[]>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<DisbursementTransitionResult> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
   const busy = useRef(false);
@@ -45,11 +45,16 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [workflowError, setWorkflowError] = useState("");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [batchOpen, setBatchOpen] = useState(false);
+  const [batchReferenceDate, setBatchReferenceDate] = useState("");
+  const [batchReason, setBatchReason] = useState("");
   const selectedDetail = selectedDetailId ? resolutions.find((resolution) => resolution.id === selectedDetailId) : undefined;
   const printPreviewTarget = printPreviewTargetId ? resolutions.find((resolution) => resolution.id === printPreviewTargetId) : undefined;
   const rejectTarget = rejectTargetId ? resolutions.find((resolution) => resolution.id === rejectTargetId) : undefined;
 
   const myPending = resolutions.filter(r => viewer && canApproveExpense(r, viewer));
+  const selectedPending = myPending.filter((resolution) => selectedIds.includes(resolution.id));
   const summary = {
     myPendingCount: myPending.length,
     completedCount: resolutions.filter(r => r.approvalStatus === "승인완료").length,
@@ -82,6 +87,47 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
   async function approveResolution(id: string) {
     const resolution = resolutions.find((item) => item.id === id);
     if (resolution) await runTransition(resolution, "APPROVE");
+  }
+
+  function openBatchApproval() {
+    if (!selectedPending.length) return;
+    const expenseMonths = [...new Set(selectedPending.map((resolution) => resolution.actualExpenseDate?.slice(0, 7)).filter(Boolean))];
+    const month = expenseMonths.length === 1 ? expenseMonths[0]! : undefined;
+    setBatchReferenceDate(month ? firstDayOfNextMonth(month) : new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }));
+    setBatchReason(month
+      ? `${Number(month.slice(0, 4))}년 ${Number(month.slice(5, 7))}월 조합통장 출금분 일괄 사후승인(현금카드 포함)`
+      : "조합통장 출금분 일괄 사후승인(현금카드 포함)");
+    setBatchOpen(true);
+  }
+
+  async function approveSelectedBatch() {
+    if (busy.current || !transitionBatchApproval || !batchReferenceDate || !batchReason.trim()) return;
+    busy.current = true;
+    setProcessing(true);
+    setWorkflowError("");
+    try {
+      const transitioned = await transitionBatchApproval({
+        idempotencyKey: crypto.randomUUID(),
+        items: selectedPending.map((resolution) => ({
+          expectedAuthorizationVersion: resolution.authorization?.version,
+          expectedCurrentApprover: resolution.currentApprover,
+          expectedStatus: resolution.approvalStatus,
+          resolutionId: resolution.id,
+        })),
+        reason: batchReason.trim(),
+        referenceDate: batchReferenceDate,
+      });
+      const changed = new Map(transitioned.map((resolution) => [resolution.id, resolution]));
+      setResolutions((current) => current.map((resolution) => changed.get(resolution.id) ?? resolution));
+      setSelectedIds([]);
+      setBatchOpen(false);
+      router.refresh();
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "일괄 결재를 처리하지 못했습니다.");
+    } finally {
+      busy.current = false;
+      setProcessing(false);
+    }
   }
 
   async function runDisbursementTransition(resolution: ManagedExpenseResolution, command: DisbursementTransitionRequest["command"]) {
@@ -173,6 +219,22 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
         </section>
 
         <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
+          {myPending.length ? (
+            <div className="mb-4 flex flex-col gap-3 rounded-xl border border-blue-200 bg-blue-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-bold text-blue-950">일괄 결재</p>
+                <p className="mt-1 text-sm text-blue-800">선택한 문서는 한 번에 검증하고, 한 건이라도 조건이 다르면 모두 처리하지 않아.</p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button className="rounded-full border border-blue-300 bg-white px-3 py-2 text-sm font-semibold text-blue-900" onClick={() => setSelectedIds(selectedIds.length === myPending.length ? [] : myPending.map((resolution) => resolution.id))} type="button">
+                  {selectedIds.length === myPending.length ? "선택 해제" : `내 결재대기 ${myPending.length}건 선택`}
+                </button>
+                <button className="rounded-full bg-slate-900 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40" disabled={!selectedPending.length || processing || !transitionBatchApproval} onClick={openBatchApproval} type="button">
+                  선택 {selectedPending.length}건 일괄 승인
+                </button>
+              </div>
+            </div>
+          ) : null}
           <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
             <div className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)] xl:w-[430px]">
               <Search className="size-4 shrink-0" />
@@ -202,6 +264,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
             <table aria-label="결재함 목록" className="w-full min-w-[1240px] border-collapse text-left text-sm">
               <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                 <tr>
+                  <th className="px-3 py-3 text-center"><span className="sr-only">일괄 선택</span></th>
                   <th className="px-4 py-3 text-center">결의서번호</th>
                   <th className="px-4 py-3 text-center">작성일</th>
                   <th className="px-4 py-3 text-center">작성자</th>
@@ -220,6 +283,16 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
 
                   return (
                     <tr className="bg-white/70" key={resolution.id}>
+                      <td className="px-3 py-4 text-center">
+                        <input
+                          aria-label={`${resolution.resolutionNo} 일괄 선택`}
+                          checked={selectedIds.includes(resolution.id)}
+                          className="size-4 accent-slate-900"
+                          disabled={!canApprove}
+                          onChange={(event) => setSelectedIds((current) => event.target.checked ? [...current, resolution.id] : current.filter((id) => id !== resolution.id))}
+                          type="checkbox"
+                        />
+                      </td>
                       <td className="px-4 py-4 font-bold text-[var(--color-deep-cobalt)]">{resolution.resolutionNo}</td>
                       <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.createdAt}</td>
                       <td className="px-4 py-4">{resolution.author}</td>
@@ -306,8 +379,29 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
           resolutionNo={rejectTarget.resolutionNo}
         />
       ) : null}
+
+      {batchOpen ? (
+        <div aria-label="일괄 승인 확인" aria-modal="true" className="fixed inset-0 z-[80] flex items-center justify-center bg-slate-950/45 p-4" role="dialog">
+          <div className="w-full max-w-xl rounded-2xl bg-white p-6 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div><h2 className="text-xl font-bold">선택 {selectedPending.length}건 일괄 승인</h2><p className="mt-2 text-sm leading-6 text-slate-600">업무 기준일은 거래 정리 기준이야. 전자결재 승인 시각은 안동연 계정에서 실제로 승인한 시각으로 별도 기록돼.</p></div>
+              <button aria-label="일괄 승인 닫기" className="rounded-full p-2 text-slate-500 hover:bg-slate-100" onClick={() => setBatchOpen(false)} type="button"><X className="size-5" /></button>
+            </div>
+            <label className="mt-5 block text-sm font-bold">업무 기준일<input className="mt-2 w-full rounded-xl border border-slate-300 px-3 py-2" onChange={(event) => setBatchReferenceDate(event.target.value)} type="date" value={batchReferenceDate} /></label>
+            <label className="mt-4 block text-sm font-bold">일괄 승인 사유<textarea className="mt-2 min-h-24 w-full rounded-xl border border-slate-300 px-3 py-2 text-sm leading-6" maxLength={300} onChange={(event) => setBatchReason(event.target.value)} value={batchReason} /></label>
+            <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-900">한 건이라도 결재자·상태·계정 연결이 달라졌으면 전체 승인이 취소돼.</p>
+            <div className="mt-5 flex justify-end gap-2"><Button onClick={() => setBatchOpen(false)} type="button" variant="outline">취소</Button><Button disabled={processing || !batchReferenceDate || !batchReason.trim()} onClick={approveSelectedBatch} type="button">{processing ? "검증 중..." : `${selectedPending.length}건 승인`}</Button></div>
+          </div>
+        </div>
+      ) : null}
     </Container>
   );
+}
+
+function firstDayOfNextMonth(month: string) {
+  const [year, monthNumber] = month.split("-").map(Number);
+  const next = new Date(Date.UTC(year, monthNumber, 1));
+  return `${next.getUTCFullYear()}-${String(next.getUTCMonth() + 1).padStart(2, "0")}-01`;
 }
 
 function RejectReasonModal({

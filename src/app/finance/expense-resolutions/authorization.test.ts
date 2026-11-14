@@ -1,7 +1,7 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), transition: vi.fn(), settings: vi.fn(), budgets: vi.fn() }));
+const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), commitBatch: vi.fn(), transition: vi.fn(), settings: vi.fn(), budgets: vi.fn() }));
 vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseRecord: mocks.access, requireExpenseFact: mocks.access, requireExpenseActor: mocks.actor }));
-vi.mock("@/features/finance/expense-resolution-repository", () => ({ commitExpenseCommand: mocks.commit }));
+vi.mock("@/features/finance/expense-resolution-repository", () => ({ commitExpenseCommand: mocks.commit, commitExpenseApprovalBatch: mocks.commitBatch }));
 vi.mock("@/features/finance/expense-approval-workflow", () => ({ transitionExpenseApproval: mocks.transition }));
 vi.mock("@/features/finance/expense-compliance-repository", () => ({ getExpenseComplianceSettings: mocks.settings }));
 vi.mock("@/features/finance/expense-resolution-domain", () => ({ validateExpenseResolutionWorkflow: vi.fn(() => ({ errors: [] })) }));
@@ -14,7 +14,7 @@ vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compr
 vi.mock("@/features/finance/budget-profile-repository", () => ({ listExpenseBudgetProfiles: mocks.budgets }));
 import { expenseResolutionFixture } from "@/features/finance/expense-resolution-test-fixture";
 import { budgetProfilePeriodKey } from "@/features/finance/budget-profile-lookup";
-import { transitionExpenseApprovalAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
+import { transitionExpenseApprovalAction, transitionExpenseApprovalBatchAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
 const request = { resolutionId: "r", actorLabel: "위조된 관리자", command: "APPROVE" as const, expectedStatus: "승인대기" as const, expectedCurrentApprover: "이전 이름 담당자", expectedAuthorizationVersion: 2 };
 function fixture() { return { actor: { user_id: "actual-user", display_name: "실제 사용자", organization_id: "org", permissions: ["APPROVE"] },
   resolution: { id: "r", author: "작성자", approvalStatus: "승인대기", currentApprover: "이전 이름 담당자", history: [], approvalLine: [{ approver: "이전 이름", role: "담당자", status: "결재대기" }, { approver: "최종", role: "조합장", status: "대기" }] },
@@ -39,6 +39,24 @@ it("rejects missing bindings and stale client versions before transitioning", as
   await expect(transitionExpenseApprovalAction({ ...request, expectedAuthorizationVersion: 1 })).rejects.toThrow("다시 조회");
   mocks.access.mockResolvedValue({ ...fixture(), binding: null });
   await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("계정 연결"); expect(mocks.transition).not.toHaveBeenCalled();
+});
+it("prepares an atomic batch with the verified approver and a separate business reference date", async () => {
+  mocks.transition.mockImplementation(({ reason, resolution }) => ({ ...resolution, history: [{ actorName: "legacy", comment: reason }] }));
+  mocks.commitBatch.mockImplementation(async (commands) => commands.map((command: { expected: unknown }) => command.expected));
+  await transitionExpenseApprovalBatchAction({
+    idempotencyKey: "batch-key",
+    items: [{ expectedAuthorizationVersion: 2, expectedCurrentApprover: "이전 이름 담당자", expectedStatus: "승인대기", resolutionId: "r" }],
+    reason: "2026년 1월 조합통장 출금분 일괄 사후승인(현금카드 포함)",
+    referenceDate: "2026-02-01",
+  });
+  expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({
+    actorLabel: "이전 이름 담당자",
+    command: "APPROVE",
+    reason: expect.stringContaining("업무 기준일 2026-02-01"),
+  }));
+  expect(mocks.commitBatch).toHaveBeenCalledWith([
+    expect.objectContaining({ id: "r", payload: expect.objectContaining({ expected_binding_version: 2, reason: expect.stringContaining("실제 승인시각 별도 기록") }) }),
+  ], "batch-key");
 });
 it("requires rebinding when the saved approval route no longer matches the account binding", async () => {
   const access = fixture();

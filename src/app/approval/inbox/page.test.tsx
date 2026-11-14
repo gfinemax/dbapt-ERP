@@ -13,7 +13,7 @@ vi.mock("@/features/approval/small-expense-repository", () => ({ loadSmallExpens
 vi.mock("@/features/approval/small-expense-inbox", () => ({ loadSmallExpenseInbox: mocks.small }));
 vi.mock("@/features/approval/small-expense-page", () => ({ SmallExpensePage: ({ mode }: { mode: string }) => <p>소액 화면 {mode}</p> }));
 vi.mock("@/features/finance/expense-approval-inbox-page", () => ({ ExpenseApprovalInboxPage: ({ initialDetailId, initialResolutions }: { initialDetailId: string; initialResolutions: Array<{ budgetSnapshot?: { monthlyBudgetAmount?: number }; id: string }> }) => <div><p>결의 상세 {initialDetailId}</p><p>월 예산 {initialResolutions.find((item) => item.id === initialDetailId)?.budgetSnapshot?.monthlyBudgetAmount ?? "-"}</p></div> }));
-vi.mock("@/app/finance/expense-resolutions/actions", () => ({ createExpenseEvidenceDownloadUrlAction: vi.fn(), transitionExpenseApprovalAction: vi.fn(), transitionExpenseDisbursementResultAction: vi.fn() }));
+vi.mock("@/app/finance/expense-resolutions/actions", () => ({ createExpenseEvidenceDownloadUrlAction: vi.fn(), transitionExpenseApprovalAction: vi.fn(), transitionExpenseApprovalBatchAction: vi.fn(), transitionExpenseDisbursementResultAction: vi.fn() }));
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.identity.mockResolvedValue({ user_id: "chair", organization_id: "org", display_name: "조합장", permissions: ["APPROVE"], active: true });

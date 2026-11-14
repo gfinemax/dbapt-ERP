@@ -87,6 +87,41 @@ describe("ExpenseApprovalInboxPage", () => {
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
   });
 
+  it("approves selected pending resolutions as one guarded batch with a separate business reference date", async () => {
+    const base = expenseResolutionFixture({
+      actualExpenseDate: "2026-01-20",
+      approvalStatus: "승인대기",
+      currentApprover: "안동연 조합장",
+      paymentStatus: "지급완료",
+    });
+    const makeResolution = (id: string, resolutionNo: string) => ({
+      ...base,
+      id,
+      resolutionNo,
+      approvalLine: [{ approver: "안동연", order: 1, role: "조합장", status: "결재대기" as const }],
+      authorization: { author_user_id: "author", version: 4, steps: [{ order: 1, approver_user_id: "chair", legacy_step: { approver: "안동연", role: "조합장", order: 1 } }] },
+    }) as ManagedExpenseResolution;
+    const resolutions = [makeResolution("batch-1", "지결-2026-0010"), makeResolution("batch-2", "지결-2026-0011")];
+    const transitionBatchApproval = vi.fn().mockResolvedValue(resolutions.map((resolution) => ({ ...resolution, approvalStatus: "승인완료", currentApprover: undefined })));
+    render(<ExpenseApprovalInboxPage
+      initialResolutions={resolutions}
+      transitionBatchApproval={transitionBatchApproval}
+      viewer={{ user_id: "chair", organization_id: "org", display_name: "안동연 조합장", permissions: ["APPROVE"], active: true }}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "내 결재대기 2건 선택" }));
+    fireEvent.click(screen.getByRole("button", { name: "선택 2건 일괄 승인" }));
+    const dialog = screen.getByRole("dialog", { name: "일괄 승인 확인" });
+    expect(within(dialog).getByLabelText("업무 기준일")).toHaveValue("2026-02-01");
+    expect(within(dialog).getByLabelText("일괄 승인 사유")).toHaveValue("2026년 1월 조합통장 출금분 일괄 사후승인(현금카드 포함)");
+    fireEvent.click(within(dialog).getByRole("button", { name: "2건 승인" }));
+    await waitFor(() => expect(transitionBatchApproval).toHaveBeenCalledWith(expect.objectContaining({
+      items: expect.arrayContaining([expect.objectContaining({ resolutionId: "batch-1", expectedAuthorizationVersion: 4 }), expect.objectContaining({ resolutionId: "batch-2" })]),
+      reason: "2026년 1월 조합통장 출금분 일괄 사후승인(현금카드 포함)",
+      referenceDate: "2026-02-01",
+    })));
+  });
+
   it("creates and confirms a voucher through the server disbursement transition", async () => {
     const resolution = expenseResolutionFixture({
       approvalStatus: "승인완료",
