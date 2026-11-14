@@ -5689,7 +5689,7 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
                 <td className="h-[58px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.name}`}>
                   <span className="block font-bold">{step.name}</span>
                   <span className="block text-[9px] font-semibold text-[var(--color-stone)]">{step.action}</span>
-                  <span className="block text-[10px] font-medium leading-tight tabular-nums">{processedAt || step.statusLabel}</span>
+                  <span className="block font-sans text-[9px] leading-tight tabular-nums">{processedAt || step.statusLabel}</span>
                 </td>
               );
             })}
