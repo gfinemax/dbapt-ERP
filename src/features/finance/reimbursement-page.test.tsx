@@ -235,10 +235,12 @@ describe("reimbursement workspace",()=>{
   expect(screen.getByRole("checkbox",{name:"정산·지연 승인"})).toBeChecked();
   expect(screen.getByLabelText("새 계정 이메일")).toBeRequired();
   expect(screen.getByLabelText("초기 비밀번호")).toBeRequired();
+  expect(screen.getByLabelText("초기 비밀번호")).toHaveAttribute("minlength","4");
   fireEvent.change(screen.getByLabelText("새 계정 이메일"),{target:{value:"director@example.com"}});
-  fireEvent.change(screen.getByLabelText("초기 비밀번호"),{target:{value:"temporary-pass-123"}});
+  fireEvent.change(screen.getByLabelText("초기 비밀번호"),{target:{value:"1234"}});
   fireEvent.click(screen.getByRole("button",{name:"담당자 저장"}));
   await waitFor(()=>expect(mocks.member).toHaveBeenCalledOnce());
+  expect((mocks.member.mock.calls[0][0] as FormData).get("password")).toBe("1234");
   expect(mocks.push).toHaveBeenCalledWith("/finance/expense-authorizations?id=er_2026_0033");
  });
 });

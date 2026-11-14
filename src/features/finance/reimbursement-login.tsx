@@ -53,7 +53,7 @@ export function ReimbursementLogin({
     <p className="my-4 text-sm text-slate-600">{description}</p>
     <form className="space-y-4" onSubmit={event => { event.preventDefault(); submit(new FormData(event.currentTarget)); }}>
       <label className="block">이메일<input className={input} name="email" type="email" autoComplete="username" required /></label>
-      <label className="block">비밀번호<input className={input} name="password" type="password" autoComplete="current-password" required /></label>
+      <label className="block">비밀번호<input aria-label="비밀번호" className={input} name="password" type="password" minLength={4} autoComplete="current-password" required /><span className="mt-1 block text-xs text-slate-600">관리자가 발급한 4자리 초기 PIN도 입력할 수 있어.</span></label>
       <button className={button} disabled={pending}>로그인</button>
     </form><p role="status" className="mt-4 text-sm">{message || error}</p>
     <p className="mt-3 text-sm text-slate-600">계정이 없으면 정산 관리자에게 계정과 권한 등록을 요청해줘.</p>
