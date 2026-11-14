@@ -13,7 +13,7 @@ import type { ExpenseEntryStart } from "./expense-entry";
 import { expenseResolutionListHref, type ExpenseResolutionListPage } from "./expense-resolution-list";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
-import type { ExpenseBudgetDecisionSnapshot, ExpenseBudgetLookupStatus } from "./expense-resolution-budget-view";
+import type { ExpenseBudgetDecisionSnapshot } from "./expense-resolution-budget-view";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -2268,7 +2268,6 @@ export function ExpenseResolutionPage({
   initialCardTransactions = [],
   initialApprovalDocuments = [],
   initialBudgetProfiles = {},
-  initialBudgetLookupStatuses = {},
   budgetDataError,
   initialExpenseDetails = [],
   directExpenseSettings = defaultExpenseComplianceSettings,
@@ -2301,7 +2300,6 @@ export function ExpenseResolutionPage({
   initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocumentCandidate[];
   initialBudgetProfiles?: Record<string, BudgetProfile>;
-  initialBudgetLookupStatuses?: Record<string, ExpenseBudgetLookupStatus>;
   budgetDataError?: string;
   initialExpenseDetails?: OperatingExpenseDetail[];
   directExpenseSettings?: ExpenseComplianceSettings;
@@ -4203,7 +4201,6 @@ export function ExpenseResolutionPage({
         <ExpenseResolutionDetailModal
           actionError={saveError}
           budgetDataError={budgetDataError}
-          budgetLookupStatus={initialBudgetLookupStatuses[selectedDetail.id]}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
           linkedApproval={initialApprovalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}
@@ -4387,7 +4384,6 @@ function ExpenseResolutionDetailWorkspace({
   actionError,
   approvalLine,
   budgetDataError,
-  budgetLookupStatus,
   canApprove,
   evidenceRows,
   isCorporateCardPayment,
@@ -4404,7 +4400,6 @@ function ExpenseResolutionDetailWorkspace({
   actionError?: string;
   approvalLine: ApprovalStep[];
   budgetDataError?: string;
-  budgetLookupStatus?: ExpenseBudgetLookupStatus;
   canApprove: boolean;
   evidenceRows: ReturnType<typeof getEvidenceRows>;
   isCorporateCardPayment: boolean;
@@ -4424,7 +4419,7 @@ function ExpenseResolutionDetailWorkspace({
   const isMultipleExpense = expenseItems.length > 1;
   const itemCount = isMultipleExpense ? expenseItems.length : 1;
   const budget = resolution.budgetSnapshot;
-  const budgetLinked = budgetLookupStatus ? budgetLookupStatus === "LINKED" : budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
+  const budgetLinked = budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
   const authorization = getExpenseAuthorizationReadiness(resolution);
   const documentApprovalParticipants = getDocumentApprovalParticipants(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
@@ -4475,7 +4470,7 @@ function ExpenseResolutionDetailWorkspace({
             {activeView === "overview" ? (
               <dl className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-blue-100 bg-blue-50/80 text-sm sm:grid-cols-3 lg:grid-cols-5">
                 <CompactMetric label="지출" value={`${itemCount}건`} />
-                <CompactMetric label="월 예산" value={budgetDataError ? "조회 실패" : budgetLinked ? formatExpenseResolutionAmount(budget.monthlyBudgetAmount) : "연결 필요"} />
+                <CompactMetric label="월 예산" value={budgetDataError ? "확인" : budgetLinked ? formatExpenseResolutionAmount(budget.monthlyBudgetAmount) : "연결 필요"} />
                 <CompactMetric label="이번 결의" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} />
                 <CompactMetric label="월 예상 잔액" value={budgetDataError ? "확인 필요" : budgetLinked ? formatExpenseResolutionAmount(budget.remainingBudgetAmount) : "확인 필요"} />
                 <CompactMetric label="집행률" value={!budgetDataError && budgetLinked ? `${usageRate}%` : "-"} />
@@ -4630,7 +4625,7 @@ function ExpenseResolutionDetailWorkspace({
           </div>
         </section>
 
-        <ExpenseBudgetInspector approvalDocumentId={resolution.approvalDocumentId} approvalDocumentNo={resolution.approvalDocumentNo} budget={budget} budgetDataError={budgetDataError} budgetItem={resolution.budgetItem} budgetLookupStatus={budgetLookupStatus} budgetOverReason={resolution.budgetOverReason} linkedApproval={linkedApproval} />
+        <ExpenseBudgetInspector approvalDocumentId={resolution.approvalDocumentId} approvalDocumentNo={resolution.approvalDocumentNo} budget={budget} budgetDataError={budgetDataError} budgetItem={resolution.budgetItem} budgetOverReason={resolution.budgetOverReason} linkedApproval={linkedApproval} />
 
         <section className="mt-4 border-t border-[var(--color-soft-border)] pt-4" aria-labelledby="payment-inspector-title">
           <h3 className="text-base font-black" id="payment-inspector-title">지급 · 증빙</h3>
@@ -4675,7 +4670,6 @@ function InspectorRow({ emphasized = false, label, value }: { emphasized?: boole
 export function ExpenseResolutionDetailModal({
   actionError,
   budgetDataError,
-  budgetLookupStatus,
   canApprove = false,
   linkedApproval,
   onApprove,
@@ -4696,7 +4690,6 @@ export function ExpenseResolutionDetailModal({
 }: {
   actionError?: string;
   budgetDataError?: string;
-  budgetLookupStatus?: ExpenseBudgetLookupStatus;
   canApprove?: boolean;
   linkedApproval?: ApprovalDocumentCandidate;
   onApprove: () => boolean | void | Promise<boolean | void>;
@@ -4791,7 +4784,6 @@ export function ExpenseResolutionDetailModal({
             actionError={actionError}
             approvalLine={approvalLine}
             budgetDataError={budgetDataError}
-            budgetLookupStatus={budgetLookupStatus}
             canApprove={canApprove}
             evidenceRows={evidenceRows}
             isCorporateCardPayment={isCorporateCardPayment}

@@ -12,7 +12,7 @@ vi.mock("@/features/finance/expense-resolution-budget-view", () => ({ loadExpens
 vi.mock("@/features/approval/small-expense-repository", () => ({ loadSmallExpenseWorkspace: mocks.workspace }));
 vi.mock("@/features/approval/small-expense-inbox", () => ({ loadSmallExpenseInbox: mocks.small }));
 vi.mock("@/features/approval/small-expense-page", () => ({ SmallExpensePage: ({ mode }: { mode: string }) => <p>소액 화면 {mode}</p> }));
-vi.mock("@/features/finance/expense-approval-inbox-page", () => ({ ExpenseApprovalInboxPage: ({ budgetLookupStatuses, initialDetailId, initialResolutions }: { budgetLookupStatuses: Record<string, string>; initialDetailId: string; initialResolutions: Array<{ budgetSnapshot?: { monthlyBudgetAmount?: number }; id: string }> }) => <div><p>결의 상세 {initialDetailId}</p><p>예산 상태 {budgetLookupStatuses[initialDetailId] ?? "-"} · {initialResolutions.find((item) => item.id === initialDetailId)?.budgetSnapshot?.monthlyBudgetAmount ?? "-"}</p></div> }));
+vi.mock("@/features/finance/expense-approval-inbox-page", () => ({ ExpenseApprovalInboxPage: ({ initialDetailId, initialResolutions }: { initialDetailId: string; initialResolutions: Array<{ budgetSnapshot?: { monthlyBudgetAmount?: number }; id: string }> }) => <div><p>결의 상세 {initialDetailId}</p><p>월 예산 {initialResolutions.find((item) => item.id === initialDetailId)?.budgetSnapshot?.monthlyBudgetAmount ?? "-"}</p></div> }));
 vi.mock("@/app/finance/expense-resolutions/actions", () => ({ transitionExpenseApprovalAction: vi.fn() }));
 beforeEach(() => {
   vi.clearAllMocks();
@@ -45,7 +45,7 @@ describe("통합 결재함", () => {
     mocks.budgetView.mockResolvedValue({ budgetProfiles: {}, lookupStatuses: { "original-1": "LINKED" }, resolutions: [enriched] });
     render(await Page({ searchParams: Promise.resolve({ type: "expense", id: "original-1" }) }));
     expect(mocks.budgetView).toHaveBeenCalledWith([raw], "org");
-    expect(screen.getByText("예산 상태 LINKED · 650000")).toBeInTheDocument();
+    expect(screen.getByText("월 예산 650000")).toBeInTheDocument();
   });
   it("소액 확인 화면은 지정 월의 같은 원본을 review 모드로 연다", async () => {
     mocks.workspace.mockResolvedValue({ rows: [] });

@@ -10,7 +10,7 @@ import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { defaultExpenseComplianceSettings } from "@/features/finance/expense-compliance";
 import { listApprovedApprovalDocumentCandidates } from "@/features/approval/approval-repository";
 import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corporate-card-transaction-repository";
-import { loadExpenseResolutionBudgetView, type ExpenseBudgetLookupStatus } from "@/features/finance/expense-resolution-budget-view";
+import { loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { loadQuickExpenseConversionDraft, type QuickExpenseConversionDraft } from "@/features/finance/quick-expense-conversion-repository";
 import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
@@ -33,7 +33,6 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let initialApprovalDocuments: Awaited<ReturnType<typeof listApprovedApprovalDocumentCandidates>> = [];
   let directExpenseSettings = defaultExpenseComplianceSettings;
   let initialBudgetProfiles = {};
-  let initialBudgetLookupStatuses: Record<string, ExpenseBudgetLookupStatus> = {};
   let budgetDataError: string | undefined;
   let initialExpenseDetails: Awaited<ReturnType<typeof listOperatingExpenseDetails>> = [];
   const organizationId = viewer.organization_id;
@@ -79,7 +78,6 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   else console.warn(`[expense-resolutions] Card transaction data unavailable: ${cardResult.reason instanceof Error ? cardResult.reason.message : String(cardResult.reason)}`);
   if (budgetResult.status === "fulfilled") {
     initialBudgetProfiles = budgetResult.value.budgetProfiles;
-    initialBudgetLookupStatuses = budgetResult.value.lookupStatuses;
     initialResolutions = budgetResult.value.resolutions;
   }
   else {
@@ -109,7 +107,6 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       initialCardTransactions={initialCardTransactions}
       initialApprovalDocuments={initialApprovalDocuments}
       initialBudgetProfiles={initialBudgetProfiles}
-      initialBudgetLookupStatuses={initialBudgetLookupStatuses}
       budgetDataError={budgetDataError}
       initialExpenseDetails={initialExpenseDetails}
       directExpenseSettings={directExpenseSettings}
