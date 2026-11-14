@@ -3,9 +3,9 @@ import { beforeEach,describe,expect,it,vi } from "vitest";
 import { ReimbursementLogin } from "./reimbursement-login";
 import { ReimbursementPage } from "./reimbursement-page";
 import type { ReimbursementWorkspace } from "./reimbursement-repository";
-const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),createObjectUrl:vi.fn(),evidenceFetch:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),replace:vi.fn(),revokeObjectUrl:vi.fn(),submit:vi.fn()}));
+const mocks=vi.hoisted(()=>({analyze:vi.fn(),command:vi.fn(),createObjectUrl:vi.fn(),evidenceFetch:vi.fn(),member:vi.fn(),personalUpdate:vi.fn(),policy:vi.fn(),login:vi.fn(),refresh:vi.fn(),push:vi.fn(),replace:vi.fn(),revokeObjectUrl:vi.fn(),submit:vi.fn()}));
 vi.mock("next/navigation",()=>({useRouter:()=>({refresh:mocks.refresh,push:mocks.push,replace:mocks.replace})}));
-vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:vi.fn(),changeReimbursementPassword:vi.fn()}));
+vi.mock("@/app/finance/reimbursements/actions",()=>({analyzeReimbursementEvidence:mocks.analyze,runReimbursementCommand:mocks.command,saveReimbursementPolicy:mocks.policy,reimbursementLogin:mocks.login,reimbursementLogout:vi.fn(),submitReimbursement:mocks.submit,reimbursementEvidence:vi.fn(),saveReimbursementMember:mocks.member,changeReimbursementPassword:vi.fn()}));
 vi.mock("@/app/finance/expenses/actions",()=>({updatePersonalReimbursementDetailsAction:mocks.personalUpdate}));
 vi.stubGlobal("fetch",mocks.evidenceFetch);
 Object.defineProperty(URL,"createObjectURL",{configurable:true,value:mocks.createObjectUrl});
@@ -227,6 +227,19 @@ describe("reimbursement workspace",()=>{
   fireEvent.change(screen.getByRole("spinbutton",{name:"장기 지연 기준 \(사용 후 일수\)"}),{target:{value:"60"}});
   fireEvent.click(screen.getByRole("button",{name:"기준 저장"}));
   await waitFor(()=>expect(screen.getByRole("status")).toHaveTextContent("보완 마감일은 제출 마감일과 같거나 늦은 1일부터 28일 사이여야 해."));
+ });
+ it("prefills an approver account and returns to the original connection screen after creation",async()=>{
+  mocks.member.mockResolvedValue(undefined);
+  render(<ReimbursementPage workspace={w} initialTab="settings" initialMemberName="장현제" initialMemberApprove accountSetupReturnTo="/finance/expense-authorizations?id=er_2026_0033"/>);
+  expect(screen.getByLabelText("담당자 이름")).toHaveValue("장현제");
+  expect(screen.getByRole("checkbox",{name:"정산·지연 승인"})).toBeChecked();
+  expect(screen.getByLabelText("새 계정 이메일")).toBeRequired();
+  expect(screen.getByLabelText("초기 비밀번호")).toBeRequired();
+  fireEvent.change(screen.getByLabelText("새 계정 이메일"),{target:{value:"director@example.com"}});
+  fireEvent.change(screen.getByLabelText("초기 비밀번호"),{target:{value:"temporary-pass-123"}});
+  fireEvent.click(screen.getByRole("button",{name:"담당자 저장"}));
+  await waitFor(()=>expect(mocks.member).toHaveBeenCalledOnce());
+  expect(mocks.push).toHaveBeenCalledWith("/finance/expense-authorizations?id=er_2026_0033");
  });
 });
 describe("reimbursement login",()=>{

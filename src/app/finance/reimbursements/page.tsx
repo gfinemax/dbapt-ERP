@@ -16,6 +16,9 @@ export default async function Page({
     request?: string;
     detail?: string;
     action?: string;
+    member?: string;
+    approval?: string;
+    returnTo?: string;
   }>;
 }) {
   const query = await searchParams;
@@ -37,6 +40,10 @@ export default async function Page({
     query.action === "APPROVE" || query.action === "PAY"
       ? query.action
       : undefined;
+  const initialMemberName = query.member?.trim().slice(0, 100) || undefined;
+  const accountSetupReturnTo = query.returnTo?.startsWith("/finance/expense-authorizations")
+    ? query.returnTo
+    : undefined;
   return (
     <ErpShell
       userLabel={workspace?.member.display_name ?? "로그인 필요"}
@@ -60,6 +67,9 @@ export default async function Page({
             initialRequestId={query.request}
             initialDetailId={query.detail}
             initialAction={action}
+            initialMemberName={initialMemberName}
+            initialMemberApprove={query.approval === "1"}
+            accountSetupReturnTo={accountSetupReturnTo}
           />
         ) : (
           <ReimbursementLogin

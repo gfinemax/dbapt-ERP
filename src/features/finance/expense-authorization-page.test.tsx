@@ -86,7 +86,11 @@ describe("explicit author and approver account binding", () => {
     expect(screen.getByLabelText(/2차 결재 계정/)).toHaveValue("secretary");
     expect(screen.getByLabelText(/3차 결재 계정/)).toHaveValue("");
     expect(screen.getByText(/자동 연결하지 못한 항목: 1차 장현제, 3차 안동연/)).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "계정 등록 화면 열기" })).toHaveAttribute("href", "/finance/reimbursements?tab=settings");
+    const directorLink = screen.getByRole("link", { name: "장현제 결재 계정 만들기" });
+    expect(directorLink.getAttribute("href")).toContain("member=%EC%9E%A5%ED%98%84%EC%A0%9C");
+    expect(directorLink.getAttribute("href")).toContain("approval=1");
+    expect(directorLink.getAttribute("href")).toContain("returnTo=%2Ffinance%2Fexpense-authorizations%3Fid%3Dpartial");
+    expect(screen.getByRole("link", { name: "안동연 결재 계정 만들기" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "연결 내용 확인" }));
     expect(screen.getByText("1차 결재자: 미연결")).toBeInTheDocument();
     expect(screen.getByText("2차 결재자: 오학동 · secretary")).toBeInTheDocument();

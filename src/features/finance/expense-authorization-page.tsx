@@ -47,6 +47,8 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
   const busy = useRef(false); const operationKey = useRef<string | null>(null);
   const duplicateApprovers = steps.some((id, index) => Boolean(id) && steps.indexOf(id) !== index);
   const unresolved = [!author ? `작성자 ${record.author}` : "", ...record.approvalLine.map((step, index) => !steps[index] ? `${index + 1}차 ${step.approver}` : "")].filter(Boolean);
+  const unregisteredApprovers = [...new Set(record.approvalLine.flatMap((step, index) => !steps[index] ? [step.approver] : []))];
+  const returnTo = `/finance/expense-authorizations?id=${encodeURIComponent(record.id)}`;
   const label = (id: string) => { const member = members.find(m => m.user_id === id); return member ? `${member.display_name} · ${member.user_id}` : "미연결"; };
   function changed() { setPreview(false); setMessage(""); operationKey.current = null; }
   function submit() {
@@ -65,7 +67,7 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
     <p className="mt-2">현재 상태: {record.approvalStatus} · 금액: {record.totalPaymentAmount.toLocaleString("ko-KR")}원</p>
     <p className="mt-2 text-sm text-slate-600">기존 연결을 우선하고, 정확히 같은 이름의 활성 계정이 하나뿐이면 자동 선택해. 작성자가 결재 순서에도 참여하면 같은 로그인 계정을 사용할 수 있어.</p>
     {unresolved.length
-      ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">자동 연결하지 못한 항목: {unresolved.join(", ")}. 로그인 계정을 등록하거나 직접 선택해. <Link className="font-bold underline" href="/finance/reimbursements?tab=settings">계정 등록 화면 열기</Link></p>
+      ? <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950"><p>자동 연결하지 못한 항목: {unresolved.join(", ")}. 로그인 계정을 등록하거나 직접 선택해.</p><div className="mt-3 flex flex-wrap gap-2">{unregisteredApprovers.map(name=><Link className="rounded-lg border border-amber-300 bg-white px-3 py-2 font-bold" href={{pathname:"/finance/reimbursements",query:{tab:"settings",member:name,approval:"1",returnTo}}} key={name}>{name} 결재 계정 만들기</Link>)}<Link className="rounded-lg px-3 py-2 font-bold underline" href={{pathname:"/finance/reimbursements",query:{tab:"settings",returnTo}}}>직접 계정 등록</Link></div></div>
       : <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">현재 결재선의 로그인 계정을 모두 선택했어. 연결 내용을 확인해.</p>}
     <fieldset disabled={pending} className="mt-4 space-y-4"><label className="block">작성자 계정 · 기존 표시: {record.author}<select className={field} value={author} onChange={e => { setAuthor(e.target.value); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>
       {record.approvalLine.map((step, index) => <label key={index} className="block">{index + 1}차 결재 계정 · 기존 표시: {step.approver} {step.role}<select className={field} value={steps[index]} onChange={e => { setSteps(current => current.map((value, i) => i === index ? e.target.value : value)); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>)}

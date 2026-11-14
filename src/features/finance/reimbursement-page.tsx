@@ -83,7 +83,7 @@ function ReimbursementDetail({record:r,applicantName,budgetName,canEdit,onClose,
     </section>
   </div>;
 }
-export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialDetailId,initialAction,initialRequestFormOpen=false}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialDetailId?:string;initialAction?:"APPROVE"|"PAY";initialRequestFormOpen?:boolean}) {
+export function ReimbursementPage({workspace:w,initialTab="requests",initialRequestId,initialDetailId,initialAction,initialRequestFormOpen=false,initialMemberName,initialMemberApprove=false,accountSetupReturnTo}:{workspace:ReimbursementWorkspace;initialTab?:string;initialRequestId?:string;initialDetailId?:string;initialAction?:"APPROVE"|"PAY";initialRequestFormOpen?:boolean;initialMemberName?:string;initialMemberApprove?:boolean;accountSetupReturnTo?:string}) {
   const op=useOperation(); const router=useRouter(); const today=koreaDate();
   const period=w.periods.find(p=>p.month===w.month);
   const initialRequest=initialRequestId?w.requests.find(request=>request.id===initialRequestId):undefined;
@@ -239,13 +239,14 @@ export function ReimbursementPage({workspace:w,initialTab="requests",initialRequ
           {isAdmin&&<button className={button} disabled={op.pending}>기준 저장</button>}
         </form>
       </section>
-      {isAdmin&&<section className={card}><h2 className="text-lg font-bold">담당자 등록·권한</h2><p className="my-3 text-sm text-slate-600">본인 신청은 본인이 승인할 수 없어. 계정 생성 시 이메일은 발송하지 않아. 초기 비밀번호를 담당자에게 별도로 전달해줘.</p>
-        <form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);op.run(()=>saveReimbursementMember(data));}}>
-          <label>기존 사용자 ID (새 계정이면 비워둠)<input className={input} name="user_id"/></label><label>담당자 이름<input className={input} name="display_name" required/></label>
-          <label>새 계정 이메일<input className={input} name="email" type="email"/></label><label>초기 비밀번호<input className={input} name="password" type="password" minLength={12} autoComplete="new-password"/></label>
-          <fieldset className="flex flex-wrap gap-3 sm:col-span-2"><legend className="mb-2">권한 (선택하지 않으면 신청만 가능)</legend>{reimbursementPermissions.map(p=><label key={p}><input name="permissions" value={p} type="checkbox"/> {permissionLabels[p]}</label>)}</fieldset>
+      {isAdmin&&<section className={`${card} ${initialMemberName?"border-blue-300 ring-2 ring-blue-100":""}`}><h2 className="text-lg font-bold">담당자 등록·권한</h2><p className="my-3 text-sm text-slate-600">결재자는 별도 공개 가입을 하지 않아도 돼. 본인이 실제 사용할 이메일로 계정을 만들고, 초기 비밀번호를 안전하게 전달해줘. 계정 생성 이메일은 자동 발송되지 않아.</p>
+        {initialMemberName&&<div className="mb-4 rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-950"><strong>{initialMemberName} 결재 계정을 만드는 중이야.</strong><p className="mt-1">이름과 결재 권한을 미리 넣었어. 실제 사용할 이메일과 12자 이상 초기 비밀번호만 입력하면 돼. 저장 후 원래 계정 연결 화면으로 자동으로 돌아가.</p></div>}
+        <form className="grid gap-3 sm:grid-cols-2" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);op.run(async()=>{await saveReimbursementMember(data);if(accountSetupReturnTo)router.push(accountSetupReturnTo);},accountSetupReturnTo?"계정을 만들었어. 원래 결의서의 계정 연결 화면으로 돌아가.":"담당자 계정을 저장했어.");}}>
+          <label>기존 사용자 ID (새 계정이면 비워둠)<input className={input} name="user_id"/></label><label>담당자 이름<input className={input} name="display_name" required defaultValue={initialMemberName}/></label>
+          <label>새 계정 이메일<input className={input} name="email" type="email" required={Boolean(initialMemberName)}/></label><label>초기 비밀번호<input className={input} name="password" type="password" minLength={12} autoComplete="new-password" required={Boolean(initialMemberName)}/></label>
+          <fieldset className="flex flex-wrap gap-3 sm:col-span-2"><legend className="mb-2">권한 (선택하지 않으면 신청만 가능)</legend>{reimbursementPermissions.map(p=><label key={p}><input name="permissions" value={p} type="checkbox" defaultChecked={initialMemberApprove&&p==="APPROVE"}/> {permissionLabels[p]}</label>)}</fieldset>
           <label><input type="checkbox" name="active" defaultChecked/> 활성 계정</label><button className={button} disabled={op.pending}>담당자 저장</button>
-        </form><ul className="mt-4 space-y-2 text-sm">{w.members.map(m=><li key={m.user_id} className="border-t pt-2">{m.display_name} · {m.active?"활성":"비활성"} · {m.permissions.map(p=>permissionLabels[p]).join(", ")||"신청자"}<p className="break-all text-xs text-slate-500">{m.user_id}</p></li>)}</ul>
+        </form>{accountSetupReturnTo&&<Link className="mt-4 inline-block text-sm text-blue-700 underline" href={accountSetupReturnTo}>계정을 만들지 않고 연결 화면으로 돌아가기</Link>}<ul className="mt-4 space-y-2 text-sm">{w.members.map(m=><li key={m.user_id} className="border-t pt-2">{m.display_name} · {m.active?"활성":"비활성"} · {m.permissions.map(p=>permissionLabels[p]).join(", ")||"신청자"}<p className="break-all text-xs text-slate-500">{m.user_id}</p></li>)}</ul>
       </section>}
       <section className={card}><h2 className="mb-3 text-lg font-bold">내 비밀번호 변경</h2><form className="flex gap-3" onSubmit={e=>{e.preventDefault();const data=new FormData(e.currentTarget);op.run(()=>changeReimbursementPassword(data),"비밀번호를 변경했어.");}}><input aria-label="새 비밀번호" className={input} type="password" name="password" required minLength={12} autoComplete="new-password"/><button className={`${button} shrink-0`} disabled={op.pending}>변경</button></form></section>
       <Link href="/basic-info/approval" className="text-sm text-blue-700 underline">예산 편성·결재 설정으로 이동</Link>
