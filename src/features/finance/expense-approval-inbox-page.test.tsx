@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ExpenseApprovalInboxPage } from "./expense-approval-inbox-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
@@ -85,5 +85,40 @@ describe("ExpenseApprovalInboxPage", () => {
     expect(screen.queryByText("지결-2026-0001")).not.toBeInTheDocument();
     fireEvent.change(screen.getByRole("textbox", { name: "지출결의 검색" }), { target: { value: "다이스" } });
     expect(screen.getByText("지결-2026-0001")).toBeInTheDocument();
+  });
+
+  it("creates and confirms a voucher through the server disbursement transition", async () => {
+    const resolution = expenseResolutionFixture({
+      approvalStatus: "승인완료",
+      id: "voucher-test-1",
+      paymentStatus: "지급완료",
+      resolutionNo: "지결-2026-0033",
+      voucherNo: undefined,
+      voucherStatus: undefined,
+    });
+    const transitionDisbursement = vi.fn()
+      .mockResolvedValueOnce({ ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표초안" })
+      .mockResolvedValueOnce({ ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표확정" });
+    render(<ExpenseApprovalInboxPage
+      initialDetailId={resolution.id}
+      initialResolutions={[resolution]}
+      transitionDisbursement={transitionDisbursement}
+      viewer={{ user_id: "chair", organization_id: "org", display_name: "안동연 조합장", permissions: ["APPROVE", "PAY"], active: true }}
+    />);
+
+    fireEvent.click(within(screen.getByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표초안 생성" }));
+    await waitFor(() => expect(transitionDisbursement).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      actorLabel: "안동연 조합장",
+      command: "VOUCHER_CREATE",
+      expectedPaymentStatus: "지급완료",
+      resolutionId: resolution.id,
+    })));
+
+    fireEvent.click(within(screen.getByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표확정" }));
+    await waitFor(() => expect(transitionDisbursement).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      command: "VOUCHER_CONFIRM",
+      expectedVoucherStatus: "전표초안",
+      resolutionId: resolution.id,
+    })));
   });
 });

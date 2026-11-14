@@ -15,6 +15,7 @@ import {
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest } from "./expense-approval-workflow";
+import type { DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -31,7 +32,7 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
   const busy = useRef(false);
@@ -81,6 +82,39 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
   async function approveResolution(id: string) {
     const resolution = resolutions.find((item) => item.id === id);
     if (resolution) await runTransition(resolution, "APPROVE");
+  }
+
+  async function runDisbursementTransition(resolution: ManagedExpenseResolution, command: DisbursementTransitionRequest["command"]) {
+    if (busy.current) return false;
+    busy.current = true; setProcessing(true);
+    setWorkflowError("");
+    try {
+      if (!transitionDisbursement) throw new Error("전표 저장 기능에 연결하지 못했어. 새로고침 후 다시 시도해줘.");
+      const transitioned = await transitionDisbursement({
+        actorLabel: currentApproverLabel,
+        command,
+        expectedPaymentStatus: resolution.paymentStatus,
+        expectedVoucherStatus: resolution.voucherStatus,
+        idempotencyKey: crypto.randomUUID(),
+        resolutionId: resolution.id,
+      });
+      setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
+      router.refresh();
+      return true;
+    } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "전표 상태를 변경하지 못했습니다.");
+      return false;
+    } finally { busy.current = false; setProcessing(false); }
+  }
+
+  async function createVoucher(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (resolution) await runDisbursementTransition(resolution, "VOUCHER_CREATE");
+  }
+
+  async function confirmVoucher(id: string) {
+    const resolution = resolutions.find((item) => item.id === id);
+    if (resolution) await runDisbursementTransition(resolution, "VOUCHER_CONFIRM");
   }
 
   function openRejectModal(id: string) {
@@ -234,15 +268,15 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
 
       {selectedDetail ? (
         <ExpenseResolutionDetailModal
+          actionError={workflowError}
           budgetDataError={budgetDataError}
           canApprove={!processing && !!viewer && canApproveExpense(selectedDetail, viewer)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={() => setSelectedDetailId(null)}
-          onConfirmVoucher={() => undefined}
-          onCreateVoucher={() => undefined}
+          onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
+          onCreateVoucher={() => createVoucher(selectedDetail.id)}
           onPrintArchive={() => setPrintPreviewTargetId(selectedDetail.id)}
           onPrintPreview={() => setPrintPreviewTargetId(selectedDetail.id)}
-          onProcessPayment={() => undefined}
           onReject={() => openRejectModal(selectedDetail.id)}
           onRequestApproval={() => undefined}
           resolution={selectedDetail}
