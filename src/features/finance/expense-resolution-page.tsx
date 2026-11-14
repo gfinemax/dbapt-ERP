@@ -474,7 +474,7 @@ export type ResolutionFormState = {
 
 const currentUser = {
   name: "오학동",
-  title: "사무장",
+  title: "사무국장",
 };
 const currentUserName = `${currentUser.name} ${currentUser.title}`;
 type PaymentTarget = {

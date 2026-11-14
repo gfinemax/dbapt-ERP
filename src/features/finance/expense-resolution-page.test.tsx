@@ -282,7 +282,7 @@ describe("ExpenseResolutionPage", () => {
 
     const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(dialog).getByLabelText("결의서번호")).toHaveValue("지결-2026-0001");
-    expect(within(dialog).getByLabelText("작성자")).toHaveValue("오학동 사무장");
+    expect(within(dialog).getByLabelText("작성자")).toHaveValue("오학동 사무국장");
 
     fireEvent.click(within(dialog).getByRole("button", { name: "임시저장" }));
     expect(screen.getByRole("button", { name: "전체 1" })).toBeInTheDocument();

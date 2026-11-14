@@ -97,7 +97,7 @@ describe("QuickExpensePage", () => {
     expect(screen.getByText(/사용내용·거래처에서 자동 선택/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "사용내용 등록" }));
 
-    await waitFor(() => expect(persistRecord).toHaveBeenCalledWith(expect.objectContaining({ bankTransactionId: "bank-1", budgetItem: "제세공과금>통신비", expenseDetailId: "detail-communications", sourceType: "BANK_TRANSACTION", usageDescription: "조합 사무실 인터넷 요금" })));
+    await waitFor(() => expect(persistRecord).toHaveBeenCalledWith(expect.objectContaining({ bankTransactionId: "bank-1", budgetItem: "제세공과금>통신비", expenseDetailId: "detail-communications", recordedByLabel: "오학동 사무국장", sourceType: "BANK_TRANSACTION", usageDescription: "조합 사무실 인터넷 요금" })));
     expect(await screen.findByText("지출결의 없이 사용내용을 등록했어.")).toBeInTheDocument();
     expect(screen.getByText("간편처리 완료")).toBeInTheDocument();
   });

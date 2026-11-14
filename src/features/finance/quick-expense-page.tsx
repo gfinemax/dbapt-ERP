@@ -216,7 +216,7 @@ export function QuickExpensePage({ attachEvidence, discardEvidence, embedded = f
     startTransition(async () => {
       let saved: QuickExpenseRecord | undefined;
       try {
-        saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBankSource ? sourceId : undefined, budgetItem: effectiveBudgetItem, corporateCardTransactionId: isCardTransactionSource && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCardTransactionSource ? "CARD_TRANSACTION" : isBankSource ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", expenseDetailId: effectiveExpenseDetailId, missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무장", sourceType, usageDescription });
+        saved = await persistRecord({ amount, approvalSkipReason: paymentMethod === "AUTO_DEBIT" ? "정기·반복 지출" : "승인 예산 내 일상 지출", bankTransactionId: isBankSource ? sourceId : undefined, budgetItem: effectiveBudgetItem, corporateCardTransactionId: isCardTransactionSource && !isManualCard ? sourceId : undefined, counterparty, evidenceKind: isCardTransactionSource ? "CARD_TRANSACTION" : isBankSource ? "BANK_TRANSFER" : "NONE", evidenceStatus: receiptAvailable ? "GENERAL" : "ALTERNATIVE", expenseDetailId: effectiveExpenseDetailId, missingEvidenceReason: receiptAvailable ? "" : missingEvidenceReason, occurredAt, paymentMethod, recordedByLabel: "오학동 사무국장", sourceType, usageDescription });
       } catch (error) { setMessage(error instanceof Error ? error.message : "사용내용을 저장하지 못했습니다."); }
       if (!saved) return;
       setRecords((current) => [saved, ...current]);
