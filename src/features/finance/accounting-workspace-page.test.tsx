@@ -46,11 +46,25 @@ describe("accounting drafts and original records", () => {
     expect(within(detail).getByText("기존 예금")).toBeInTheDocument();
     expect(within(detail).getByText("원본 적요 그대로")).toBeInTheDocument();
     expect(within(detail).getAllByText("1,200원").length).toBeGreaterThan(0);
+    expect(within(detail).getByText("계정과목 연결이 필요해")).toBeInTheDocument();
+    expect(within(detail).getByText(/이미 확정된 기존 기록이므로/)).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "계정과목 관리 열기" })).toHaveAttribute("href", "/basic-info?section=account-subjects");
     expect(screen.getByRole("button", { name: /기존-2025-007.*승인완료/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "연결 초안 수정" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("조회 구분"), { target: { value: "LEGACY" } });
     expect(screen.getByRole("heading", { name: "전표 1건" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /전표-2026-001/ })).not.toBeInTheDocument();
+  });
+
+  it("fits all journal columns in the selected voucher without a horizontal scroll container", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />);
+    const detail = screen.getByRole("region", { name: "전표 상세" });
+    const table = within(detail).getByRole("table");
+    expect(table).toHaveClass("table-fixed");
+    expect(table).not.toHaveClass("min-w-[520px]");
+    expect(table.parentElement).not.toHaveClass("overflow-x-auto");
+    expect(within(table).getByRole("columnheader", { name: "대변" })).toBeInTheDocument();
+    expect(within(detail).getByText(/연결 초안 수정.*지출 성격에 맞는 계정/)).toBeInTheDocument();
   });
 
   it("updates the adjacent detail panel and URL when another voucher is selected", () => {
