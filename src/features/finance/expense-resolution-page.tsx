@@ -5397,8 +5397,8 @@ export function ExpenseResolutionPrintPreviewModal({
         },
         ];
   const firstPageItems = printExpenseItems.slice(0, 5);
-  const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 5) / 10) }, (_, pageIndex) =>
-    printExpenseItems.slice(5 + pageIndex * 10, 5 + (pageIndex + 1) * 10),
+  const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 5) / 7) }, (_, pageIndex) =>
+    printExpenseItems.slice(5 + pageIndex * 7, 5 + (pageIndex + 1) * 7),
   );
   const totalPrintPages = 1 + continuationPages.length + evidencePrintPages.length;
   const evidenceText = getExpensePrintEvidenceText(resolution);
@@ -5509,7 +5509,7 @@ export function ExpenseResolutionPrintPreviewModal({
             <h2 className="text-2xl font-bold" id="expense-resolution-print-title">
               지출결의서 출력 미리보기
             </h2>
-            <p className="mt-2 text-sm text-[var(--color-stone)]">A4 세로 기준 보관용 문서 형태를 확인합니다.</p>
+            <p className="mt-2 text-sm text-[var(--color-stone)]">A4 세로 보관용 문서를 확인합니다.</p>
           </div>
           <button aria-label="출력 미리보기 닫기" className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onClose} type="button">
             <X className="size-4" />
@@ -5566,13 +5566,7 @@ export function ExpenseResolutionPrintPreviewModal({
               <ExpensePrintItemsTable items={firstPageItems} totalLabel={continuationPages.length ? "본지 소계" : "전체 합계"} />
             </section>
 
-            <section className="expense-resolution-print-section mt-4">
-              <h4 className="mb-1.5 text-[15px] font-bold">지출사유 및 증빙</h4>
-              <div className="border-y border-solid border-[#9ca3af]">
-                <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
-                <PrintCell label="증빙·확인근거" value={<span className={evidenceText.includes("확인 필요") || evidenceText.includes("사유 미입력") ? warningTextClass : ""}>{evidenceText}</span>} wide />
-              </div>
-            </section>
+            {continuationPages.length === 0 ? <ExpensePrintReasonEvidence evidenceText={evidenceText} reasonText={reasonText} resolution={resolution} warningTextClass={warningTextClass} /> : null}
 
             <ExpensePrintFooter page={1} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
           </article>
@@ -5581,7 +5575,7 @@ export function ExpenseResolutionPrintPreviewModal({
               <header className="border-b-2 border-[var(--color-midnight-ink)] pb-4">
                 <div className="flex items-end justify-between gap-4">
                   <div>
-                    <h3 className="text-xl font-bold">지출결의서 세부 지출내역 계속지</h3>
+                    <h3 className="text-xl font-bold">세부 지출내역 (계속)</h3>
                     <p className="mt-1 font-semibold">{resolution.resolutionNo} · {getResolutionSubject(resolution)}</p>
                     {isBatchResolution ? <p className="mt-1 text-xs text-[var(--color-stone)]">프로젝트: {resolution.projectName || "프로젝트 미입력"}</p> : null}
                   </div>
@@ -5591,10 +5585,11 @@ export function ExpenseResolutionPrintPreviewModal({
               <section className="expense-resolution-print-items mt-5">
                 <ExpensePrintItemsTable
                   items={items}
-                  totalLabel={pageIndex === continuationPages.length - 1 ? "전체 합계" : "계속지 소계"}
+                  totalLabel={pageIndex === continuationPages.length - 1 ? "전체 합계" : "페이지 소계"}
                   totals={pageIndex === continuationPages.length - 1 ? { supplyAmount: resolution.supplyAmount, totalAmount: resolution.totalPaymentAmount, vatAmount: resolution.vat } : undefined}
                 />
               </section>
+              {pageIndex === continuationPages.length - 1 ? <ExpensePrintReasonEvidence evidenceText={evidenceText} reasonText={reasonText} resolution={resolution} warningTextClass={warningTextClass} /> : null}
               <ExpensePrintFooter page={pageIndex + 2} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
             </article>
           ))}
@@ -5645,6 +5640,28 @@ type ExpensePrintItem = {
   vatAmount: string;
   vendorName: string;
 };
+
+function ExpensePrintReasonEvidence({
+  evidenceText,
+  reasonText,
+  resolution,
+  warningTextClass,
+}: {
+  evidenceText: string;
+  reasonText: string;
+  resolution: ManagedExpenseResolution;
+  warningTextClass: string;
+}) {
+  return (
+    <section className="expense-resolution-print-section mt-4">
+      <h4 className="mb-1.5 text-[15px] font-bold">지출사유 및 증빙</h4>
+      <div className="border-y border-solid border-[#9ca3af]">
+        <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
+        <PrintCell label="증빙·확인근거" value={<span className={evidenceText.includes("확인 필요") || evidenceText.includes("사유 미입력") ? warningTextClass : ""}>{evidenceText}</span>} wide />
+      </div>
+    </section>
+  );
+}
 
 function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResolution }) {
   const approvalLine = getDocumentApprovalParticipants(resolution);

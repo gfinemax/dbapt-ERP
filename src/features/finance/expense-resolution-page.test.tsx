@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, ExpenseResolutionPrintPreviewModal, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -147,6 +147,30 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getByRole("button", { name: "증빙 0건" })).toBeInTheDocument();
     expect(within(dialog).getAllByText("미첨부").length).toBeGreaterThan(0);
     expect(within(dialog).queryByText("12/12 첨부")).not.toBeInTheDocument();
+  });
+
+  it("prints the reason and evidence after the final detailed expense row", () => {
+    const items = Array.from({ length: 12 }, (_, index) => batchExpenseItem(index + 1, 18_000));
+    render(<ExpenseResolutionPrintPreviewModal
+      onClose={() => undefined}
+      resolution={expenseResolutionFixture({
+        expenseItems: items,
+        itemCount: items.length,
+        reason: "1월 업무식대 일괄 사후결의",
+        resolutionType: "BATCH",
+        supplyAmount: 216_000,
+        totalPaymentAmount: 216_000,
+      })}
+    />);
+
+    const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
+    const documentPages = printDialog.querySelectorAll<HTMLElement>(".expense-resolution-document-page");
+    expect(documentPages).toHaveLength(2);
+    expect(within(documentPages[0]).queryByRole("heading", { name: "지출사유 및 증빙" })).not.toBeInTheDocument();
+    expect(within(documentPages[1]).getByRole("heading", { name: "세부 지출내역 (계속)" })).toBeInTheDocument();
+    expect(within(documentPages[1]).queryByText(/계속지/)).not.toBeInTheDocument();
+    expect(within(documentPages[1]).getByRole("heading", { name: "지출사유 및 증빙" })).toBeInTheDocument();
+    expect(documentPages[1].textContent?.indexOf("2026-01-18")).toBeLessThan(documentPages[1].textContent?.indexOf("지출사유 및 증빙") ?? -1);
   });
 
   it("shows 장현제 as 이사 on an unresolved legacy approval line", () => {
