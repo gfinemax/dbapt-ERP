@@ -29,6 +29,9 @@ import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-smal
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
 import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
 
+import { listExpenseBudgetProfiles } from "@/features/finance/budget-profile-repository";
+import { refreshOpenExpenseResolutionBudgetSnapshots } from "@/features/finance/expense-resolution-budget-refresh";
+
 const expenseEvidenceBucket = "expense-evidence";
 
 const maxEvidenceFileSize = 10 * 1024 * 1024;
@@ -465,7 +468,9 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (input.command === "CANCEL" && !actor.permissions.includes("ADMIN")) throw new Error("승인취소는 관리자만 처리할 수 있습니다.");
   const settings = await getExpenseComplianceSettings(actor.organization_id);
   const isFinal = index === current.approvalLine.length - 1;
-  const workflowCurrent = current;
+  const budgetPeriod = current.budgetSnapshot?.budgetPeriod;
+  const budgetProfiles = budgetPeriod ? await listExpenseBudgetProfiles(actor.organization_id, [budgetPeriod]) : {};
+  const workflowCurrent = budgetPeriod ? refreshOpenExpenseResolutionBudgetSnapshots([current], budgetProfiles)[0] : current;
   if (input.command === "REQUEST" || input.command === "APPROVE" && isFinal) {
     if (input.command === "REQUEST") {
       const validation = validateExpenseResolutionWorkflow({ ...current,
@@ -499,6 +504,16 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   revalidatePath("/finance/approval-inbox");
   revalidatePath("/approval/inbox");
   revalidatePath("/finance/workspace");
+  // Refresh totals after the command updates approval reservations.
+  // Optional reads must not report a completed command as failed.
+  if (budgetPeriod && saved.approvalStatus !== "승인완료") {
+    try {
+      const latestProfiles = await listExpenseBudgetProfiles(actor.organization_id, [budgetPeriod]);
+      return refreshOpenExpenseResolutionBudgetSnapshots([saved], latestProfiles)[0];
+    } catch (error) {
+      console.warn("[expense-approval] Budget refresh after successful transition failed", error);
+    }
+  }
   return saved as ManagedExpenseResolution;
 }
 

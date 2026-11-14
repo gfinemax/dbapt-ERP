@@ -1,20 +1,25 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), transition: vi.fn(), settings: vi.fn() }));
+const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), transition: vi.fn(), settings: vi.fn(), budgets: vi.fn() }));
 vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseRecord: mocks.access, requireExpenseFact: mocks.access, requireExpenseActor: mocks.actor }));
 vi.mock("@/features/finance/expense-resolution-repository", () => ({ commitExpenseCommand: mocks.commit }));
 vi.mock("@/features/finance/expense-approval-workflow", () => ({ transitionExpenseApproval: mocks.transition }));
 vi.mock("@/features/finance/expense-compliance-repository", () => ({ getExpenseComplianceSettings: mocks.settings }));
+vi.mock("@/features/finance/expense-resolution-domain", () => ({ validateExpenseResolutionWorkflow: vi.fn(() => ({ errors: [] })) }));
+vi.mock("@/lib/supabase/server", () => ({ getSupabaseServerClient: vi.fn(() => ({})) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-ocr.server", () => ({ extractExpenseEvidenceFile: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-openai.server", () => ({ extractExpenseEvidenceWithOpenAI: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compressExpenseEvidenceFile: vi.fn() }));
+vi.mock("@/features/finance/budget-profile-repository", () => ({ listExpenseBudgetProfiles: mocks.budgets }));
+import { expenseResolutionFixture } from "@/features/finance/expense-resolution-test-fixture";
+import { budgetProfilePeriodKey } from "@/features/finance/budget-profile-lookup";
 import { transitionExpenseApprovalAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
 const request = { resolutionId: "r", actorLabel: "위조된 관리자", command: "APPROVE" as const, expectedStatus: "승인대기" as const, expectedCurrentApprover: "이전 이름 담당자", expectedAuthorizationVersion: 2 };
 function fixture() { return { actor: { user_id: "actual-user", display_name: "실제 사용자", organization_id: "org", permissions: ["APPROVE"] },
   resolution: { id: "r", author: "작성자", approvalStatus: "승인대기", currentApprover: "이전 이름 담당자", history: [], approvalLine: [{ approver: "이전 이름", role: "담당자", status: "결재대기" }, { approver: "최종", role: "조합장", status: "대기" }] },
   binding: { author_user_id: "author", version: 2, steps: [{ order: 1, approver_user_id: "actual-user", legacy_step: { approver: "이전 이름", order: 1, role: "담당자" } }, { order: 2, approver_user_id: "final", legacy_step: { approver: "최종", order: 2, role: "조합장" } }] } }; }
-beforeEach(() => { vi.clearAllMocks(); mocks.settings.mockResolvedValue(null); mocks.access.mockResolvedValue(fixture()); mocks.transition.mockReturnValue({ ...fixture().resolution, history: [{ actorName: "old" }] }); mocks.commit.mockResolvedValue({ id: "r" }); });
+beforeEach(() => { vi.clearAllMocks(); mocks.budgets.mockResolvedValue({}); mocks.settings.mockResolvedValue(null); mocks.access.mockResolvedValue(fixture()); mocks.transition.mockReturnValue({ ...fixture().resolution, history: [{ actorName: "old" }] }); mocks.commit.mockResolvedValue({ id: "r" }); });
 it("ignores a forged actor label and records the verified identity", async () => {
   await transitionExpenseApprovalAction(request);
   expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: "이전 이름 담당자" }));
@@ -57,4 +62,33 @@ it("saves fact drafts atomically with the verified author and rejects signature 
 it("deletes fact drafts through the same versioned command", async () => {
   await deleteExpenseFactConfirmationAction("fact-id", "r", "위조 작성자");
   expect(mocks.commit).toHaveBeenCalledWith("FACT_DELETE", "r", fixture().resolution, { input: { id: "fact-id", resolutionId: "r" }, expected_binding_version: 2 }, expect.any(String));
+});
+
+it("keeps the January budget after requesting approval and refreshes committed totals", async () => {
+  const access = fixture();
+  const resolution = expenseResolutionFixture({
+    id: "r", author: "author", approvalStatus: "작성중", currentApprover: undefined,
+    budgetItem: "benefits", budgetId: "budget-jan", budgetMonth: "2026-01-01", totalPaymentAmount: 252000,
+    approvalLine: access.resolution.approvalLine.map((step, index) => ({ ...step, order: index + 1, status: "대기" as const })),
+  });
+  resolution.budgetSnapshot = { ...resolution.budgetSnapshot, budgetPeriod: "2026-01", monthlyBudgetAmount: 0, currentAnnualBudgetAmount: 0 };
+  mocks.access.mockResolvedValue({ ...access, actor: { ...access.actor, user_id: "author" }, resolution });
+  const profile = { budgetId: "budget-jan", budgetPeriod: "2026-01", calculationBasis: "approved budget", currentAnnualBudgetAmount: 7800000, monthlyBudgetAmount: 650000, usedAmount: 0, reservedAmount: 0, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0 };
+  const key = budgetProfilePeriodKey("benefits", "2026-01");
+  mocks.budgets.mockResolvedValueOnce({ [key]: profile }).mockResolvedValueOnce({ [key]: { ...profile, pendingApprovalAmount: 335000 } });
+  mocks.transition.mockImplementation(({ resolution: current }) => ({ ...current, approvalStatus: "승인대기" }));
+  mocks.commit.mockImplementation(async (_command, _id, _expected, payload) => payload.after);
+  const result = await transitionExpenseApprovalAction({ ...request, command: "REQUEST", expectedStatus: "작성중", expectedCurrentApprover: undefined });
+  expect(mocks.budgets).toHaveBeenNthCalledWith(1, "org", ["2026-01"]);
+  expect(mocks.commit.mock.calls[0][3].after.budgetSnapshot.monthlyBudgetAmount).toBe(650000);
+  expect(result.budgetSnapshot).toMatchObject({ budgetPeriod: "2026-01", monthlyBudgetAmount: 650000, currentAnnualBudgetAmount: 7800000, expectedUsedAmount: 335000, remainingBudgetAmount: 315000 });
+  mocks.budgets.mockResolvedValueOnce({ [key]: profile }).mockRejectedValueOnce(new Error("temporary read failure"));
+  const warning = vi.spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    const fallback = await transitionExpenseApprovalAction({ ...request, command: "REQUEST", expectedStatus: "작성중", expectedCurrentApprover: undefined });
+    expect(fallback.budgetSnapshot.monthlyBudgetAmount).toBe(650000);
+    expect(warning).toHaveBeenCalledOnce();
+  } finally {
+    warning.mockRestore();
+  }
 });
