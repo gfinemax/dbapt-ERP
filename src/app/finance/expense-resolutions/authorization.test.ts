@@ -20,6 +20,12 @@ it("ignores a forged actor label and records the verified identity", async () =>
   expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({ actorLabel: "이전 이름 담당자" }));
   expect(mocks.commit).toHaveBeenCalledWith("APPROVAL", "r", expect.any(Object), expect.objectContaining({ expected_binding_version: 2, after: expect.objectContaining({ history: [{ actorName: "실제 사용자", actorTitle: "" }] }) }), expect.any(String));
 });
+it("passes organization compliance settings into the approval workflow", async () => {
+  const settings = { postApprovalMaxDays: undefined };
+  mocks.settings.mockResolvedValue(settings);
+  await transitionExpenseApprovalAction(request);
+  expect(mocks.transition).toHaveBeenCalledWith(expect.objectContaining({ settings }));
+});
 it("rejects a same-named actor whose UUID is not assigned", async () => {
   const access = fixture(); access.actor.user_id = "different-user"; access.actor.display_name = "이전 이름 담당자"; mocks.access.mockResolvedValue(access);
   await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("현재 순서"); expect(mocks.commit).not.toHaveBeenCalled();

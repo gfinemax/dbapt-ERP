@@ -110,7 +110,7 @@ function createVoucher(input: DisbursementTransitionInput) {
   const { resolution, voucherNo } = input;
   if (resolution.paymentStatus !== "지급완료") throw new DisbursementWorkflowError("지급완료 문서만 전표를 생성할 수 있습니다.");
   if (resolution.voucherNo) return resolution;
-  if (resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId) throw new DisbursementWorkflowError("연결된 통장거래 없이 사후결의 전표를 생성할 수 없습니다.");
+  if (resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId && !resolution.bankTransactions?.length) throw new DisbursementWorkflowError("연결된 통장거래 없이 사후결의 전표를 생성할 수 없습니다.");
   if (!voucherNo) throw new DisbursementWorkflowError("전표번호가 필요합니다.");
   if (resolution.resolutionType === "BATCH" && resolution.voucherCreationMode === "ITEM_VOUCHER") {
     const expenseItems = resolution.expenseItems.map((item) => ({ ...item, voucherNo: `${voucherNo}-${String(item.itemNo).padStart(2, "0")}`, voucherStatus: "전표초안" as const }));

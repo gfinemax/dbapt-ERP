@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeEvidenceStatus, validateExpenseCompliance } from "./expense-compliance";
+import { defaultExpenseComplianceSettings, normalizeEvidenceStatus, validateExpenseCompliance } from "./expense-compliance";
 
 describe("expense compliance", () => {
   it("allows an actual date to remain empty only for a general expense requested before purchase", () => {
@@ -16,6 +16,19 @@ describe("expense compliance", () => {
   it("requires a linked bank transaction and post-approval reason", () => {
     const result = validateExpenseCompliance({ actualExpenseDate: "2026-03-15", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL" });
     expect(result.errors).toEqual(expect.arrayContaining([expect.stringContaining("은행거래"), expect.stringContaining("사후결의 사유")]));
+  });
+
+  it("accepts row-level bank transactions for a historical batch when the organization has no day limit", () => {
+    const result = validateExpenseCompliance({
+      actualExpenseDate: "2026-01-30",
+      bankTransactionCount: 12,
+      evidenceKind: "BANK_TRANSFER",
+      evidenceStatus: "ALTERNATIVE",
+      expenseKind: "BANK_POST_APPROVAL",
+      postApprovalReason: "2026년 1월 업무식대 12건 기지급분 일괄 사후결의",
+      settings: { ...defaultExpenseComplianceSettings, postApprovalMaxDays: undefined },
+    });
+    expect(result.errors).toEqual([]);
   });
 
   it("warns but does not block a person's monthly petty-cash excess", () => {

@@ -489,7 +489,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   }
   // UUID authorizes execution. Legacy labels are used only by the compatibility state calculator.
   const legacyLabel = input.command === "REQUEST" ? current.author : input.command === "CANCEL" ? actor.display_name : current.currentApprover!;
-  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: workflowCurrent });
+  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: workflowCurrent, settings: settings ?? undefined });
   const history = transitioned.history.map((item, i) => i < current.history.length ? item : { ...item, actorName: actor.display_name, actorTitle: "" });
   const saved = await commitExpenseCommand("APPROVAL", input.resolutionId, current, {
     command: input.command, after: { ...transitioned, history }, reason: input.reason,
