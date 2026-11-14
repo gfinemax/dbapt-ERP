@@ -10,18 +10,43 @@ import { expenseResolutionHref } from "./expense-entry";
 type Member = { user_id: string; display_name: string; permissions: string[] };
 const field = "mt-2 w-full rounded-lg border bg-white p-3";
 const button = "rounded-lg border bg-white px-4 py-2 font-semibold disabled:opacity-50";
+const automaticReason = "고유 이름이 일치하는 활성 로그인 계정 자동 선택 후 관리자 확인";
+
+function normalizedName(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function uniqueMemberId(members: Member[], displayName: string) {
+  const name = normalizedName(displayName);
+  if (!name) return "";
+  const matches = members.filter(member => normalizedName(member.display_name) === name);
+  return matches.length === 1 ? matches[0].user_id : "";
+}
 
 function BindingForm({ record, members }: { record: ManagedExpenseResolution; members: Member[] }) {
   const router = useRouter();
-  const [author, setAuthor] = useState(record.authorization?.author_user_id ?? "");
-  const [steps, setSteps] = useState(record.approvalLine.map((_, index) => record.authorization?.steps.find(s => s.order === index + 1)?.approver_user_id ?? ""));
-  const [reason, setReason] = useState("");
+  const eligible = members.filter(m => m.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p)));
+  const suggestedAuthor = uniqueMemberId(eligible, record.author);
+  const suggestedSteps = record.approvalLine.map(step => uniqueMemberId(eligible, step.approver));
+  const initialAuthor = record.authorization?.author_user_id ?? suggestedAuthor;
+  const initialSteps = record.approvalLine.map((step, index) => {
+    const saved = record.authorization?.steps.find(s => s.order === index + 1
+      && s.legacy_step.approver === step.approver
+      && s.legacy_step.role === step.role
+      && s.legacy_step.order === step.order)?.approver_user_id;
+    return saved ?? suggestedSteps[index];
+  });
+  const usedAutomaticSuggestion = (!record.authorization?.author_user_id && Boolean(suggestedAuthor))
+    || initialSteps.some((id, index) => Boolean(id) && !record.authorization?.steps.some(step => step.order === index + 1 && step.approver_user_id === id));
+  const [author, setAuthor] = useState(initialAuthor);
+  const [steps, setSteps] = useState(initialSteps);
+  const [reason, setReason] = useState(usedAutomaticSuggestion ? automaticReason : "");
   const [preview, setPreview] = useState(false);
   const [message, setMessage] = useState("");
   const [pending, start] = useTransition();
   const busy = useRef(false); const operationKey = useRef<string | null>(null);
-  const eligible = members.filter(m => m.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p)));
   const duplicateApprovers = steps.some((id, index) => Boolean(id) && steps.indexOf(id) !== index);
+  const unresolved = [!author ? `작성자 ${record.author}` : "", ...record.approvalLine.map((step, index) => !steps[index] ? `${index + 1}차 ${step.approver}` : "")].filter(Boolean);
   const label = (id: string) => { const member = members.find(m => m.user_id === id); return member ? `${member.display_name} · ${member.user_id}` : "미연결"; };
   function changed() { setPreview(false); setMessage(""); operationKey.current = null; }
   function submit() {
@@ -38,7 +63,10 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
   }
   return <section className="mt-5 rounded-2xl border bg-white p-5"><h2 className="text-xl font-bold">{record.resolutionNo} · {record.subject || record.reason}</h2>
     <p className="mt-2">현재 상태: {record.approvalStatus} · 금액: {record.totalPaymentAmount.toLocaleString("ko-KR")}원</p>
-    <p className="mt-2 text-sm text-slate-600">기존 이름과 이력은 유지돼. 작성자가 결재 순서에도 참여하면 같은 로그인 계정을 선택할 수 있어. 다만 같은 계정을 여러 결재 순서에 중복 연결할 수는 없어.</p>
+    <p className="mt-2 text-sm text-slate-600">기존 연결을 우선하고, 정확히 같은 이름의 활성 계정이 하나뿐이면 자동 선택해. 작성자가 결재 순서에도 참여하면 같은 로그인 계정을 사용할 수 있어.</p>
+    {unresolved.length
+      ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">자동 연결하지 못한 항목: {unresolved.join(", ")}. 로그인 계정을 등록하거나 직접 선택해.</p>
+      : <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">현재 결재선의 로그인 계정을 모두 선택했어. 연결 내용을 확인해.</p>}
     <fieldset disabled={pending} className="mt-4 space-y-4"><label className="block">작성자 계정 · 기존 표시: {record.author}<select className={field} value={author} onChange={e => { setAuthor(e.target.value); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>
       {record.approvalLine.map((step, index) => <label key={index} className="block">{index + 1}차 결재 계정 · 기존 표시: {step.approver} {step.role}<select className={field} value={steps[index]} onChange={e => { setSteps(current => current.map((value, i) => i === index ? e.target.value : value)); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>)}
       <label className="block">연결 확인 근거<textarea className={field} value={reason} onChange={e => { setReason(e.target.value); changed(); }} /></label>
@@ -52,7 +80,7 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
 
 export function ExpenseAuthorizationPage({ records, members }: { records: ManagedExpenseResolution[]; members: Member[] }) {
   const [id, setId] = useState(""); const record = records.find(r => r.id === id);
-  return <div><h1 className="text-2xl font-bold">작성자·결재선 계정 연결</h1><p className="mt-3">같은 조합의 원본과 로그인 계정을 직접 연결해. 이름으로 자동 연결하지 않아.</p>
+  return <div><h1 className="text-2xl font-bold">작성자·결재선 계정 연결</h1><p className="mt-3">기존 연결을 우선하고, 정확히 같은 이름의 활성 로그인 계정이 하나일 때만 자동 선택해. 동명이인과 미등록 계정은 직접 확인해.</p>
     <label className="mt-4 block">지출결의 원본<select className={field} value={id} onChange={e => setId(e.target.value)}><option value="">원본 선택</option>{records.map(r => <option key={r.id} value={r.id}>{r.resolutionNo} · {r.subject || r.reason}</option>)}</select></label>
     {record && <BindingForm key={`${record.id}:${record.authorization?.version ?? 0}`} record={record} members={members} />}
   </div>;

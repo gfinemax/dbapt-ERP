@@ -50,22 +50,43 @@ describe("explicit author and approver account binding", () => {
     expect(canEditExpense(bound, viewer)).toBe(false);
     expect(canEditExpense(bound, { ...viewer, user_id: "author" })).toBe(true);
   });
-  it("allows the author account to participate as the second approver", () => {
-    const multiStepRecord = { ...record, id: "multi", approvalLine: [
+  it("automatically selects unique exact-name accounts including the author as second approver", () => {
+    const uniqueMembers = [
+      { user_id: "director", display_name: "장현제", permissions: ["APPROVE"] },
+      { user_id: "secretary", display_name: "오학동", permissions: ["ADMIN"] },
+      { user_id: "chair", display_name: "안동연", permissions: ["APPROVE"] },
+    ];
+    const multiStepRecord = { ...record, id: "multi", author: "오학동", approvalLine: [
       { order: 1, approver: "장현제", role: "이사", status: "대기" },
       { order: 2, approver: "오학동", role: "사무국장", status: "대기" },
       { order: 3, approver: "안동연", role: "조합장", status: "대기" },
     ] } as unknown as ManagedExpenseResolution;
-    render(<ExpenseAuthorizationPage records={[multiStepRecord]} members={members} />);
+    render(<ExpenseAuthorizationPage records={[multiStepRecord]} members={uniqueMembers} />);
     fireEvent.change(screen.getByLabelText("지출결의 원본"), { target: { value: "multi" } });
-    fireEvent.change(screen.getByLabelText(/작성자 계정/), { target: { value: "author" } });
-    fireEvent.change(screen.getByLabelText(/1차 결재 계정/), { target: { value: "a" } });
-    fireEvent.change(screen.getByLabelText(/2차 결재 계정/), { target: { value: "author" } });
-    fireEvent.change(screen.getByLabelText(/3차 결재 계정/), { target: { value: "b" } });
-    fireEvent.change(screen.getByLabelText("연결 확인 근거"), { target: { value: "계정 확인" } });
+    expect(screen.getByLabelText(/작성자 계정/)).toHaveValue("secretary");
+    expect(screen.getByLabelText(/1차 결재 계정/)).toHaveValue("director");
+    expect(screen.getByLabelText(/2차 결재 계정/)).toHaveValue("secretary");
+    expect(screen.getByLabelText(/3차 결재 계정/)).toHaveValue("chair");
+    expect(screen.getByLabelText("연결 확인 근거")).toHaveValue("고유 이름이 일치하는 활성 로그인 계정 자동 선택 후 관리자 확인");
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "연결 내용 확인" }));
-    expect(screen.getByText("2차 결재자: 작성자 · author")).toBeInTheDocument();
+    expect(screen.getByText("2차 결재자: 오학동 · secretary")).toBeInTheDocument();
+  });
+  it("leaves unregistered approvers empty while matching the registered author account", () => {
+    const onlySecretary = [{ user_id: "secretary", display_name: "오학동", permissions: ["ADMIN"] }];
+    const multiStepRecord = { ...record, id: "partial", author: "오학동", approvalLine: [
+      { order: 1, approver: "장현제", role: "이사", status: "대기" },
+      { order: 2, approver: "오학동", role: "사무국장", status: "대기" },
+      { order: 3, approver: "안동연", role: "조합장", status: "대기" },
+    ] } as unknown as ManagedExpenseResolution;
+    render(<ExpenseAuthorizationPage records={[multiStepRecord]} members={onlySecretary} />);
+    fireEvent.change(screen.getByLabelText("지출결의 원본"), { target: { value: "partial" } });
+    expect(screen.getByLabelText(/작성자 계정/)).toHaveValue("secretary");
+    expect(screen.getByLabelText(/1차 결재 계정/)).toHaveValue("");
+    expect(screen.getByLabelText(/2차 결재 계정/)).toHaveValue("secretary");
+    expect(screen.getByLabelText(/3차 결재 계정/)).toHaveValue("");
+    expect(screen.getByText(/자동 연결하지 못한 항목: 1차 장현제, 3차 안동연/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "연결 내용 확인" })).toBeDisabled();
   });
   it("does not reuse a binding from a different approval route", () => {
     const changedRoute = {
