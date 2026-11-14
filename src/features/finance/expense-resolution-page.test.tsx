@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -48,6 +48,37 @@ describe("ExpenseResolutionPage", () => {
     expect(getExpensePrintPersonName("오학동 사무장")).toBe("오학동");
     expect(getExpensePrintPersonName("장현제 부장")).toBe("장현제");
     expect(getExpensePrintPersonName("안동연")).toBe("안동연");
+  });
+
+  it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({
+      evidenceFiles: [{ evidenceType: "카드매출전표", ocrData: {}, id: "evidence-1" } as ExpenseEvidenceAttachment],
+      missingEvidenceReason: "사용자가 입력한 대체증빙 설명",
+    }))).toBe("사용자가 입력한 대체증빙 설명");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({
+      evidenceFiles: [{ evidenceType: "카드매출전표", ocrData: {}, id: "evidence-1" } as ExpenseEvidenceAttachment],
+    }))).toBe("카드매출전표 1건 첨부");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({ missingEvidenceReason: "직접 작성한 확인 근거" })))
+      .toBe("직접 작성한 확인 근거");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({
+      bankTransactions: Array.from({ length: 12 }, (_, index) => ({ id: `bank-${index}` })) as never,
+      cardSettlementMode: "BANK_DIRECT",
+      cardVerificationSource: "BANK_TRANSACTION",
+      expenseBurdenType: "CORPORATE_CARD",
+    }))).toBe("법인 체크카드 사용 · 조합 통장 건별출금 내역 12건으로 결제 확인");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({ cardTransactionId: "card-1", expenseBurdenType: "CORPORATE_CARD" })))
+      .toBe("공용 법인카드 승인내역으로 대체 · 카드 승인내역 연결");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture({ bankTransactionId: "bank-1" })))
+      .toBe("조합 통장 거래내역 1건 연결 · 원본 거래로 결제 확인");
+    expect(getExpensePrintEvidenceText(expenseResolutionFixture())).toBe("증빙 미첨부 · 사유 미입력");
+  });
+
+  it("uses the detail column for a compact readable expense description", () => {
+    expect(getExpensePrintItemDescription({
+      ...batchExpenseItem(1, 18_000),
+      description: "2026-01-07 옛골식당 업무식대 · 조합계좌 출금 원본 연결",
+      memo: "참석 2명",
+    })).toBe("업무식대\n조합계좌 출금 원본 연결\n사무국 업무 수행\n참석 2명");
   });
   beforeEach(() => {
     localStorage.clear();
@@ -503,7 +534,7 @@ describe("ExpenseResolutionPage", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     fireEvent.click(within(dialog).getByRole("button", { name: "영수증 미발행" }));
-    expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("영수증 미발행 · 공용 법인카드 사용내역 확인 필요");
+    expect(within(dialog).getByLabelText("출력 증빙·대체증빙 설명")).toHaveValue("영수증 미발행 · 공용 법인카드 사용내역 확인 필요");
     expect(within(dialog).getByText(/결재권자의 추가 확인 대상/)).toBeInTheDocument();
   });
 
@@ -551,7 +582,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("카카오T 택시비");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(18500);
-    expect(within(dialog).getByLabelText("증빙 미첨부·대체 사유")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
+    expect(within(dialog).getByLabelText("출력 증빙·대체증빙 설명")).toHaveValue("공용 법인카드 승인내역으로 대체 · 승인번호 48392011");
   });
 
   it("creates a corporate debit-card draft from bank withdrawals without card transaction input", async () => {
@@ -689,6 +720,7 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(screen.getByRole("dialog", { name: "보관용 출력 전 확인" })).getByRole("button", { name: "그래도 출력하기" }));
 
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
+    expect(printDialog.querySelector(".expense-resolution-print-page")).toHaveClass("expense-resolution-document-page");
     expect(within(printDialog).getByRole("heading", { name: "지출결의서" })).toHaveClass("text-[35px]");
     const coreInfoHeading = within(printDialog).getByRole("heading", { name: "핵심 결의정보" });
     expect(coreInfoHeading).toHaveClass("text-[15px]");
@@ -707,16 +739,16 @@ describe("ExpenseResolutionPage", () => {
     const expenseItemsHeading = within(printDialog).getByRole("heading", { name: "세부 지출내역" });
     expect(expenseItemsHeading).toHaveClass("text-[15px]");
     const expenseItemsTable = expenseItemsHeading.closest("section")?.querySelector("table");
-    expect(expenseItemsTable).toHaveClass("text-[13px]");
+    expect(expenseItemsTable).toHaveClass("text-[12px]");
     expect(expenseItemsTable?.parentElement).toHaveClass("border-y");
     expect(expenseItemsTable?.parentElement).not.toHaveClass("border");
     expect(expenseItemsTable?.parentElement).toHaveClass("[border-bottom-style:dashed]", "[border-top-style:dashed]");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("text-center");
-    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("py-[4.5px]");
+    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("px-1", "py-1", "text-[11px]");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("[border-bottom-style:dashed]");
     expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
-    expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-1/4");
-    expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-1/6");
+    expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-[18%]");
+    expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-[34%]");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
     expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(5);
     expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(4);
@@ -741,8 +773,9 @@ describe("ExpenseResolutionPage", () => {
     const evidenceHeading = within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" });
     expect(evidenceHeading.nextElementSibling).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(evidenceHeading.nextElementSibling).not.toHaveClass("border");
+    expect(within(printDialog).getByText("증빙·확인근거")).toBeInTheDocument();
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
-    expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
+    expect(within(printDialog).getByText("작성자")).toHaveClass("text-[12px]");
     expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("text-[var(--color-stone)]");
     expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("justify-center", "text-center");
     expect(within(printDialog).getByText("작성자").parentElement).not.toHaveTextContent("사무장");

@@ -9,8 +9,8 @@ const routeDirectory = resolve(buildDirectory, "server/app/finance/expense-resol
 const staticDirectory = resolve(buildDirectory, "static");
 
 const budgets = {
-  // Bank-linked corporate-card authoring plus flexible three-person approval routing are part of the primary workspace.
-  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 371_500),
+  // Bank/card evidence explanations and the fixed A4 print presentation are part of the primary workspace.
+  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 373_000),
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 95_000),
   totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 107_000),
 };
