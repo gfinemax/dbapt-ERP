@@ -159,7 +159,7 @@ export const businessPartners: BusinessPartner[] = [
     code: "BP-0003",
     type: "매출",
     ownerType: "사업자",
-    name: "파인맥스 업무대행",
+    name: "오학동 업무대행",
     registrationNo: "345-67-89012",
     representative: "이대행",
     businessCategory: "업무대행",

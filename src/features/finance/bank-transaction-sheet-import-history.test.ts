@@ -16,13 +16,13 @@ describe("bank transaction sheet import history", () => {
       source_row_count: "76",
       source_sheet: "시트1",
       source_withdrawal_total: "489147570",
-    }, "파인맥스", {
+    }, "오학동", {
       erpTransactionCount: 76,
       googleSheetSourceCount: 19,
       ledgerSourceCount: 57,
       otherSourceCount: 0,
     })).toEqual({
-      actorLabel: "파인맥스",
+      actorLabel: "오학동",
       bankAccountId: "bank-10054",
       batchId: "batch-76",
       currentTransactionCount: 76,

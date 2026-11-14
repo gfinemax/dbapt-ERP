@@ -32,6 +32,8 @@ export type SupabaseBankTransactionRow = SupabaseBankTransactionInsert & {
 
 export type BankTransactionClassificationStatus = "UNREVIEWED" | "RECOMMENDED" | "CONFIRMED" | "DEFERRED" | "EXCLUDED";
 export type BankTransactionSourceReconciliationStatus = "SOURCE_REVIEW_REQUIRED";
+export type BankTransactionWorkflowStage = "결의서 작성 대기" | "결의서 작성중" | "승인대기" | "승인완료" | "전표확인" | "전표완료";
+export type BankTransactionAccountingResult = "전표 생성 완료" | "계좌대체" | "취소·환불 연결" | "확인 필요";
 export type FinancialActivityOrigin = "ALL" | "BANK_TRANSACTION" | "EXTERNAL_RECOGNITION";
 export type FinancialActivityCashImpact = "BANK_CASH" | "NON_CASH_RECOGNITION" | "TRUST_HELD";
 export type ExternalRecognitionKind = "FIXED_CERTIFICATE" | "GENERAL";
@@ -92,7 +94,9 @@ export type BankTransactionSourceCounts = Pick<
 >;
 
 export type BankTransactionListRow = BankTransactionReviewRow & {
+  accountingResult?: BankTransactionAccountingResult;
   accountingTreatment?: "confirmed_loss" | "trust_receipt" | "pending_review" | null;
+  accountReviewRequired?: boolean;
   actualFundAmount?: number;
   balanceAmount: number | null;
   branchName: string;
@@ -118,6 +122,9 @@ export type BankTransactionListRow = BankTransactionReviewRow & {
   transactionDetail?: string;
   uploadedAccountTitle?: string;
   uploadedCategory?: string;
+  voucherId?: string | null;
+  voucherNo?: string | null;
+  workflowStage?: BankTransactionWorkflowStage;
 };
 
 export type FinancialActivitySummary = {
@@ -594,9 +601,10 @@ export async function listBankTransactions(
   const bankSourceIds = (data ?? [])
     .filter((row) => row.origin_type === "BANK_TRANSACTION")
     .map((row) => row.source_record_id);
-  const [sheetOverrideMap, detailOverrideMap] = await Promise.all([
+  const [sheetOverrideMap, detailOverrideMap, processingStatusMap] = await Promise.all([
     loadLatestBankTransactionSheetOverrides(organizationId, bankSourceIds),
     loadBankTransactionDetailOverrides(organizationId, bankSourceIds),
+    loadBankTransactionProcessingStatuses(organizationId, bankSourceIds),
   ]);
   const rows = (data ?? []).map((row) => {
     const overrides = sheetOverrideMap.get(row.source_record_id) ?? [];
@@ -607,8 +615,11 @@ export async function listBankTransactions(
     const detailValue = (fieldName: BankTransactionDetailField) => detailOverrides.find((override) => override.fieldName === fieldName)?.value;
     const sourceMemo = memoOverride?.sourceValue ?? row.memo ?? "";
     const sourceUploadedCategory = categoryOverride?.sourceValue ?? row.uploaded_major_category ?? "";
+    const processingStatus = processingStatusMap.get(row.source_record_id);
     return ({
+    accountingResult: processingStatus?.accountingResult,
     accountingTreatment: row.accounting_treatment,
+    accountReviewRequired: processingStatus?.accountReviewRequired,
     actualFundAmount: Number(row.actual_fund_amount) || 0,
     amount: Number(row.activity_amount) || 0,
     balanceAmount: row.balance_amount === null ? null : Number(row.balance_amount),
@@ -653,6 +664,9 @@ export async function listBankTransactions(
     transactionKind: row.origin_type === "BANK_TRANSACTION" ? row.transaction_kind : null,
     uploadedAccountTitle: detailValue("UPLOADED_ACCOUNT_TITLE") ?? row.uploaded_account_title ?? "",
     uploadedCategory: detailValue("UPLOADED_CATEGORY") ?? sourceUploadedCategory,
+    voucherId: processingStatus?.voucherId,
+    voucherNo: processingStatus?.voucherNo,
+    workflowStage: processingStatus?.workflowStage,
   }); }) as BankTransactionListRow[];
   const totalCount = count ?? rows.length;
   return {
@@ -662,6 +676,41 @@ export async function listBankTransactions(
     totalCount,
     totalPages: Math.max(1, Math.ceil(totalCount / pageSize)),
   };
+}
+
+async function loadBankTransactionProcessingStatuses(
+  organizationId: string,
+  transactionIds: string[],
+) {
+  const result = new Map<string, {
+    accountingResult: BankTransactionAccountingResult;
+    accountReviewRequired: boolean;
+    voucherId: string | null;
+    voucherNo: string | null;
+    workflowStage: BankTransactionWorkflowStage;
+  }>();
+  if (!transactionIds.length) return result;
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return result;
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .from("bank_transaction_processing_status")
+    .select("bank_transaction_id,workflow_stage,accounting_result,voucher_id,voucher_no,account_review_required")
+    .eq("organization_id", organizationId)
+    .in("bank_transaction_id", transactionIds);
+  if (error) {
+    if (["42P01", "PGRST205"].includes(error.code ?? "")) return result;
+    throw new Error(`통장거래 처리상태를 불러오지 못했어: ${error.message}`);
+  }
+  for (const row of data ?? []) {
+    result.set(row.bank_transaction_id, {
+      accountingResult: row.accounting_result as BankTransactionAccountingResult,
+      accountReviewRequired: Boolean(row.account_review_required),
+      voucherId: row.voucher_id,
+      voucherNo: row.voucher_no,
+      workflowStage: row.workflow_stage as BankTransactionWorkflowStage,
+    });
+  }
+  return result;
 }
 
 async function loadBankTransactionDetailOverrides(
@@ -1141,6 +1190,24 @@ export async function confirmBankTransactionSubjects(
   });
   if (error) throw new Error(`은행거래 계정과목 확정에 실패했어: ${error.message}`);
   return data as Array<{ account_subject_id: string; transaction_id: string }>;
+}
+
+export async function refreshApprovedBankExpenseVouchers(
+  organizationId: string,
+  actorId: string,
+  transactionIds: string[],
+) {
+  if (!transactionIds.length) return { results: [] };
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.schema(bankTransactionRepositorySchema)
+    .rpc("refresh_bank_expense_vouchers_for_transactions", {
+      p_actor: actorId,
+      p_org: organizationId,
+      p_transaction_ids: transactionIds,
+    });
+  if (error) throw new Error(`확정 계정과목의 전표 반영에 실패했어: ${error.message}`);
+  return data as { results: Array<{ completed_count: number; linked_count: number; resolution_id: string; status: string }> };
 }
 
 export async function saveBankTransactionReview(
