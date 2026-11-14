@@ -3769,9 +3769,7 @@ export function ExpenseResolutionPage({
     }
 
     createPrintRecord(resolution.id, printPurpose);
-    if (printPurpose === "미리보기") {
-      setPrintPreviewTargetId(resolution.id);
-    }
+    setPrintPreviewTargetId(resolution.id);
   }
 
   function continuePrintAfterWarning() {
@@ -3780,9 +3778,7 @@ export function ExpenseResolutionPage({
     }
 
     createPrintRecord(printWarning.resolutionId, printWarning.mode);
-    if (printWarning.mode === "미리보기") {
-      setPrintPreviewTargetId(printWarning.resolutionId);
-    }
+    setPrintPreviewTargetId(printWarning.resolutionId);
     setPrintWarning(null);
   }
 
@@ -5310,7 +5306,7 @@ function blobToDataUrl(blob: Blob) {
   });
 }
 
-function ExpenseResolutionPrintPreviewModal({
+export function ExpenseResolutionPrintPreviewModal({
   createEvidenceDownloadUrl,
   onClose,
   resolution,

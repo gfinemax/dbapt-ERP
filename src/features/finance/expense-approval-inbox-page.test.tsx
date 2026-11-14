@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ExpenseApprovalInboxPage } from "./expense-approval-inbox-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
@@ -17,6 +18,25 @@ describe("ExpenseApprovalInboxPage", () => {
   it("keeps the inbox available when the remote data source is unavailable", () => {
     render(<ExpenseApprovalInboxPage dataLoadError="지출결의 저장소에 연결하지 못했습니다." initialResolutions={[]} />);
     expect(screen.getByRole("alert")).toHaveTextContent("지출결의 저장소에 연결하지 못했습니다.");
+  });
+
+  it("opens the shared A4 preview from both print menu actions", () => {
+    const resolution = expenseResolutionFixture({
+      id: "print-test",
+      resolutionNo: "지결-2026-0033",
+      subject: "1월 업무식대",
+      vendorName: "옛골식당",
+    });
+    render(<ExpenseApprovalInboxPage initialDetailId={resolution.id} initialResolutions={[resolution]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "A4 출력 미리보기" }));
+    expect(screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "출력 미리보기 닫기" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "보관용 PDF 생성" }));
+    expect(screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
   });
 
   it("persists approval through the server transition with an optimistic state guard", async () => {

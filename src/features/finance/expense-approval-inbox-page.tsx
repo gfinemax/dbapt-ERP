@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
   ExpenseResolutionDetailModal,
+  ExpenseResolutionPrintPreviewModal,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest } from "./expense-approval-workflow";
@@ -30,7 +31,7 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ viewer, budgetDataError, dataLoadError, initialResolutions, transitionApproval, embedded = false, initialDetailId }: { budgetDataError?: string; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
   const busy = useRef(false);
@@ -39,10 +40,12 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, dataLoadErro
   const [search, setSearch] = useState("");
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? []);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialDetailId ?? null);
+  const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
   const [rejectTargetId, setRejectTargetId] = useState<string | null>(null);
   const [rejectionReason, setRejectionReason] = useState("");
   const [workflowError, setWorkflowError] = useState("");
   const selectedDetail = selectedDetailId ? resolutions.find((resolution) => resolution.id === selectedDetailId) : undefined;
+  const printPreviewTarget = printPreviewTargetId ? resolutions.find((resolution) => resolution.id === printPreviewTargetId) : undefined;
   const rejectTarget = rejectTargetId ? resolutions.find((resolution) => resolution.id === rejectTargetId) : undefined;
 
   const myPending = resolutions.filter(r => viewer && canApproveExpense(r, viewer));
@@ -237,12 +240,20 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, dataLoadErro
           onClose={() => setSelectedDetailId(null)}
           onConfirmVoucher={() => undefined}
           onCreateVoucher={() => undefined}
-          onPrintArchive={() => undefined}
-          onPrintPreview={() => undefined}
+          onPrintArchive={() => setPrintPreviewTargetId(selectedDetail.id)}
+          onPrintPreview={() => setPrintPreviewTargetId(selectedDetail.id)}
           onProcessPayment={() => undefined}
           onReject={() => openRejectModal(selectedDetail.id)}
           onRequestApproval={() => undefined}
           resolution={selectedDetail}
+        />
+      ) : null}
+
+      {printPreviewTarget ? (
+        <ExpenseResolutionPrintPreviewModal
+          createEvidenceDownloadUrl={createEvidenceDownloadUrl}
+          onClose={() => setPrintPreviewTargetId(null)}
+          resolution={printPreviewTarget}
         />
       ) : null}
 
