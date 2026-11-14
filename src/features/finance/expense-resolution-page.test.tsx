@@ -803,7 +803,7 @@ describe("ExpenseResolutionPage", () => {
     expect(approvalTable?.querySelectorAll("col")[2]).toHaveClass("w-[67px]");
     expect(approvalTable?.querySelectorAll("col")[3]).toHaveClass("w-[67px]");
     expect(within(approvalTable as HTMLTableElement).getByText("서명란").closest("td")).toHaveClass("h-[58px]", "px-0.5", "py-0.5");
-    expect(approvalTable?.querySelector("td span:last-child")).toHaveClass("font-sans", "text-[9px]", "leading-tight", "tabular-nums");
+    expect(approvalTable?.querySelector("td span:last-child")).toHaveClass("expense-approval-timestamp", "text-[9px]", "leading-tight", "tabular-nums");
     expect(within(approvalTable as HTMLTableElement).getByText("규정상 생략")).toBeInTheDocument();
     expect(within(approvalTable as HTMLTableElement).getByText("최종결재")).toBeInTheDocument();
     expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveStyle({ display: "inline-flex", flexDirection: "column", gap: "10px" });

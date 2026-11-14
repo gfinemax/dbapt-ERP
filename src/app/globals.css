@@ -196,6 +196,11 @@
   text-orientation: mixed;
 }
 
+.expense-approval-timestamp {
+  font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-style: normal;
+}
+
 /* Ledger 외부 납입 인정 원장: 헤더와 값을 같은 축에 두고 열 간격을 조밀하게 유지한다. */
 #external-recognition-ledger-panel table {
   width: 100%;
