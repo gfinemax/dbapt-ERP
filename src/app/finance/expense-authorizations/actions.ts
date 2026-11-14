@@ -17,7 +17,6 @@ export async function bindExpenseAuthorization(input: {
   if (!input.author || input.steps.length !== expectedOrders.length || input.steps.some((step, index) => step.order !== expectedOrders[index] || !step.approver_user_id)) {
     throw new Error("현재 결재선의 작성자와 필수 결재 계정을 모두 연결해 주세요.");
   }
-  if (approverIds.includes(input.author)) throw new Error("작성자와 실제 결재자는 서로 다른 계정이어야 합니다.");
   if (new Set(approverIds).size !== approverIds.length) throw new Error("같은 계정을 여러 결재 순서에 중복 연결할 수 없습니다.");
   await commitExpenseCommand("BIND", input.id, input.expected, {
     author_user_id: input.author, steps: input.steps, reason: input.reason,

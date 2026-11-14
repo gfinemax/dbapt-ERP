@@ -22,8 +22,6 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
   const busy = useRef(false); const operationKey = useRef<string | null>(null);
   const eligible = members.filter(m => m.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p)));
   const duplicateApprovers = steps.some((id, index) => Boolean(id) && steps.indexOf(id) !== index);
-  const authorIsApprover = Boolean(author) && steps.includes(author);
-  const accountConflict = authorIsApprover || duplicateApprovers;
   const label = (id: string) => { const member = members.find(m => m.user_id === id); return member ? `${member.display_name} · ${member.user_id}` : "미연결"; };
   function changed() { setPreview(false); setMessage(""); operationKey.current = null; }
   function submit() {
@@ -40,12 +38,12 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
   }
   return <section className="mt-5 rounded-2xl border bg-white p-5"><h2 className="text-xl font-bold">{record.resolutionNo} · {record.subject || record.reason}</h2>
     <p className="mt-2">현재 상태: {record.approvalStatus} · 금액: {record.totalPaymentAmount.toLocaleString("ko-KR")}원</p>
-    <p className="mt-2 text-sm text-slate-600">기존 이름과 이력은 유지돼. 문서에 표시되는 3명 중 실제 결재가 필요한 계정만 연결해. 작성·생략·후열 표시는 계정 연결이나 승인 서명을 요구하지 않아.</p>
+    <p className="mt-2 text-sm text-slate-600">기존 이름과 이력은 유지돼. 작성자가 결재 순서에도 참여하면 같은 로그인 계정을 선택할 수 있어. 다만 같은 계정을 여러 결재 순서에 중복 연결할 수는 없어.</p>
     <fieldset disabled={pending} className="mt-4 space-y-4"><label className="block">작성자 계정 · 기존 표시: {record.author}<select className={field} value={author} onChange={e => { setAuthor(e.target.value); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>
       {record.approvalLine.map((step, index) => <label key={index} className="block">{index + 1}차 결재 계정 · 기존 표시: {step.approver} {step.role}<select className={field} value={steps[index]} onChange={e => { setSteps(current => current.map((value, i) => i === index ? e.target.value : value)); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>)}
       <label className="block">연결 확인 근거<textarea className={field} value={reason} onChange={e => { setReason(e.target.value); changed(); }} /></label>
-      {accountConflict ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700" role="alert">{authorIsApprover ? "작성자와 실제 결재자는 서로 다른 계정이어야 해." : "같은 계정을 여러 결재 순서에 중복 연결할 수 없어."}</p> : null}
-      <button className={button} disabled={!author || !steps.length || steps.some(s => !s) || !reason.trim() || accountConflict} onClick={() => setPreview(true)}>연결 내용 확인</button>
+      {duplicateApprovers ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700" role="alert">같은 계정을 여러 결재 순서에 중복 연결할 수 없어.</p> : null}
+      <button className={button} disabled={!author || !steps.length || steps.some(s => !s) || !reason.trim() || duplicateApprovers} onClick={() => setPreview(true)}>연결 내용 확인</button>
     </fieldset>
     {preview && <div className="mt-5 rounded-xl border bg-slate-50 p-4"><h3 className="font-bold">저장할 계정 연결</h3><p className="mt-2 break-all">작성자: {label(author)}</p>{steps.map((id, i) => <p className="mt-2 break-all" key={i}>{i + 1}차 결재자: {label(id)}</p>)}<p className="my-3">확인 근거: {reason}</p><button className={button} disabled={pending} onClick={submit}>{pending ? "저장 중…" : "확인한 계정 연결 저장"}</button></div>}
     <p role="status" className="my-3">{message}</p><Link className="underline" href={expenseResolutionHref({ resolutionId: record.id })}>기존 결의서 상세로 이동</Link>
