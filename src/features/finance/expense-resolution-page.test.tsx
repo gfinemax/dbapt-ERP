@@ -248,6 +248,39 @@ describe("ExpenseResolutionPage", () => {
     await waitFor(() => expect(requestApproval).toHaveBeenCalledOnce());
   });
 
+  it("keeps the next voucher action visible in the detail inspector", () => {
+    const createVoucher = vi.fn();
+    const confirmVoucher = vi.fn();
+    const baseProps = {
+      onApprove: () => undefined,
+      onClose: () => undefined,
+      onPrintArchive: () => undefined,
+      onPrintPreview: () => undefined,
+      onReject: () => undefined,
+      onRequestApproval: () => undefined,
+    };
+    const { rerender } = render(<ExpenseResolutionDetailModal
+      {...baseProps}
+      onConfirmVoucher={confirmVoucher}
+      onCreateVoucher={createVoucher}
+      resolution={expenseResolutionFixture({ approvalStatus: "승인완료", paymentStatus: "지급완료" })}
+    />);
+
+    const nextAction = screen.getByRole("region", { name: "다음 할 일" });
+    expect(within(nextAction).getByText("상단 단계는 상태 표시야.")).toBeInTheDocument();
+    fireEvent.click(within(nextAction).getByRole("button", { name: "전표초안 생성" }));
+    expect(createVoucher).toHaveBeenCalledOnce();
+
+    rerender(<ExpenseResolutionDetailModal
+      {...baseProps}
+      onConfirmVoucher={confirmVoucher}
+      onCreateVoucher={createVoucher}
+      resolution={expenseResolutionFixture({ approvalStatus: "승인완료", paymentStatus: "지급완료", voucherNo: "지출-2026-0001", voucherStatus: "전표초안" })}
+    />);
+    fireEvent.click(within(screen.getByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표확정" }));
+    expect(confirmVoucher).toHaveBeenCalledOnce();
+  });
+
   it("blocks approval requests and links to account setup when approver accounts are missing", () => {
     const requestApproval = vi.fn();
     render(<ExpenseResolutionDetailModal

@@ -4422,7 +4422,10 @@ function ExpenseResolutionDetailWorkspace({
   isApprovalActionPending,
   linkedApproval,
   onApprove,
+  onConfirmVoucher,
   onCreateFactConfirmation,
+  onCreateVoucher,
+  onProcessPayment,
   onReject,
   onRequestApproval,
   resolution,
@@ -4438,7 +4441,10 @@ function ExpenseResolutionDetailWorkspace({
   isApprovalActionPending: boolean;
   linkedApproval?: ApprovalDocumentCandidate;
   onApprove: () => void;
+  onConfirmVoucher?: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
+  onCreateVoucher?: () => void;
+  onProcessPayment?: () => void;
   onReject: () => void;
   onRequestApproval: () => void;
   resolution: ManagedExpenseResolution;
@@ -4456,6 +4462,15 @@ function ExpenseResolutionDetailWorkspace({
   const documentApprovalParticipants = getDocumentApprovalParticipants(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
+  const nextAction = resolution.approvalStatus !== "승인완료"
+    ? undefined
+    : resolution.paymentStatus !== "지급완료" && onProcessPayment
+      ? { label: "지급처리", onClick: onProcessPayment }
+      : !resolution.voucherNo && onCreateVoucher
+        ? { label: "전표초안 생성", onClick: onCreateVoucher }
+        : resolution.voucherStatus === "전표초안" && onConfirmVoucher
+          ? { label: "전표확정", onClick: onConfirmVoucher }
+          : undefined;
 
   const viewOptions: Array<{ label: string; value: ExpenseDetailView }> = [
     { label: "전체요약", value: "overview" },
@@ -4602,6 +4617,13 @@ function ExpenseResolutionDetailWorkspace({
       </main>
 
       <aside className="min-h-0 overflow-y-auto border-t border-[var(--color-soft-border)] bg-white p-4 xl:border-t-0 xl:border-l" aria-label="결재 및 예산 판단">
+        {nextAction ? (
+          <section aria-labelledby="expense-next-action-title" className="sticky top-0 z-10 mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 shadow-sm">
+            <h3 className="text-base font-black text-blue-950" id="expense-next-action-title">다음 할 일</h3>
+            <p className="mt-1 text-xs font-semibold text-blue-900">상단 단계는 상태 표시야.</p>
+            <Button className="mt-3 w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" onClick={nextAction.onClick}>{nextAction.label}</Button>
+          </section>
+        ) : null}
         <section aria-labelledby="approval-inspector-title">
           <h3 className="text-base font-black" id="approval-inspector-title">결재 진행</h3>
           {resolution.approvalParticipants?.length ? (
@@ -4652,7 +4674,7 @@ function ExpenseResolutionDetailWorkspace({
             {resolution.approvalStatus === "승인대기" && !canApprove ? (
               <p className="text-xs font-semibold leading-5 text-[var(--color-stone)]">현재 결재자는 <strong className="text-[var(--color-midnight-ink)]">{resolution.currentApprover ?? approvalLine.find((step) => step.status === "결재대기")?.approver ?? "지정 결재자"}</strong>입니다. 해당 결재자 계정에서 승인·반려할 수 있습니다.</p>
             ) : null}
-            {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">모든 결재가 완료되었습니다. 지급 단계로 진행할 수 있습니다.</p> : null}
+            {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">{resolution.paymentStatus === "지급완료" ? "모든 결재와 지급이 완료됐어. 전표 단계로 진행해." : "모든 결재가 완료됐어. 지급 단계로 진행해."}</p> : null}
             {actionError ? <p role="alert" className="mt-2 rounded-md bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700">{actionError}</p> : null}
           </div>
         </section>
@@ -4822,7 +4844,10 @@ export function ExpenseResolutionDetailModal({
             isApprovalActionPending={isApprovalActionPending}
             linkedApproval={linkedApproval}
             onApprove={() => { void handleApprove(); }}
+            onConfirmVoucher={onConfirmVoucher}
             onCreateFactConfirmation={onCreateFactConfirmation}
+            onCreateVoucher={onCreateVoucher}
+            onProcessPayment={onProcessPayment}
             onReject={handleReject}
             onRequestApproval={() => { void handleRequestApproval(); }}
             resolution={resolution}
