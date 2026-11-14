@@ -87,7 +87,10 @@ describe("explicit author and approver account binding", () => {
     expect(screen.getByLabelText(/3차 결재 계정/)).toHaveValue("");
     expect(screen.getByText(/자동 연결하지 못한 항목: 1차 장현제, 3차 안동연/)).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "계정 등록 화면 열기" })).toHaveAttribute("href", "/finance/reimbursements?tab=settings");
-    expect(screen.getByRole("button", { name: "연결 내용 확인" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "연결 내용 확인" }));
+    expect(screen.getByText("1차 결재자: 미연결")).toBeInTheDocument();
+    expect(screen.getByText("2차 결재자: 오학동 · secretary")).toBeInTheDocument();
+    expect(screen.getByText("3차 결재자: 미연결")).toBeInTheDocument();
   });
   it("opens a linked resolution immediately from its detail screen", () => {
     render(<ExpenseAuthorizationPage records={[record]} members={members} initialId="original" />);

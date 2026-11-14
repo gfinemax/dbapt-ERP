@@ -14,8 +14,8 @@ export async function bindExpenseAuthorization(input: {
   if (input.expected.id !== input.id || !input.reason.trim() || !input.key.trim()) throw new Error("연결할 원본과 확인 사유가 필요합니다.");
   const approverIds = input.steps.map((step) => step.approver_user_id);
   const expectedOrders = resolution.approvalLine.map((_, index) => index + 1);
-  if (!input.author || input.steps.length !== expectedOrders.length || input.steps.some((step, index) => step.order !== expectedOrders[index] || !step.approver_user_id)) {
-    throw new Error("현재 결재선의 작성자와 필수 결재 계정을 모두 연결해 주세요.");
+  if (!input.author || input.steps.some(step => !expectedOrders.includes(step.order) || !step.approver_user_id) || new Set(input.steps.map(step => step.order)).size !== input.steps.length) {
+    throw new Error("현재 결재선에서 확인된 작성자와 결재 계정을 연결해 주세요.");
   }
   if (new Set(approverIds).size !== approverIds.length) throw new Error("같은 계정을 여러 결재 순서에 중복 연결할 수 없습니다.");
   await commitExpenseCommand("BIND", input.id, input.expected, {

@@ -55,8 +55,8 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
     start(async () => {
       try {
         await bindExpenseAuthorization({ id: record.id, expected: record, version: record.authorization?.version ?? 0,
-          author, steps: steps.map((approver_user_id, i) => ({ order: i + 1, approver_user_id })), reason, key: operationKey.current! });
-        setMessage("계정 연결을 저장했어. 원본 금액과 과거 이력은 유지돼."); setPreview(false); router.refresh();
+          author, steps: steps.flatMap((approver_user_id, i) => approver_user_id ? [{ order: i + 1, approver_user_id }] : []), reason, key: operationKey.current! });
+        setMessage("확인된 계정 연결을 저장했어. 나머지 계정은 등록 후 이어서 연결할 수 있어."); setPreview(false); router.refresh();
       } catch (error) { setMessage(error instanceof Error ? error.message : "계정 연결을 저장하지 못했어."); }
       finally { busy.current = false; }
     });
@@ -71,7 +71,7 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
       {record.approvalLine.map((step, index) => <label key={index} className="block">{index + 1}차 결재 계정 · 기존 표시: {step.approver} {step.role}<select className={field} value={steps[index]} onChange={e => { setSteps(current => current.map((value, i) => i === index ? e.target.value : value)); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>)}
       <label className="block">연결 확인 근거<textarea className={field} value={reason} onChange={e => { setReason(e.target.value); changed(); }} /></label>
       {duplicateApprovers ? <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700" role="alert">같은 계정을 여러 결재 순서에 중복 연결할 수 없어.</p> : null}
-      <button className={button} disabled={!author || !steps.length || steps.some(s => !s) || !reason.trim() || duplicateApprovers} onClick={() => setPreview(true)}>연결 내용 확인</button>
+      <button className={button} disabled={!author || !reason.trim() || duplicateApprovers} onClick={() => setPreview(true)}>연결 내용 확인</button>
     </fieldset>
     {preview && <div className="mt-5 rounded-xl border bg-slate-50 p-4"><h3 className="font-bold">저장할 계정 연결</h3><p className="mt-2 break-all">작성자: {label(author)}</p>{steps.map((id, i) => <p className="mt-2 break-all" key={i}>{i + 1}차 결재자: {label(id)}</p>)}<p className="my-3">확인 근거: {reason}</p><button className={button} disabled={pending} onClick={submit}>{pending ? "저장 중…" : "확인한 계정 연결 저장"}</button></div>}
     <p role="status" className="my-3">{message}</p><Link className="underline" href={expenseResolutionHref({ resolutionId: record.id })}>기존 결의서 상세로 이동</Link>

@@ -85,3 +85,25 @@ it("stores only the required approval account after validating the current route
     steps: [{ order: 1, approver_user_id: "chair-user" }],
   }), "operation-key");
 });
+
+it("stores a verified partial approval binding while other accounts are unregistered", async () => {
+  const threeStepExpected = { id: "resolution-1", approvalLine: [
+    { approver: "장현제", order: 1, role: "이사", status: "대기" },
+    { approver: "오학동", order: 2, role: "사무국장", status: "대기" },
+    { approver: "안동연", order: 3, role: "조합장", status: "대기" },
+  ] } as never;
+  mocks.access.mockResolvedValueOnce({ resolution: threeStepExpected });
+  await bindExpenseAuthorization({
+    id: "resolution-1",
+    expected: threeStepExpected,
+    version: 0,
+    author: "secretary-user",
+    steps: [{ order: 2, approver_user_id: "secretary-user" }],
+    reason: "고유 이름이 일치하는 활성 로그인 계정 자동 지정",
+    key: "operation-key",
+  });
+  expect(mocks.commit).toHaveBeenCalledWith("BIND", "resolution-1", threeStepExpected, expect.objectContaining({
+    author_user_id: "secretary-user",
+    steps: [{ order: 2, approver_user_id: "secretary-user" }],
+  }), "operation-key");
+});
