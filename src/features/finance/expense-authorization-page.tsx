@@ -65,7 +65,7 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
     <p className="mt-2">현재 상태: {record.approvalStatus} · 금액: {record.totalPaymentAmount.toLocaleString("ko-KR")}원</p>
     <p className="mt-2 text-sm text-slate-600">기존 연결을 우선하고, 정확히 같은 이름의 활성 계정이 하나뿐이면 자동 선택해. 작성자가 결재 순서에도 참여하면 같은 로그인 계정을 사용할 수 있어.</p>
     {unresolved.length
-      ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">자동 연결하지 못한 항목: {unresolved.join(", ")}. 로그인 계정을 등록하거나 직접 선택해.</p>
+      ? <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">자동 연결하지 못한 항목: {unresolved.join(", ")}. 로그인 계정을 등록하거나 직접 선택해. <Link className="font-bold underline" href="/finance/reimbursements?tab=settings">계정 등록 화면 열기</Link></p>
       : <p className="mt-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">현재 결재선의 로그인 계정을 모두 선택했어. 연결 내용을 확인해.</p>}
     <fieldset disabled={pending} className="mt-4 space-y-4"><label className="block">작성자 계정 · 기존 표시: {record.author}<select className={field} value={author} onChange={e => { setAuthor(e.target.value); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>
       {record.approvalLine.map((step, index) => <label key={index} className="block">{index + 1}차 결재 계정 · 기존 표시: {step.approver} {step.role}<select className={field} value={steps[index]} onChange={e => { setSteps(current => current.map((value, i) => i === index ? e.target.value : value)); changed(); }}><option value="">직접 선택</option>{eligible.map(m => <option key={m.user_id} value={m.user_id}>{label(m.user_id)}</option>)}</select></label>)}
@@ -78,8 +78,8 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
   </section>;
 }
 
-export function ExpenseAuthorizationPage({ records, members }: { records: ManagedExpenseResolution[]; members: Member[] }) {
-  const [id, setId] = useState(""); const record = records.find(r => r.id === id);
+export function ExpenseAuthorizationPage({ records, members, initialId }: { records: ManagedExpenseResolution[]; members: Member[]; initialId?: string }) {
+  const [id, setId] = useState(records.some(record => record.id === initialId) ? initialId! : ""); const record = records.find(r => r.id === id);
   return <div><h1 className="text-2xl font-bold">작성자·결재선 계정 연결</h1><p className="mt-3">기존 연결을 우선하고, 정확히 같은 이름의 활성 로그인 계정이 하나일 때만 자동 선택해. 동명이인과 미등록 계정은 직접 확인해.</p>
     <label className="mt-4 block">지출결의 원본<select className={field} value={id} onChange={e => setId(e.target.value)}><option value="">원본 선택</option>{records.map(r => <option key={r.id} value={r.id}>{r.resolutionNo} · {r.subject || r.reason}</option>)}</select></label>
     {record && <BindingForm key={`${record.id}:${record.authorization?.version ?? 0}`} record={record} members={members} />}

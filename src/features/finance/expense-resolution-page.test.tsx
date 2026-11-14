@@ -197,7 +197,7 @@ describe("ExpenseResolutionPage", () => {
     />);
 
     expect(screen.getByText("작성자 연결됨 · 결재자 0/3명")).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "계정 연결 화면 열기" })).toHaveAttribute("href", "/finance/expense-authorizations");
+    expect(screen.getByRole("link", { name: "계정 연결 화면 열기" })).toHaveAttribute("href", `/finance/expense-authorizations?id=${encodeURIComponent("fixture-resolution")}`);
     expect(screen.getByRole("button", { name: "계정 연결 필요" })).toBeDisabled();
     expect(requestApproval).not.toHaveBeenCalled();
   });

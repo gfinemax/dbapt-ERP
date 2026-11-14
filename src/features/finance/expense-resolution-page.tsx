@@ -4600,7 +4600,7 @@ function ExpenseResolutionDetailWorkspace({
                   <p className="font-black">승인요청 전 계정 연결이 필요합니다.</p>
                   <p className="mt-1 font-semibold">작성자 {authorization.authorLinked ? "연결됨" : "미연결"} · 결재자 {authorization.linkedApproverCount}/{authorization.expectedApproverCount}명</p>
                   <p className="mt-1">결재자 로그인 계정을 등록한 뒤 각 결재 순서에 연결해 주세요.</p>
-                  <Link className="mt-2 inline-flex rounded-md border border-amber-300 bg-white px-2.5 py-1 font-black text-amber-950 hover:bg-amber-100" href="/finance/expense-authorizations">계정 연결 화면 열기</Link>
+                  <Link className="mt-2 inline-flex rounded-md border border-amber-300 bg-white px-2.5 py-1 font-black text-amber-950 hover:bg-amber-100" href={`/finance/expense-authorizations?id=${encodeURIComponent(resolution.id)}`}>계정 연결 화면 열기</Link>
                 </div>
               )
             ) : null}
