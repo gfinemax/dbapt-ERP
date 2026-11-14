@@ -4150,9 +4150,9 @@ export function ExpenseResolutionPage({
                               </button>
                             ) : null}
                             {resolution.voucherStatus === "전표확정" ? (
-                              <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" type="button">
+                              <a className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" href={`/finance?resolutionId=${resolution.id}`}>
                                 전표보기
-                              </button>
+                              </a>
                             ) : null}
                           </div>
                         </td>
@@ -4258,6 +4258,7 @@ export function ExpenseResolutionPage({
           onReject={() => rejectResolution(selectedDetail.id)}
           onRequestApproval={() => requestApproval(selectedDetail.id)}
           resolution={selectedDetail}
+          voucherHref={`/finance?resolutionId=${selectedDetail.id}`}
         />
       ) : null}
 
@@ -4749,6 +4750,7 @@ export function ExpenseResolutionDetailModal({
   onReject,
   onRequestApproval,
   resolution,
+  voucherHref,
 }: {
   actionError?: string;
   budgetDataError?: string;
@@ -4769,6 +4771,7 @@ export function ExpenseResolutionDetailModal({
   onReject: () => void;
   onRequestApproval: () => boolean | void | Promise<boolean | void>;
   resolution: ManagedExpenseResolution;
+  voucherHref?: string;
 }) {
   const evidenceRows = getEvidenceRows(resolution);
   const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
@@ -5227,7 +5230,7 @@ export function ExpenseResolutionDetailModal({
             </Button>
           ) : null}
           {resolution.voucherStatus === "전표확정" ? (
-            <><Button className="rounded-full" variant="outline">전표보기</Button>{onCancelVoucher ? <Button className="rounded-full text-red-700" onClick={onCancelVoucher} variant="outline">전표취소</Button> : null}</>
+            <>{voucherHref ? <a className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-white px-4 text-sm font-semibold" href={voucherHref}>전표보기</a> : null}{onCancelVoucher ? <Button className="rounded-full text-red-700" onClick={onCancelVoucher} variant="outline">전표취소</Button> : null}</>
           ) : null}
           {resolution.approvalStatus === "반려" && onEdit ? (
             <Button className="rounded-full" onClick={onEdit} variant="outline">

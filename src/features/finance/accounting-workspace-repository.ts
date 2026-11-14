@@ -38,6 +38,21 @@ export async function loadAccountingWorkspace(): Promise<AccountingWorkspace> {
   return { vouchers: data.vouchers, accounts: data.accounts, sources: data.sources, viewer: { permissions: [...member.permissions] }, policy: { confirmation_enabled: true } };
 }
 
+export async function findAccountingVoucherIdByResolutionId(resolutionId: string): Promise<string | null> {
+  const member = await requireReimbursementIdentity();
+  if (!member.active || !member.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "CLOSE", "SENIOR"].includes(p))) throw new Error("회계 자료 조회 권한이 필요합니다.");
+  const { data, error } = await reimbursementDb().schema("finance").from("vouchers")
+    .select("id")
+    .eq("organization_id", member.organization_id)
+    .eq("expense_resolution_id", resolutionId)
+    .is("deleted_at", null)
+    .order("voucher_no", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(`연결 전표 조회 실패: ${error.message}`);
+  return data?.id ?? null;
+}
+
 export async function confirmAccountingDrafts(input: AccountingBatchConfirmationInput, operationKey: string): Promise<AccountingBatchConfirmationResult> {
   const member = await requireReimbursementIdentity();
   if (!member.active || !hasReimbursementPermission(member, "APPROVE")) throw new Error("전표 일괄 확정 권한이 필요합니다.");

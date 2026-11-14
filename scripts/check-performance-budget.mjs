@@ -9,8 +9,8 @@ const routeDirectory = resolve(buildDirectory, "server/app/finance/expense-resol
 const staticDirectory = resolve(buildDirectory, "static");
 
 const budgets = {
-  // Bank/card evidence explanations and measured A4 row pagination are part of the primary workspace.
-  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 377_000),
+  // Bank/card evidence, measured A4 pagination, and linked voucher navigation are part of the primary workspace.
+  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 377_250),
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 95_000),
   totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 107_000),
 };

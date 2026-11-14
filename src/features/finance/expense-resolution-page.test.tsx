@@ -279,6 +279,13 @@ describe("ExpenseResolutionPage", () => {
     />);
     fireEvent.click(within(screen.getByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표확정" }));
     expect(confirmVoucher).toHaveBeenCalledOnce();
+
+    rerender(<ExpenseResolutionDetailModal
+      {...baseProps}
+      resolution={expenseResolutionFixture({ approvalStatus: "승인완료", paymentStatus: "지급완료", voucherNo: "지출-2026-0001", voucherStatus: "전표확정" })}
+      voucherHref="/finance?resolutionId=resolution-id"
+    />);
+    expect(screen.getByRole("link", { name: "전표보기" })).toHaveAttribute("href", "/finance?resolutionId=resolution-id");
   });
 
   it("blocks approval requests and links to account setup when approver accounts are missing", () => {

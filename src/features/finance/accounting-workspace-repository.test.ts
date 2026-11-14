@@ -1,12 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReimbursementMember } from "./reimbursement-domain";
-const mocks = vi.hoisted(() => ({ identity: vi.fn(), rpc: vi.fn(), db: vi.fn() }));
+const mocks = vi.hoisted(() => ({ db: vi.fn(), eq: vi.fn(), from: vi.fn(), identity: vi.fn(), is: vi.fn(), limit: vi.fn(), maybeSingle: vi.fn(), order: vi.fn(), rpc: vi.fn(), select: vi.fn() }));
 vi.mock("./reimbursement-auth", () => ({ requireReimbursementIdentity: mocks.identity }));
 vi.mock("./reimbursement-repository", () => ({ reimbursementDb: mocks.db }));
-import { assertLegacyVoucherEditable, confirmAccountingDrafts, loadAccountingWorkspace, runAccountingCommand, type AccountingCommand } from "./accounting-workspace-repository";
+import { assertLegacyVoucherEditable, confirmAccountingDrafts, findAccountingVoucherIdByResolutionId, loadAccountingWorkspace, runAccountingCommand, type AccountingCommand } from "./accounting-workspace-repository";
 const member: ReimbursementMember = { organization_id: "verified-org", user_id: "verified-user", display_name: "담당자", permissions: ["APPROVE"], active: true };
 const input = { source_kind: "RECOGNITION", source_id: "tx", source_signature: "snapshot-signature", voucher_date: "2026-03-01", lines: [] };
-beforeEach(() => { vi.clearAllMocks(); mocks.identity.mockResolvedValue(member); mocks.db.mockReturnValue({ schema: () => ({ rpc: mocks.rpc }) }); mocks.rpc.mockResolvedValue({ data: { id: "voucher", lock_version: 1 }, error: null }); });
+beforeEach(() => {
+  vi.clearAllMocks();
+  const query = { eq: mocks.eq, from: mocks.from, is: mocks.is, limit: mocks.limit, maybeSingle: mocks.maybeSingle, order: mocks.order, rpc: mocks.rpc, select: mocks.select };
+  for (const method of [mocks.eq, mocks.from, mocks.is, mocks.limit, mocks.order, mocks.select]) method.mockReturnValue(query);
+  mocks.identity.mockResolvedValue(member);
+  mocks.db.mockReturnValue({ schema: () => query });
+  mocks.rpc.mockResolvedValue({ data: { id: "voucher", lock_version: 1 }, error: null });
+  mocks.maybeSingle.mockResolvedValue({ data: { id: "first-voucher" }, error: null });
+});
 describe("accounting draft service boundary", () => {
   it("checks legacy mutation access with Auth scope before the original record is written", async () => {
     await assertLegacyVoucherEditable("original-text-id");
@@ -61,6 +69,12 @@ describe("accounting draft service boundary", () => {
     expect(result.viewer.permissions).toEqual(["APPROVE"]);
     expect(result.policy.confirmation_enabled).toBe(true);
     expect(mocks.rpc).toHaveBeenCalledWith("accounting_workspace", { p_org: member.organization_id, p_actor: member.user_id });
+  });
+  it("resolves the first organization-scoped voucher from a resolution id", async () => {
+    await expect(findAccountingVoucherIdByResolutionId("resolution-1")).resolves.toBe("first-voucher");
+    expect(mocks.eq).toHaveBeenCalledWith("organization_id", member.organization_id);
+    expect(mocks.eq).toHaveBeenCalledWith("expense_resolution_id", "resolution-1");
+    expect(mocks.order).toHaveBeenCalledWith("voucher_no", { ascending: true });
   });
   it("confirms a validated batch with the verified actor and organization", async () => {
     mocks.rpc.mockResolvedValue({ data: { confirmed_count: 1, confirmed_ids: ["voucher"] }, error: null });

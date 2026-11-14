@@ -285,6 +285,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
           onReject={() => openRejectModal(selectedDetail.id)}
           onRequestApproval={() => undefined}
           resolution={selectedDetail}
+          voucherHref={`/finance?resolutionId=${selectedDetail.id}`}
         />
       ) : null}
 
