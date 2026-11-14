@@ -78,7 +78,7 @@ describe("ExpenseResolutionPage", () => {
       ...batchExpenseItem(1, 18_000),
       description: "2026-01-07 옛골식당 업무식대 · 조합계좌 출금 원본 연결",
       memo: "참석 2명",
-    })).toBe("업무식대\n조합계좌 출금 원본 연결\n사무국 업무 수행\n참석 2명");
+    })).toBe("업무식대\n조합계좌 출금 원본 연결");
   });
   beforeEach(() => {
     localStorage.clear();

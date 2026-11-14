@@ -1038,7 +1038,9 @@ export function getExpensePrintItemDescription(item: BatchExpenseItem) {
   for (const prefix of [item.expenseDate, item.vendorName, item.itemTitle]) {
     if (prefix && detail.startsWith(prefix)) detail = detail.slice(prefix.length).trim().replace(/^[·\-–—\s]+/, "");
   }
-  return Array.from(new Set([item.itemTitle, detail, item.businessPurpose, item.memo].map((value) => value.trim()).filter(Boolean))).join("\n") || "-";
+  const primaryDescription = Array.from(new Set([item.itemTitle, detail].map((value) => value.trim()).filter(Boolean)));
+  if (primaryDescription.length > 0) return primaryDescription.join("\n");
+  return item.businessPurpose.trim() || item.memo.trim() || "-";
 }
 
 function calculateBatchExpenseItem(item: BatchExpenseItem): BatchExpenseItem {
