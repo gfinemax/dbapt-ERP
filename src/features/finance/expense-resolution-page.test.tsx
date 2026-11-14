@@ -138,6 +138,26 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText(/실제 지출일이 없는 결의서는 월 검색에서 제외/)).toBeInTheDocument();
   });
 
+  it("sorts the resolution content column by actual expense date and keeps missing dates last", () => {
+    render(<ExpenseResolutionPage initialResolutions={[
+      expenseResolutionFixture({ actualExpenseDate: "2026-01-12", id: "later", resolutionNo: "TEST-2026-0012" }),
+      expenseResolutionFixture({ actualExpenseDate: undefined, id: "missing", resolutionNo: "TEST-2026-9999" }),
+      expenseResolutionFixture({ actualExpenseDate: "2026-01-08", id: "earlier", resolutionNo: "TEST-2026-0008" }),
+    ]} />);
+    const list = screen.getByRole("table", { name: "지출결의서 목록" });
+    const listedNumbers = () => within(list).getAllByRole("button")
+      .map((button) => button.textContent ?? "")
+      .filter((label) => label.startsWith("TEST-"));
+
+    fireEvent.click(screen.getByRole("button", { name: "결의내용을 실제 지출일 오래된순으로 정렬" }));
+    expect(listedNumbers()).toEqual(["TEST-2026-0008", "TEST-2026-0012", "TEST-2026-9999"]);
+    expect(screen.getByRole("columnheader", { name: /결의내용/ })).toHaveAttribute("aria-sort", "ascending");
+
+    fireEvent.click(screen.getByRole("button", { name: "결의내용을 실제 지출일 최신순으로 정렬" }));
+    expect(listedNumbers()).toEqual(["TEST-2026-0012", "TEST-2026-0008", "TEST-2026-9999"]);
+    expect(screen.getByRole("columnheader", { name: /결의내용/ })).toHaveAttribute("aria-sort", "descending");
+  });
+
   it("shows an approval-focused single-expense detail workspace", async () => {
     render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ budgetOverReason: undefined, totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
 
@@ -330,7 +350,7 @@ describe("ExpenseResolutionPage", () => {
 
   it("shows the server total and navigates between result pages", () => {
     render(<ExpenseResolutionPage
-      initialListPage={{ page: 2, pageSize: 50, query: "", total: 120, totalPages: 3 }}
+      initialListPage={{ month: "", page: 2, pageSize: 50, query: "", sort: "updated_desc", total: 120, totalPages: 3 }}
       initialResolutions={[expenseResolutionFixture({ id: "page-2", resolutionNo: "지결-2026-0051" })]}
     />);
 
@@ -340,9 +360,19 @@ describe("ExpenseResolutionPage", () => {
     expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?page=3");
   });
 
+  it("restarts server pagination and preserves the month when expense-date sorting changes", () => {
+    render(<ExpenseResolutionPage
+      initialListPage={{ month: "2026-01", page: 2, pageSize: 50, query: "", sort: "updated_desc", total: 120, totalPages: 3 }}
+      initialResolutions={[expenseResolutionFixture({ actualExpenseDate: "2026-01-08", id: "page-2", resolutionNo: "지결-2026-0051" })]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "결의내용을 실제 지출일 오래된순으로 정렬" }));
+    expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?month=2026-01&sort=expense_date_asc");
+  });
+
   it("uses the server-wide next number when creating from a paginated result", async () => {
     render(<ExpenseResolutionPage
-      initialListPage={{ page: 2, pageSize: 50, query: "", total: 120, totalPages: 3 }}
+      initialListPage={{ month: "", page: 2, pageSize: 50, query: "", sort: "updated_desc", total: 120, totalPages: 3 }}
       initialNextResolutionNo="지결-2026-0121"
       initialResolutions={[expenseResolutionFixture({ id: "page-2", resolutionNo: "지결-2026-0051" })]}
     />);

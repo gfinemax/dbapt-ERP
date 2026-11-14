@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
-import { expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage } from "./expense-resolution-list";
+import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 import type { ExpenseBudgetDecisionSnapshot } from "./expense-resolution-budget-view";
@@ -2289,6 +2289,21 @@ function getResolutionTabItems(resolutions: ManagedExpenseResolution[], viewer?:
   ];
 }
 
+export function sortExpenseResolutionsByExpenseDate(resolutions: ManagedExpenseResolution[], sort: ExpenseResolutionSort) {
+  if (sort === defaultExpenseResolutionSort) return resolutions;
+  const direction = sort === "expense_date_asc" ? 1 : -1;
+  return [...resolutions].sort((left, right) => {
+    const leftDate = left.actualExpenseDate ?? "";
+    const rightDate = right.actualExpenseDate ?? "";
+    if (!leftDate && rightDate) return 1;
+    if (leftDate && !rightDate) return -1;
+    const dateDifference = leftDate.localeCompare(rightDate) * direction;
+    if (dateDifference) return dateDifference;
+    const numberDifference = left.resolutionNo.localeCompare(right.resolutionNo, "ko-KR") * direction;
+    return numberDifference || left.id.localeCompare(right.id) * direction;
+  });
+}
+
 export function ExpenseResolutionPage({
   viewer,
   createEvidenceDownloadUrl,
@@ -2375,6 +2390,7 @@ export function ExpenseResolutionPage({
   const [activeTab, setActiveTab] = useState<ResolutionTabKey>("all");
   const [searchQuery, setSearchQuery] = useState(initialListPage?.query ?? "");
   const [monthFilter, setMonthFilter] = useState(initialListPage?.month ?? "");
+  const [sortOrder, setSortOrder] = useState<ExpenseResolutionSort>(initialListPage?.sort ?? defaultExpenseResolutionSort);
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [isListNavigationPending, startListNavigation] = useTransition();
   const [approvalFilter, setApprovalFilter] = useState("");
@@ -2468,7 +2484,10 @@ export function ExpenseResolutionPage({
     pettyCashBatch: pettyCashBatchFilter,
     query: clientSearchQuery,
   });
-  const visibleResolutions = resolutionsAfterFilters.filter((resolution) => !monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter);
+  const visibleResolutions = sortExpenseResolutionsByExpenseDate(
+    resolutionsAfterFilters.filter((resolution) => !monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter),
+    sortOrder,
+  );
   const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
   const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
   const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
@@ -3828,9 +3847,9 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
   }
 
-  function navigateList(page: number, query = initialListPage?.query ?? "", month = monthFilter) {
+  function navigateList(page: number, query = initialListPage?.query ?? "", month = monthFilter, sort = sortOrder) {
     if (!initialListPage) return;
-    startListNavigation(() => router.push(expenseResolutionListHref(page, query, month)));
+    startListNavigation(() => router.push(expenseResolutionListHref(page, query, month, sort)));
   }
 
   function submitListSearch(event: FormEvent<HTMLFormElement>) {
@@ -3841,7 +3860,13 @@ export function ExpenseResolutionPage({
   function changeResolutionMonth(value: string) {
     const month = normalizeFinanceMonth(value);
     setMonthFilter(month);
-    if (initialListPage) navigateList(1, searchQuery, month);
+    if (initialListPage) navigateList(1, searchQuery, month, sortOrder);
+  }
+
+  function toggleExpenseDateSort() {
+    const nextSort = sortOrder === "expense_date_asc" ? "expense_date_desc" : "expense_date_asc";
+    setSortOrder(nextSort);
+    if (initialListPage) navigateList(1, searchQuery, monthFilter, nextSort);
   }
 
   return (
@@ -3951,7 +3976,7 @@ export function ExpenseResolutionPage({
                   <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-[var(--color-midnight-ink)] outline-none" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 프로젝트, 작성자 검색" value={searchQuery} />
                 </label>
                 {initialListPage ? <button className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={isListNavigationPending} type="submit">검색</button> : null}
-                {initialListPage?.query ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, "", monthFilter); }} type="button">검색 초기화</button> : null}
+                {initialListPage?.query ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, "", monthFilter, sortOrder); }} type="button">검색 초기화</button> : null}
                 {monthFilter ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => changeResolutionMonth("")} type="button">전체 기간</button> : null}
               </form>
               <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
@@ -4026,7 +4051,20 @@ export function ExpenseResolutionPage({
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
                     <th className="w-[180px] px-4 py-3 text-left">결의정보</th>
-                    <th className="px-4 py-3 text-left">결의내용</th>
+                    <th aria-sort={sortOrder === "expense_date_asc" ? "ascending" : sortOrder === "expense_date_desc" ? "descending" : "none"} className="px-4 py-3 text-left">
+                      <button
+                        aria-label={sortOrder === "expense_date_asc" ? "결의내용을 실제 지출일 최신순으로 정렬" : "결의내용을 실제 지출일 오래된순으로 정렬"}
+                        className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-semibold hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-deep-cobalt)]"
+                        disabled={isListNavigationPending}
+                        onClick={toggleExpenseDateSort}
+                        type="button"
+                      >
+                        결의내용
+                        <span aria-hidden="true" className="text-[10px] text-[var(--color-stone)]">
+                          {sortOrder === "expense_date_asc" ? "지출일 ↑" : sortOrder === "expense_date_desc" ? "지출일 ↓" : "↕"}
+                        </span>
+                      </button>
+                    </th>
                     <th className="w-[180px] px-4 py-3 text-left">거래처</th>
                     <th className="w-[140px] px-4 py-3 text-right">지급금액</th>
                     <th className="sticky right-[150px] z-20 w-[190px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left">진행상태</th>

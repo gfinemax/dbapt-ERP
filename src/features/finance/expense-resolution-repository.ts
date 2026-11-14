@@ -261,8 +261,21 @@ export async function listExpenseResolutionPageFromSupabase(
       .gte("actual_expense_date", `${request.month}-01`)
       .lt("actual_expense_date", `${nextFinanceMonth(request.month)}-01`);
   }
+  const orderedQuery = request.sort === "expense_date_asc"
+    ? query
+      .order("actual_expense_date", { ascending: true, nullsFirst: false })
+      .order("resolution_no", { ascending: true })
+      .order("id", { ascending: true })
+    : request.sort === "expense_date_desc"
+      ? query
+        .order("actual_expense_date", { ascending: false, nullsFirst: false })
+        .order("resolution_no", { ascending: false })
+        .order("id", { ascending: false })
+      : query
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false });
   const [pageResult, nextResolutionNo] = await Promise.all([
-    query.order("updated_at", { ascending: false }).range(offset, offset + request.pageSize - 1),
+    orderedQuery.range(offset, offset + request.pageSize - 1),
     getNextExpenseResolutionNo(supabase, actor.organization_id),
   ]);
   const { data, error, count } = pageResult;
@@ -287,6 +300,7 @@ export async function listExpenseResolutionPageFromSupabase(
       pageSize: request.pageSize,
       month: request.month,
       query: request.query,
+      sort: request.sort,
       total,
       totalPages: Math.max(1, Math.ceil(total / request.pageSize)),
     },

@@ -3,6 +3,7 @@ import {
   expenseResolutionListHref,
   expenseResolutionListPageSize,
   getExpenseResolutionSearchPattern,
+  normalizeExpenseResolutionSort,
   parseExpenseResolutionListRequest,
 } from "./expense-resolution-list";
 
@@ -17,11 +18,13 @@ describe("expense resolution list navigation", () => {
       page: 1,
       pageSize: expenseResolutionListPageSize,
       query: "복사용지",
+      sort: "updated_desc",
     });
     expect(parseExpenseResolutionListRequest({ page: "20000", q: "가".repeat(120) })).toMatchObject({
       month: "",
       page: 10_000,
       query: "가".repeat(100),
+      sort: "updated_desc",
     });
   });
 
@@ -40,5 +43,12 @@ describe("expense resolution list navigation", () => {
     expect(parseExpenseResolutionListRequest({ month: "2026-13" })).toMatchObject({ month: "" });
     expect(expenseResolutionListHref(1, "옛골식당", "2026-01"))
       .toBe("/finance/expense-resolutions?q=%EC%98%9B%EA%B3%A8%EC%8B%9D%EB%8B%B9&month=2026-01");
+  });
+
+  it("validates and preserves the expense-date sort order", () => {
+    expect(parseExpenseResolutionListRequest({ sort: "expense_date_asc" })).toMatchObject({ sort: "expense_date_asc" });
+    expect(normalizeExpenseResolutionSort("unknown")).toBe("updated_desc");
+    expect(expenseResolutionListHref(1, "옛골식당", "2026-01", "expense_date_desc"))
+      .toBe("/finance/expense-resolutions?q=%EC%98%9B%EA%B3%A8%EC%8B%9D%EB%8B%B9&month=2026-01&sort=expense_date_desc");
   });
 });
