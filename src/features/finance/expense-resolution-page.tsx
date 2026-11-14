@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
-import { expenseResolutionListHref, type ExpenseResolutionListPage } from "./expense-resolution-list";
+import { expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage } from "./expense-resolution-list";
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 import type { ExpenseBudgetDecisionSnapshot } from "./expense-resolution-budget-view";
@@ -2374,6 +2374,7 @@ export function ExpenseResolutionPage({
   const [evidenceOcrProgress, setEvidenceOcrProgress] = useState<Record<string, EvidenceOcrJobProgress>>({});
   const [activeTab, setActiveTab] = useState<ResolutionTabKey>("all");
   const [searchQuery, setSearchQuery] = useState(initialListPage?.query ?? "");
+  const [monthFilter, setMonthFilter] = useState(initialListPage?.month ?? "");
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const [isListNavigationPending, startListNavigation] = useTransition();
   const [approvalFilter, setApprovalFilter] = useState("");
@@ -2451,7 +2452,7 @@ export function ExpenseResolutionPage({
   const tabItems = getResolutionTabItems(resolutions, viewer);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
   const clientSearchQuery = initialListPage && deferredSearchQuery === initialListPage.query ? "" : deferredSearchQuery;
-  const visibleResolutions = filterExpenseResolutions(activeTabItem.resolutions, {
+  const resolutionsAfterFilters = filterExpenseResolutions(activeTabItem.resolutions, {
     approvalStatus: approvalFilter,
     dateFrom: dateFromFilter,
     dateTo: dateToFilter,
@@ -2467,6 +2468,7 @@ export function ExpenseResolutionPage({
     pettyCashBatch: pettyCashBatchFilter,
     query: clientSearchQuery,
   });
+  const visibleResolutions = resolutionsAfterFilters.filter((resolution) => !monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter);
   const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
   const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
   const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
@@ -3826,14 +3828,20 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
   }
 
-  function navigateList(page: number, query = initialListPage?.query ?? "") {
+  function navigateList(page: number, query = initialListPage?.query ?? "", month = monthFilter) {
     if (!initialListPage) return;
-    startListNavigation(() => router.push(expenseResolutionListHref(page, query)));
+    startListNavigation(() => router.push(expenseResolutionListHref(page, query, month)));
   }
 
   function submitListSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (initialListPage) navigateList(1, searchQuery);
+  }
+
+  function changeResolutionMonth(value: string) {
+    const month = normalizeFinanceMonth(value);
+    setMonthFilter(month);
+    if (initialListPage) navigateList(1, searchQuery, month);
   }
 
   return (
@@ -3933,13 +3941,18 @@ export function ExpenseResolutionPage({
         <section className="flex flex-col gap-6">
           <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
             <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <form className="flex min-w-0 gap-2 xl:w-[520px]" onSubmit={submitListSearch}>
+              <form className="flex min-w-0 flex-1 flex-wrap gap-2 xl:max-w-[760px]" onSubmit={submitListSearch}>
+                <label className="min-w-[170px] text-xs font-semibold text-[var(--color-stone)]">
+                  실제 지출월
+                  <input aria-label="지출결의 실제 지출월" className="mt-1 w-full rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-midnight-ink)]" onChange={(event) => changeResolutionMonth(event.target.value)} type="month" value={monthFilter} />
+                </label>
                 <label className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)]">
                   <Search className="size-4 shrink-0" />
                   <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-[var(--color-midnight-ink)] outline-none" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 프로젝트, 작성자 검색" value={searchQuery} />
                 </label>
                 {initialListPage ? <button className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={isListNavigationPending} type="submit">검색</button> : null}
-                {initialListPage?.query ? <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, ""); }} type="button">초기화</button> : null}
+                {initialListPage?.query ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, "", monthFilter); }} type="button">검색 초기화</button> : null}
+                {monthFilter ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => changeResolutionMonth("")} type="button">전체 기간</button> : null}
               </form>
               <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
                 현재 사용자: {currentUserName}
@@ -3998,9 +4011,10 @@ export function ExpenseResolutionPage({
               <div>
                 <h2 className="text-lg font-bold">지출결의서 목록</h2>
                 <p className="mt-1 text-sm text-[var(--color-stone)]">
-                  {activeTabItem.label} 기준 {visibleResolutions.length}건
+                  {formatFinanceMonth(monthFilter)} · {activeTabItem.label} 기준 {visibleResolutions.length}건
                   {initialListPage ? ` · 전체 ${initialListPage.total}건 · ${initialListPage.page}/${initialListPage.totalPages} 페이지` : ""}
                 </p>
+                {monthFilter ? <p className="mt-1 text-xs text-[var(--color-stone)]">실제 지출일 기준이며, 실제 지출일이 없는 결의서는 월 검색에서 제외됩니다.</p> : null}
               </div>
               <Button className="rounded-full" onClick={exportAllExpenseResolutions} size="sm" variant="outline">
                 <FileSpreadsheet className="size-4" />

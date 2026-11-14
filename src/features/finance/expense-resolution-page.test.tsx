@@ -123,6 +123,21 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.queryByText(/지결-2026-000[1-5]/)).not.toBeInTheDocument();
   });
 
+  it("filters expense resolutions by the actual expense month", () => {
+    render(<ExpenseResolutionPage initialResolutions={[
+      expenseResolutionFixture({ actualExpenseDate: "2026-01-30", id: "january", resolutionNo: "TEST-2026-01" }),
+      expenseResolutionFixture({ actualExpenseDate: "2026-02-03", id: "february", resolutionNo: "TEST-2026-02" }),
+    ]} />);
+
+    fireEvent.change(screen.getByLabelText("지출결의 실제 지출월"), { target: { value: "2026-01" } });
+
+    const list = screen.getByRole("table", { name: "지출결의서 목록" });
+    expect(within(list).getByText("TEST-2026-01")).toBeInTheDocument();
+    expect(within(list).queryByText("TEST-2026-02")).not.toBeInTheDocument();
+    expect(screen.getByText("2026년 1월 · 전체 기준 1건", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText(/실제 지출일이 없는 결의서는 월 검색에서 제외/)).toBeInTheDocument();
+  });
+
   it("shows an approval-focused single-expense detail workspace", async () => {
     render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({ budgetOverReason: undefined, totalPaymentAmount: 252_000, vendorName: "옛골식당" })]} />);
 

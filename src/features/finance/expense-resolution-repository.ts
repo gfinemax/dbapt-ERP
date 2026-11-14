@@ -4,7 +4,7 @@ import type { ExpenseAuthorization } from "./expense-authorization";
 import type { AccountAllocation, BatchExpenseItem, ManagedExpenseResolution, SingleExpenseItem } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
-import { getExpenseResolutionSearchPattern, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
+import { getExpenseResolutionSearchPattern, nextFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
 import type { ReimbursementMember } from "./reimbursement-domain";
 
 export const expenseResolutionRepositorySchema = "finance";
@@ -256,6 +256,11 @@ export async function listExpenseResolutionPageFromSupabase(
       `current_approver_label.ilike.${pattern}`,
     ].join(","));
   }
+  if (request.month) {
+    query = query
+      .gte("actual_expense_date", `${request.month}-01`)
+      .lt("actual_expense_date", `${nextFinanceMonth(request.month)}-01`);
+  }
   const [pageResult, nextResolutionNo] = await Promise.all([
     query.order("updated_at", { ascending: false }).range(offset, offset + request.pageSize - 1),
     getNextExpenseResolutionNo(supabase, actor.organization_id),
@@ -280,6 +285,7 @@ export async function listExpenseResolutionPageFromSupabase(
     pagination: {
       page: request.page,
       pageSize: request.pageSize,
+      month: request.month,
       query: request.query,
       total,
       totalPages: Math.max(1, Math.ceil(total / request.pageSize)),

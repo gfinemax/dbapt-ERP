@@ -12,6 +12,11 @@ const primary = "rounded-lg bg-slate-900 px-4 py-2 text-sm font-semibold text-wh
 const secondary = "rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-40";
 const money = (value: number | null) => value === null ? "금액 확인 필요" : `${Number(value).toLocaleString("ko-KR")}원`;
 const sourceLabels = { RECOGNITION: "거래 발생", PAYMENT: "실제 지급·회수", TRANSFER: "계좌 간 이체" };
+const financeMonthPattern = /^\d{4}-(0[1-9]|1[0-2])$/;
+const normalizeFinanceMonth = (value: string | undefined) => financeMonthPattern.test(value?.trim() ?? "") ? value!.trim() : "";
+const financeMonthFromDate = (value: string | null | undefined) => normalizeFinanceMonth(value?.slice(0, 7));
+const formatFinanceMonth = (value: string) => value ? `${value.slice(0, 4)}년 ${Number(value.slice(5, 7))}월` : "전체 기간";
+const listFinanceMonths = (values: Array<string | null | undefined>) => Array.from(new Set(values.map(financeMonthFromDate).filter(Boolean))).sort((left, right) => right.localeCompare(left));
 type Voucher = AccountingWorkspace["vouchers"][number];
 type Source = AccountingWorkspace["sources"][number];
 type LineInput = { key: string; account_subject_id: string | null; description: string; debit_amount: number; credit_amount: number };
@@ -188,13 +193,38 @@ function DraftEditor({ workspace, voucher, initialSource, onSaved, onClose }: { 
   </section>;
 }
 
-export function AccountingWorkspacePage({ workspace, initialVoucherId = "" }: { workspace: AccountingWorkspace; initialVoucherId?: string }) {
+const accountingFilters = new Set(["ALL", "CONFIRMED", "DRAFT", "REVIEW", "MANAGED", "LEGACY", "STALE"]);
+
+export function buildAccountingWorkspaceHref({ filter, month, search, voucherId }: { filter: string; month: string; search: string; voucherId?: string }) {
+  const params = new URLSearchParams();
+  if (voucherId) params.set("voucherId", voucherId);
+  if (month) params.set("month", month);
+  if (search.trim()) params.set("q", search.trim().slice(0, 100));
+  if (filter !== "ALL") params.set("status", filter);
+  const serialized = params.toString();
+  return `/finance${serialized ? `?${serialized}` : ""}`;
+}
+
+export function AccountingWorkspacePage({
+  workspace,
+  initialVoucherId = "",
+  initialMonth = "",
+  initialSearch = "",
+  initialFilter = "ALL",
+}: {
+  workspace: AccountingWorkspace;
+  initialVoucherId?: string;
+  initialMonth?: string;
+  initialSearch?: string;
+  initialFilter?: string;
+}) {
   const router = useRouter();
   const [selectedId, setSelectedId] = useState(initialVoucherId || workspace.vouchers[0]?.id || "");
   const [editing, setEditing] = useState<string | null>(null);
   const [newSource, setNewSource] = useState<Source | undefined>();
-  const [search, setSearch] = useState("");
-  const [filter, setFilter] = useState("ALL");
+  const [search, setSearch] = useState(initialSearch);
+  const [filter, setFilter] = useState(accountingFilters.has(initialFilter) ? initialFilter : "ALL");
+  const [month, setMonth] = useState(normalizeFinanceMonth(initialMonth));
   const [workspaceTab, setWorkspaceTab] = useState<"VOUCHERS" | "SOURCES">("VOUCHERS");
   const [batchMode, setBatchMode] = useState(false);
   const [confirmationReason, setConfirmationReason] = useState("");
@@ -209,9 +239,11 @@ export function AccountingWorkspacePage({ workspace, initialVoucherId = "" }: { 
   const canConfirm = canDraft && workspace.policy.confirmation_enabled;
   const selected = workspace.vouchers.find(v => v.id === selectedId);
   const normalizedSearch = search.trim().toLocaleLowerCase();
-  const visible = useMemo(() => workspace.vouchers.filter(voucher => {
+  const months = useMemo(() => listFinanceMonths(workspace.vouchers.map(voucher => voucher.voucher_date)), [workspace.vouchers]);
+  const monthVouchers = useMemo(() => workspace.vouchers.filter(voucher => !month || financeMonthFromDate(voucher.voucher_date) === month), [month, workspace.vouchers]);
+  const visible = useMemo(() => monthVouchers.filter(voucher => {
     const source = workspace.sources.find(item => item.kind === voucher.source_kind && item.id === voucher.source_id);
-    const searchable = `${voucher.voucher_no} ${voucher.memo ?? ""} ${source?.number ?? ""} ${source?.title ?? ""} ${voucher.lines.map(line => line.description).join(" ")}`.toLocaleLowerCase();
+    const searchable = `${voucher.voucher_date} ${voucher.voucher_no} ${voucher.memo ?? ""} ${source?.number ?? ""} ${source?.title ?? ""} ${voucher.lines.map(line => line.description).join(" ")}`.toLocaleLowerCase();
     const issue = voucherReviewIssue(voucher, workspace);
     const matchesFilter = filter === "ALL"
       || (filter === "CONFIRMED" && voucher.approval_status === "승인완료")
@@ -221,19 +253,45 @@ export function AccountingWorkspacePage({ workspace, initialVoucherId = "" }: { 
       || (filter === "LEGACY" && !voucher.managed)
       || (filter === "STALE" && voucher.source_stale);
     return (!normalizedSearch || searchable.includes(normalizedSearch)) && matchesFilter;
-  }), [filter, normalizedSearch, workspace]);
+  }), [filter, monthVouchers, normalizedSearch, workspace]);
   const summary = useMemo(() => ({
-    total: workspace.vouchers.length,
-    confirmed: workspace.vouchers.filter(voucher => voucher.approval_status === "승인완료").length,
-    drafts: workspace.vouchers.filter(voucher => voucher.approval_status === "승인대기").length,
-    review: workspace.vouchers.filter(voucher => voucherReviewIssue(voucher, workspace)).length,
+    total: monthVouchers.length,
+    confirmed: monthVouchers.filter(voucher => voucher.approval_status === "승인완료").length,
+    drafts: monthVouchers.filter(voucher => voucher.approval_status === "승인대기").length,
+    review: monthVouchers.filter(voucher => voucherReviewIssue(voucher, workspace)).length,
     sources: workspace.sources.filter(source => !source.existing_voucher_id).length,
-  }), [workspace]);
+  }), [monthVouchers, workspace]);
   const selectedAmount = selectedForConfirmation.reduce((total, id) => {
     const voucher = workspace.vouchers.find(candidate => candidate.id === id);
     return total + (voucher ? voucherTotals(voucher).amount : 0);
   }, 0);
-  function choose(id: string) { setSelectedId(id); router.replace(`/finance?voucherId=${encodeURIComponent(id)}`, { scroll: false }); }
+  function replaceLocation(next: { filter?: string; month?: string; search?: string; voucherId?: string } = {}) {
+    router.replace(buildAccountingWorkspaceHref({
+      filter: next.filter ?? filter,
+      month: next.month ?? month,
+      search: next.search ?? search,
+      voucherId: next.voucherId ?? selectedId,
+    }), { scroll: false });
+  }
+  function choose(id: string) { setSelectedId(id); replaceLocation({ voucherId: id }); }
+  function changeMonth(value: string) {
+    const nextMonth = normalizeFinanceMonth(value);
+    const candidates = workspace.vouchers.filter(voucher => !nextMonth || financeMonthFromDate(voucher.voucher_date) === nextMonth);
+    const nextSelectedId = candidates.some(voucher => voucher.id === selectedId) ? selectedId : candidates[0]?.id ?? "";
+    setMonth(nextMonth);
+    setSelectedId(nextSelectedId);
+    setSelectedForConfirmation([]);
+    replaceLocation({ month: nextMonth, voucherId: nextSelectedId });
+  }
+  function changeFilter(value: string) {
+    const nextFilter = accountingFilters.has(value) ? value : "ALL";
+    setFilter(nextFilter);
+    replaceLocation({ filter: nextFilter });
+  }
+  function changeSearch(value: string) {
+    setSearch(value);
+    replaceLocation({ search: value });
+  }
   function toggleConfirmation(id: string) { setSelectedForConfirmation(current => current.includes(id) ? current.filter(value => value !== id) : [...current, id]); }
   function toggleBatchMode() {
     setBatchMode(current => {
@@ -272,12 +330,12 @@ export function AccountingWorkspacePage({ workspace, initialVoucherId = "" }: { 
     });
   }
   return <div className="space-y-4"><header className={card}><div className="flex flex-wrap items-start justify-between gap-4"><div><h1 className="text-3xl font-bold">수입·지출 전표관리</h1><p className="mt-2 max-w-3xl text-sm text-slate-600">저장된 회계 전표를 빠르게 비교하고, 분개·원본·확정 상태를 한 화면에서 확인해.</p></div>{canDraft ? <button className={primary} onClick={() => { setNewSource(undefined); setEditing(`new:${crypto.randomUUID()}`); }}>원본으로 전표 작성</button> : null}</div><div className="mt-4 flex flex-wrap gap-2"><Link className={secondary} href="/finance/expenses">지출 등록·조회</Link><Link className={secondary} href="/finance/payments">실제 지급 내역</Link><Link className={secondary} href="/basic-info?section=account-subjects">계정과목 관리</Link></div></header>
-    <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5" aria-label="전표 현황"><button className={`${card} p-4 text-left ${filter === "ALL" && workspaceTab === "VOUCHERS" ? "border-blue-400 bg-blue-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); setFilter("ALL"); }}><span className="text-xs text-slate-500">전체 전표</span><strong className="mt-1 block text-2xl">{summary.total}</strong></button><button className={`${card} p-4 text-left ${filter === "CONFIRMED" ? "border-emerald-300 bg-emerald-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); setFilter("CONFIRMED"); }}><span className="text-xs text-slate-500">확정</span><strong className="mt-1 block text-2xl">{summary.confirmed}</strong></button><button className={`${card} p-4 text-left ${filter === "DRAFT" ? "border-blue-300 bg-blue-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); setFilter("DRAFT"); }}><span className="text-xs text-slate-500">초안</span><strong className="mt-1 block text-2xl">{summary.drafts}</strong></button><button className={`${card} p-4 text-left ${filter === "REVIEW" ? "border-amber-300 bg-amber-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); setFilter("REVIEW"); }}><span className="text-xs text-slate-500">검토 필요</span><strong className="mt-1 block text-2xl">{summary.review}</strong></button><button className={`${card} col-span-2 p-4 text-left sm:col-span-1 ${workspaceTab === "SOURCES" ? "border-violet-300 bg-violet-50" : ""}`} onClick={() => setWorkspaceTab("SOURCES")}><span className="text-xs text-slate-500">원본 연결 대기</span><strong className="mt-1 block text-2xl">{summary.sources}</strong></button></section>
+    <section className="grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-5" aria-label="전표 현황"><button className={`${card} p-4 text-left ${filter === "ALL" && workspaceTab === "VOUCHERS" ? "border-blue-400 bg-blue-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); changeFilter("ALL"); }}><span className="text-xs text-slate-500">전체 전표</span><strong className="mt-1 block text-2xl">{summary.total}</strong></button><button className={`${card} p-4 text-left ${filter === "CONFIRMED" ? "border-emerald-300 bg-emerald-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); changeFilter("CONFIRMED"); }}><span className="text-xs text-slate-500">확정</span><strong className="mt-1 block text-2xl">{summary.confirmed}</strong></button><button className={`${card} p-4 text-left ${filter === "DRAFT" ? "border-blue-300 bg-blue-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); changeFilter("DRAFT"); }}><span className="text-xs text-slate-500">초안</span><strong className="mt-1 block text-2xl">{summary.drafts}</strong></button><button className={`${card} p-4 text-left ${filter === "REVIEW" ? "border-amber-300 bg-amber-50" : ""}`} onClick={() => { setWorkspaceTab("VOUCHERS"); changeFilter("REVIEW"); }}><span className="text-xs text-slate-500">검토 필요</span><strong className="mt-1 block text-2xl">{summary.review}</strong></button><button className={`${card} col-span-2 p-4 text-left sm:col-span-1 ${workspaceTab === "SOURCES" ? "border-violet-300 bg-violet-50" : ""}`} onClick={() => setWorkspaceTab("SOURCES")}><span className="text-xs text-slate-500">원본 연결 대기</span><strong className="mt-1 block text-2xl">{summary.sources}</strong></button></section>
     {editing && canDraft && <DraftEditor key={editing} workspace={workspace} voucher={workspace.vouchers.find(v => v.id === editing)} initialSource={newSource} onClose={() => setEditing(null)} onSaved={id => { setEditing(null); choose(id); }} />}
     <section className={card}><div className="flex flex-wrap gap-2 border-b border-slate-200" role="tablist" aria-label="전표 업무 구분"><button className={`border-b-2 px-3 py-2 text-sm font-bold ${workspaceTab === "VOUCHERS" ? "border-slate-900" : "border-transparent text-slate-500"}`} onClick={() => setWorkspaceTab("VOUCHERS")} role="tab" aria-selected={workspaceTab === "VOUCHERS"}>전표 목록</button><button className={`border-b-2 px-3 py-2 text-sm font-bold ${workspaceTab === "SOURCES" ? "border-slate-900" : "border-transparent text-slate-500"}`} onClick={() => setWorkspaceTab("SOURCES")} role="tab" aria-selected={workspaceTab === "SOURCES"}>원본 연결 대기 <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-xs">{summary.sources}</span></button></div>
-      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_220px_auto] md:items-end"><label className="text-sm font-semibold">검색<input className={field} value={search} onChange={event => setSearch(event.target.value)} placeholder={workspaceTab === "VOUCHERS" ? "전표번호·내용·원본 검색" : "원본번호·거래내용 검색"} /></label>{workspaceTab === "VOUCHERS" ? <label className="text-sm font-semibold">조회 구분<select className={field} value={filter} onChange={event => setFilter(event.target.value)}><option value="ALL">전체</option><option value="CONFIRMED">확정</option><option value="DRAFT">초안</option><option value="REVIEW">검토 필요</option><option value="MANAGED">원본 연결 전표</option><option value="LEGACY">기존 기록</option><option value="STALE">원본 변경</option></select></label> : <div />}{workspaceTab === "VOUCHERS" && canConfirm ? <button className={batchMode ? primary : secondary} onClick={toggleBatchMode} type="button">{batchMode ? "일괄 선택 종료" : "일괄 선택"}</button> : null}</div>
+      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_190px_auto] md:items-end"><label className="text-sm font-semibold">검색<input className={field} value={search} onChange={event => changeSearch(event.target.value)} placeholder={workspaceTab === "VOUCHERS" ? "전표번호·내용·원본 검색" : "원본번호·거래내용 검색"} /></label>{workspaceTab === "VOUCHERS" ? <><label className="text-sm font-semibold">회계 귀속월<select aria-label="전표 회계 귀속월" className={field} value={month} onChange={event => changeMonth(event.target.value)}><option value="">전체 기간</option>{months.map(value => <option key={value} value={value}>{formatFinanceMonth(value)}</option>)}</select></label><label className="text-sm font-semibold">조회 구분<select className={field} value={filter} onChange={event => changeFilter(event.target.value)}><option value="ALL">전체</option><option value="CONFIRMED">확정</option><option value="DRAFT">초안</option><option value="REVIEW">검토 필요</option><option value="MANAGED">원본 연결 전표</option><option value="LEGACY">기존 기록</option><option value="STALE">원본 변경</option></select></label></> : <><div /><div /></>}{workspaceTab === "VOUCHERS" && canConfirm ? <button className={batchMode ? primary : secondary} onClick={toggleBatchMode} type="button">{batchMode ? "일괄 선택 종료" : "일괄 선택"}</button> : null}</div>
     </section>
-    {workspaceTab === "VOUCHERS" ? <div className="grid items-start gap-4 xl:grid-cols-2"><section className={`${card} order-2 min-w-0 xl:order-1`} aria-label="전표 목록"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-lg font-bold">전표 {visible.length}건</h2><p className="text-xs text-slate-500">전표를 선택하면 오른쪽에서 분개와 원본을 바로 확인할 수 있어.</p></div>{batchMode ? statusBadge("확정 가능한 초안만 선택", "blue") : null}</div><div className="space-y-2">{visible.map(voucher => { const blocked = confirmationBlockReason(voucher, workspace); const issue = voucherReviewIssue(voucher, workspace); const totals = voucherTotals(voucher); const selectable = batchMode && canConfirm && voucher.managed && voucher.approval_status === "승인대기"; return <div className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${voucher.id === selectedId ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-slate-300"}`} key={voucher.id}>{selectable ? <input aria-label={`${voucher.voucher_no} 일괄 확정 선택`} checked={selectedForConfirmation.includes(voucher.id)} className="mt-1 size-4" disabled={Boolean(blocked) || confirmationPending} onChange={() => toggleConfirmation(voucher.id)} type="checkbox" /> : null}<button className="min-w-0 flex-1 text-left" aria-pressed={voucher.id === selectedId} onClick={() => choose(voucher.id)}><span className="flex flex-wrap items-start justify-between gap-2"><span><strong className="block">{voucher.voucher_no}</strong><span className="mt-0.5 block text-xs text-slate-500">{voucher.voucher_date} · {voucher.managed ? "원본 연결" : "기존 기록"}</span></span><strong className="tabular-nums">{money(totals.amount)}</strong></span><span className="mt-2 block truncate text-sm">{voucher.memo || "메모 없음"}</span><span className="mt-2 flex flex-wrap gap-1.5">{statusBadge(voucher.approval_status, voucher.approval_status === "승인완료" ? "green" : "blue")}{issue ? statusBadge(issue, "amber") : statusBadge("정상", "green")}</span>{selectable && blocked ? <span className="mt-2 block text-xs font-semibold text-amber-800">확정 제외 · {blocked}</span> : null}</button></div>; })}{!visible.length ? <p className="py-12 text-center text-sm text-slate-500">검색 조건에 맞는 전표가 없어.</p> : null}</div></section><div className="order-1 min-w-0 xl:order-2"><VoucherDetailPanel key={selected?.id ?? "empty"} canDraft={canDraft} canManageAccounts={canManageAccounts} onEdit={() => { if (!selected) return; setNewSource(undefined); setEditing(selected.id); }} selected={selected} workspace={workspace} /></div></div> : <section className={card} aria-label="원본 연결 대기"><div className="mb-4"><h2 className="text-lg font-bold">회계 연결할 원본</h2><p className="mt-1 text-sm text-slate-600">지급과 계좌이체의 실제 금액을 확인한 뒤 전표 초안을 작성해. 이미 연결된 원본은 기존 전표로 이동해.</p></div><div className="space-y-2">{workspace.sources.filter(source => `${source.number ?? ""} ${source.title}`.toLocaleLowerCase().includes(normalizedSearch)).map(source => <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4" key={`${source.kind}:${source.id}`}><div><p className="font-semibold">{source.title}</p><p className="mt-1 text-sm text-slate-600">{sourceLabels[source.kind]} · {source.number ?? "번호 없음"} · {money(source.amount)} · {source.occurred_at ?? "일자 확인 필요"}</p></div>{source.existing_voucher_id ? <button className={secondary} onClick={() => { setWorkspaceTab("VOUCHERS"); choose(source.existing_voucher_id!); }}>연결 전표 확인</button> : source.blocked_reason ? <p role="status" className="max-w-md text-sm font-semibold text-amber-800">{source.blocked_reason}</p> : canDraft ? <button className={secondary} onClick={() => { setNewSource(source); setEditing(`new:${crypto.randomUUID()}`); }}>이 원본으로 초안 작성</button> : null}</div>)}</div></section>}
+    {workspaceTab === "VOUCHERS" ? <div className="grid items-start gap-4 xl:grid-cols-2"><section className={`${card} order-2 min-w-0 xl:order-1`} aria-label="전표 목록"><div className="mb-3 flex flex-wrap items-center justify-between gap-2"><div><h2 className="text-lg font-bold">전표 {visible.length}건</h2><p className="text-xs text-slate-500">{formatFinanceMonth(month)} 기준 {monthVouchers.length}건 · 전표를 선택하면 오른쪽에서 분개와 원본을 바로 확인할 수 있어.</p></div>{batchMode ? statusBadge("확정 가능한 초안만 선택", "blue") : null}</div><div className="space-y-2">{visible.map(voucher => { const blocked = confirmationBlockReason(voucher, workspace); const issue = voucherReviewIssue(voucher, workspace); const totals = voucherTotals(voucher); const selectable = batchMode && canConfirm && voucher.managed && voucher.approval_status === "승인대기"; return <div className={`flex items-start gap-3 rounded-xl border p-3 transition-colors ${voucher.id === selectedId ? "border-blue-500 bg-blue-50" : "border-slate-200 hover:border-slate-300"}`} key={voucher.id}>{selectable ? <input aria-label={`${voucher.voucher_no} 일괄 확정 선택`} checked={selectedForConfirmation.includes(voucher.id)} className="mt-1 size-4" disabled={Boolean(blocked) || confirmationPending} onChange={() => toggleConfirmation(voucher.id)} type="checkbox" /> : null}<button className="min-w-0 flex-1 text-left" aria-pressed={voucher.id === selectedId} onClick={() => choose(voucher.id)}><span className="flex flex-wrap items-start justify-between gap-2"><span><strong className="block">{voucher.voucher_no}</strong><span className="mt-0.5 block text-xs text-slate-500">{voucher.voucher_date} · {voucher.managed ? "원본 연결" : "기존 기록"}</span></span><strong className="tabular-nums">{money(totals.amount)}</strong></span><span className="mt-2 block truncate text-sm">{voucher.memo || "메모 없음"}</span><span className="mt-2 flex flex-wrap gap-1.5">{statusBadge(voucher.approval_status, voucher.approval_status === "승인완료" ? "green" : "blue")}{issue ? statusBadge(issue, "amber") : statusBadge("정상", "green")}</span>{selectable && blocked ? <span className="mt-2 block text-xs font-semibold text-amber-800">확정 제외 · {blocked}</span> : null}</button></div>; })}{!visible.length ? <p className="py-12 text-center text-sm text-slate-500">검색 조건에 맞는 전표가 없어.</p> : null}</div></section><div className="order-1 min-w-0 xl:order-2"><VoucherDetailPanel key={selected?.id ?? "empty"} canDraft={canDraft} canManageAccounts={canManageAccounts} onEdit={() => { if (!selected) return; setNewSource(undefined); setEditing(selected.id); }} selected={selected} workspace={workspace} /></div></div> : <section className={card} aria-label="원본 연결 대기"><div className="mb-4"><h2 className="text-lg font-bold">회계 연결할 원본</h2><p className="mt-1 text-sm text-slate-600">지급과 계좌이체의 실제 금액을 확인한 뒤 전표 초안을 작성해. 이미 연결된 원본은 기존 전표로 이동해.</p></div><div className="space-y-2">{workspace.sources.filter(source => `${source.number ?? ""} ${source.title}`.toLocaleLowerCase().includes(normalizedSearch)).map(source => <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 p-4" key={`${source.kind}:${source.id}`}><div><p className="font-semibold">{source.title}</p><p className="mt-1 text-sm text-slate-600">{sourceLabels[source.kind]} · {source.number ?? "번호 없음"} · {money(source.amount)} · {source.occurred_at ?? "일자 확인 필요"}</p></div>{source.existing_voucher_id ? <button className={secondary} onClick={() => { setWorkspaceTab("VOUCHERS"); choose(source.existing_voucher_id!); }}>연결 전표 확인</button> : source.blocked_reason ? <p role="status" className="max-w-md text-sm font-semibold text-amber-800">{source.blocked_reason}</p> : canDraft ? <button className={secondary} onClick={() => { setNewSource(source); setEditing(`new:${crypto.randomUUID()}`); }}>이 원본으로 초안 작성</button> : null}</div>)}</div></section>}
     {batchMode && selectedForConfirmation.length > 0 ? <section className="sticky bottom-3 z-20 rounded-2xl border border-slate-300 bg-white/95 p-4 shadow-xl backdrop-blur" aria-label="선택 전표 일괄 확정"><div className="grid gap-3 lg:grid-cols-[auto_minmax(260px,1fr)_auto] lg:items-end"><div><p className="text-sm font-bold">선택 {selectedForConfirmation.length}건</p><p className="text-xs text-slate-500">합계 {money(selectedAmount)}</p></div><label className="text-sm font-semibold">일괄 확인 근거<input className={field} value={confirmationReason} onChange={event => setConfirmationReason(event.target.value)} placeholder="예: 은행거래 및 증빙 대조 완료" /></label><button className={primary} disabled={confirmationPending || confirmationReason.trim().length < 2} onClick={submitConfirmation} type="button">{confirmationPending ? "확정 처리 중..." : `선택 ${selectedForConfirmation.length}건 전표 확정`}</button></div><p className="mt-2 text-xs text-slate-600">선택한 전표는 한 번에 검증하며, 한 건이라도 조건이 맞지 않으면 전체 확정을 취소해.</p>{confirmationMessage ? <p className="mt-2 text-sm font-semibold text-green-800" role="status">{confirmationMessage}</p> : null}{confirmationError ? <p className="mt-2 text-sm font-semibold text-red-700" role="alert">{confirmationError}</p> : null}</section> : confirmationMessage ? <p className="rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800" role="status">{confirmationMessage}</p> : null}
   </div>;
 }

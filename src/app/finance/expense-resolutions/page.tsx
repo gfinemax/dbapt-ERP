@@ -88,7 +88,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   else console.warn(`[expense-resolutions] Expense detail data unavailable: ${detailResult.reason instanceof Error ? detailResult.reason.message : String(detailResult.reason)}`);
   return (
     <ExpenseResolutionPage
-      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}`}
+      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}:${initialListPage?.month ?? ""}`}
       viewer={viewer}
       initialEntryStart={entry.start}
       initialResolutionId={initialResolutionId}

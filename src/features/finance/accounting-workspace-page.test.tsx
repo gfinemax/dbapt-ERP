@@ -113,6 +113,16 @@ describe("accounting drafts and original records", () => {
     expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft", { scroll: false });
   });
 
+  it("filters voucher counts by accounting month and keeps the month in the URL", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} />);
+    fireEvent.change(screen.getByLabelText("전표 회계 귀속월"), { target: { value: "2026-03" } });
+    expect(screen.getByRole("heading", { name: "전표 1건" })).toBeInTheDocument();
+    expect(screen.getByText("2026년 3월 기준 1건", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /전표-2026-001.*승인대기/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /기존-2025-007.*승인완료/ })).not.toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft&month=2026-03", { scroll: false });
+  });
+
   it("filters from the status summary and hides confirmed voucher checkboxes in batch mode", () => {
     render(<AccountingWorkspacePage workspace={fixture()} />);
     const summary = screen.getByRole("region", { name: "전표 현황" });
