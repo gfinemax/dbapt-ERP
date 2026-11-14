@@ -13,7 +13,7 @@ import { transitionExpenseApprovalAction, saveExpenseFactConfirmationAction, del
 const request = { resolutionId: "r", actorLabel: "위조된 관리자", command: "APPROVE" as const, expectedStatus: "승인대기" as const, expectedCurrentApprover: "이전 이름 담당자", expectedAuthorizationVersion: 2 };
 function fixture() { return { actor: { user_id: "actual-user", display_name: "실제 사용자", organization_id: "org", permissions: ["APPROVE"] },
   resolution: { id: "r", author: "작성자", approvalStatus: "승인대기", currentApprover: "이전 이름 담당자", history: [], approvalLine: [{ approver: "이전 이름", role: "담당자", status: "결재대기" }, { approver: "최종", role: "조합장", status: "대기" }] },
-  binding: { author_user_id: "author", version: 2, steps: [{ order: 1, approver_user_id: "actual-user", legacy_step: { role: "담당자" } }, { order: 2, approver_user_id: "final" }] } }; }
+  binding: { author_user_id: "author", version: 2, steps: [{ order: 1, approver_user_id: "actual-user", legacy_step: { approver: "이전 이름", order: 1, role: "담당자" } }, { order: 2, approver_user_id: "final", legacy_step: { approver: "최종", order: 2, role: "조합장" } }] } }; }
 beforeEach(() => { vi.clearAllMocks(); mocks.settings.mockResolvedValue(null); mocks.access.mockResolvedValue(fixture()); mocks.transition.mockReturnValue({ ...fixture().resolution, history: [{ actorName: "old" }] }); mocks.commit.mockResolvedValue({ id: "r" }); });
 it("ignores a forged actor label and records the verified identity", async () => {
   await transitionExpenseApprovalAction(request);
@@ -28,6 +28,13 @@ it("rejects missing bindings and stale client versions before transitioning", as
   await expect(transitionExpenseApprovalAction({ ...request, expectedAuthorizationVersion: 1 })).rejects.toThrow("다시 조회");
   mocks.access.mockResolvedValue({ ...fixture(), binding: null });
   await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("계정 연결"); expect(mocks.transition).not.toHaveBeenCalled();
+});
+it("requires rebinding when the saved approval route no longer matches the account binding", async () => {
+  const access = fixture();
+  access.binding.steps[0].legacy_step.approver = "과거 결재자";
+  mocks.access.mockResolvedValue(access);
+  await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("계정 연결");
+  expect(mocks.transition).not.toHaveBeenCalled();
 });
 
 it("saves fact drafts atomically with the verified author and rejects signature input", async () => {

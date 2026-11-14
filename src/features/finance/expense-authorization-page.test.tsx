@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExpenseAuthorizationPage } from "./expense-authorization-page";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
-import type { ManagedExpenseResolution } from "./expense-resolution-page";
+import { getExpenseAuthorizationReadiness, type ManagedExpenseResolution } from "./expense-resolution-page";
 const mocks = vi.hoisted(() => ({ bind: vi.fn(), refresh: vi.fn() }));
 vi.mock("@/app/finance/expense-authorizations/actions", () => ({ bindExpenseAuthorization: mocks.bind }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
@@ -49,5 +49,25 @@ describe("explicit author and approver account binding", () => {
     expect(canApproveExpense(bound, { ...viewer, user_id: "a" })).toBe(true);
     expect(canEditExpense(bound, viewer)).toBe(false);
     expect(canEditExpense(bound, { ...viewer, user_id: "author" })).toBe(true);
+  });
+  it("blocks self approval account binding", () => {
+    select();
+    fireEvent.change(screen.getByLabelText(/작성자 계정/), { target: { value: "author" } });
+    fireEvent.change(screen.getByLabelText(/1차 결재 계정/), { target: { value: "author" } });
+    fireEvent.change(screen.getByLabelText("연결 확인 근거"), { target: { value: "계정 확인" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("작성자와 실제 결재자는 서로 다른 계정");
+    expect(screen.getByRole("button", { name: "연결 내용 확인" })).toBeDisabled();
+  });
+  it("does not reuse a binding from a different approval route", () => {
+    const changedRoute = {
+      ...record,
+      approvalLine: [{ approver: "안동연", order: 1, role: "최종결재", status: "대기" }],
+      authorization: {
+        author_user_id: "author",
+        version: 2,
+        steps: [{ order: 1, approver_user_id: "a", legacy_step: { approver: "장현제", order: 1, role: "이사" } }],
+      },
+    } as ManagedExpenseResolution;
+    expect(getExpenseAuthorizationReadiness(changedRoute)).toMatchObject({ ready: false, linkedApproverCount: 0 });
   });
 });

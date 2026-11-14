@@ -62,6 +62,16 @@ describe("expense approval workflow", () => {
     expect(resolution.voucherNo).toBeUndefined();
   });
 
+  it("completes a chair-only route with one real approval", () => {
+    const draft = createResolution({
+      approvalLine: [{ approver: "안동연", order: 1, role: "최종결재", status: "대기" }],
+      approvalRoute: "SECRETARY_CHAIR",
+    });
+    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: draft });
+    const approved = transitionExpenseApproval({ actorLabel: "안동연 최종결재", command: "APPROVE", resolution: requested });
+    expect(approved).toMatchObject({ approvalStatus: "승인완료", paymentStatus: "지급대기" });
+  });
+
   it("completes a bank post-approval without scheduling a duplicate payment", () => {
     let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
     for (const actorLabel of ["장현제 담당자", "오학동 사무국장", "안동연 조합장"]) resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution });

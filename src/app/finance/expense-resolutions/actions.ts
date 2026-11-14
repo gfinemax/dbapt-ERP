@@ -449,7 +449,13 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   const { actor, resolution: current, binding } = await requireExpenseRecord(input.resolutionId);
   if (current.approvalStatus !== input.expectedStatus || current.currentApprover !== input.expectedCurrentApprover)
     throw new Error("다른 사용자가 먼저 결재 상태를 변경했습니다. 목록을 새로고침해주세요.");
-  if (!binding?.author_user_id || binding.steps.length !== current.approvalLine.length)
+  const bindingMatchesCurrentLine = binding?.steps.every((step) => {
+    const currentStep = current.approvalLine[step.order - 1];
+    return currentStep
+      && step.legacy_step?.approver === currentStep.approver
+      && step.legacy_step?.role === currentStep.role;
+  });
+  if (!binding?.author_user_id || binding.steps.length !== current.approvalLine.length || !bindingMatchesCurrentLine)
     throw new Error("작성자와 결재선의 로그인 계정 연결을 먼저 확인해주세요.");
   if (input.expectedAuthorizationVersion !== binding.version) throw new Error("계정 연결 또는 결의 내용이 변경되었습니다. 다시 조회해주세요.");
   const index = current.approvalLine.findIndex(step => step.status === "결재대기");

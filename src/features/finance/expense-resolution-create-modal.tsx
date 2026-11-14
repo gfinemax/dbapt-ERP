@@ -14,6 +14,7 @@ import { evaluateDirectExpensePolicy } from "./direct-expense-policy";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
 import { isBudgetProfilePeriodKey } from "./budget-profile-lookup";
 import { getEmployeeAdvanceSourceFacts } from "./expense-advance-source";
+import { buildExpenseApprovalRoute, expenseApprovalRouteOptions } from "./expense-approval-routing";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import { expenseResolutionTypeOptions, formatExpenseResolutionAmount, type ExpenseResolutionType } from "./expense-resolution-data";
 import type { EvidenceOcrJobProgress } from "./expense-evidence";
@@ -26,7 +27,6 @@ import {
   batchEvidenceTypeOptions,
   BudgetProfilesContext,
   BudgetRow,
-  buildApprovalLine,
   CollapsibleFormSection,
   createAccountAllocation,
   createSingleExpenseItem,
@@ -162,6 +162,7 @@ export function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
+  const selectedApprovalRoute = buildExpenseApprovalRoute(formState.approvalRoute);
   const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
@@ -1251,33 +1252,49 @@ export function ExpenseResolutionCreateModal({
               {incompleteReviewItems.length > 0 ? <p className="mt-3 text-xs font-semibold text-[var(--color-tangerine)]">승인요청 전 {incompleteReviewItems.length}개 항목을 확인해주세요.</p> : null}
             </section>
             <h3 className="text-base font-bold">결재선</h3>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">결재는 내부 승인 절차이며, 실제 계좌이체는 지급처리 단계에서 진행합니다.</p>
+            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">문서에는 세 사람을 모두 표시하고, 실제 로그인 결재는 선택한 경로의 필수 결재자만 진행해. 작성·생략·후열을 승인 서명으로 처리하지 않아.</p>
+            <div className="mt-3 grid gap-2">
+              {expenseApprovalRouteOptions.map((option) => {
+                const selected = formState.approvalRoute === option.route;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    className={`rounded-xl border px-3 py-3 text-left ${selected ? "border-[var(--color-deep-cobalt)] bg-blue-50" : "border-[var(--color-soft-border)] bg-white"}`}
+                    key={option.route}
+                    onClick={() => onChange("approvalRoute", option.route)}
+                    type="button"
+                  >
+                    <span className="block text-sm font-black">{option.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
             <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-soft-border)] bg-white">
               <table className="w-full text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                   <tr>
-                    <th className="px-3 py-2">순서</th>
-                    <th className="px-3 py-2">결재자</th>
+                    <th className="px-3 py-2">표시</th>
+                    <th className="px-3 py-2">이름</th>
                     <th className="px-3 py-2">직책</th>
-                    <th className="px-3 py-2">결재상태</th>
-                    <th className="px-3 py-2">처리일</th>
+                    <th className="px-3 py-2">역할</th>
+                    <th className="px-3 py-2">실제 결재</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
-                  {buildApprovalLine().map((step) => (
-                    <tr key={step.order}>
-                      <td className="px-3 py-2">{step.order}차</td>
-                      <td className="px-3 py-2 font-semibold">{step.approver}</td>
-                      <td className="px-3 py-2">{step.role}</td>
-                      <td className="px-3 py-2">
-                        <Badge value={step.status} />
-                      </td>
-                      <td className="px-3 py-2 text-[var(--color-stone)]">-</td>
+                  {selectedApprovalRoute.participants.map((participant, index) => (
+                    <tr key={participant.name}>
+                      <td className="px-3 py-2">{index + 1}</td>
+                      <td className="px-3 py-2 font-semibold">{participant.name}</td>
+                      <td className="px-3 py-2">{participant.title}</td>
+                      <td className="px-3 py-2 font-semibold">{participant.action}</td>
+                      <td className="px-3 py-2 text-[var(--color-stone)]">{participant.approvalOrder ? `${participant.approvalOrder}차 필수` : "서명 없음"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="mt-2 text-xs font-semibold text-[var(--color-deep-cobalt)]">계정 연결 필요: 작성자 1명 · 실제 결재자 {selectedApprovalRoute.approvalLine.length}명</p>
             <div className="mt-3 rounded-lg bg-white p-3 text-sm">
               <p className="font-bold">초기 상태</p>
               <p className="mt-1 text-[var(--color-stone)]">승인상태: 작성중</p>

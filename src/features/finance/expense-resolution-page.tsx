@@ -38,6 +38,12 @@ import type { ExpenseResolution, ExpenseResolutionType, ResolutionHistory } from
 import { getNextDocumentNo } from "./finance-numbering";
 import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendorName, type EvidenceOcrData, type EvidenceOcrJobProgress, type ExpenseEvidenceAttachment, type ExpenseEvidenceUploadResult } from "./expense-evidence";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
+import {
+  buildExpenseApprovalRoute,
+  inferExpenseApprovalRoute,
+  type ExpenseApprovalParticipant,
+  type ExpenseApprovalRoute,
+} from "./expense-approval-routing";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
@@ -211,6 +217,8 @@ export type ManagedExpenseResolution = {
   actualPaidAmount?: number;
   accountHolder: string;
   approvalLine: ApprovalStep[];
+  approvalParticipants?: ExpenseApprovalParticipant[];
+  approvalRoute?: ExpenseApprovalRoute;
   approvalStatus: ApprovalStatus;
   author: string;
   budgetItem: string;
@@ -330,7 +338,13 @@ export function getExpenseAuthorizationReadiness(resolution: ManagedExpenseResol
   const expectedApproverCount = resolution.approvalLine.length;
   const linkedOrders = new Set(
     (resolution.authorization?.steps ?? [])
-      .filter((step) => step.approver_user_id && step.order >= 1 && step.order <= expectedApproverCount)
+      .filter((step) => {
+        const expectedStep = resolution.approvalLine[step.order - 1];
+        return step.approver_user_id
+          && expectedStep
+          && step.legacy_step?.approver === expectedStep.approver
+          && step.legacy_step?.role === expectedStep.role;
+      })
       .map((step) => step.order),
   );
   const linkedApproverCount = linkedOrders.size;
@@ -382,6 +396,7 @@ export type ResolutionFormState = {
   approvalDocumentNo: string;
   approvalSkipReason: string;
   approvalSkipReasonDetail: string;
+  approvalRoute: ExpenseApprovalRoute;
   expenseKind: ExpenseKind;
   accountingDate: string;
   actualExpenseDate: string;
@@ -1499,6 +1514,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     approvalDocumentNo: resolution.approvalDocumentNo ?? "",
     approvalSkipReason: resolution.approvalSkipReason ?? "",
     approvalSkipReasonDetail: resolution.approvalSkipReason && !["승인 예산 내 일상 지출", "정기·반복 지출", "기존 계약에 따른 지급", "소액경비 일괄결의"].includes(resolution.approvalSkipReason) ? resolution.approvalSkipReason : "",
+    approvalRoute: resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine),
     expenseKind: resolution.expenseKind ?? "GENERAL",
     accountingDate: resolution.accountingDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
     actualExpenseDate: resolution.actualExpenseDate ?? "",
@@ -1603,6 +1619,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     approvalDocumentNo: "",
     approvalSkipReason: "",
     approvalSkipReasonDetail: "",
+    approvalRoute: "SECRETARY_CHAIR",
     expenseKind: "GENERAL",
     accountingDate: currentDate,
     actualExpenseDate: "",
@@ -1793,6 +1810,40 @@ function getDisplayApprovalLine(resolution: ManagedExpenseResolution) {
       ...step,
       role,
       status: currentApprover && step.status === "대기" ? "결재대기" as const : step.status,
+    };
+  });
+}
+
+type DocumentApprovalParticipant = ExpenseApprovalParticipant & {
+  processedAt?: string;
+  statusLabel: string;
+};
+
+function getDocumentApprovalParticipants(resolution: ManagedExpenseResolution): DocumentApprovalParticipant[] {
+  if (!resolution.approvalParticipants?.length) {
+    return getDisplayApprovalLine(resolution).map((step) => ({
+      action: step.role as ExpenseApprovalParticipant["action"],
+      approvalOrder: step.order,
+      name: step.approver,
+      processedAt: getApprovalProcessedAt(resolution, step),
+      statusLabel: step.status,
+      title: step.role,
+    }));
+  }
+
+  return resolution.approvalParticipants.map((participant) => {
+    const approvalStep = participant.approvalOrder
+      ? resolution.approvalLine.find((step) => step.order === participant.approvalOrder)
+      : undefined;
+    const statusLabel = approvalStep
+      ? ["대기", "결재대기"].includes(approvalStep.status) ? "서명란" : approvalStep.status
+      : (participant.action === "작성" ? "작성완료"
+        : participant.action === "규정상 생략" ? "생략"
+          : participant.action === "후열·보고" ? "후열대상" : "대기");
+    return {
+      ...participant,
+      processedAt: approvalStep ? getApprovalProcessedAt(resolution, approvalStep) : participant.action === "작성" ? resolution.draftedAt ?? resolution.createdAt : undefined,
+      statusLabel,
     };
   });
 }
@@ -3310,10 +3361,11 @@ export function ExpenseResolutionPage({
       }
     }
     const approvalStatus: ApprovalStatus = mode === "draft" || viewer ? "작성중" : "승인대기";
-    const firstApprover = buildApprovalLine()[0];
+    const approvalRoute = buildExpenseApprovalRoute(formState.approvalRoute);
+    const firstApprover = approvalRoute.approvalLine[0];
     const isAlreadyPaid = formState.expenseTiming === "REIMBURSEMENT" && (formState.expenseBurdenType === "CORPORATE_CARD" || formState.expenseBurdenType === "ORGANIZATION_PAID");
     const usesAdvanceFields = formState.expenseTiming === "SETTLEMENT" || (formState.expenseTiming === "ADVANCE" && formState.executionMethod === "EMPLOYEE_ADVANCE");
-    const approvalLine = buildApprovalLine().map((step, index) =>
+    const approvalLine = approvalRoute.approvalLine.map((step, index) =>
       mode === "approval-request" && !viewer && index === 0 ? { ...step, status: "결재대기" as const } : step,
     );
     const pettyCashTransactions = formState.expenseKind === "PETTY_CASH_BATCH" || formState.expenseKind === "RECURRING_BATCH" ? formState.batchItems.map((item) => ({ accountTitle: item.accountTitle, amount: item.totalAmount, businessPurpose: item.businessPurpose || formState.reason || item.description, evidenceKind: item.evidenceKind, evidenceStatus: item.evidenceStatus, factConfirmationId: item.factConfirmationId, id: item.id, item: item.itemTitle, overrideReason: item.overBudgetReason, spender: item.actualSpender || formState.advancePayer || formState.author, transactionDate: item.expenseDate, vendor: item.vendorName })) : undefined;
@@ -3402,6 +3454,8 @@ export function ExpenseResolutionPage({
       evidenceAttached: formState.evidenceFiles.length > 0,
       evidenceType: formState.evidenceType,
       approvalLine,
+      approvalParticipants: approvalRoute.participants,
+      approvalRoute: formState.approvalRoute,
       approvalStatus,
       currentApprover: mode === "approval-request" && !viewer ? getApproverLabel(firstApprover) : undefined,
       paymentStatus: isAlreadyPaid && !viewer ? "지급완료" : "지급전",
@@ -4360,6 +4414,7 @@ function ExpenseResolutionDetailWorkspace({
   const budget = resolution.budgetSnapshot;
   const budgetLinked = budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
   const authorization = getExpenseAuthorizationReadiness(resolution);
+  const documentApprovalParticipants = getDocumentApprovalParticipants(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
 
@@ -4510,6 +4565,21 @@ function ExpenseResolutionDetailWorkspace({
       <aside className="min-h-0 overflow-y-auto border-t border-[var(--color-soft-border)] bg-white p-4 xl:border-t-0 xl:border-l" aria-label="결재 및 예산 판단">
         <section aria-labelledby="approval-inspector-title">
           <h3 className="text-base font-black" id="approval-inspector-title">결재 진행</h3>
+          {resolution.approvalParticipants?.length ? (
+            <div className="mt-3 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/45 p-3">
+              <p className="text-xs font-black text-[var(--color-stone)]">문서 표시 · 3명</p>
+              <ol className="mt-2 grid gap-2">
+                {documentApprovalParticipants.map((participant) => (
+                  <li className="grid grid-cols-[1fr_auto] items-center gap-2 text-xs" key={participant.name}>
+                    <span><strong className="text-sm">{participant.name}</strong><span className="ml-1 text-[var(--color-stone)]">{participant.title}</span></span>
+                    <span className="rounded-full border border-[var(--color-soft-border)] bg-white px-2 py-1 font-bold">{participant.action} · {participant.statusLabel}</span>
+                  </li>
+                ))}
+              </ol>
+              <p className="mt-2 text-[11px] leading-4 text-[var(--color-stone)]">생략·작성·후열 표시는 승인 서명으로 계산하지 않아.</p>
+            </div>
+          ) : null}
+          <p className="mt-3 text-xs font-black text-[var(--color-stone)]">실제 로그인 결재 · {approvalLine.length}명</p>
           <ol className="mt-3 grid gap-2">
             {approvalLine.map((step, index) => (
               <li className="grid grid-cols-[24px_1fr_auto] items-center gap-2 text-sm" key={step.order}>
@@ -5544,14 +5614,14 @@ type ExpensePrintItem = {
 };
 
 function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResolution }) {
-  const approvalLine = getDisplayApprovalLine(resolution);
+  const approvalLine = getDocumentApprovalParticipants(resolution);
   return (
     <section className="expense-resolution-print-approval min-w-0 self-end">
       <h4 className="sr-only">결재선</h4>
       <table className="ml-auto w-[219px] table-fixed border-collapse text-center text-[13px]">
         <colgroup>
           <col className="w-[18px]" />
-          {approvalLine.map((step) => <col className="w-[67px]" key={`approval-column-${step.order}`} />)}
+          {approvalLine.map((step) => <col className="w-[67px]" key={`approval-column-${step.name}`} />)}
         </colgroup>
         <tbody>
           <tr>
@@ -5559,16 +5629,17 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
               <span style={{ alignItems: "center", display: "inline-flex", flexDirection: "column", gap: "10px", lineHeight: 1 }}><span>결</span><span>재</span></span>
             </th>
             {approvalLine.map((step) => (
-              <th className="border border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] py-0.5 font-bold" key={`role-${step.order}`}>{step.role}</th>
+              <th className="border border-[var(--color-midnight-ink)] bg-[var(--color-cloud-veil)] py-0.5 font-bold" key={`role-${step.name}`}>{step.title}</th>
             ))}
           </tr>
           <tr>
             {approvalLine.map((step) => {
-              const processedAt = formatApprovalDateTime(getApprovalProcessedAt(resolution, step));
+              const processedAt = formatApprovalDateTime(step.processedAt);
               return (
-                <td className="h-[52px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.order}`}>
-                  <span className="block font-bold">{step.approver}</span>
-                  <span className="mt-1 block whitespace-nowrap text-[var(--color-stone)]">{processedAt || "서명란"}</span>
+                <td className="h-[58px] border border-[var(--color-midnight-ink)] px-0.5 py-0.5" key={`approval-${step.name}`}>
+                  <span className="block font-bold">{step.name}</span>
+                  <span className="block text-[9px] font-semibold text-[var(--color-stone)]">{step.action}</span>
+                  <span className="mt-0.5 block whitespace-nowrap text-[var(--color-stone)]">{processedAt || step.statusLabel}</span>
                 </td>
               );
             })}
