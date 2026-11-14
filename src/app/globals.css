@@ -146,7 +146,8 @@
   line-height: 1.45;
 }
 
-.expense-resolution-document-page {
+.expense-resolution-document-page,
+.expense-resolution-document-probe {
   width: 210mm;
   height: 297mm;
   min-height: 297mm;
@@ -154,6 +155,16 @@
   overflow: hidden;
   padding: 14mm 16mm 12mm;
   page: expense-resolution-document;
+}
+
+.expense-resolution-pagination-probe {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  max-width: none;
+  margin: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 
 .expense-resolution-print-section {
@@ -276,13 +287,18 @@
     page-break-after: always;
   }
 
-  .expense-resolution-document-page {
+  .expense-resolution-document-page,
+  .expense-resolution-document-probe {
     width: 210mm !important;
     height: 297mm !important;
     min-height: 297mm !important;
     max-height: 297mm !important;
     padding: 14mm 16mm 12mm !important;
     overflow: hidden !important;
+  }
+
+  .expense-resolution-pagination-probe {
+    display: none !important;
   }
 
   .expense-resolution-print-header h3 {

@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, ExpenseResolutionPrintPreviewModal, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, ExpenseResolutionPrintPreviewModal, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, paginateExpensePrintRowHeights, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -29,6 +29,21 @@ async function getExpenseResolutionDialog(name: "간편지출을 정식결의로
 }
 
 describe("ExpenseResolutionPage", () => {
+  it("fills each A4 expense page by measured row height and reserves the final reason block", () => {
+    expect(paginateExpensePrintRowHeights({
+      continuationPageBudget: 100,
+      finalBlockHeight: 20,
+      firstPageBudget: 100,
+      rowHeights: Array.from({ length: 12 }, () => 10),
+    })).toEqual([10, 2]);
+    expect(paginateExpensePrintRowHeights({
+      continuationPageBudget: 100,
+      finalBlockHeight: 30,
+      firstPageBudget: 100,
+      rowHeights: [45, 45, 45, 45],
+    })).toEqual([2, 1, 1]);
+  });
+
   it("turns stale Server Action errors into a refresh instruction", () => {
     expect(getEvidenceUploadErrorMessage(new Error("An error occurred in the Server Components render. A digest property is included.")))
       .toBe("화면이 새 버전으로 업데이트되었습니다. 새로고침한 후 증빙파일을 다시 선택해 주세요.");
@@ -166,6 +181,7 @@ describe("ExpenseResolutionPage", () => {
     const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
     const documentPages = printDialog.querySelectorAll<HTMLElement>(".expense-resolution-document-page");
     expect(documentPages).toHaveLength(2);
+    expect(printDialog.querySelector(".expense-resolution-print-empty-row")).not.toBeInTheDocument();
     expect(within(documentPages[0]).queryByRole("heading", { name: "지출사유 및 증빙" })).not.toBeInTheDocument();
     expect(within(documentPages[1]).getByRole("heading", { name: "세부 지출내역 (계속)" })).toBeInTheDocument();
     expect(within(documentPages[1]).queryByText(/계속지/)).not.toBeInTheDocument();
@@ -774,9 +790,8 @@ describe("ExpenseResolutionPage", () => {
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-[18%]");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-[34%]");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
-    expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(5);
-    expect(expenseItemsTable?.querySelectorAll("tbody tr[aria-hidden='true']")).toHaveLength(4);
-    expect(expenseItemsTable?.querySelector("tbody tr[aria-hidden='true'] td")).toHaveClass("[border-bottom-style:dashed]");
+    expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(1);
+    expect(expenseItemsTable?.querySelector("tbody tr[aria-hidden='true']")).not.toBeInTheDocument();
     expect(expenseItemsTable?.querySelector("thead")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]", "text-center");
     expect(within(printDialog).queryByRole("heading", { name: "예산 확인" })).not.toBeInTheDocument();

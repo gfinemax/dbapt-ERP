@@ -5342,6 +5342,77 @@ function blobToDataUrl(blob: Blob) {
   });
 }
 
+export function paginateExpensePrintRowHeights({
+  continuationPageBudget,
+  finalBlockHeight,
+  firstPageBudget,
+  rowHeights,
+}: {
+  continuationPageBudget: number;
+  finalBlockHeight: number;
+  firstPageBudget: number;
+  rowHeights: number[];
+}) {
+  if (rowHeights.length === 0) return [0];
+
+  const normalizedRows = rowHeights.map((height) => Math.max(1, height));
+  const normalizedFinalBlockHeight = Math.max(0, finalBlockHeight);
+  const pageCounts: number[] = [];
+  let rowIndex = 0;
+  let pageIndex = 0;
+
+  while (rowIndex < normalizedRows.length) {
+    const pageBudget = Math.max(1, pageIndex === 0 ? firstPageBudget : continuationPageBudget);
+    const remainingRows = normalizedRows.slice(rowIndex);
+    const remainingHeight = remainingRows.reduce((sum, height) => sum + height, 0);
+
+    if (remainingHeight + normalizedFinalBlockHeight <= pageBudget) {
+      pageCounts.push(remainingRows.length);
+      rowIndex = normalizedRows.length;
+      break;
+    }
+
+    let usedHeight = 0;
+    let fittingCount = 0;
+    while (rowIndex + fittingCount < normalizedRows.length) {
+      const nextHeight = normalizedRows[rowIndex + fittingCount];
+      if (fittingCount > 0 && usedHeight + nextHeight > pageBudget) break;
+      usedHeight += nextHeight;
+      fittingCount += 1;
+      if (usedHeight > pageBudget) break;
+    }
+
+    const remainingCount = normalizedRows.length - rowIndex;
+    if (fittingCount >= remainingCount) {
+      const finalRowHeight = normalizedRows.at(-1) ?? 0;
+      if (remainingCount > 1 && finalRowHeight + normalizedFinalBlockHeight <= continuationPageBudget) {
+        fittingCount = remainingCount - 1;
+      } else {
+        pageCounts.push(remainingCount);
+        rowIndex = normalizedRows.length;
+        pageCounts.push(0);
+        break;
+      }
+    }
+
+    pageCounts.push(Math.max(1, fittingCount));
+    rowIndex += Math.max(1, fittingCount);
+    pageIndex += 1;
+  }
+
+  return pageCounts;
+}
+
+function getFallbackExpensePrintPageCounts(itemCount: number) {
+  const pageCounts = [Math.min(itemCount, 5)];
+  let remainingCount = Math.max(0, itemCount - 5);
+  while (remainingCount > 0) {
+    pageCounts.push(Math.min(remainingCount, 7));
+    remainingCount -= 7;
+  }
+  return pageCounts;
+}
+
 export function ExpenseResolutionPrintPreviewModal({
   createEvidenceDownloadUrl,
   onClose,
@@ -5355,6 +5426,9 @@ export function ExpenseResolutionPrintPreviewModal({
   const [printPreparationError, setPrintPreparationError] = useState("");
   const [evidencePrintPages, setEvidencePrintPages] = useState<ExpenseEvidencePrintPage[]>([]);
   const [isEvidencePreparing, setIsEvidencePreparing] = useState(Boolean((resolution.evidenceFiles?.length ?? 0) && createEvidenceDownloadUrl));
+  const printStackRef = useRef<HTMLDivElement>(null);
+  const continuationProbeRef = useRef<HTMLElement>(null);
+  const [measuredPagination, setMeasuredPagination] = useState<{ key: string; pageCounts: number[] } | null>(null);
   const vendorMissing = !resolution.vendorName.trim() || resolution.vendorName === "거래처 미입력";
   const reasonText = resolution.reason.trim() || "지출사유 미입력";
   const warningTextClass = "font-bold text-[var(--color-tangerine)]";
@@ -5396,16 +5470,92 @@ export function ExpenseResolutionPrintPreviewModal({
           totalAmount: resolution.totalPaymentAmount,
         },
         ];
-  const firstPageItems = printExpenseItems.slice(0, 5);
-  const continuationPages = Array.from({ length: Math.ceil(Math.max(0, printExpenseItems.length - 5) / 7) }, (_, pageIndex) =>
-    printExpenseItems.slice(5 + pageIndex * 7, 5 + (pageIndex + 1) * 7),
-  );
-  const totalPrintPages = 1 + continuationPages.length + evidencePrintPages.length;
   const evidenceText = getExpensePrintEvidenceText(resolution);
+  const paginationKey = `${resolution.id}|${printExpenseItems.map((item) => `${item.id}:${item.description}:${item.vendorName}`).join("|")}|${reasonText}|${evidenceText}`;
+  const fallbackPageCounts = getFallbackExpensePrintPageCounts(printExpenseItems.length);
+  const pageCounts = measuredPagination?.key === paginationKey ? measuredPagination.pageCounts : fallbackPageCounts;
+  const printItemPages = pageCounts.map((pageItemCount, pageIndex) => {
+    const startIndex = pageCounts.slice(0, pageIndex).reduce((sum, count) => sum + count, 0);
+    return printExpenseItems.slice(startIndex, startIndex + pageItemCount);
+  });
+  const firstPageItems = printItemPages[0] ?? [];
+  const continuationPages = printItemPages.slice(1);
+  const totalPrintPages = 1 + continuationPages.length + evidencePrintPages.length;
   const evidenceConnectionError = (resolution.evidenceFiles?.length ?? 0) > 0 && !createEvidenceDownloadUrl
     ? "증빙 원본을 출력할 수 있도록 연결되지 않았습니다."
     : "";
   const displayedPrintError = printPreparationError || evidenceConnectionError;
+
+  useEffect(() => {
+    const printStack = printStackRef.current;
+    if (!printStack) return;
+
+    let cancelled = false;
+    let animationFrame = 0;
+
+    const measurePagination = () => {
+      if (cancelled) return;
+      const firstPage = printStack.querySelector<HTMLElement>('[data-expense-print-page="first"]');
+      const continuationProbe = continuationProbeRef.current;
+      const firstItemsSection = firstPage?.querySelector<HTMLElement>(".expense-resolution-print-items");
+      const probeItemsSection = continuationProbe?.querySelector<HTMLElement>(".expense-resolution-print-items");
+      const firstBody = firstItemsSection?.querySelector<HTMLElement>("tbody");
+      const probeBody = probeItemsSection?.querySelector<HTMLElement>("tbody");
+      const firstFoot = firstItemsSection?.querySelector<HTMLElement>("tfoot");
+      const probeFoot = probeItemsSection?.querySelector<HTMLElement>("tfoot");
+      const firstFooter = firstPage?.querySelector<HTMLElement>("[data-expense-print-footer]");
+      const probeFooter = continuationProbe?.querySelector<HTMLElement>("[data-expense-print-footer]");
+      const reasonBlock = continuationProbe?.querySelector<HTMLElement>(".expense-resolution-print-reason");
+      const itemRows = Array.from(printStack.querySelectorAll<HTMLElement>(".expense-resolution-document-page .expense-resolution-print-item-row"));
+
+      if (!firstPage || !continuationProbe || !firstBody || !probeBody || !firstFoot || !probeFoot || !firstFooter || !probeFooter || !reasonBlock) return;
+      if (itemRows.length !== printExpenseItems.length) return;
+
+      const getRowBudget = (page: HTMLElement, body: HTMLElement, foot: HTMLElement, footer: HTMLElement) => {
+        const pageRect = page.getBoundingClientRect();
+        const bodyRect = body.getBoundingClientRect();
+        const footRect = foot.getBoundingClientRect();
+        const footerRect = footer.getBoundingClientRect();
+        const pageStyle = window.getComputedStyle(page);
+        const paddingBottom = Number.parseFloat(pageStyle.paddingBottom) || 0;
+        const footerTop = pageRect.bottom - paddingBottom - footerRect.height;
+        return footerTop - bodyRect.top - footRect.height - 8;
+      };
+      const firstPageBudget = getRowBudget(firstPage, firstBody, firstFoot, firstFooter);
+      const continuationPageBudget = getRowBudget(continuationProbe, probeBody, probeFoot, probeFooter);
+      const reasonStyle = window.getComputedStyle(reasonBlock);
+      const finalBlockHeight = reasonBlock.getBoundingClientRect().height
+        + (Number.parseFloat(reasonStyle.marginTop) || 0)
+        + (Number.parseFloat(reasonStyle.marginBottom) || 0);
+      const rowHeights = itemRows.map((row) => row.getBoundingClientRect().height);
+
+      if (firstPageBudget <= 0 || continuationPageBudget <= 0 || finalBlockHeight <= 0 || rowHeights.some((height) => height <= 0)) return;
+
+      const nextPageCounts = paginateExpensePrintRowHeights({
+        continuationPageBudget,
+        finalBlockHeight,
+        firstPageBudget,
+        rowHeights,
+      });
+      setMeasuredPagination((current) => {
+        if (current?.key === paginationKey && current.pageCounts.length === nextPageCounts.length && current.pageCounts.every((count, index) => count === nextPageCounts[index])) return current;
+        return { key: paginationKey, pageCounts: nextPageCounts };
+      });
+    };
+    const scheduleMeasurement = () => {
+      window.cancelAnimationFrame(animationFrame);
+      animationFrame = window.requestAnimationFrame(measurePagination);
+    };
+
+    scheduleMeasurement();
+    void document.fonts?.ready.then(scheduleMeasurement);
+    window.addEventListener("resize", scheduleMeasurement);
+    return () => {
+      cancelled = true;
+      window.cancelAnimationFrame(animationFrame);
+      window.removeEventListener("resize", scheduleMeasurement);
+    };
+  }, [paginationKey, printExpenseItems.length]);
 
   useEffect(() => {
     const evidenceFiles = resolution.evidenceFiles ?? [];
@@ -5516,8 +5666,8 @@ export function ExpenseResolutionPrintPreviewModal({
           </button>
         </div>
 
-        <div className="print-expense-resolution expense-resolution-document-stack bg-[var(--color-cloud-veil)] p-6">
-          <article className="erp-print-page expense-resolution-print-page expense-resolution-document-page mx-auto rounded-sm bg-white shadow-sm">
+        <div className="print-expense-resolution expense-resolution-document-stack bg-[var(--color-cloud-veil)] p-6" ref={printStackRef}>
+          <article className="erp-print-page expense-resolution-print-page expense-resolution-document-page mx-auto rounded-sm bg-white shadow-sm" data-expense-print-page="first">
             <header className="expense-resolution-print-header grid grid-cols-[1fr_70mm] items-center gap-6 border-b-2 border-[var(--color-midnight-ink)] pb-4">
               <div className="min-w-0">
                 <p className="mb-2 inline-flex rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-[9px] font-bold text-[var(--color-stone)]">{getExpenseTimingLabel(expenseTiming)}</p>
@@ -5571,7 +5721,7 @@ export function ExpenseResolutionPrintPreviewModal({
             <ExpensePrintFooter page={1} resolutionNo={resolution.resolutionNo} totalPages={totalPrintPages} />
           </article>
           {continuationPages.map((items, pageIndex) => (
-            <article className="erp-print-page expense-resolution-print-page expense-resolution-document-page expense-resolution-continuation-page mx-auto mt-6 rounded-sm bg-white shadow-sm" key={`continuation-${pageIndex + 1}`}>
+            <article className="erp-print-page expense-resolution-print-page expense-resolution-document-page expense-resolution-continuation-page mx-auto mt-6 rounded-sm bg-white shadow-sm" data-expense-print-page="continuation" key={`continuation-${pageIndex + 1}`}>
               <header className="border-b-2 border-[var(--color-midnight-ink)] pb-4">
                 <div className="flex items-end justify-between gap-4">
                   <div>
@@ -5624,6 +5774,23 @@ export function ExpenseResolutionPrintPreviewModal({
           </Button>
         </div>
       </section>
+      <article aria-hidden="true" className="erp-print-page expense-resolution-print-page expense-resolution-document-probe expense-resolution-pagination-probe" data-expense-print-page="continuation-probe" ref={continuationProbeRef}>
+        <header className="border-b-2 border-[var(--color-midnight-ink)] pb-4">
+          <div className="flex items-end justify-between gap-4">
+            <div>
+              <h3 className="text-xl font-bold">세부 지출내역 (계속)</h3>
+              <p className="mt-1 font-semibold">{resolution.resolutionNo} · {getResolutionSubject(resolution)}</p>
+              {isBatchResolution ? <p className="mt-1 text-xs text-[var(--color-stone)]">프로젝트: {resolution.projectName || "프로젝트 미입력"}</p> : null}
+            </div>
+            <p className="text-xs font-semibold text-[var(--color-stone)]">측정용 페이지</p>
+          </div>
+        </header>
+        <section className="expense-resolution-print-items mt-5">
+          <ExpensePrintItemsTable items={[]} totalLabel="전체 합계" totals={{ supplyAmount: resolution.supplyAmount, totalAmount: resolution.totalPaymentAmount, vatAmount: resolution.vat }} />
+        </section>
+        <ExpensePrintReasonEvidence evidenceText={evidenceText} reasonText={reasonText} resolution={resolution} warningTextClass={warningTextClass} />
+        <ExpensePrintFooter page={1} resolutionNo={resolution.resolutionNo} totalPages={1} />
+      </article>
     </div>,
     document.body,
   );
@@ -5653,7 +5820,7 @@ function ExpensePrintReasonEvidence({
   warningTextClass: string;
 }) {
   return (
-    <section className="expense-resolution-print-section mt-4">
+    <section className="expense-resolution-print-reason expense-resolution-print-section mt-4">
       <h4 className="mb-1.5 text-[15px] font-bold">지출사유 및 증빙</h4>
       <div className="border-y border-solid border-[#9ca3af]">
         <PrintCell label="지출사유" value={<span className={`whitespace-pre-wrap ${resolution.reason.trim() ? "" : warningTextClass}`}>{reasonText}</span>} wide />
@@ -5702,7 +5869,7 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
 
 function ExpensePrintFooter({ page, resolutionNo, totalPages }: { page: number; resolutionNo: string; totalPages: number }) {
   return (
-    <footer className="mt-auto flex items-end justify-between gap-6 border-t border-[var(--color-soft-border)] pt-3 text-[9px] text-[var(--color-stone)]">
+    <footer className="mt-auto flex items-end justify-between gap-6 border-t border-[var(--color-soft-border)] pt-3 text-[9px] text-[var(--color-stone)]" data-expense-print-footer>
       <div>
         <p className="text-[12px] font-bold text-[var(--color-midnight-ink)]">대방동 지역주택조합</p>
         <p className="mt-1">조합원의 소중한 자금을 투명하고 책임 있게 집행합니다.</p>
@@ -5724,8 +5891,6 @@ function ExpensePrintItemsTable({
   const pageSupplyAmount = items.reduce((sum, item) => sum + toNumber(item.supplyAmount), 0);
   const pageVatAmount = items.reduce((sum, item) => sum + toNumber(item.vatAmount), 0);
   const pageTotalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
-  const emptyRowCount = Math.max(0, 5 - items.length);
-
   return (
     <div className="overflow-x-auto border-y border-[var(--color-soft-border)] [border-bottom-style:dashed] [border-top-style:dashed]">
       <table className="w-full table-fixed border-collapse text-[12px]">
@@ -5753,16 +5918,6 @@ function ExpensePrintItemsTable({
               <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[11px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
               <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[11px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
               <td className="whitespace-nowrap border-b border-[var(--color-soft-border)] px-1 py-1 text-[11px] font-bold [border-bottom-style:dashed]">{formatExpenseResolutionAmount(item.totalAmount)}</td>
-            </tr>
-          ))}
-          {Array.from({ length: emptyRowCount }, (_, rowIndex) => (
-            <tr aria-hidden="true" className="expense-resolution-print-empty-row text-center" key={`empty-${rowIndex}`}>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
-              <td className="border-b border-r border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
-              <td className="border-b border-[var(--color-soft-border)] px-2 py-[4.5px] [border-bottom-style:dashed]">&nbsp;</td>
             </tr>
           ))}
         </tbody>
