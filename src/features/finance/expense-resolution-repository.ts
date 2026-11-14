@@ -394,6 +394,22 @@ export function stripExpenseAuthorization(resolution: ManagedExpenseResolution) 
   return result;
 }
 
+export function mapExpenseDisbursementUpdate(
+  resolution: ManagedExpenseResolution,
+  expected: { paymentStatus: ManagedExpenseResolution["paymentStatus"] },
+) {
+  const snapshot = stripExpenseAuthorization(resolution);
+  if (resolution.paymentStatus === expected.paymentStatus) {
+    return {
+      resolution_data: snapshot,
+      updated_at: new Date().toISOString(),
+      voucher_no: resolution.voucherNo ?? null,
+      voucher_status: resolution.voucherStatus ?? null,
+    };
+  }
+  return mapExpenseResolutionToUpsert(snapshot);
+}
+
 export async function updateExpenseDisbursementInSupabase(
   resolution: ManagedExpenseResolution,
   expected: { paymentStatus: ManagedExpenseResolution["paymentStatus"]; voucherStatus?: ManagedExpenseResolution["voucherStatus"] },
@@ -404,7 +420,7 @@ export async function updateExpenseDisbursementInSupabase(
   let query = supabase
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolutions")
-    .update(mapExpenseResolutionToUpsert(stripExpenseAuthorization(resolution)))
+    .update(mapExpenseDisbursementUpdate(resolution, expected))
     .eq("id", resolution.id)
     .eq("organization_id", actor.organization_id)
     .eq("payment_status", expected.paymentStatus);

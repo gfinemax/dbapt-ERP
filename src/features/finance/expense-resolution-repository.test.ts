@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   hydrateExpenseResolutionChildren,
   mapExpenseAccountAllocationsToRows,
+  mapExpenseDisbursementUpdate,
   mapExpenseEvidenceToRows,
   mapExpenseResolutionItemsToRows,
   mapExpenseResolutionToUpsert,
@@ -37,6 +38,41 @@ describe("expense resolution repository", () => {
       input_method: "MANUAL",
       total_payment_amount: resolution.totalPaymentAmount,
       resolution_data: resolution,
+    });
+  });
+
+  it("updates only voucher fields when the payment status does not change", () => {
+    const resolution = expenseResolutionFixture({
+      actualPaidAmount: 252000,
+      disbursedAt: "2026-01-30",
+      paymentStatus: "지급완료",
+      voucherNo: "지출-2026-0001",
+      voucherStatus: "초안",
+    });
+
+    const update = mapExpenseDisbursementUpdate(resolution, { paymentStatus: "지급완료" });
+
+    expect(update).toMatchObject({
+      resolution_data: expect.objectContaining({ voucherNo: "지출-2026-0001", voucherStatus: "초안" }),
+      voucher_no: "지출-2026-0001",
+      voucher_status: "초안",
+    });
+    expect(update).not.toHaveProperty("actual_paid_amount");
+    expect(update).not.toHaveProperty("disbursed_at");
+    expect(update).not.toHaveProperty("payment_status");
+  });
+
+  it("updates payment fields when the payment status changes", () => {
+    const resolution = expenseResolutionFixture({
+      actualPaidAmount: 252000,
+      disbursedAt: "2026-01-30",
+      paymentStatus: "지급완료",
+    });
+
+    expect(mapExpenseDisbursementUpdate(resolution, { paymentStatus: "지급대기" })).toMatchObject({
+      actual_paid_amount: 252000,
+      disbursed_at: "2026-01-30",
+      payment_status: "지급완료",
     });
   });
 
