@@ -97,8 +97,8 @@ describe("ExpenseApprovalInboxPage", () => {
       voucherStatus: undefined,
     });
     const transitionDisbursement = vi.fn()
-      .mockResolvedValueOnce({ ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표초안" })
-      .mockResolvedValueOnce({ ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표확정" });
+      .mockResolvedValueOnce({ data: { ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표초안" }, ok: true })
+      .mockResolvedValueOnce({ data: { ...resolution, voucherNo: "지출-2026-0001", voucherStatus: "전표확정" }, ok: true });
     render(<ExpenseApprovalInboxPage
       initialDetailId={resolution.id}
       initialResolutions={[resolution]}

@@ -15,7 +15,7 @@ import {
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest } from "./expense-approval-workflow";
-import type { DisbursementTransitionRequest } from "./expense-disbursement-workflow";
+import type { DisbursementTransitionRequest, DisbursementTransitionResult } from "./expense-disbursement-workflow";
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {
@@ -32,7 +32,7 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
-export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution> } = {}) {
+export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<DisbursementTransitionResult> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
   const busy = useRef(false);
@@ -90,7 +90,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
     setWorkflowError("");
     try {
       if (!transitionDisbursement) throw new Error("전표 저장 기능에 연결하지 못했어. 새로고침 후 다시 시도해줘.");
-      const transitioned = await transitionDisbursement({
+      const result = await transitionDisbursement({
         actorLabel: currentApproverLabel,
         command,
         expectedPaymentStatus: resolution.paymentStatus,
@@ -98,6 +98,11 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
         idempotencyKey: crypto.randomUUID(),
         resolutionId: resolution.id,
       });
+      if (!result.ok) {
+        setWorkflowError(result.error);
+        return false;
+      }
+      const transitioned = result.data;
       setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
       router.refresh();
       return true;

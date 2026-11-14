@@ -13,7 +13,7 @@ import { listUnresolvedCorporateCardTransactions } from "@/features/finance/corp
 import { loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 import { listOperatingExpenseDetails } from "@/features/finance/operating-budget-repository";
 import { loadQuickExpenseConversionDraft, type QuickExpenseConversionDraft } from "@/features/finance/quick-expense-conversion-repository";
-import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction, uploadExpenseFactSupportingFileAction } from "./actions";
+import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementResultAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export const dynamic = "force-dynamic";
 export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
@@ -117,7 +117,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       uploadFactSupportingFile={uploadExpenseFactSupportingFileAction}
       retryEvidenceOcrJob={retryExpenseEvidenceOcrJobAction}
       transitionApproval={transitionExpenseApprovalAction}
-      transitionDisbursement={transitionExpenseDisbursementAction}
+      transitionDisbursement={transitionExpenseDisbursementResultAction}
     />
   );
 }

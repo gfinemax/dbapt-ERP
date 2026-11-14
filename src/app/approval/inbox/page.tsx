@@ -8,7 +8,7 @@ import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-r
 import { loadSmallExpenseWorkspace } from "@/features/approval/small-expense-repository";
 import { SmallExpensePage } from "@/features/approval/small-expense-page";
 import { ExpenseApprovalInboxPage } from "@/features/finance/expense-approval-inbox-page";
-import { createExpenseEvidenceDownloadUrlAction, transitionExpenseApprovalAction, transitionExpenseDisbursementAction } from "@/app/finance/expense-resolutions/actions";
+import { createExpenseEvidenceDownloadUrlAction, transitionExpenseApprovalAction, transitionExpenseDisbursementResultAction } from "@/app/finance/expense-resolutions/actions";
 import { documentInboxTasks } from "@/features/approval/unified-inbox-model";
 import { loadSmallExpenseInbox } from "@/features/approval/small-expense-inbox";
 import { loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
@@ -59,7 +59,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
     {errors.map(error => <p key={error} role="alert" className="rounded-xl bg-amber-50 p-4 text-amber-900">{error}</p>)}
     {!canReadDocuments && ["general", "expense"].includes(type) ? <p className={box}>기안·지출결의 조회 권한이 필요해. 소액지출은 지정된 담당자 권한으로 확인할 수 있어.</p> : null}
     {["all", "general"].includes(type) && <section className={box}><h2 className="text-lg font-bold">내 확인대기 {errors.length ? "· 조회된 내역" : `· ${tasks.length}건`}</h2>{tasks.length ? <ul className="mt-3 divide-y divide-slate-100">{tasks.map(task => <li key={task.key}><Link className="flex flex-wrap items-center justify-between gap-3 rounded-lg py-4 hover:bg-slate-50" href={task.href}><div><p className="text-xs text-slate-500">{task.label}</p><p className="mt-1 font-semibold">{task.title}</p></div><span className="text-sm tabular-nums">{task.amount.toLocaleString("ko-KR")}원 →</span></Link></li>)}</ul> : <p className="mt-4 text-sm text-slate-600">{errors.length ? "일부 내역을 조회하지 못했어. 위 안내를 확인해줘." : "현재 내 계정에 배정된 확인대기가 없어."}</p>}</section>}
-    {type === "expense" && canReadDocuments && results[1].status === "fulfilled" && <ExpenseApprovalInboxPage key={resolutions.map(r => `${r.id}:${r.authorization?.version}:${r.approvalStatus}`).join(",") + query.id} budgetDataError={expenseView.budgetDataError} createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction} embedded viewer={viewer} initialResolutions={resolutions} initialDetailId={query.id} transitionApproval={transitionExpenseApprovalAction} transitionDisbursement={transitionExpenseDisbursementAction} />}
+    {type === "expense" && canReadDocuments && results[1].status === "fulfilled" && <ExpenseApprovalInboxPage key={resolutions.map(r => `${r.id}:${r.authorization?.version}:${r.approvalStatus}`).join(",") + query.id} budgetDataError={expenseView.budgetDataError} createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction} embedded viewer={viewer} initialResolutions={resolutions} initialDetailId={query.id} transitionApproval={transitionExpenseApprovalAction} transitionDisbursement={transitionExpenseDisbursementResultAction} />}
     {type === "small" && smallWorkspace && <SmallExpensePage key={`${month}:${smallWorkspace.rows.map(r => `${r.id}:${r.revision}`).join(",")}`} workspace={smallWorkspace} mode="review" />}
   </main></ErpShell>;
 }

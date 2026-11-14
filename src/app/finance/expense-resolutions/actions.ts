@@ -18,7 +18,7 @@ import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence
 import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
 import { getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseCommand, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
 import { transitionExpenseApproval, type ApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
-import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "@/features/finance/expense-disbursement-workflow";
+import { DisbursementWorkflowError, transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "@/features/finance/expense-disbursement-workflow";
 import { validateExpenseResolutionWorkflow } from "@/features/finance/expense-resolution-domain";
 import { normalizeEvidenceStatus } from "@/features/finance/expense-compliance";
 import { getExpenseComplianceSettings, listExpenseFactConfirmations, saveExpenseComplianceSettings, type ExpenseFactConfirmationInput } from "@/features/finance/expense-compliance-repository";
@@ -28,6 +28,7 @@ import { evaluateDirectExpensePolicy } from "@/features/finance/direct-expense-p
 import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-small-expense";
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
 import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
+import { getExpenseVoucherSyncTargets } from "@/features/finance/expense-voucher-sync";
 
 import { createExpenseBudgetDecisionSnapshot, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
@@ -581,8 +582,31 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
 
   try {
     const current = await getExpenseResolutionSnapshotFromSupabase(input.resolutionId);
+    const canRecoverIncompleteDraft = input.command === "VOUCHER_CREATE"
+      && input.expectedVoucherStatus == null
+      && current.paymentStatus === input.expectedPaymentStatus
+      && current.voucherStatus === "전표초안"
+      && !!current.voucherNo;
+    if (canRecoverIncompleteDraft) {
+      await syncExpenseVoucherRecords(supabase, current, current, "VOUCHER_CREATE");
+      const { error: recoveryAuditError } = await supabase.schema("finance").from("expense_workflow_audit_logs").insert({
+        action: "VOUCHER_CREATE_RECOVERED",
+        actor_label: input.actorLabel,
+        after_data: current,
+        before_data: current,
+        operation_id: inserted.id,
+        resolution_id: input.resolutionId,
+      });
+      if (recoveryAuditError) throw new Error(`복구 감사로그 저장 실패: ${recoveryAuditError.message}`);
+      await completeExpenseWorkflowOperation(supabase, inserted.id, current);
+      revalidateExpenseDisbursementPaths();
+      return current;
+    }
     if (current.paymentStatus !== input.expectedPaymentStatus || current.voucherStatus !== input.expectedVoucherStatus) {
       throw new Error("다른 사용자가 먼저 지급 또는 전표 상태를 변경했습니다. 목록을 새로고침해주세요.");
+    }
+    if (input.command === "VOUCHER_CONFIRM") {
+      await syncExpenseVoucherRecords(supabase, current, current, "VOUCHER_CREATE");
     }
     const governedCurrent = ["PAYMENT_COMPLETE", "ITEM_PAYMENT_COMPLETE"].includes(input.command) ? await validateDirectExpenseGovernance(current) : current;
     const transitioned = transitionExpenseDisbursement({
@@ -604,15 +628,8 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
       resolution_id: input.resolutionId,
     });
     if (auditError) throw new Error(`감사로그 저장 실패: ${auditError.message}`);
-    const { error: completionError } = await supabase
-      .schema("finance")
-      .from("expense_workflow_operations")
-      .update({ completed_at: new Date().toISOString(), result_data: saved, status: "COMPLETED" })
-      .eq("id", inserted.id);
-    if (completionError) throw new Error(`처리결과 저장 실패: ${completionError.message}`);
-    revalidatePath("/finance/expense-resolutions");
-    revalidatePath("/finance/payment-waiting");
-    revalidatePath("/finance/payment-completed");
+    await completeExpenseWorkflowOperation(supabase, inserted.id, saved);
+    revalidateExpenseDisbursementPaths();
     return saved;
   } catch (error) {
     await supabase
@@ -624,10 +641,56 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
   }
 }
 
+export async function transitionExpenseDisbursementResultAction(input: DisbursementTransitionRequest): Promise<DisbursementTransitionResult> {
+  try {
+    return { data: await transitionExpenseDisbursementAction(input), ok: true };
+  } catch (error) {
+    console.error("[expense-disbursement] Server action failed", error);
+    return { error: getSafeExpenseDisbursementError(error), ok: false };
+  }
+}
+
+function getSafeExpenseDisbursementError(error: unknown) {
+  if (error instanceof DisbursementWorkflowError) return error.message;
+  const message = error instanceof Error ? error.message : "";
+  const safePrefixes = [
+    "다른 사용자가",
+    "동일한 지급 처리가",
+    "이전 지급 처리가",
+    "통합 연결된 건의",
+    "확정할 전표초안이",
+    "취소할 지출전표가",
+    "전표취소 사유를",
+    "지급완료 문서만",
+    "연결된 통장거래 없이",
+  ];
+  const safeMessage = safePrefixes.find((prefix) => message.startsWith(prefix));
+  if (safeMessage) return message;
+  if (message.startsWith("지출전표 헤더 저장 실패")) return "전표 원본 연결을 확인하지 못했어. 새로고침 후 다시 시도해줘.";
+  return "전표 처리 중 서버 오류가 발생했어. 새로고침 후 다시 시도해줘.";
+}
+
+async function completeExpenseWorkflowOperation(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  operationId: string,
+  resolution: ManagedExpenseResolution,
+) {
+  const { error } = await supabase
+    .schema("finance")
+    .from("expense_workflow_operations")
+    .update({ completed_at: new Date().toISOString(), result_data: resolution, status: "COMPLETED" })
+    .eq("id", operationId);
+  if (error) throw new Error(`처리결과 저장 실패: ${error.message}`);
+}
+
+function revalidateExpenseDisbursementPaths() {
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/payment-waiting");
+  revalidatePath("/finance/payment-completed");
+}
+
 async function syncExpenseVoucherRecords(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>, before: ManagedExpenseResolution, afterResolution: ManagedExpenseResolution, command: "VOUCHER_CREATE" | "VOUCHER_CONFIRM" | "VOUCHER_CANCEL") {
-  const targets = afterResolution.resolutionType === "BATCH" && afterResolution.voucherCreationMode === "ITEM_VOUCHER"
-    ? afterResolution.expenseItems.filter((item) => item.voucherNo).map((item) => ({ amount: item.totalAmount, detailTransactionId: item.id, description: item.itemTitle, voucherNo: item.voucherNo! }))
-    : afterResolution.voucherNo ? [{ amount: afterResolution.totalPaymentAmount, detailTransactionId: null, description: afterResolution.subject || afterResolution.reason, voucherNo: afterResolution.voucherNo }] : [];
+  const targets = getExpenseVoucherSyncTargets(afterResolution);
   if (!targets.length) throw new Error("동기화할 지출전표 번호가 없습니다.");
   const voucherNumbers = [...new Set(targets.map((target) => target.voucherNo))];
   if (command !== "VOUCHER_CREATE") {
@@ -638,11 +701,11 @@ async function syncExpenseVoucherRecords(supabase: NonNullable<ReturnType<typeof
   }
   const { data: resolutionRow, error: resolutionError } = await supabase.schema("finance").from("expense_resolutions").select("organization_id").eq("id", afterResolution.id).single();
   if (resolutionError) throw new Error(`전표 조직정보 조회 실패: ${resolutionError.message}`);
-  for (const [index, target] of targets.entries()) {
+  for (const target of targets) {
     const { data: voucher, error: voucherError } = await supabase.schema("finance").from("vouchers").upsert({
       approval_status: "승인대기",
-      bank_transaction_id: index === 0 ? afterResolution.bankTransactionId ?? null : null,
-      detail_transaction_id: target.detailTransactionId,
+      bank_transaction_id: target.bankTransactionId,
+      detail_transaction_id: null,
       expense_resolution_id: afterResolution.id,
       memo: `${afterResolution.resolutionNo} · ${target.description}`,
       organization_id: resolutionRow.organization_id,

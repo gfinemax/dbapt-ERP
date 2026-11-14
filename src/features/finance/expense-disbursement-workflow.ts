@@ -7,6 +7,10 @@ export type DisbursementTransitionRequest = Omit<DisbursementTransitionInput, "r
   resolutionId: string;
 };
 
+export type DisbursementTransitionResult =
+  | { data: ManagedExpenseResolution; ok: true }
+  | { error: string; ok: false };
+
 export type DisbursementCommand = "PAYMENT_COMPLETE" | "ITEM_PAYMENT_COMPLETE" | "PAYMENT_HOLD" | "VOUCHER_CREATE" | "VOUCHER_CONFIRM" | "VOUCHER_CANCEL";
 
 export type DisbursementTransitionInput = {

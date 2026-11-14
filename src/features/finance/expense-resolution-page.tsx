@@ -45,7 +45,7 @@ import {
   type ExpenseApprovalParticipant,
   type ExpenseApprovalRoute,
 } from "./expense-approval-routing";
-import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
+import { transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "./expense-disbursement-workflow";
 import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 import {
@@ -2351,7 +2351,7 @@ export function ExpenseResolutionPage({
   uploadFactSupportingFile?: (formData: FormData) => Promise<{ fileName: string; id: string }>;
   retryEvidenceOcrJob?: (id: string) => Promise<void>;
   transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>;
-  transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<ManagedExpenseResolution>;
+  transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<DisbursementTransitionResult>;
   uploadEvidence?: (formData: FormData) => Promise<ExpenseEvidenceAttachment | ExpenseEvidenceUploadResult>;
 } = {}) {
   const router = useRouter();
@@ -3684,9 +3684,17 @@ export function ExpenseResolutionPage({
         resolutionId: resolution.id,
         ...extra,
       } as DisbursementTransitionRequest;
-      const transitioned = transitionDisbursement
-        ? await transitionDisbursement(request)
-        : transitionExpenseDisbursement({ ...request, resolution, voucherNo: command === "VOUCHER_CREATE" ? getNextExpenseVoucherNo(resolutions) : undefined });
+      let transitioned: ManagedExpenseResolution;
+      if (transitionDisbursement) {
+        const result = await transitionDisbursement(request);
+        if (!result.ok) {
+          setSaveError(result.error);
+          return null;
+        }
+        transitioned = result.data;
+      } else {
+        transitioned = transitionExpenseDisbursement({ ...request, resolution, voucherNo: command === "VOUCHER_CREATE" ? getNextExpenseVoucherNo(resolutions) : undefined });
+      }
       setResolutions((current) => current.map((item) => item.id === transitioned.id ? transitioned : item));
       return transitioned;
     } catch (error) {
