@@ -111,6 +111,7 @@ const testFiles = [
   "quick_expense_resolution_conversion.sql",
   "trust_operating_fund_periods.sql",
   "user_quick_menu_preferences.sql",
+  "top_favorite_menus.sql",
   "collection_ledger_bridge.sql",
   "bank_post_approval_budget_guard.sql",
 ];

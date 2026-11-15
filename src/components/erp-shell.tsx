@@ -299,8 +299,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             })}
           </nav>
         )}
-
-        <ErpQuickMenu badges={financeBadges} onSelect={onQuickMenuSelect} />
         </>}
       </aside>
 
@@ -360,6 +358,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             </div>
           </div>
 
+          <ErpQuickMenu badges={financeBadges} onSelect={onQuickMenuSelect} placement="top" />
         </header>
 
         <div className="border-b border-[var(--color-soft-border)] bg-white px-4 py-2 md:hidden">

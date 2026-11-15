@@ -1,100 +1,153 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-const actions = vi.hoisted(() => ({
-  load: vi.fn(),
-  save: vi.fn(),
-}));
+const actions = vi.hoisted(() => ({ load: vi.fn(), save: vi.fn() }));
 vi.mock("@/app/finance/quick-menu/actions", () => ({
   loadQuickMenuPreferencesAction: actions.load,
   saveQuickMenuPreferencesAction: actions.save,
 }));
 import { ErpQuickMenu, QUICK_MENU_STORAGE_KEY } from "./erp-quick-menu";
+import { defaultQuickMenuIds } from "@/features/finance/erp-quick-menu-catalog";
 
-function openQuickMenu() {
-  fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 펼치기" }));
+async function openEditor() {
+  await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+  fireEvent.click(screen.getByRole("button", { name: "즐겨찾기 편집" }));
 }
-
-describe("ERP quick menu preferences", () => {
+function add(id: string) {
+  fireEvent.change(screen.getByRole("combobox", { name: "즐겨찾기 추가" }), { target: { value: id } });
+}
+async function save() {
+  fireEvent.click(screen.getByRole("button", { name: "저장" }));
+  await waitFor(() => expect(screen.queryByRole("region", { name: "즐겨찾기 편집" })).not.toBeInTheDocument());
+}
+describe("personalized top favorites", () => {
   beforeEach(() => {
     localStorage.clear();
     actions.load.mockReset().mockResolvedValue({ authenticated: false, menuIds: null, revision: 0 });
     actions.save.mockReset();
   });
-  it("saves additions, removals and order and restores them after remount", async () => {
-    const mounted = render(<ErpQuickMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 설정" }));
+  it("shows recommended destinations immediately and preserves favorites when remounted", async () => {
+    const mounted = render(<ErpQuickMenu placement="top" />);
+    expect(screen.getByRole("link", { name: "즐겨찾기 지출결의서" })).toHaveAttribute("href", "/finance/expense-resolutions");
+    expect(screen.getByRole("link", { name: "즐겨찾기 전표" })).toHaveAttribute("href", "/finance");
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "지출 등록·신청 제거" }));
-    fireEvent.change(screen.getByRole("combobox", { name: "퀵메뉴 추가" }), { target: { value: "advance" } });
-    fireEvent.click(screen.getByRole("button", { name: "받은 선지급금 정산 위로" }));
-    fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await waitFor(() => expect(screen.queryByRole("combobox", { name: "퀵메뉴 추가" })).not.toBeInTheDocument());
-    const saved = JSON.parse(localStorage.getItem(QUICK_MENU_STORAGE_KEY)!);
-    expect(saved).not.toContain("expense-entry");
-    expect(saved.indexOf("advance")).toBe(saved.indexOf("bank") - 1);
+    add("payments");
+    fireEvent.click(screen.getByRole("button", { name: "지급대기 위로" }));
+    await save();
+    const ids = JSON.parse(localStorage.getItem(QUICK_MENU_STORAGE_KEY)!);
+    expect(ids).not.toContain("expense-entry");
+    expect(ids.indexOf("payments")).toBe(ids.indexOf("budget") - 1);
     mounted.unmount();
-    render(<ErpQuickMenu />);
-    openQuickMenu();
-    expect(screen.queryByRole("link", { name: "퀵메뉴 지출 등록·신청" })).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "퀵메뉴 받은 선지급금 정산" })).toHaveAttribute("href", "/finance/advance-settlements");
+    render(<ErpQuickMenu placement="top" />);
+    await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+    expect(screen.queryByRole("link", { name: "즐겨찾기 지출 등록·신청" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "즐겨찾기 지급대기" })).toHaveAttribute("href", "/finance/payments?tab=UNPAID");
   });
-  it("does not save cancelled edits and disables unsupported shortcuts", async () => {
-    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["arrears", "cards", "members"]));
-    render(<ErpQuickMenu />);
-    openQuickMenu();
-    await waitFor(() => expect(actions.load).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "퀵메뉴 미납 조합원" })).toBeDisabled();
-    expect(screen.getByRole("link", { name: "퀵메뉴 법인카드 내역 연결" })).toHaveAttribute("href", "/finance/quick-expenses?method=corporate-card");
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 설정" }));
-    fireEvent.click(screen.getByRole("button", { name: "조합원 등록 제거" }));
+  it("searches menu choices and cancels edits without saving", async () => {
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    expect(screen.getByRole("textbox", { name: "즐겨찾기 메뉴 검색" })).toHaveFocus();
+    fireEvent.change(screen.getByRole("textbox", { name: "즐겨찾기 메뉴 검색" }), { target: { value: "정산" } });
+    const options = within(screen.getByRole("combobox", { name: "즐겨찾기 추가" })).getAllByRole("option").slice(1);
+    expect(options.length).toBeGreaterThan(0);
+    expect(options.every((option) => option.textContent?.includes("정산"))).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "전표 제거" }));
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
-    expect(screen.getByRole("link", { name: "퀵메뉴 조합원 등록" })).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem(QUICK_MENU_STORAGE_KEY)!)).toEqual(["arrears", "cards", "members"]);
+    expect(screen.getByRole("link", { name: "즐겨찾기 전표" })).toBeInTheDocument();
+    expect(localStorage.getItem(QUICK_MENU_STORAGE_KEY)).toBeNull();
+    expect(screen.getByRole("button", { name: "즐겨찾기 편집" })).toHaveFocus();
   });
-  it("validates stored identifiers and preserves supported callbacks", () => {
-    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["arrears", "arrears", "malicious", 1]));
-    const onSelect = vi.fn();
-    render(<ErpQuickMenu onSelect={onSelect} />);
-    openQuickMenu();
-    expect(within(screen.getByRole("region", { name: "퀵메뉴" })).getAllByRole("button")).toHaveLength(3);
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 미납 조합원" }));
-    expect(onSelect).toHaveBeenCalledWith("미납 조합원");
+  it("restores defaults and closes the editor with Escape", async () => {
+    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["expenses"]));
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    fireEvent.click(screen.getByRole("button", { name: "기본값" }));
+    await save();
+    expect(JSON.parse(localStorage.getItem(QUICK_MENU_STORAGE_KEY)!)).toEqual(defaultQuickMenuIds);
+    await openEditor();
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "즐겨찾기 메뉴 검색" }), { key: "Escape" });
+    expect(screen.queryByRole("region", { name: "즐겨찾기 편집" })).not.toBeInTheDocument();
   });
-  it("falls back safely for corrupt stored preferences", () => {
-    localStorage.setItem(QUICK_MENU_STORAGE_KEY, "{");
-    render(<ErpQuickMenu />);
-    openQuickMenu();
-    expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toBeInTheDocument();
+  it("loads the account preference and saves the new menus in order", async () => {
+    actions.load.mockResolvedValue({ authenticated: true, menuIds: ["expenses", "vouchers"], revision: 4 });
+    actions.save.mockResolvedValue({ menuIds: ["vouchers", "expenses", "resolution-list"], revision: 5 });
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    expect(screen.getByText("내 계정의 모든 기기에 같은 메뉴와 순서가 표시돼.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "전표 위로" }));
+    add("resolution-list");
+    await save();
+    expect(actions.save).toHaveBeenCalledWith(["vouchers", "expenses", "resolution-list"], 4, expect.any(String));
+    expect(within(screen.getByRole("navigation", { name: "즐겨찾기 바로가기" })).getAllByRole("link").map((link) => link.textContent)).toEqual(["전표", "전체 지출", "지출결의서"]);
   });
-  it("keeps the editor and draft when browser storage rejects a save", async () => {
-    render(<ErpQuickMenu />);
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 설정" }));
-    const save = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+  it("does not report an account save as failed when browser storage is blocked", async () => {
+    actions.load.mockResolvedValue({ authenticated: true, menuIds: ["vouchers"], revision: 1 });
+    actions.save.mockResolvedValue({ menuIds: ["vouchers", "budget"], revision: 2 });
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    add("budget");
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
+    try { await save(); expect(screen.queryByRole("alert")).not.toBeInTheDocument(); }
+    finally { storage.mockRestore(); }
+  });
+  it("keeps the draft when anonymous browser storage rejects saving", async () => {
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
     try {
       fireEvent.click(screen.getByRole("button", { name: "저장" }));
       await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("저장할 수 없어"));
-      expect(screen.getByRole("combobox", { name: "퀵메뉴 추가" })).toBeInTheDocument();
-    } finally { save.mockRestore(); }
+      expect(screen.getByRole("region", { name: "즐겨찾기 편집" })).toBeInTheDocument();
+    } finally { storage.mockRestore(); }
   });
-  it("loads and saves an authenticated account preference", async () => {
-    actions.load.mockResolvedValue({ authenticated: true, menuIds: ["expenses", "corporate-use"], revision: 4 });
-    actions.save.mockResolvedValue({ menuIds: ["corporate-use", "expenses"], revision: 5 });
-    render(<ErpQuickMenu />);
-    openQuickMenu();
-    await screen.findByRole("link", { name: "퀵메뉴 법인카드 간편처리" });
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 설정" }));
-    expect(screen.getByText("내 계정의 모든 기기에 같은 메뉴와 순서가 표시돼.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "법인카드 간편처리 위로" }));
+  it("blocks overwriting unavailable account settings and permits reloading them", async () => {
+    actions.load.mockRejectedValueOnce(new Error("offline"));
+    render(<ErpQuickMenu placement="top" />);
+    await screen.findByRole("alert");
+    await openEditor();
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "취소" }));
+    actions.load.mockResolvedValue({ authenticated: true, menuIds: ["vouchers"], revision: 7 });
+    fireEvent.click(screen.getByRole("button", { name: "다시 불러오기" }));
+    await waitFor(() => expect(screen.queryByRole("alert")).not.toBeInTheDocument());
+    await openEditor();
+    expect(screen.getByRole("button", { name: "저장" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "전표 제거" })).toBeInTheDocument();
+  });
+  it("retains the editor on account conflicts and changes the retry key when the draft changes", async () => {
+    actions.load.mockResolvedValue({ authenticated: true, menuIds: ["vouchers"], revision: 3 });
+    actions.save.mockRejectedValue(new Error("다른 화면에서 변경됐습니다. 새로고침해주세요."));
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
-    await waitFor(() => expect(actions.save).toHaveBeenCalledWith(["corporate-use", "expenses"], 4, expect.any(String)));
-    expect(JSON.parse(localStorage.getItem(QUICK_MENU_STORAGE_KEY)!)).toEqual(["corporate-use", "expenses"]);
+    await screen.findByRole("alert");
+    const key = actions.save.mock.calls[0][2];
+    add("budget");
+    fireEvent.click(screen.getByRole("button", { name: "저장" }));
+    await waitFor(() => expect(actions.save).toHaveBeenCalledTimes(2));
+    expect(actions.save.mock.calls[1][2]).not.toBe(key);
+    expect(screen.getByRole("region", { name: "즐겨찾기 편집" })).toBeInTheDocument();
   });
-  it("shows source-backed pending counts and offers refund management", () => {
-    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["cards", "refunds", "resolution"]));
-    render(<ErpQuickMenu badges={{ "법인카드 내역 연결": 3, "환급관리": 2 }} />);
-    openQuickMenu();
-    expect(screen.getByLabelText("법인카드 내역 연결 대기 3건")).toHaveTextContent("3");
-    expect(screen.getByLabelText("환급관리 대기 2건")).toHaveTextContent("2");
-    expect(screen.getByRole("link", { name: "퀵메뉴 환급관리" })).toHaveAttribute("href", "/finance/refunds");
-    expect(screen.queryByLabelText(/지출결의 작성 대기/)).not.toBeInTheDocument();
+  it("preserves older 12-menu preferences, limits additions and prevents an empty save", async () => {
+    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["members","collections","refunds","bank","cards","resolution","payments","evidence","advance","expenses","corporate-use","expense-entry"]));
+    render(<ErpQuickMenu placement="top" />);
+    await openEditor();
+    expect(screen.getByRole("combobox", { name: "즐겨찾기 추가" })).toBeDisabled();
+    for (const button of screen.getAllByRole("button", { name: / 제거$/ })) fireEvent.click(button);
+    expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
+    expect(screen.getByRole("combobox", { name: "즐겨찾기 추가" })).toBeEnabled();
+  });
+  it("validates browser preferences and provides the narrow-screen more toggle", async () => {
+    localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["vouchers", "vouchers", "malicious", 1]));
+    const mounted = render(<ErpQuickMenu placement="top" />);
+    await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+    expect(within(screen.getByRole("navigation", { name: "즐겨찾기 바로가기" })).getAllByRole("link")).toHaveLength(1);
+    mounted.unmount();
+    localStorage.setItem(QUICK_MENU_STORAGE_KEY, "{");
+    render(<ErpQuickMenu placement="top" />);
+    await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+    expect(screen.getByRole("link", { name: "즐겨찾기 지출결의서" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "즐겨찾기 더보기" }));
+    expect(screen.getByRole("button", { name: "즐겨찾기 접기" })).toHaveAttribute("aria-expanded", "true");
   });
 });
