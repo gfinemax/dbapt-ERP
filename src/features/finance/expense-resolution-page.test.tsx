@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
+import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, ExpenseResolutionPrintPreviewModal, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, paginateExpensePrintRowHeights, type BatchExpenseItem } from "./expense-resolution-page";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
@@ -174,6 +175,21 @@ describe("ExpenseResolutionPage", () => {
     expect(within(dialog).getAllByText("예산 미편성")).toHaveLength(2);
     expect(within(dialog).getByText("공식 예산이 없습니다. 예산 편성·조정 후 항목과 귀속월을 연결해주세요.")).toBeInTheDocument();
     expect(within(dialog).getAllByText("252,000원").length).toBeGreaterThan(0);
+  });
+
+  it("loads authoritative child data only when a resolution detail is opened", async () => {
+    vi.useRealTimers();
+    const summary = expenseResolutionFixture({ id: "lazy-detail", vendorName: "목록 거래처" });
+    const detail = expenseResolutionFixture({ id: "lazy-detail", resolutionNo: "DETAIL-0042", vendorName: "상세 거래처" });
+    const loadResolutionDetail = vi.fn(async () => detail);
+    render(<ExpenseResolutionPage initialResolutions={[summary]} loadResolutionDetail={loadResolutionDetail} />);
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 0)); });
+
+    expect(loadResolutionDetail).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
+    await waitFor(() => expect(loadResolutionDetail).toHaveBeenCalledWith("lazy-detail"));
+    const dialog = await screen.findByRole("dialog", { name: "지출결의서 상세" });
+    expect(within(dialog).getByText("DETAIL-0042")).toBeInTheDocument();
   });
 
   it("does not count bank descriptions as uploaded evidence files", async () => {
@@ -380,6 +396,28 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const dialog = await getExpenseResolutionDialog("지출결의서 작성");
     expect(within(dialog).getByLabelText("결의서번호")).toHaveValue("지결-2026-0121");
+  });
+
+  it("loads creation-only options after the user opens the form and reuses them", async () => {
+    vi.useRealTimers();
+    const loadFormOptions = vi.fn(async () => ({
+      approvalDocuments: [],
+      bankTransactions: [],
+      cardTransactions: [],
+      directExpenseSettings: defaultExpenseComplianceSettings,
+      expenseDetails: [],
+    }));
+    render(<ExpenseResolutionPage initialResolutions={[]} loadFormOptions={loadFormOptions} />);
+
+    expect(loadFormOptions).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    await waitFor(() => expect(loadFormOptions).toHaveBeenCalledOnce());
+    const firstDialog = await getExpenseResolutionDialog("지출결의서 작성");
+    fireEvent.click(within(firstDialog).getByRole("button", { name: "취소" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    await getExpenseResolutionDialog("지출결의서 작성");
+    expect(loadFormOptions).toHaveBeenCalledOnce();
   });
 
   it("routes new small expenses away from resolutions and keeps legacy batches read-only", async () => {

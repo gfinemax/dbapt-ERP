@@ -233,7 +233,7 @@ export async function listExpenseResolutionsFromSupabase(verifiedActor?: Reimbur
 export async function listExpenseResolutionPageFromSupabase(
   request: ExpenseResolutionListRequest & { includeId?: string },
   verifiedActor?: ReimbursementMember,
-): Promise<{ items: ManagedExpenseResolution[]; nextResolutionNo: string; pagination: ExpenseResolutionListPage } | null> {
+): Promise<{ items: ManagedExpenseResolution[]; pagination: ExpenseResolutionListPage } | null> {
   const actor = verifiedActor ?? await requireExpenseActor();
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
@@ -274,19 +274,19 @@ export async function listExpenseResolutionPageFromSupabase(
       : query
         .order("updated_at", { ascending: false })
         .order("id", { ascending: false });
-  const [pageResult, nextResolutionNo] = await Promise.all([
-    orderedQuery.range(offset, offset + request.pageSize - 1),
-    getNextExpenseResolutionNo(supabase, actor.organization_id),
-  ]);
+  const pageResult = await orderedQuery.range(offset, offset + request.pageSize - 1);
   const { data, error, count } = pageResult;
   if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
 
   const sourceRows = (data ?? []) as ExpenseResolutionRow[];
-  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionRows(supabase, actor, sourceRows) : [];
+  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionListRows(supabase, actor, sourceRows) : [];
   let items: ManagedExpenseResolution[] = hydratedItems;
-  if (request.includeId && !items.some((item) => item.id === request.includeId)) {
+  if (request.includeId) {
     try {
-      items = [await getExpenseResolutionSnapshotFromSupabase(request.includeId, actor), ...items];
+      const detail = await getExpenseResolutionDetailFromSupabase(request.includeId, actor);
+      const existingIndex = items.findIndex((item) => item.id === request.includeId);
+      if (existingIndex >= 0) items = items.map((item, index) => index === existingIndex ? detail : item);
+      else items = [detail, ...items];
     } catch {
       // The page renders its existing not-found guidance for missing or unauthorized deep links.
     }
@@ -294,7 +294,6 @@ export async function listExpenseResolutionPageFromSupabase(
   const total = count ?? 0;
   return {
     items,
-    nextResolutionNo,
     pagination: {
       page: request.page,
       pageSize: request.pageSize,
@@ -325,6 +324,13 @@ async function getNextExpenseResolutionNo(
   if (error) throw new Error(`Failed to determine the next expense resolution number: ${error.message}`);
   const latestSequence = Number(data?.resolution_no?.slice(prefix.length));
   return `${prefix}${String(Number.isSafeInteger(latestSequence) ? latestSequence + 1 : 1).padStart(4, "0")}`;
+}
+
+export async function getNextExpenseResolutionNoFromSupabase(verifiedActor?: ReimbursementMember) {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  return getNextExpenseResolutionNo(supabase, actor.organization_id);
 }
 
 async function hydrateExpenseResolutionRows(
@@ -388,6 +394,52 @@ async function hydrateExpenseResolutionRows(
     (allocationData ?? []) as ExpenseAccountAllocationRow[],
     (evidenceData ?? []) as ExpenseEvidenceRow[],
   );
+}
+
+async function hydrateExpenseResolutionListRows(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  actor: ReimbursementMember,
+  sourceRows: ExpenseResolutionRow[],
+) {
+  const resolutionIds = sourceRows.map((row) => row.resolution_data.id);
+  const [
+    { data: bindingRows, error: bindingError },
+    { data: workflowData, error: workflowError },
+  ] = await Promise.all([
+    supabase.schema("finance").from("expense_authorization_bindings")
+      .select("resolution_id,author_user_id,steps,version")
+      .eq("organization_id", actor.organization_id)
+      .in("resolution_id", resolutionIds),
+    supabase.schema("finance").from("workflow_transactions")
+      .select("id,source_id")
+      .eq("organization_id", actor.organization_id)
+      .eq("source_kind", "RESOLUTION")
+      .in("source_id", resolutionIds),
+  ]);
+  if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
+  if (workflowError) throw new Error(`Failed to list integrated expense links: ${workflowError.message}`);
+  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
+  const workflowMap = new Map(((workflowData ?? []) as { id: string; source_id: string }[]).map(item => [item.source_id, item.id]));
+  return sourceRows.map((row) => ({
+    ...row.resolution_data,
+    authorization: bindingMap.get(row.resolution_data.id) ?? null,
+    workflowTransactionId: workflowMap.get(row.resolution_data.id),
+  }));
+}
+
+export async function getExpenseResolutionDetailFromSupabase(id: string, verifiedActor?: ReimbursementMember) {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_resolutions")
+    .select(expenseResolutionSelect)
+    .eq("id", id)
+    .eq("organization_id", actor.organization_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error || !data) throw new Error("조회 권한이 있는 지출결의서를 찾을 수 없습니다.");
+  const [resolution] = await hydrateExpenseResolutionRows(supabase, actor, [data as ExpenseResolutionRow]);
+  return resolution;
 }
 
 export async function getExpenseResolutionSnapshotFromSupabase(id: string, verifiedActor?: ReimbursementMember) {

@@ -18,7 +18,7 @@ import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-
 import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
 import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
 import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
-import { getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
+import { getExpenseResolutionDetailFromSupabase, getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type BatchApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
 import { DisbursementWorkflowError, transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "@/features/finance/expense-disbursement-workflow";
 import { validateExpenseResolutionWorkflow } from "@/features/finance/expense-resolution-domain";
@@ -31,6 +31,7 @@ import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-smal
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
 import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
 import { getExpenseVoucherSyncTargets } from "@/features/finance/expense-voucher-sync";
+import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options.server";
 
 import { createExpenseBudgetDecisionSnapshot, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
@@ -38,6 +39,14 @@ const expenseEvidenceBucket = "expense-evidence";
 
 const maxEvidenceFileSize = 10 * 1024 * 1024;
 const acceptedEvidenceTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "text/plain", "text/csv"]);
+
+export async function loadExpenseResolutionFormOptionsAction() {
+  return loadExpenseResolutionFormOptions();
+}
+
+export async function loadExpenseResolutionDetailAction(id: string) {
+  return getExpenseResolutionDetailFromSupabase(id);
+}
 
 async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolution, settings?: ExpenseComplianceSettings | null) {
   const supabase = getSupabaseServerClient();

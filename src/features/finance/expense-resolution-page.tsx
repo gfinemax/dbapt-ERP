@@ -16,6 +16,7 @@ import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceM
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 import type { ExpenseBudgetDecisionSnapshot } from "./expense-resolution-budget-view";
+import type { ExpenseResolutionFormOptions } from "./expense-resolution-form-options";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -2325,6 +2326,9 @@ export function ExpenseResolutionPage({
   initialResolutions,
   initialListPage,
   initialNextResolutionNo,
+  initialFormOptions,
+  loadFormOptions,
+  loadResolutionDetail,
   initialBankTransactions = [],
   initialCardTransactions = [],
   initialApprovalDocuments = [],
@@ -2357,6 +2361,9 @@ export function ExpenseResolutionPage({
   initialResolutions?: ManagedExpenseResolution[];
   initialListPage?: ExpenseResolutionListPage;
   initialNextResolutionNo?: string;
+  initialFormOptions?: ExpenseResolutionFormOptions;
+  loadFormOptions?: () => Promise<ExpenseResolutionFormOptions>;
+  loadResolutionDetail?: (id: string) => Promise<ManagedExpenseResolution>;
   initialBankTransactions?: BankTransactionResolutionCandidate[];
   initialCardTransactions?: CorporateCardTransactionCandidate[];
   initialApprovalDocuments?: ApprovalDocumentCandidate[];
@@ -2385,7 +2392,17 @@ export function ExpenseResolutionPage({
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? [],
   );
-  const initialBankDraft = initialBankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
+  const [formOptions, setFormOptions] = useState<ExpenseResolutionFormOptions>(() => initialFormOptions ?? {
+    approvalDocuments: initialApprovalDocuments,
+    bankTransactions: initialBankTransactions,
+    cardTransactions: initialCardTransactions,
+    directExpenseSettings,
+    expenseDetails: initialExpenseDetails,
+  });
+  const [formOptionsLoaded, setFormOptionsLoaded] = useState(Boolean(initialFormOptions) || !loadFormOptions);
+  const [isFormOptionsLoading, setIsFormOptionsLoading] = useState(false);
+  const formOptionsRequest = useRef<Promise<ExpenseResolutionFormOptions> | null>(null);
+  const initialBankDraft = formOptions.bankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
   const [isLocalStorageHydrated, setIsLocalStorageHydrated] = useState(false);
   const [saveError, setSaveError] = useState("");
   const savingResolution = useRef(false);
@@ -2426,9 +2443,10 @@ export function ExpenseResolutionPage({
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
-    if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo)), author: currentUserName, settlementManager: currentUserName };
-    if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), currentUserName);
-    const form = createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName);
+    const nextResolutionNo = initialNextResolutionNo ?? formOptions.nextResolutionNo;
+    if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo)), author: currentUserName, settlementManager: currentUserName };
+    if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo), currentUserName);
+    const form = createFormState(getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo), undefined, currentUserName);
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
   const [quickConversionSourceId, setQuickConversionSourceId] = useState<string | null>(initialQuickExpense?.sourceId ?? null);
@@ -2506,6 +2524,25 @@ export function ExpenseResolutionPage({
     .map((file) => file.ocrJobId)
     .join(",");
 
+  async function ensureFormOptions() {
+    if (formOptionsLoaded || !loadFormOptions) return formOptions;
+    setIsFormOptionsLoading(true);
+    setSaveError("");
+    try {
+      formOptionsRequest.current ??= loadFormOptions();
+      const options = await formOptionsRequest.current;
+      setFormOptions(options);
+      setFormOptionsLoaded(true);
+      return options;
+    } catch (error) {
+      formOptionsRequest.current = null;
+      setSaveError(error instanceof Error ? error.message : "작성용 기준정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.");
+      return null;
+    } finally {
+      setIsFormOptionsLoading(false);
+    }
+  }
+
   useEffect(() => {
     let storedResolutions: ManagedExpenseResolution[] | undefined;
     if (initialResolutions === undefined && !persistResolution && !dataLoadError) {
@@ -2544,7 +2581,7 @@ export function ExpenseResolutionPage({
       file.ocrData.recognizedText,
       file.ocrData.items?.map((item) => item.itemName).join(" "),
     ].filter(Boolean).join(" ")).join(" ");
-    const result = recommendOperatingExpenseDetail(initialExpenseDetails, {
+    const result = recommendOperatingExpenseDetail(formOptions.expenseDetails, {
       evidenceText,
       itemName: formState.singleItems.map((item) => item.itemName).join(" "),
       memo: formState.memo,
@@ -2570,9 +2607,11 @@ export function ExpenseResolutionPage({
   useEffect(() => {
     const timer = window.setTimeout(applyAutomaticExpenseDetail, 0);
     return () => window.clearTimeout(timer);
-  }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, initialExpenseDetails, isCreateModalOpen]);
+  }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, formOptions.expenseDetails, isCreateModalOpen]);
 
-  function openCreateModal() {
+  async function openCreateModal() {
+    const options = await ensureFormOptions();
+    if (!options) return;
     setQuickConversionSourceId(null);
     setBatchImportResult(null);
     setBatchImportFileName("");
@@ -2581,11 +2620,13 @@ export function ExpenseResolutionPage({
     setVendorRegistrationNotice("");
     setEditingResolutionId(null);
     expenseDetailSelectionRef.current = "AUTO";
-    setFormState(createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName));
+    setFormState(createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo ?? options.nextResolutionNo), undefined, currentUserName));
     setIsCreateModalOpen(true);
   }
 
-  function openExcelImportModal() {
+  async function openExcelImportModal() {
+    const options = await ensureFormOptions();
+    if (!options) return;
     setQuickConversionSourceId(null);
     setEditingResolutionId(null);
     expenseDetailSelectionRef.current = "AUTO";
@@ -2594,7 +2635,7 @@ export function ExpenseResolutionPage({
     setBatchImportError("");
     setEvidenceUploadError("");
     setFormState({
-      ...createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo), undefined, currentUserName),
+      ...createFormState(getNextResolutionNoForLoadedPage(resolutions, initialNextResolutionNo ?? options.nextResolutionNo), undefined, currentUserName),
       inputMethod: "EXCEL",
       resolutionMode: "PROJECT_BULK",
       resolutionType: "BATCH",
@@ -2609,7 +2650,8 @@ export function ExpenseResolutionPage({
     setQuickConversionSourceId(null);
   }
 
-  function openEditModal(resolution: ManagedExpenseResolution) {
+  async function openEditModal(resolution: ManagedExpenseResolution) {
+    if (!(await ensureFormOptions())) return;
     setQuickConversionSourceId(null);
     setEvidenceUploadError("");
     setPrintWarning(null);
@@ -2620,10 +2662,27 @@ export function ExpenseResolutionPage({
     setIsCreateModalOpen(true);
   }
 
+  async function openDetailModal(id: string) {
+    setSaveError("");
+    if (!loadResolutionDetail) {
+      setSelectedDetailId(id);
+      return;
+    }
+    try {
+      const detail = await loadResolutionDetail(id);
+      setResolutions((current) => current.some((item) => item.id === id)
+        ? current.map((item) => item.id === id ? detail : item)
+        : [detail, ...current]);
+      setSelectedDetailId(id);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "지출결의서 상세를 불러오지 못했습니다.");
+    }
+  }
+
   function editPrintWarningResolution() {
     if (!printWarning) return;
     const resolution = resolutions.find((item) => item.id === printWarning.resolutionId);
-    if (resolution) openEditModal(resolution);
+    if (resolution) void openEditModal(resolution);
   }
 
   function closeDetailModal() {
@@ -2745,7 +2804,7 @@ export function ExpenseResolutionPage({
       }
 
       if (key === "cardTransactionId" && typeof value === "string") {
-        const transaction = initialCardTransactions.find((candidate) => candidate.id === value);
+        const transaction = formOptions.cardTransactions.find((candidate) => candidate.id === value);
         if (!transaction) return { ...nextState, cardLastFour: "", cardReconciliationStatus: "PENDING", cardVerificationSource: undefined };
         const expenseDate = transaction.approvedAt.slice(0, 10);
         const category = isTaxiCardTransaction(transaction) ? "택시" : current.quickExpenseCategory;
@@ -3194,7 +3253,7 @@ export function ExpenseResolutionPage({
       vendorBusinessType: ocr.issuerBusinessType,
       vendorName: ocr.issuer,
     });
-    const expenseDetailRecommendation = recommendOperatingExpenseDetail(initialExpenseDetails, {
+    const expenseDetailRecommendation = recommendOperatingExpenseDetail(formOptions.expenseDetails, {
       evidenceText: ocr.recognizedText,
       itemName: ocrItemNames.join(" ") || ocr.itemName,
       reason: current.reason,
@@ -3391,8 +3450,8 @@ export function ExpenseResolutionPage({
         ? itemBudgetProfiles[0]
         : undefined
       : resolveBudgetProfile(formState.budgetItem, formState.budgetPeriod, initialBudgetProfiles);
-    const linkedApproval = initialApprovalDocuments.find((document) => document.id === formState.approvalDocumentId);
-    const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
+    const linkedApproval = formOptions.approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
+    const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, formOptions.directExpenseSettings);
     if (mode === "approval-request") {
       if (formState.expenseTiming === "SETTLEMENT") {
         const saved = resolutions.find(resolution => resolution.id === editingResolutionId);
@@ -3893,7 +3952,7 @@ export function ExpenseResolutionPage({
       activeWorkspaceLabel="전표·증빙"
       onQuickMenuSelect={(label) => {
         if (label === "지출결의 작성") {
-          openCreateModal();
+          void openCreateModal();
         }
       }}
     >
@@ -3917,17 +3976,17 @@ export function ExpenseResolutionPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button className="rounded-full" onClick={openExcelImportModal} size="lg" variant="outline">
+            <Button className="rounded-full" disabled={isFormOptionsLoading} onClick={openExcelImportModal} size="lg" variant="outline">
               <FileSpreadsheet className="size-4" />
-              엑셀 가져오기
+              {isFormOptionsLoading ? "작성 정보 불러오는 중" : "엑셀 가져오기"}
             </Button>
             <Button className="rounded-full" onClick={() => setIsOperatingBudgetPrintOpen(true)} size="lg" variant="outline">
               <FileSpreadsheet className="size-4" />
               운영비 예산표 출력
             </Button>
-            <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={openCreateModal} size="lg">
+            <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isFormOptionsLoading} onClick={openCreateModal} size="lg">
               <FilePlus2 className="size-4" />
-              지출결의 작성
+              {isFormOptionsLoading ? "작성 정보 불러오는 중" : "지출결의 작성"}
             </Button>
           </div>
         </section>
@@ -3947,7 +4006,7 @@ export function ExpenseResolutionPage({
             </div>
             <div className="mt-3 flex flex-wrap gap-2">
               {workflowAlerts.slice(0, 6).map((alert) => (
-                <button className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-800" key={alert.id} onClick={() => setSelectedDetailId(alert.resolutionId)} type="button">{alert.label}</button>
+                <button className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-800" key={alert.id} onClick={() => { void openDetailModal(alert.resolutionId); }} type="button">{alert.label}</button>
               ))}
             </div>
           </section>
@@ -4111,7 +4170,7 @@ export function ExpenseResolutionPage({
                     return (
                       <tr className="group bg-white/70 [content-visibility:auto] hover:bg-[var(--color-cloud-veil)]/55" key={resolution.id}>
                         <td className="px-4 py-3 align-top">
-                          <button className="font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} type="button">
+                          <button className="font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} type="button">
                             {resolution.resolutionNo}
                           </button>
                           <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
@@ -4120,7 +4179,7 @@ export function ExpenseResolutionPage({
                           {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">{resolution.cardVerificationSource === "BANK_TRANSACTION" ? "통장거래 확인완료" : "카드내역 매칭완료"}</p> : null}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => setSelectedDetailId(resolution.id)} title={getResolutionSubject(resolution)} type="button">
+                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} title={getResolutionSubject(resolution)} type="button">
                             {getResolutionSubject(resolution)}
                           </button>
                           <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
@@ -4162,7 +4221,7 @@ export function ExpenseResolutionPage({
                             <button
                               aria-label="상세보기"
                               className="order-last rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
-                              onClick={() => { setSaveError(""); setSelectedDetailId(resolution.id); }}
+                              onClick={() => { void openDetailModal(resolution.id); }}
                               type="button"
                             >
                               상세
@@ -4182,7 +4241,7 @@ export function ExpenseResolutionPage({
                               <>
                                 <button
                                   className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => { setSaveError(""); setSelectedDetailId(resolution.id); }}
+                                  onClick={() => { void openDetailModal(resolution.id); }}
                                   type="button"
                                 >
                                   결재하기
@@ -4264,11 +4323,11 @@ export function ExpenseResolutionPage({
           batchSummary={formBatchSummary}
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
-          bankTransactionCandidates={initialBankTransactions}
-          cardTransactionCandidates={initialCardTransactions}
-          approvalDocuments={initialApprovalDocuments}
-          directExpenseSettings={directExpenseSettings}
-          expenseDetails={initialExpenseDetails}
+          bankTransactionCandidates={formOptions.bankTransactions}
+          cardTransactionCandidates={formOptions.cardTransactions}
+          approvalDocuments={formOptions.approvalDocuments}
+          directExpenseSettings={formOptions.directExpenseSettings}
+          expenseDetails={formOptions.expenseDetails}
           settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
           canRestoreHistorical={Boolean(viewer?.permissions.includes("ADMIN"))}
           isEditing={Boolean(editingResolutionId)}
@@ -4310,7 +4369,7 @@ export function ExpenseResolutionPage({
           actionError={saveError}
           budgetDataError={budgetDataError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
-          linkedApproval={initialApprovalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
+          linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
           onCancelApproval={() => cancelApproval(selectedDetail.id)}
