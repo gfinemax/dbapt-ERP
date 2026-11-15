@@ -11,6 +11,7 @@ import { defaultQuickMenuIds } from "@/features/finance/erp-quick-menu-catalog";
 async function openEditor() {
   await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
   fireEvent.click(screen.getByRole("button", { name: "즐겨찾기 편집" }));
+  await screen.findByRole("region", { name: "즐겨찾기 편집" }, { timeout: 10_000 });
 }
 function add(id: string) {
   fireEvent.change(screen.getByRole("combobox", { name: "즐겨찾기 추가" }), { target: { value: id } });
@@ -26,7 +27,7 @@ describe("personalized top favorites", () => {
     actions.save.mockReset();
   });
   it("shows recommended destinations immediately and preserves favorites when remounted", async () => {
-    const mounted = render(<ErpQuickMenu placement="top" />);
+    const mounted = render(<ErpQuickMenu />);
     expect(screen.getByRole("link", { name: "즐겨찾기 지출결의서" })).toHaveAttribute("href", "/finance/expense-resolutions");
     expect(screen.getByRole("link", { name: "즐겨찾기 전표" })).toHaveAttribute("href", "/finance");
     await openEditor();
@@ -38,13 +39,13 @@ describe("personalized top favorites", () => {
     expect(ids).not.toContain("expense-entry");
     expect(ids.indexOf("payments")).toBe(ids.indexOf("budget") - 1);
     mounted.unmount();
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
     expect(screen.queryByRole("link", { name: "즐겨찾기 지출 등록·신청" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "즐겨찾기 지급대기" })).toHaveAttribute("href", "/finance/payments?tab=UNPAID");
   });
   it("searches menu choices and cancels edits without saving", async () => {
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     expect(screen.getByRole("textbox", { name: "즐겨찾기 메뉴 검색" })).toHaveFocus();
     fireEvent.change(screen.getByRole("textbox", { name: "즐겨찾기 메뉴 검색" }), { target: { value: "정산" } });
@@ -59,7 +60,7 @@ describe("personalized top favorites", () => {
   });
   it("restores defaults and closes the editor with Escape", async () => {
     localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["expenses"]));
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "기본값" }));
     await save();
@@ -71,7 +72,7 @@ describe("personalized top favorites", () => {
   it("loads the account preference and saves the new menus in order", async () => {
     actions.load.mockResolvedValue({ authenticated: true, menuIds: ["expenses", "vouchers"], revision: 4 });
     actions.save.mockResolvedValue({ menuIds: ["vouchers", "expenses", "resolution-list"], revision: 5 });
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     expect(screen.getByText("내 계정의 모든 기기에 같은 메뉴와 순서가 표시돼.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "전표 위로" }));
@@ -83,7 +84,7 @@ describe("personalized top favorites", () => {
   it("does not report an account save as failed when browser storage is blocked", async () => {
     actions.load.mockResolvedValue({ authenticated: true, menuIds: ["vouchers"], revision: 1 });
     actions.save.mockResolvedValue({ menuIds: ["vouchers", "budget"], revision: 2 });
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     add("budget");
     const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
@@ -91,7 +92,7 @@ describe("personalized top favorites", () => {
     finally { storage.mockRestore(); }
   });
   it("keeps the draft when anonymous browser storage rejects saving", async () => {
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     const storage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("denied"); });
     try {
@@ -102,7 +103,7 @@ describe("personalized top favorites", () => {
   });
   it("blocks overwriting unavailable account settings and permits reloading them", async () => {
     actions.load.mockRejectedValueOnce(new Error("offline"));
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await screen.findByRole("alert");
     await openEditor();
     expect(screen.getByRole("button", { name: "저장" })).toBeDisabled();
@@ -117,7 +118,7 @@ describe("personalized top favorites", () => {
   it("retains the editor on account conflicts and changes the retry key when the draft changes", async () => {
     actions.load.mockResolvedValue({ authenticated: true, menuIds: ["vouchers"], revision: 3 });
     actions.save.mockRejectedValue(new Error("다른 화면에서 변경됐습니다. 새로고침해주세요."));
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     fireEvent.click(screen.getByRole("button", { name: "저장" }));
     await screen.findByRole("alert");
@@ -130,7 +131,7 @@ describe("personalized top favorites", () => {
   });
   it("preserves older 12-menu preferences, limits additions and prevents an empty save", async () => {
     localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["members","collections","refunds","bank","cards","resolution","payments","evidence","advance","expenses","corporate-use","expense-entry"]));
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await openEditor();
     expect(screen.getByRole("combobox", { name: "즐겨찾기 추가" })).toBeDisabled();
     for (const button of screen.getAllByRole("button", { name: / 제거$/ })) fireEvent.click(button);
@@ -139,12 +140,12 @@ describe("personalized top favorites", () => {
   });
   it("validates browser preferences and provides the narrow-screen more toggle", async () => {
     localStorage.setItem(QUICK_MENU_STORAGE_KEY, JSON.stringify(["vouchers", "vouchers", "malicious", 1]));
-    const mounted = render(<ErpQuickMenu placement="top" />);
+    const mounted = render(<ErpQuickMenu />);
     await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
     expect(within(screen.getByRole("navigation", { name: "즐겨찾기 바로가기" })).getAllByRole("link")).toHaveLength(1);
     mounted.unmount();
     localStorage.setItem(QUICK_MENU_STORAGE_KEY, "{");
-    render(<ErpQuickMenu placement="top" />);
+    render(<ErpQuickMenu />);
     await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
     expect(screen.getByRole("link", { name: "즐겨찾기 지출결의서" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "즐겨찾기 더보기" }));

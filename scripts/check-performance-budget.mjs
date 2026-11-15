@@ -12,7 +12,8 @@ const budgets = {
   // Bank/card evidence, measured A4 pagination, linked voucher navigation, monthly filtering, and accessible server sorting are part of the primary workspace.
   initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 382_000),
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 95_000),
-  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 107_000),
+  // The favorites editor is fetched only after the user opens it (up to 9 KB).
+  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 116_000),
 };
 
 function readJson(path) {
@@ -40,7 +41,10 @@ function readInitialChunkPaths() {
   const entryKey = "[project]/src/app/finance/expense-resolutions/page";
   const chunks = manifest.entryJSFiles?.[entryKey];
   if (!Array.isArray(chunks) || chunks.length === 0) throw new Error("지출결의 초기 JavaScript 청크가 없습니다.");
-  return unique(chunks);
+  // Include shared layout JavaScript as well as the page itself. Moving a feature
+  // to the root layout must not hide its cost from the route's performance budget.
+  const layoutChunks = manifest.entryJSFiles?.["[project]/src/app/layout"] ?? [];
+  return unique([...layoutChunks, ...chunks]);
 }
 
 function readAsyncChunkPaths() {

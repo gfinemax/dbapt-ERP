@@ -114,13 +114,11 @@ describe("ErpShell", () => {
     await waitFor(() => expect(navigation.badges).toHaveBeenCalledTimes(1));
   });
 
-  it("keeps favorites accessible in the header when the sidebar is collapsed", async () => {
+  it("leaves room for the global favorites bar without duplicating it", async () => {
     await renderShell(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
-    const header = screen.getByRole("banner");
-    expect(within(header).getByRole("link", { name: "즐겨찾기 지출결의서" })).toHaveAttribute("href", "/finance/expense-resolutions");
-    fireEvent.click(screen.getByRole("button", { name: "사이드바 닫기" }));
-    expect(within(header).getByRole("button", { name: "즐겨찾기 편집" })).toBeInTheDocument();
-    await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+    expect(screen.getByRole("banner")).toHaveClass("top-16");
+    expect(screen.getByRole("complementary", { name: "사이드바" })).toHaveClass("top-16");
+    expect(screen.queryByRole("navigation", { name: "즐겨찾기 바로가기" })).not.toBeInTheDocument();
   });
 
   it("collapses to an accessible icon rail without hiding finance navigation", async () => {

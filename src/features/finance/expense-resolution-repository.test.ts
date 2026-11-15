@@ -47,15 +47,15 @@ describe("expense resolution repository", () => {
       disbursedAt: "2026-01-30",
       paymentStatus: "지급완료",
       voucherNo: "지출-2026-0001",
-      voucherStatus: "초안",
+      voucherStatus: "전표초안",
     });
 
     const update = mapExpenseDisbursementUpdate(resolution, { paymentStatus: "지급완료" });
 
     expect(update).toMatchObject({
-      resolution_data: expect.objectContaining({ voucherNo: "지출-2026-0001", voucherStatus: "초안" }),
+      resolution_data: expect.objectContaining({ voucherNo: "지출-2026-0001", voucherStatus: "전표초안" }),
       voucher_no: "지출-2026-0001",
-      voucher_status: "초안",
+      voucher_status: "전표초안",
     });
     expect(update).not.toHaveProperty("actual_paid_amount");
     expect(update).not.toHaveProperty("disbursed_at");
