@@ -18,7 +18,7 @@ import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-
 import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
 import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
 import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
-import { getExpenseResolutionDetailFromSupabase, getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
+import { getExpenseResolutionDetailFromSupabase, getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, commitExpenseSaveBatch, upsertExpenseResolutionInSupabase, type ExpenseBankDraftReviewContract } from "@/features/finance/expense-resolution-repository";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type BatchApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
 import { DisbursementWorkflowError, transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "@/features/finance/expense-disbursement-workflow";
 import { validateExpenseResolutionWorkflow } from "@/features/finance/expense-resolution-domain";
@@ -372,6 +372,18 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   return saved;
 }
 
+export async function saveMonthlyBankExpenseDraftBatchAction(input: {
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>;
+  month: string;
+}) {
+  if (!input.items.length) throw new Error("저장할 월별 초안이 없어.");
+  const saved = await commitExpenseSaveBatch(input.items, input.month, randomUUID());
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/expense-resolutions/bank-draft-manifest");
+  revalidatePath("/finance/bank-transactions");
+  return saved;
+}
+
 export async function convertQuickExpenseResolutionAction(sourceId: string, resolution: ManagedExpenseResolution) {
   if (!sourceId.trim()) throw new Error("전환할 간편지출 원본이 필요합니다.");
   if (resolution.approvalStatus !== "작성중") throw new Error("먼저 전환 초안을 저장한 뒤 승인요청해주세요.");
@@ -444,9 +456,11 @@ export async function uploadExpenseFactSupportingFileAction(formData: FormData) 
 export async function linkBankTransactionAction(input: { bankTransactionId: string; resolutionId: string; actorLabel: string }) {
   const { actor, resolution, binding } = await requireExpenseRecord(input.resolutionId, true);
   await assertExpenseRelatedRow("bank_transactions", input.bankTransactionId, actor);
-  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,deposit_amount,transaction_kind").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
+  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,deposit_amount,transaction_kind,raw_payload").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
   if (error || !transaction || inferTransactionKind(transaction.transaction_kind, Number(transaction.deposit_amount), Number(transaction.withdrawal_amount)) !== "출금") throw new Error("연결할 통장 출금거래를 찾을 수 없습니다. 입출금 구분과 금액을 확인해줘.");
-  const actualExpenseDate = new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const actualExpenseDate = typeof transaction.raw_payload?.transaction_date === "string" && transaction.raw_payload.transaction_date
+    ? transaction.raw_payload.transaction_date.slice(0, 10)
+    : new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
   await upsertExpenseResolutionInSupabase({ ...resolution, authorization: binding, actualExpenseDate, bankTransactionId: input.bankTransactionId, expenseKind: "BANK_POST_APPROVAL", isPostApproval: true, approvalStatus: "작성중", currentApprover: undefined, approvedAt: undefined, approvalLine: resolution.approvalLine.map((step) => ({ ...step, status: "대기", processedAt: undefined })) }, resolution, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/bank-transactions");

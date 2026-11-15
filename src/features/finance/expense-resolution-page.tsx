@@ -3991,6 +3991,9 @@ export function ExpenseResolutionPage({
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <Link className="inline-flex h-11 items-center rounded-full border bg-white px-5 font-semibold" href="/finance/expense-resolutions/bank-draft-manifest">
+              통장거래 작성 예정표
+            </Link>
             <Button className="rounded-full" disabled={isFormOptionsLoading} onClick={openExcelImportModal} size="lg" variant="outline">
               <FileSpreadsheet className="size-4" />
               {isFormOptionsLoading ? "작성 정보 불러오는 중" : "엑셀 가져오기"}

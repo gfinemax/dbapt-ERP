@@ -13,7 +13,7 @@ export async function loadExpenseResolutionFormOptions(): Promise<ExpenseResolut
   const [approvalDocuments, directExpenseSettings, bankTransactions, cardTransactions, expenseDetails, nextResolutionNo] = await Promise.all([
     listApprovedApprovalDocumentCandidates(organizationId, 50),
     getExpenseComplianceSettings(organizationId),
-    listUnresolvedWithdrawalTransactions(organizationId, 50),
+    listUnresolvedWithdrawalTransactions(organizationId, 500),
     listUnresolvedCorporateCardTransactions(organizationId, 50),
     listOperatingExpenseDetails(organizationId),
     getNextExpenseResolutionNoFromSupabase(actor),

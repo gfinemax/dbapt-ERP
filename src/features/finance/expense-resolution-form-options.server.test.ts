@@ -45,7 +45,7 @@ describe("expense resolution form options", () => {
       nextResolutionNo: "지결-2026-0042",
     });
     expect(mocks.approvalDocuments).toHaveBeenCalledWith("org-one", 50);
-    expect(mocks.bankTransactions).toHaveBeenCalledWith("org-one", 50);
+    expect(mocks.bankTransactions).toHaveBeenCalledWith("org-one", 500);
     expect(mocks.cardTransactions).toHaveBeenCalledWith("org-one", 50);
     expect(mocks.expenseDetails).toHaveBeenCalledWith("org-one");
     expect(mocks.settings).toHaveBeenCalledWith("org-one");

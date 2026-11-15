@@ -9,6 +9,18 @@ import type { ReimbursementMember } from "./reimbursement-domain";
 
 export const expenseResolutionRepositorySchema = "finance";
 
+export type ExpenseBankDraftReviewContract = {
+  accountSubjectId: string;
+  approvalBasisKey: string;
+  budgetId: string;
+  duplicateResolutionId?: string;
+  duplicateResolutionReviewed?: boolean;
+  evidencePolicyKey: string;
+  expenseDetailId: string;
+  purposeKey: string;
+  taxPolicyKey: string;
+};
+
 type ExpenseResolutionRow = {
   resolution_data: ManagedExpenseResolution;
 };
@@ -488,6 +500,63 @@ export async function commitExpenseApprovalBatch(
   } as ManagedExpenseResolution)));
 }
 
+export async function commitExpenseSaveBatch(
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>,
+  month: string,
+  key: string,
+) {
+  validateExpenseSaveBatchInput(items, month);
+  const actor = await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았습니다.");
+  if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("월별 초안 기준은 월의 첫날이어야 합니다.");
+  const payloadItems = items.map(({ resolution, reviewContract }) => {
+    const draft = stripExpenseAuthorization(resolution);
+    return {
+      expected: null,
+      id: draft.id,
+      payload: mapExpenseResolutionSavePayload(draft, actor.organization_id),
+      review_contract: reviewContract,
+    };
+  });
+  const { data, error } = await supabase.schema("finance").rpc("legacy_expense_save_batch", {
+    p_actor: actor.user_id,
+    p_items: payloadItems,
+    p_key: key,
+    p_month: month,
+    p_org: actor.organization_id,
+  });
+  if (error) throw new Error(error.message);
+  const results = (data as { results?: ManagedExpenseResolution[] } | null)?.results;
+  if (!Array.isArray(results) || results.length !== items.length) throw new Error("월별 초안 저장 결과를 확인하지 못했습니다.");
+  return results;
+}
+
+export function validateExpenseSaveBatchInput(
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>,
+  month: string,
+  today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
+) {
+  if (!items.length || items.length > 200) throw new Error("월별 초안은 1건 이상 200건 이하만 저장할 수 있습니다.");
+  if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("월별 초안 기준은 월의 첫날이어야 합니다.");
+  for (const { resolution } of items) {
+    if (resolution.approvalStatus !== "작성중" || resolution.paymentStatus !== "지급전" || resolution.expenseKind !== "BANK_POST_APPROVAL" || !resolution.isPostApproval) {
+      throw new Error(`${resolution.resolutionNo}: 작성중·지급전·통장 선출금 사후결의 초안만 월별 저장할 수 있습니다.`);
+    }
+    if (resolution.createdAt.slice(0, 10) !== today || (resolution.draftedAt && resolution.draftedAt.slice(0, 10) !== today)) {
+      throw new Error(`${resolution.resolutionNo}: 작성일은 실제 저장일을 사용해야 합니다.`);
+    }
+    if (resolution.approvedAt || resolution.disbursedAt || resolution.voucherNo || resolution.voucherGenerated) {
+      throw new Error(`${resolution.resolutionNo}: 승인·지급·전표 결과가 없는 초안만 저장할 수 있습니다.`);
+    }
+    if (!resolution.bankTransactions?.length) throw new Error(`${resolution.resolutionNo}: 원천 통장거래가 필요합니다.`);
+    const sourceDates = resolution.bankTransactions.map((transaction) => transaction.transactionDate).toSorted();
+    if (sourceDates.some((date) => `${date.slice(0, 7)}-01` !== month)) throw new Error(`${resolution.resolutionNo}: 한 회계월의 통장거래만 함께 저장할 수 있습니다.`);
+    if (resolution.actualExpenseDate !== sourceDates.at(-1)) throw new Error(`${resolution.resolutionNo}: 실제 지출일은 묶음의 마지막 원천 거래일이어야 합니다.`);
+    if (resolution.budgetMonth !== month) throw new Error(`${resolution.resolutionNo}: 예산 귀속월이 월별 저장 기준과 다릅니다.`);
+  }
+}
+
 export function stripExpenseAuthorization(resolution: ManagedExpenseResolution) {
   const result = { ...resolution };
   delete result.authorization;
@@ -535,6 +604,13 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
   const actor = await requireExpenseActor();
   const version = resolution.authorization?.version ?? 0;
   resolution = stripExpenseAuthorization(resolution);
+  return commitExpenseCommand("SAVE", resolution.id, expected, {
+    ...mapExpenseResolutionSavePayload(resolution, actor.organization_id),
+    expected_binding_version: version,
+  }, key);
+}
+
+export function mapExpenseResolutionSavePayload(resolution: ManagedExpenseResolution, organizationId: string) {
   const itemRows = mapExpenseResolutionItemsToRows(resolution);
   const allocationRows = mapExpenseAccountAllocationsToRows(resolution);
   const evidenceRows = mapExpenseEvidenceToRows(resolution);
@@ -542,10 +618,13 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
     const source = resolution.expenseItems.find((expenseItem) => expenseItem.id === item.id) ?? resolution.expenseItems[index];
     return { account_title: item.accountTitle, actual_spender_label: item.spender, amount: item.amount, business_purpose: item.businessPurpose, deleted_at: null, evidence_kind: item.evidenceKind ?? mapDetailEvidenceKind(source?.evidenceType), evidence_status: item.evidenceStatus ?? (source?.evidenceFileName ? "GENERAL" : "NONE"), fact_confirmation_id: item.factConfirmationId ?? null, id: item.id, item_name: item.item, line_no: index + 1, memo: source?.memo || null, payment_method: source?.paymentMethod ?? resolution.advancePaymentMethod ?? resolution.paymentMethod ?? "기타", resolution_id: resolution.id, transaction_date: item.transactionDate, updated_at: new Date().toISOString(), vendor_name: item.vendor };
   });
-  return commitExpenseCommand("SAVE", resolution.id, expected, {
-    row: mapExpenseResolutionToUpsert(resolution, actor.organization_id), items: itemRows,
-    allocations: allocationRows, evidence: evidenceRows, details: detailRows, expected_binding_version: version,
-  }, key);
+  return {
+    allocations: allocationRows,
+    details: detailRows,
+    evidence: evidenceRows,
+    items: itemRows,
+    row: mapExpenseResolutionToUpsert(resolution, organizationId),
+  };
 }
 
 function mapDetailEvidenceKind(value?: string) {
