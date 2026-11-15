@@ -141,6 +141,17 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText(/실제 지출일이 없는 결의서는 월 검색에서 제외/)).toBeInTheDocument();
   });
 
+  it("does not label a grouped bank-linked draft as unlinked", () => {
+    render(<ExpenseResolutionPage initialResolutions={[expenseResolutionFixture({
+      bankTransactionId: undefined,
+      bankTransactions: [{ id: "bank-1" }, { id: "bank-2" }] as never,
+      expenseKind: "BANK_POST_APPROVAL",
+      isPostApproval: true,
+    })]} />);
+
+    expect(screen.queryByText("통장 미연결")).not.toBeInTheDocument();
+  });
+
   it("sorts the resolution content column by actual expense date and keeps missing dates last", () => {
     render(<ExpenseResolutionPage initialResolutions={[
       expenseResolutionFixture({ actualExpenseDate: "2026-01-12", id: "later", resolutionNo: "TEST-2026-0012" }),

@@ -4206,7 +4206,7 @@ export function ExpenseResolutionPage({
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
                             {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
-                            {resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId ? <ComplianceBadge label="통장 미연결" tone="danger" /> : null}
+                            {resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId && !resolution.bankTransactions?.length ? <ComplianceBadge label="통장 미연결" tone="danger" /> : null}
                             {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
                             {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
                             {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
