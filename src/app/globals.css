@@ -146,6 +146,27 @@
   line-height: 1.45;
 }
 
+.expense-resolution-document-page,
+.expense-resolution-document-probe {
+  width: 210mm;
+  height: 297mm;
+  min-height: 297mm;
+  max-height: 297mm;
+  overflow: hidden;
+  padding: 14mm 16mm 12mm;
+  page: expense-resolution-document;
+}
+
+.expense-resolution-pagination-probe {
+  position: fixed;
+  top: 0;
+  left: -10000px;
+  max-width: none;
+  margin: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .expense-resolution-print-section {
   break-inside: avoid;
   page-break-inside: avoid;
@@ -173,6 +194,11 @@
 .expense-approval-vertical-label {
   writing-mode: horizontal-tb;
   text-orientation: mixed;
+}
+
+.expense-approval-timestamp {
+  font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  font-style: normal;
 }
 
 /* Ledger 외부 납입 인정 원장: 헤더와 값을 같은 축에 두고 열 간격을 조밀하게 유지한다. */
@@ -230,6 +256,11 @@
   margin: 20mm;
 }
 
+@page expense-resolution-document {
+  size: A4 portrait;
+  margin: 0;
+}
+
 @media print {
   html,
   body {
@@ -260,6 +291,20 @@
     page-break-after: always;
   }
 
+  .expense-resolution-document-page,
+  .expense-resolution-document-probe {
+    width: 210mm !important;
+    height: 297mm !important;
+    min-height: 297mm !important;
+    max-height: 297mm !important;
+    padding: 14mm 16mm 12mm !important;
+    overflow: hidden !important;
+  }
+
+  .expense-resolution-pagination-probe {
+    display: none !important;
+  }
+
   .expense-resolution-print-header h3 {
     white-space: nowrap !important;
   }
@@ -269,6 +314,11 @@
     inset: 0 auto auto 0 !important;
     width: 170mm !important;
     min-height: 0 !important;
+  }
+
+  .expense-resolution-document-shell,
+  .print-expense-resolution.expense-resolution-document-stack {
+    width: 210mm !important;
   }
 
   .print-expense-resolution {

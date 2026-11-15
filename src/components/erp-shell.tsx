@@ -24,13 +24,13 @@ import {
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { Fragment, useEffect, useState } from "react";
-import { ErpQuickMenu } from "./erp-quick-menu";
+import { requestFinanceBadges } from "./finance-navigation-badges-client";
 import {
   financeWorkspaceMenus,
   normalizeFinanceDetailLabel,
   normalizeFinanceWorkspaceLabel,
 } from "@/features/finance/finance-navigation";
-import { loadFinanceNavigationBadgesAction } from "@/app/finance/navigation/actions";
+
 
 const primaryNavigation = [
   { label: "대시보드", icon: Home, href: "/" },
@@ -111,24 +111,6 @@ type ErpShellProps = {
   onQuickMenuSelect?: (label: string) => void;
 };
 
-let financeBadgesRequest: Promise<Record<string, number>> | null = null;
-
-function requestFinanceBadges() {
-  if (!financeBadgesRequest) {
-    financeBadgesRequest = loadFinanceNavigationBadgesAction().then(
-      (badges) => {
-        financeBadgesRequest = null;
-        return badges;
-      },
-      (error) => {
-        financeBadgesRequest = null;
-        throw error;
-      },
-    );
-  }
-  return financeBadgesRequest;
-}
-
 function DetailMenuLink({ badges, item, selectedDetailMenu }: { badges: Record<string, number>; item: DetailMenuItem; selectedDetailMenu?: string }) {
   const badge = badges[item.label] ?? 0;
 
@@ -174,7 +156,7 @@ function WorkspaceNavigation({ badges, menus, selectedWorkspaceLabel, selectedMe
   );
 }
 
-export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, onQuickMenuSelect, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [financeBadges, setFinanceBadges] = useState<Record<string, number>>({});
@@ -221,7 +203,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
     <div className="min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)]">
       <aside
         aria-label="사이드바"
-        className={`fixed inset-y-0 left-0 z-20 hidden overflow-y-auto overscroll-contain border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)] py-5 transition-[width] duration-200 motion-reduce:transition-none md:block ${
+        className={`fixed bottom-0 left-0 top-16 z-20 hidden overflow-y-auto overscroll-contain border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)] py-5 transition-[width] duration-200 motion-reduce:transition-none md:block ${
           isSidebarOpen ? "w-60 px-3" : "w-16 px-2"
         }`}
       >
@@ -299,8 +281,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
             })}
           </nav>
         )}
-
-        <ErpQuickMenu badges={financeBadges} onSelect={onQuickMenuSelect} />
         </>}
       </aside>
 
@@ -308,7 +288,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
         aria-label={sidebarToggleLabel}
         aria-expanded={isSidebarOpen}
         title={sidebarToggleLabel}
-        className={`fixed top-4 z-30 hidden size-8 items-center justify-center rounded-lg border border-[var(--color-soft-border)] bg-white text-[var(--color-stone)] shadow-sm transition-[left] duration-200 motion-reduce:transition-none hover:bg-[var(--color-morning-tint)] focus-visible:outline-2 md:flex ${
+        className={`fixed top-20 z-30 hidden size-8 items-center justify-center rounded-lg border border-[var(--color-soft-border)] bg-white text-[var(--color-stone)] shadow-sm transition-[left] duration-200 motion-reduce:transition-none hover:bg-[var(--color-morning-tint)] focus-visible:outline-2 md:flex ${
           isSidebarOpen ? "left-56" : "left-4"
         }`}
         onClick={() => setIsSidebarOpen((current) => !current)}
@@ -318,7 +298,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
       </button>
 
       <div className={`transition-[padding] duration-200 motion-reduce:transition-none ${isSidebarOpen ? "md:pl-60" : "md:pl-16"}`}>
-        <header className="sticky top-0 z-10 border-b border-[var(--color-soft-border)] bg-[var(--color-sky-wash)]/86 backdrop-blur">
+        <header className="sticky top-16 z-10 border-b border-[var(--color-soft-border)] bg-[var(--color-sky-wash)]/86 backdrop-blur">
           <div className="flex h-16 items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
             <div className="flex min-w-0 items-center gap-3">
               <div className="hidden rounded-full border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] px-3 py-1.5 text-sm font-semibold sm:block">
@@ -359,7 +339,6 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
               </a>}
             </div>
           </div>
-
         </header>
 
         <div className="border-b border-[var(--color-soft-border)] bg-white px-4 py-2 md:hidden">

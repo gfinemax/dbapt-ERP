@@ -1,3 +1,5 @@
+import { canApproveOn, seoulToday } from "./approval-effective-policy";
+
 export const organizationApprovalLine = [
   { approverLabel: "장현제", approverRole: "이사" },
   { approverLabel: "오학동", approverRole: "사무국장" },
@@ -8,12 +10,12 @@ export function getOrganizationApproverDisplayRole(approverLabel: string, approv
   return approverLabel === "장현제" && approverRole === "담당자" ? "이사" : approverRole;
 }
 
-export function getOrganizationApprovalSteps() {
-  return organizationApprovalLine.map((step) => ({ ...step }));
+export function getOrganizationApprovalSteps(referenceDate = seoulToday()) {
+  return organizationApprovalLine.filter(step => canApproveOn(step.approverLabel, referenceDate)).map((step) => ({ ...step }));
 }
 
-export function getOrganizationExpenseApprovalLine() {
-  return organizationApprovalLine.map((step, index) => ({
+export function getOrganizationExpenseApprovalLine(referenceDate = seoulToday()) {
+  return organizationApprovalLine.filter(step => canApproveOn(step.approverLabel, referenceDate)).map((step, index) => ({
     approver: step.approverLabel,
     order: index + 1,
     role: step.approverRole,

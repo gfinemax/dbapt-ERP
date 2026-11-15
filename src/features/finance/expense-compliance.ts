@@ -78,6 +78,7 @@ export function validateExpenseCompliance(input: {
   actualExpenseDate?: string;
   postApprovalReason?: string;
   bankTransactionId?: string;
+  bankTransactionCount?: number;
   evidenceKind: EvidenceKind;
   evidenceStatus: EvidenceStatus;
   missingEvidenceReason?: string;
@@ -89,7 +90,7 @@ export function validateExpenseCompliance(input: {
   const warnings: string[] = [];
   if (!input.actualExpenseDate && !(input.beforeExpense && input.expenseKind === "GENERAL")) errors.push("실제 지출일을 입력해주세요.");
   if (input.expenseKind === "BANK_POST_APPROVAL") {
-    if (!input.bankTransactionId) errors.push("통장 선출금 사후결의는 은행거래를 연결해야 합니다.");
+    if (!input.bankTransactionId && !input.bankTransactionCount) errors.push("통장 선출금 사후결의는 은행거래를 연결해야 합니다.");
     if (!input.postApprovalReason?.trim()) errors.push("사후결의 사유를 입력해주세요.");
   }
   const normalizedEvidenceStatus = normalizeEvidenceStatus(input.evidenceKind, input.evidenceStatus);

@@ -28,6 +28,7 @@ export type ExpenseFactConfirmation = ExpenseFactConfirmationInput & {
 export type BankTransactionResolutionCandidate = {
   id: string;
   transactedAt: string;
+  sourceTransactionDate?: string;
   withdrawalAmount: number;
   counterparty?: string;
   description: string;
@@ -119,11 +120,11 @@ export async function deleteExpenseFactConfirmation(id: string, resolutionId: st
   await writeComplianceAudit(resolutionId, "FACT_CONFIRMATION_DELETED", actorLabel, { id }, null);
 }
 
-export async function listUnresolvedWithdrawalTransactions(organizationId?: string, limit = 200): Promise<BankTransactionResolutionCandidate[]> {
+export async function listUnresolvedWithdrawalTransactions(organizationId?: string, limit = 500): Promise<BankTransactionResolutionCandidate[]> {
   const supabase = requireSupabase();
-  const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 200);
+  const boundedLimit = Math.min(Math.max(Math.trunc(limit), 1), 500);
   let query = supabase.schema("finance").from("bank_transactions")
-    .select("id,transacted_at,withdrawal_amount,counterparty,description,bank_transaction_uid,resolution_status")
+    .select("id,transacted_at,withdrawal_amount,counterparty,description,bank_transaction_uid,resolution_status,raw_payload")
     .is("deleted_at", null).gt("withdrawal_amount", 0).order("transacted_at", { ascending: false }).limit(boundedLimit);
   if (organizationId) query = query.eq("organization_id", organizationId);
   const { data, error } = await query;
@@ -131,9 +132,19 @@ export async function listUnresolvedWithdrawalTransactions(organizationId?: stri
   const ids = (data ?? []).map((row) => row.id);
   const { data: links, error: linkError } = ids.length ? await supabase.schema("finance").from("expense_resolutions").select("id,resolution_no,bank_transaction_id").in("bank_transaction_id", ids).is("deleted_at", null) : { data: [], error: null };
   if (linkError) throw new Error(`통장거래 연결상태 조회 실패: ${linkError.message}`);
+  const { data: groupedLinks, error: groupedLinkError } = ids.length ? await supabase.schema("finance").from("expense_resolution_bank_transactions").select("bank_transaction_id,resolution_id").in("bank_transaction_id", ids) : { data: [], error: null };
+  if (groupedLinkError) throw new Error(`통장거래 일괄 연결상태 조회 실패: ${groupedLinkError.message}`);
+  const groupedResolutionIds = Array.from(new Set((groupedLinks ?? []).map((link) => link.resolution_id)));
+  const { data: groupedResolutions, error: groupedResolutionError } = groupedResolutionIds.length ? await supabase.schema("finance").from("expense_resolutions").select("id,resolution_no").in("id", groupedResolutionIds).is("deleted_at", null) : { data: [], error: null };
+  if (groupedResolutionError) throw new Error(`일괄 지출결의 연결상태 조회 실패: ${groupedResolutionError.message}`);
   return (data ?? []).map((row) => {
-    const linked = (links ?? []).find((item) => item.bank_transaction_id === row.id);
-    return { bankTransactionUid: row.bank_transaction_uid ?? undefined, counterparty: row.counterparty ?? undefined, description: row.description, id: row.id, linkedResolutionId: linked?.id, linkedResolutionNo: linked?.resolution_no, resolutionStatus: row.resolution_status, transactedAt: row.transacted_at, withdrawalAmount: Number(row.withdrawal_amount) };
+    const groupedLink = (groupedLinks ?? []).find((item) => item.bank_transaction_id === row.id);
+    const linked = (links ?? []).find((item) => item.bank_transaction_id === row.id)
+      ?? (groupedResolutions ?? []).find((item) => item.id === groupedLink?.resolution_id);
+    const sourceTransactionDate = typeof row.raw_payload?.transaction_date === "string" && row.raw_payload.transaction_date
+      ? row.raw_payload.transaction_date.slice(0, 10)
+      : new Date(row.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+    return { bankTransactionUid: row.bank_transaction_uid ?? undefined, counterparty: row.counterparty ?? undefined, description: row.description, id: row.id, linkedResolutionId: linked?.id, linkedResolutionNo: linked?.resolution_no, resolutionStatus: row.resolution_status, sourceTransactionDate, transactedAt: row.transacted_at, withdrawalAmount: Number(row.withdrawal_amount) };
   });
 }
 
@@ -141,14 +152,17 @@ export async function linkBankTransactionToResolution(input: { bankTransactionId
   const supabase = requireSupabase();
   const { data: linked } = await supabase.schema("finance").from("expense_resolutions").select("id,resolution_no").eq("bank_transaction_id", input.bankTransactionId).is("deleted_at", null).maybeSingle();
   if (linked && linked.id !== input.resolutionId) throw new Error(`이미 ${linked.resolution_no} 결의서에 연결된 통장거래입니다.`);
-  const { data: transaction, error: transactionError } = await supabase.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount").eq("id", input.bankTransactionId).single();
+  const { data: transaction, error: transactionError } = await supabase.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,raw_payload").eq("id", input.bankTransactionId).single();
   if (transactionError || !transaction) throw new Error("연결할 통장 출금거래를 찾을 수 없습니다.");
+  const sourceTransactionDate = typeof transaction.raw_payload?.transaction_date === "string" && transaction.raw_payload.transaction_date
+    ? transaction.raw_payload.transaction_date.slice(0, 10)
+    : new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
   const before = { bankTransactionId: null };
-  const { error } = await supabase.schema("finance").from("expense_resolutions").update({ actual_expense_date: transaction.transacted_at.slice(0, 10), bank_transaction_id: input.bankTransactionId, expense_kind: "BANK_POST_APPROVAL", is_post_approval: true, payment_status: "지급전" }).eq("id", input.resolutionId);
+  const { error } = await supabase.schema("finance").from("expense_resolutions").update({ actual_expense_date: sourceTransactionDate, bank_transaction_id: input.bankTransactionId, expense_kind: "BANK_POST_APPROVAL", is_post_approval: true, payment_status: "지급전" }).eq("id", input.resolutionId);
   if (error) throw new Error(error.code === "23505" ? "이미 다른 결의서에 연결된 통장거래입니다." : `통장거래 연결 실패: ${error.message}`);
   await supabase.schema("finance").from("bank_transactions").update({ resolution_status: "DRAFTING" }).eq("id", input.bankTransactionId);
   await writeComplianceAudit(input.resolutionId, "BANK_TRANSACTION_LINKED", input.actorLabel, before, { bankTransactionId: input.bankTransactionId });
-  return { actualExpenseDate: transaction.transacted_at.slice(0, 10), withdrawalAmount: Number(transaction.withdrawal_amount) };
+  return { actualExpenseDate: sourceTransactionDate, withdrawalAmount: Number(transaction.withdrawal_amount) };
 }
 
 export async function getExpenseComplianceSettings(organizationId: string): Promise<ExpenseComplianceSettings | null> {

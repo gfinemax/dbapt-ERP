@@ -1,7 +1,7 @@
 import { ErpShell } from "@/components/erp-shell";
 import { reimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
-import { loadAccountingWorkspace } from "@/features/finance/accounting-workspace-repository";
+import { findAccountingVoucherIdByResolutionId, loadAccountingWorkspace } from "@/features/finance/accounting-workspace-repository";
 import { AccountingWorkspacePage } from "@/features/finance/accounting-workspace-page";
 import {
   FinanceWorkspaceLanding,
@@ -9,18 +9,31 @@ import {
   parseFinanceWorkspaceKey,
 } from "@/features/finance/finance-workspace-landing";
 import { reimbursementLogout } from "./reimbursements/actions";
+import { normalizeFinanceMonth } from "@/features/finance/expense-resolution-list";
 
 export const dynamic = "force-dynamic";
-export default async function FinanceRoute({ searchParams }: { searchParams: Promise<{ voucherId?: string; workspace?: string }> }) {
+export default async function FinanceRoute({ searchParams }: { searchParams: Promise<{ month?: string; q?: string; resolutionId?: string; status?: string; voucherId?: string; workspace?: string }> }) {
   const query = await searchParams;
   const workspaceKey = parseFinanceWorkspaceKey(query.workspace);
-  let member; let workspace; let message;
+  let member; let workspace; let message; let selectedVoucherId: string | null | undefined = query.voucherId;
   try {
     member = await reimbursementIdentity();
-    if (member && !workspaceKey) workspace = await loadAccountingWorkspace();
+    if (member && !workspaceKey) {
+      [workspace, selectedVoucherId] = await Promise.all([
+        loadAccountingWorkspace(),
+        query.resolutionId ? findAccountingVoucherIdByResolutionId(query.resolutionId) : Promise.resolve(selectedVoucherId),
+      ]);
+    }
   } catch (error) { message = error instanceof Error ? error.message : "전표 자료를 불러오지 못했어."; }
   const content = workspaceKey ? <FinanceWorkspaceLanding workspaceKey={workspaceKey} />
-    : workspace ? <AccountingWorkspacePage key={query.voucherId ?? ""} workspace={workspace} initialVoucherId={query.voucherId} />
+    : workspace ? <AccountingWorkspacePage
+      key={selectedVoucherId ?? ""}
+      workspace={workspace}
+      initialVoucherId={selectedVoucherId ?? undefined}
+      initialMonth={normalizeFinanceMonth(query.month)}
+      initialSearch={query.q?.slice(0, 100) ?? ""}
+      initialFilter={query.status ?? "ALL"}
+    />
     : member ? <section className="rounded-2xl border bg-white p-5"><h1 className="text-2xl font-bold">수입·지출 전표관리</h1><p role="alert" className="mt-3">{message}</p></section>
       : <ReimbursementLogin error={message} title="수입·지출 전표관리" description="조합의 전표와 회계 담당 권한을 확인하기 위해 본인 계정으로 로그인해줘." />;
   const activeWorkspace = workspaceKey ? financeWorkspaceLandings[workspaceKey] : undefined;

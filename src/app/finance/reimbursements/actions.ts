@@ -15,6 +15,16 @@ import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evi
 const reimbursementEvidenceBucket = "personal-reimbursements";
 const maxReimbursementEvidenceSize = 3 * 1024 * 1024;
 
+function reimbursementAuthPassword(email: string, password: string) {
+  if (password.length >= 6) return password;
+  // Supabase Auth enforces a six-character minimum. Keep the user-facing
+  // temporary PIN short while sending a stable, non-raw credential to Auth.
+  const digest = createHash("sha256")
+    .update(`dbapt-reimbursement-pin-v1\0${email.toLowerCase()}\0${password}`)
+    .digest("base64url");
+  return `Pin!${digest}`;
+}
+
 function refresh() {
   for (const path of ["/finance/reimbursements","/basic-info/approval","/approval","/finance/quick-expenses","/finance/expense-resolutions"]) revalidatePath(path);
 }
@@ -26,7 +36,7 @@ export async function assignBudgetSource(data: Record<string,unknown>) {
   refresh();
 }
 export async function reimbursementLogin(form: FormData) {
-  const email=String(form.get("email") ?? "").trim();
+  const email=String(form.get("email") ?? "").trim().toLowerCase();
   const password=String(form.get("password") ?? "");
   if(!email||!password) return {ok:false as const,message:"이메일과 비밀번호를 입력해줘."};
   const failed=(phase:string,error?:{code?:string;status?:number})=>{
@@ -40,7 +50,7 @@ export async function reimbursementLogin(form: FormData) {
     }
     // Dedicated client: signing in must never alter the shared service client.
     const auth = createClient(config.url,config.key,{auth:{persistSession:false,autoRefreshToken:false}});
-    const { data,error } = await auth.auth.signInWithPassword({email,password});
+    const { data,error } = await auth.auth.signInWithPassword({email,password:reimbursementAuthPassword(email,password)});
     if (error || !data.session || !data.user) {
       failed("authentication",error ? {code:error.code,status:error.status} : undefined);
       const invalidCredentials=error?.code==="invalid_credentials"||error?.status===400||error?.status===401;
@@ -216,8 +226,8 @@ export async function saveReimbursementMember(form: FormData) {
   if(!userId) {
     // Admin creates an account without sending email. The individual changes the initial password after login.
     const password=String(form.get("password") ?? "");
-    if(password.length<12) throw new Error("초기 비밀번호는 12자 이상으로 설정해주세요.");
-    const result=await db.auth.admin.createUser({email,password,email_confirm:true});
+    if(password.length<4) throw new Error("초기 비밀번호는 숫자를 포함해 4자 이상으로 설정해주세요.");
+    const result=await db.auth.admin.createUser({email,password:reimbursementAuthPassword(email,password),email_confirm:true});
     if(result.error) throw new Error("계정 생성 실패. 기존 계정이면 사용자 ID로 권한을 지정해주세요.");
     userId=result.data.user.id;
     created=true;

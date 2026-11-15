@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ApprovalWorkflowError, transitionExpenseApproval } from "./expense-approval-workflow";
+import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
 function createResolution(overrides: Partial<ManagedExpenseResolution> = {}) {
@@ -62,10 +63,46 @@ describe("expense approval workflow", () => {
     expect(resolution.voucherNo).toBeUndefined();
   });
 
+  it("completes a chair-only route with one real approval", () => {
+    const draft = createResolution({
+      approvalLine: [{ approver: "안동연", order: 1, role: "최종결재", status: "대기" }],
+      approvalRoute: "SECRETARY_CHAIR",
+    });
+    const requested = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: draft });
+    const approved = transitionExpenseApproval({ actorLabel: "안동연 최종결재", command: "APPROVE", resolution: requested });
+    expect(approved).toMatchObject({ approvalStatus: "승인완료", paymentStatus: "지급대기" });
+  });
+
   it("completes a bank post-approval without scheduling a duplicate payment", () => {
     let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
     for (const actorLabel of ["장현제 담당자", "오학동 사무국장", "안동연 조합장"]) resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution });
     expect(resolution).toMatchObject({ approvalStatus: "승인완료", paymentStatus: "지급완료" });
+  });
+
+  it("requests approval for a historical batch using row-level bank links and organization settings", () => {
+    const bankTransactions = Array.from({ length: 12 }, (_, index) => ({
+      amount: 18_000,
+      description: "업무식대",
+      id: `bank-${index + 1}`,
+      itemId: `item-${index + 1}`,
+      transactionDate: "2026-01-30",
+    }));
+    const resolution = createResolution({
+      actualExpenseDate: "2026-01-30",
+      bankTransactions,
+      evidenceKind: "BANK_TRANSFER",
+      evidenceStatus: "ALTERNATIVE",
+      expenseKind: "BANK_POST_APPROVAL",
+      postApprovalReason: "2026년 1월 업무식대 12건 기지급분 일괄 사후결의",
+      resolutionType: "BATCH",
+    });
+    const requested = transitionExpenseApproval({
+      actorLabel: "오학동 사무국장",
+      command: "REQUEST",
+      resolution,
+      settings: { ...defaultExpenseComplianceSettings, postApprovalMaxDays: undefined },
+    });
+    expect(requested).toMatchObject({ approvalStatus: "승인대기", currentApprover: "장현제 담당자" });
   });
 
   it("requires an audited cancellation path before editing an approved unpaid document", () => {

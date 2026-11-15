@@ -105,13 +105,16 @@ const testFiles = [
   "advance_settlement_drafts.sql",
   "advance_settlement_lifecycle.sql",
   "legacy_expense_authorization.sql",
+  "effective_expense_approval_policy.sql",
   "approval_document_authorization.sql",
   "approval_finance_handoff.sql",
   "expense_classification_axes.sql",
   "quick_expense_resolution_conversion.sql",
   "trust_operating_fund_periods.sql",
   "user_quick_menu_preferences.sql",
+  "top_favorite_menus.sql",
   "collection_ledger_bridge.sql",
+  "bank_post_approval_budget_guard.sql",
 ];
 const requestedTests = process.argv.slice(2);
 testFiles.push("budget_unknown_month_review.sql");

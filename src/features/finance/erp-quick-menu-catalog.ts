@@ -1,8 +1,12 @@
 export const quickMenuEntries = [
+  { id: "resolution-list", label: "지출결의서", href: "/finance/expense-resolutions" },
+  { id: "vouchers", label: "전표", href: "/finance" },
+  { id: "approval-inbox", label: "결재함", href: "/approval/inbox?type=expense" },
+  { id: "budget", label: "예산", href: "/finance/reimbursements?tab=budgets" },
   { id: "members", label: "조합원 등록", href: "/members" },
   { id: "collections", label: "분담금 수납처리", href: "/finance/collections", badgeLabel: "분담금 수납관리" },
   { id: "refunds", label: "환급관리", href: "/finance/refunds", badgeLabel: "환급관리" },
-  { id: "bank", label: "은행거래 업로드", href: "/finance/bank-transactions" },
+  { id: "bank", label: "은행거래", href: "/finance/bank-transactions" },
   { id: "cards", label: "법인카드 내역 연결", href: "/finance/quick-expenses?method=corporate-card", badgeLabel: "법인카드 내역 연결" },
   { id: "resolution", label: "지출결의 작성", href: "/finance/expense-entry?flow=before" },
   { id: "payments", label: "지급대기", href: "/finance/payments?tab=UNPAID", badgeLabel: "조합 지급대기" },
@@ -20,8 +24,7 @@ export const quickMenuEntries = [
 
 export type QuickMenuId = (typeof quickMenuEntries)[number]["id"];
 export const defaultQuickMenuIds: QuickMenuId[] = [
-  "expense-entry", "corporate-use", "resolution", "personal-refund",
-  "payments", "trust-business", "trust-operating", "bank",
+  "resolution-list", "vouchers", "expense-entry", "approval-inbox", "bank", "budget",
 ];
 
 export function validQuickMenuIds(value: unknown): QuickMenuId[] {

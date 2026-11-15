@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getExpensePrintAmountSummary } from "./expense-resolution-page";
+import { getExpensePrintAmountSummary } from "./expense-resolution-print-preview";
 
 describe("expense print amount summary", () => {
   it("uses the approval amount for an advance resolution", () => {

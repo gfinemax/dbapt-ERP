@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { findCorporateCardMatchCandidates, isTaxiCardTransaction } from "./corporate-card-transaction";
+import { findCorporateCardMatchCandidates, isBankVerifiedCorporateCard, isTaxiCardTransaction } from "./corporate-card-transaction";
 
 describe("corporate card transaction", () => {
   it("recognizes taxi merchants and categories", () => {
@@ -21,5 +21,18 @@ describe("corporate card transaction", () => {
     });
 
     expect(matches.map((match) => [match.id, match.matchLevel])).toEqual([["exact", "EXACT"], ["likely", "LIKELY"]]);
+  });
+
+  it("accepts a bank-linked debit card without a duplicate card transaction", () => {
+    expect(isBankVerifiedCorporateCard({
+      bankTransactions: [{ id: "bank-1" }],
+      cardSettlementMode: "BANK_DIRECT",
+      cardVerificationSource: "BANK_TRANSACTION",
+    })).toBe(true);
+    expect(isBankVerifiedCorporateCard({
+      bankTransactions: [],
+      cardSettlementMode: "BANK_DIRECT",
+      cardVerificationSource: "BANK_TRANSACTION",
+    })).toBe(false);
   });
 });

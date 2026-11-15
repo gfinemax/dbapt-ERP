@@ -4,10 +4,22 @@ import type { ExpenseAuthorization } from "./expense-authorization";
 import type { AccountAllocation, BatchExpenseItem, ManagedExpenseResolution, SingleExpenseItem } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
-import { getExpenseResolutionSearchPattern, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
+import { getExpenseResolutionSearchPattern, nextFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
 import type { ReimbursementMember } from "./reimbursement-domain";
 
 export const expenseResolutionRepositorySchema = "finance";
+
+export type ExpenseBankDraftReviewContract = {
+  accountSubjectId: string;
+  approvalBasisKey: string;
+  budgetId: string;
+  duplicateResolutionId?: string;
+  duplicateResolutionReviewed?: boolean;
+  evidencePolicyKey: string;
+  expenseDetailId: string;
+  purposeKey: string;
+  taxPolicyKey: string;
+};
 
 type ExpenseResolutionRow = {
   resolution_data: ManagedExpenseResolution;
@@ -233,7 +245,7 @@ export async function listExpenseResolutionsFromSupabase(verifiedActor?: Reimbur
 export async function listExpenseResolutionPageFromSupabase(
   request: ExpenseResolutionListRequest & { includeId?: string },
   verifiedActor?: ReimbursementMember,
-): Promise<{ items: ManagedExpenseResolution[]; nextResolutionNo: string; pagination: ExpenseResolutionListPage } | null> {
+): Promise<{ items: ManagedExpenseResolution[]; pagination: ExpenseResolutionListPage } | null> {
   const actor = verifiedActor ?? await requireExpenseActor();
   const supabase = getSupabaseServerClient();
   if (!supabase) return null;
@@ -256,19 +268,37 @@ export async function listExpenseResolutionPageFromSupabase(
       `current_approver_label.ilike.${pattern}`,
     ].join(","));
   }
-  const [pageResult, nextResolutionNo] = await Promise.all([
-    query.order("updated_at", { ascending: false }).range(offset, offset + request.pageSize - 1),
-    getNextExpenseResolutionNo(supabase, actor.organization_id),
-  ]);
+  if (request.month) {
+    query = query
+      .gte("actual_expense_date", `${request.month}-01`)
+      .lt("actual_expense_date", `${nextFinanceMonth(request.month)}-01`);
+  }
+  const orderedQuery = request.sort === "expense_date_asc"
+    ? query
+      .order("actual_expense_date", { ascending: true, nullsFirst: false })
+      .order("resolution_no", { ascending: true })
+      .order("id", { ascending: true })
+    : request.sort === "expense_date_desc"
+      ? query
+        .order("actual_expense_date", { ascending: false, nullsFirst: false })
+        .order("resolution_no", { ascending: false })
+        .order("id", { ascending: false })
+      : query
+        .order("updated_at", { ascending: false })
+        .order("id", { ascending: false });
+  const pageResult = await orderedQuery.range(offset, offset + request.pageSize - 1);
   const { data, error, count } = pageResult;
   if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
 
   const sourceRows = (data ?? []) as ExpenseResolutionRow[];
-  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionRows(supabase, actor, sourceRows) : [];
+  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionListRows(supabase, actor, sourceRows) : [];
   let items: ManagedExpenseResolution[] = hydratedItems;
-  if (request.includeId && !items.some((item) => item.id === request.includeId)) {
+  if (request.includeId) {
     try {
-      items = [await getExpenseResolutionSnapshotFromSupabase(request.includeId, actor), ...items];
+      const detail = await getExpenseResolutionDetailFromSupabase(request.includeId, actor);
+      const existingIndex = items.findIndex((item) => item.id === request.includeId);
+      if (existingIndex >= 0) items = items.map((item, index) => index === existingIndex ? detail : item);
+      else items = [detail, ...items];
     } catch {
       // The page renders its existing not-found guidance for missing or unauthorized deep links.
     }
@@ -276,11 +306,12 @@ export async function listExpenseResolutionPageFromSupabase(
   const total = count ?? 0;
   return {
     items,
-    nextResolutionNo,
     pagination: {
       page: request.page,
       pageSize: request.pageSize,
+      month: request.month,
       query: request.query,
+      sort: request.sort,
       total,
       totalPages: Math.max(1, Math.ceil(total / request.pageSize)),
     },
@@ -305,6 +336,13 @@ async function getNextExpenseResolutionNo(
   if (error) throw new Error(`Failed to determine the next expense resolution number: ${error.message}`);
   const latestSequence = Number(data?.resolution_no?.slice(prefix.length));
   return `${prefix}${String(Number.isSafeInteger(latestSequence) ? latestSequence + 1 : 1).padStart(4, "0")}`;
+}
+
+export async function getNextExpenseResolutionNoFromSupabase(verifiedActor?: ReimbursementMember) {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  return getNextExpenseResolutionNo(supabase, actor.organization_id);
 }
 
 async function hydrateExpenseResolutionRows(
@@ -370,6 +408,52 @@ async function hydrateExpenseResolutionRows(
   );
 }
 
+async function hydrateExpenseResolutionListRows(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  actor: ReimbursementMember,
+  sourceRows: ExpenseResolutionRow[],
+) {
+  const resolutionIds = sourceRows.map((row) => row.resolution_data.id);
+  const [
+    { data: bindingRows, error: bindingError },
+    { data: workflowData, error: workflowError },
+  ] = await Promise.all([
+    supabase.schema("finance").from("expense_authorization_bindings")
+      .select("resolution_id,author_user_id,steps,version")
+      .eq("organization_id", actor.organization_id)
+      .in("resolution_id", resolutionIds),
+    supabase.schema("finance").from("workflow_transactions")
+      .select("id,source_id")
+      .eq("organization_id", actor.organization_id)
+      .eq("source_kind", "RESOLUTION")
+      .in("source_id", resolutionIds),
+  ]);
+  if (bindingError && !isMissingExpenseBinding(bindingError)) throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
+  if (workflowError) throw new Error(`Failed to list integrated expense links: ${workflowError.message}`);
+  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[]).map(binding => [binding.resolution_id, binding]));
+  const workflowMap = new Map(((workflowData ?? []) as { id: string; source_id: string }[]).map(item => [item.source_id, item.id]));
+  return sourceRows.map((row) => ({
+    ...row.resolution_data,
+    authorization: bindingMap.get(row.resolution_data.id) ?? null,
+    workflowTransactionId: workflowMap.get(row.resolution_data.id),
+  }));
+}
+
+export async function getExpenseResolutionDetailFromSupabase(id: string, verifiedActor?: ReimbursementMember) {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.schema(expenseResolutionRepositorySchema).from("expense_resolutions")
+    .select(expenseResolutionSelect)
+    .eq("id", id)
+    .eq("organization_id", actor.organization_id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (error || !data) throw new Error("조회 권한이 있는 지출결의서를 찾을 수 없습니다.");
+  const [resolution] = await hydrateExpenseResolutionRows(supabase, actor, [data as ExpenseResolutionRow]);
+  return resolution;
+}
+
 export async function getExpenseResolutionSnapshotFromSupabase(id: string, verifiedActor?: ReimbursementMember) {
   const { resolution, binding } = await requireExpenseRecord(id, false, verifiedActor);
   return { ...resolution, authorization: binding };
@@ -388,10 +472,111 @@ export async function commitExpenseCommand(command: string, id: string, expected
   return { ...data, authorization: await expenseBinding(id, actor) } as ManagedExpenseResolution;
 }
 
+export async function commitExpenseApprovalBatch(
+  items: Array<{ id: string; expected: ManagedExpenseResolution; payload: Record<string, unknown> }>,
+  key: string,
+) {
+  const actor = await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았습니다.");
+  const { data, error } = await supabase.schema("finance").rpc("legacy_expense_approval_batch", {
+    p_org: actor.organization_id,
+    p_actor: actor.user_id,
+    p_items: items.map((item) => ({
+      id: item.id,
+      expected: stripExpenseAuthorization(item.expected),
+      payload: item.payload,
+    })),
+    p_key: key,
+  });
+  if (error) throw new Error(error.message);
+  const results = (data as { results?: ManagedExpenseResolution[] } | null)?.results;
+  if (!Array.isArray(results) || results.length !== items.length) {
+    throw new Error("일괄 결재 처리 결과를 확인하지 못했습니다.");
+  }
+  return Promise.all(results.map(async (resolution) => ({
+    ...resolution,
+    authorization: await expenseBinding(resolution.id, actor),
+  } as ManagedExpenseResolution)));
+}
+
+export async function commitExpenseSaveBatch(
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>,
+  month: string,
+  key: string,
+) {
+  validateExpenseSaveBatchInput(items, month);
+  const actor = await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았습니다.");
+  if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("월별 초안 기준은 월의 첫날이어야 합니다.");
+  const payloadItems = items.map(({ resolution, reviewContract }) => {
+    const draft = stripExpenseAuthorization(resolution);
+    return {
+      expected: null,
+      id: draft.id,
+      payload: mapExpenseResolutionSavePayload(draft, actor.organization_id),
+      review_contract: reviewContract,
+    };
+  });
+  const { data, error } = await supabase.schema("finance").rpc("legacy_expense_save_batch", {
+    p_actor: actor.user_id,
+    p_items: payloadItems,
+    p_key: key,
+    p_month: month,
+    p_org: actor.organization_id,
+  });
+  if (error) throw new Error(error.message);
+  const results = (data as { results?: ManagedExpenseResolution[] } | null)?.results;
+  if (!Array.isArray(results) || results.length !== items.length) throw new Error("월별 초안 저장 결과를 확인하지 못했습니다.");
+  return results;
+}
+
+export function validateExpenseSaveBatchInput(
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>,
+  month: string,
+  today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
+) {
+  if (!items.length || items.length > 200) throw new Error("월별 초안은 1건 이상 200건 이하만 저장할 수 있습니다.");
+  if (!/^\d{4}-\d{2}-01$/.test(month)) throw new Error("월별 초안 기준은 월의 첫날이어야 합니다.");
+  for (const { resolution } of items) {
+    if (resolution.approvalStatus !== "작성중" || resolution.paymentStatus !== "지급전" || resolution.expenseKind !== "BANK_POST_APPROVAL" || !resolution.isPostApproval) {
+      throw new Error(`${resolution.resolutionNo}: 작성중·지급전·통장 선출금 사후결의 초안만 월별 저장할 수 있습니다.`);
+    }
+    if (resolution.createdAt.slice(0, 10) !== today || (resolution.draftedAt && resolution.draftedAt.slice(0, 10) !== today)) {
+      throw new Error(`${resolution.resolutionNo}: 작성일은 실제 저장일을 사용해야 합니다.`);
+    }
+    if (resolution.approvedAt || resolution.disbursedAt || resolution.voucherNo || resolution.voucherGenerated) {
+      throw new Error(`${resolution.resolutionNo}: 승인·지급·전표 결과가 없는 초안만 저장할 수 있습니다.`);
+    }
+    if (!resolution.bankTransactions?.length) throw new Error(`${resolution.resolutionNo}: 원천 통장거래가 필요합니다.`);
+    const sourceDates = resolution.bankTransactions.map((transaction) => transaction.transactionDate).toSorted();
+    if (sourceDates.some((date) => `${date.slice(0, 7)}-01` !== month)) throw new Error(`${resolution.resolutionNo}: 한 회계월의 통장거래만 함께 저장할 수 있습니다.`);
+    if (resolution.actualExpenseDate !== sourceDates.at(-1)) throw new Error(`${resolution.resolutionNo}: 실제 지출일은 묶음의 마지막 원천 거래일이어야 합니다.`);
+    if (resolution.budgetMonth !== month) throw new Error(`${resolution.resolutionNo}: 예산 귀속월이 월별 저장 기준과 다릅니다.`);
+  }
+}
+
 export function stripExpenseAuthorization(resolution: ManagedExpenseResolution) {
   const result = { ...resolution };
   delete result.authorization;
   return result;
+}
+
+export function mapExpenseDisbursementUpdate(
+  resolution: ManagedExpenseResolution,
+  expected: { paymentStatus: ManagedExpenseResolution["paymentStatus"] },
+) {
+  const snapshot = stripExpenseAuthorization(resolution);
+  if (resolution.paymentStatus === expected.paymentStatus) {
+    return {
+      resolution_data: snapshot,
+      updated_at: new Date().toISOString(),
+      voucher_no: resolution.voucherNo ?? null,
+      voucher_status: resolution.voucherStatus ?? null,
+    };
+  }
+  return mapExpenseResolutionToUpsert(snapshot);
 }
 
 export async function updateExpenseDisbursementInSupabase(
@@ -404,7 +589,7 @@ export async function updateExpenseDisbursementInSupabase(
   let query = supabase
     .schema(expenseResolutionRepositorySchema)
     .from("expense_resolutions")
-    .update(mapExpenseResolutionToUpsert(stripExpenseAuthorization(resolution)))
+    .update(mapExpenseDisbursementUpdate(resolution, expected))
     .eq("id", resolution.id)
     .eq("organization_id", actor.organization_id)
     .eq("payment_status", expected.paymentStatus);
@@ -419,6 +604,13 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
   const actor = await requireExpenseActor();
   const version = resolution.authorization?.version ?? 0;
   resolution = stripExpenseAuthorization(resolution);
+  return commitExpenseCommand("SAVE", resolution.id, expected, {
+    ...mapExpenseResolutionSavePayload(resolution, actor.organization_id),
+    expected_binding_version: version,
+  }, key);
+}
+
+export function mapExpenseResolutionSavePayload(resolution: ManagedExpenseResolution, organizationId: string) {
   const itemRows = mapExpenseResolutionItemsToRows(resolution);
   const allocationRows = mapExpenseAccountAllocationsToRows(resolution);
   const evidenceRows = mapExpenseEvidenceToRows(resolution);
@@ -426,10 +618,13 @@ export async function upsertExpenseResolutionInSupabase(resolution: ManagedExpen
     const source = resolution.expenseItems.find((expenseItem) => expenseItem.id === item.id) ?? resolution.expenseItems[index];
     return { account_title: item.accountTitle, actual_spender_label: item.spender, amount: item.amount, business_purpose: item.businessPurpose, deleted_at: null, evidence_kind: item.evidenceKind ?? mapDetailEvidenceKind(source?.evidenceType), evidence_status: item.evidenceStatus ?? (source?.evidenceFileName ? "GENERAL" : "NONE"), fact_confirmation_id: item.factConfirmationId ?? null, id: item.id, item_name: item.item, line_no: index + 1, memo: source?.memo || null, payment_method: source?.paymentMethod ?? resolution.advancePaymentMethod ?? resolution.paymentMethod ?? "기타", resolution_id: resolution.id, transaction_date: item.transactionDate, updated_at: new Date().toISOString(), vendor_name: item.vendor };
   });
-  return commitExpenseCommand("SAVE", resolution.id, expected, {
-    row: mapExpenseResolutionToUpsert(resolution, actor.organization_id), items: itemRows,
-    allocations: allocationRows, evidence: evidenceRows, details: detailRows, expected_binding_version: version,
-  }, key);
+  return {
+    allocations: allocationRows,
+    details: detailRows,
+    evidence: evidenceRows,
+    items: itemRows,
+    row: mapExpenseResolutionToUpsert(resolution, organizationId),
+  };
 }
 
 function mapDetailEvidenceKind(value?: string) {

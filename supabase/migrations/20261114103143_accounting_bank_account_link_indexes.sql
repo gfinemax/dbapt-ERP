@@ -1,0 +1,6 @@
+create index bank_account_subject_links_subject_idx
+  on finance.bank_account_subject_links(account_subject_id);
+create index bank_account_subject_links_created_by_idx
+  on finance.bank_account_subject_links(created_by);
+create index bank_account_subject_links_updated_by_idx
+  on finance.bank_account_subject_links(updated_by);

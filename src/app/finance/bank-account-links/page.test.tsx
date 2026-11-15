@@ -37,7 +37,7 @@ describe("bank account link settings route", () => {
   beforeEach(() => vi.clearAllMocks());
 
   it("renders a dedicated destination with account registration and transaction links", async () => {
-    mocks.requireActor.mockResolvedValue({ display_name: "파인맥스", organization_id: "org-1" });
+    mocks.requireActor.mockResolvedValue({ display_name: "오학동", organization_id: "org-1" });
     mocks.loadBankAccounts.mockResolvedValue([]);
     mocks.loadStatus.mockResolvedValue({
       accounts: [],
@@ -60,7 +60,7 @@ describe("bank account link settings route", () => {
   });
 
   it("loads the selected Ledger account detail with a bounded page number", async () => {
-    mocks.requireActor.mockResolvedValue({ display_name: "파인맥스", organization_id: "org-1" });
+    mocks.requireActor.mockResolvedValue({ display_name: "오학동", organization_id: "org-1" });
     mocks.loadBankAccounts.mockResolvedValue([{ accountName: "대방동지역주택조합", accountNo: "071-114261-04-017", accountType: "운영계좌", bankName: "기업은행", createdAt: "2021-02-26", id: "bank-erp", lastSyncedAt: "", status: "정상", unmatchedCount: 0, usageStatus: "사용" }]);
     mocks.loadStatus.mockResolvedValue({
       accounts: [{ account_name: "기업(0711)", account_number_last4: "4017", bank_name: "기업은행", conflict_count: 0, erp_bank_account_id: "bank-erp", imported_count: 1, invalid_count: 0, ledger_account_id: "8", mapping_note: null, pending_count: 0 }],

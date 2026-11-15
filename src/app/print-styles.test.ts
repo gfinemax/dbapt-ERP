@@ -12,8 +12,9 @@ describe("print styles", () => {
     expect(css).toContain("width: 170mm !important;");
     expect(css).toContain("min-height: 257mm !important;");
     expect(css).toContain('font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", "Malgun Gothic", sans-serif;');
+    expect(css).toMatch(/\.expense-approval-timestamp \{\r?\n  font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;\r?\n  font-style: normal;\r?\n\}/);
     expect(css).toContain(".expense-resolution-print-header h3 {\n    white-space: nowrap !important;");
-    expect(css).not.toContain("width: 210mm !important;");
+    expect(css).toContain("width: 210mm !important;");
     expect(css).not.toContain("font-size: 11pt;");
   });
 });

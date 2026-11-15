@@ -14,6 +14,9 @@ import { evaluateDirectExpensePolicy } from "./direct-expense-policy";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
 import { isBudgetProfilePeriodKey } from "./budget-profile-lookup";
 import { getEmployeeAdvanceSourceFacts } from "./expense-advance-source";
+import { ExpenseApprovalPolicyFields } from "./expense-approval-policy-fields";
+import { seoulToday } from "@/features/approval/approval-effective-policy";
+import { buildExpenseApprovalRoute, expenseApprovalRouteOptions } from "./expense-approval-routing";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import { expenseResolutionTypeOptions, formatExpenseResolutionAmount, type ExpenseResolutionType } from "./expense-resolution-data";
 import type { EvidenceOcrJobProgress } from "./expense-evidence";
@@ -26,7 +29,6 @@ import {
   batchEvidenceTypeOptions,
   BudgetProfilesContext,
   BudgetRow,
-  buildApprovalLine,
   CollapsibleFormSection,
   createAccountAllocation,
   createSingleExpenseItem,
@@ -82,6 +84,7 @@ export function ExpenseResolutionCreateModal({
   budgetSnapshot,
   formState,
   settlementCandidates,
+  canRestoreHistorical = false,
   isEditing,
   isQuickConversion,
   isEvidenceUploading,
@@ -129,6 +132,7 @@ export function ExpenseResolutionCreateModal({
   budgetSnapshot: BudgetSnapshot;
   formState: ResolutionFormState;
   settlementCandidates: ManagedExpenseResolution[];
+  canRestoreHistorical?: boolean;
   isEditing: boolean;
   isQuickConversion: boolean;
   isEvidenceUploading: boolean;
@@ -162,6 +166,8 @@ export function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
+  const approvalReferenceDate = formState.approvalRecordKind === "HISTORICAL" ? formState.originalApprovalDate || seoulToday() : seoulToday();
+  const selectedApprovalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalReferenceDate);
   const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
@@ -175,6 +181,56 @@ export function ExpenseResolutionCreateModal({
     const recommendedIds = new Set(cardMatchCandidates.map((candidate) => candidate.id));
     return [...cardMatchCandidates, ...cardTransactionCandidates.filter((transaction) => !recommendedIds.has(transaction.id))];
   }, [cardMatchCandidates, cardTransactionCandidates]);
+  const bankTransactionById = useMemo(() => new Map(bankTransactionCandidates.map((transaction) => [transaction.id, transaction])), [bankTransactionCandidates]);
+  const selectedBankTransactionIds = useMemo(() => new Set(formState.bankTransactions.map((transaction) => transaction.id)), [formState.bankTransactions]);
+  const toggleBankTransaction = (transaction: BankTransactionResolutionCandidate) => {
+    const selected = selectedBankTransactionIds.has(transaction.id);
+    const candidates = selected
+      ? formState.bankTransactions.filter((item) => item.id !== transaction.id).map((item) => ({
+          ...item,
+          candidate: bankTransactionById.get(item.id),
+        }))
+      : [...formState.bankTransactions.map((item) => ({
+          ...item,
+          candidate: bankTransactionById.get(item.id),
+        })), {
+          amount: transaction.withdrawalAmount,
+          candidate: transaction,
+          description: transaction.description,
+          id: transaction.id,
+          itemId: `bank-card-item-${transaction.id}`,
+          transactionDate: transaction.sourceTransactionDate ?? transaction.transactedAt.slice(0, 10),
+        }];
+    const links = candidates.map((item) => ({
+      amount: item.amount,
+      description: item.description,
+      id: item.id,
+      itemId: item.itemId,
+      transactionDate: item.transactionDate,
+    }));
+    const selectedCandidates = candidates.map((item) => item.candidate).filter((item): item is BankTransactionResolutionCandidate => Boolean(item));
+    const total = links.reduce((sum, item) => sum + item.amount, 0);
+    const dates = links.map((item) => item.transactionDate).sort();
+    const counterparties = Array.from(new Set(selectedCandidates.map((item) => item.counterparty || item.description).filter(Boolean)));
+    onChange("bankTransactions", links);
+    onChange("singleItems", links.length ? links.map((item) => createSingleExpenseItem({
+      id: item.itemId,
+      itemName: item.description || (formState.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : "법인 체크카드 사용"),
+      quantity: "1",
+      taxCategory: "NO_VAT",
+      unitPrice: String(item.amount),
+    })) : [createSingleExpenseItem()]);
+    onChange("accountAllocations", [createAccountAllocation({
+      amount: total ? String(total) : "",
+      budgetItem: formState.budgetItem,
+      description: links.length ? `${formState.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : "법인 체크카드 통장출금"} ${links.length}건` : "",
+    })]);
+    onChange("actualExpenseDate", dates.at(-1) ?? "");
+    onChange("plannedPaymentDate", dates.at(-1) ?? formState.plannedPaymentDate);
+    onChange("bankTransactionId", "");
+    onChange("vendorName", counterparties.length === 1 ? counterparties[0]! : counterparties.length > 1 ? `${formState.expenseKind === "BANK_POST_APPROVAL" ? "통장거래" : "법인카드"} 사용처 ${counterparties.length}곳` : "");
+    onChange("reason", links.length ? `${formState.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금 사후결의" : "법인 체크카드 통장 건별출금"} ${links.length}건` : formState.reason);
+  };
   const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
   const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
@@ -477,6 +533,7 @@ export function ExpenseResolutionCreateModal({
               onChange={(value) => {
                 onChange("expenseKind", value as ExpenseKind);
                 if (value === "BANK_POST_APPROVAL" || value === "PERSONAL_REIMBURSEMENT") onChange("expenseTiming", "REIMBURSEMENT");
+                if (value === "BANK_POST_APPROVAL") onChange("expenseBurdenType", "ORGANIZATION_PAID");
                 if (value === "RECURRING_BATCH") onChange("resolutionMode", "PROJECT_BULK");
               }}
               options={[
@@ -550,20 +607,52 @@ export function ExpenseResolutionCreateModal({
                   value={formState.quickPaymentMethod}
                 />
                 {formState.quickPaymentMethod === "CORPORATE_CARD" ? <>
-                <label className="grid gap-2 text-sm font-bold">
-                  <span>법인카드 승인내역</span>
-                  <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
-                    <option value="">아직 카드내역이 없음 · 연결대기로 임시등록</option>
-                    {displayedCardTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{cardMatchCandidates.some((candidate) => candidate.id === transaction.id) ? "추천 · " : ""}{transaction.approvedAt.slice(0, 10)} · {transaction.merchantName} · {transaction.amount.toLocaleString("ko-KR")}원 · {transaction.cardName} 끝 {transaction.cardLastFour}{isTaxiCardTransaction(transaction) ? " · 택시 자동분류" : ""}</option>)}
-                  </select>
-                  {cardTransactionCandidates.length ? <span className="text-xs font-semibold text-[var(--color-stone)]">미결의 승인내역 {cardTransactionCandidates.length}건 · 이미 결의서에 연결된 거래는 표시하지 않습니다.</span> : <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)]">불러온 미결의 카드 승인내역이 없습니다. 카드 내역 동기화 후 다시 확인해주세요.</span>}
-                </label>
-                <div className={`rounded-lg border px-4 py-3 text-sm ${formState.cardTransactionId ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
-                  <p className="font-bold">{formState.cardTransactionId ? "카드 승인내역 매칭완료" : "카드 승인내역 연결대기"}</p>
-                  <p className="mt-1 text-xs font-semibold">{formState.cardTransactionId ? "선택한 승인내역과 하나의 기록으로 통합해 중복 비용처리를 방지합니다." : "지금은 업무 목적만 임시등록합니다. 별도 지급·확정전표는 만들지 않고, 카드내역이 들어오면 날짜·금액으로 추천합니다."}</p>
-                </div>
-                {!formState.cardTransactionId ? <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} /> : null}
-                {!formState.cardTransactionId && cardMatchCandidates.length ? <div className="rounded-lg border border-[var(--color-deep-cobalt)]/25 bg-white px-4 py-3 text-sm"><p className="font-bold text-[var(--color-deep-cobalt)]">일치 가능성이 높은 카드내역 {cardMatchCandidates.length}건</p><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">금액과 결제일(±2일)이 일치합니다. 위 목록의 ‘추천’ 거래를 선택해 통합해주세요.</p></div> : null}
+                <QuestionChoiceGroup
+                  label="카드대금이 통장에서 어떻게 출금되나요?"
+                  onChange={(value) => onChange("cardSettlementMode", value as ResolutionFormState["cardSettlementMode"])}
+                  options={[
+                    { label: "건별로 바로 출금 · 체크카드", value: "BANK_DIRECT" },
+                    { label: "카드사에서 합계 청구 · 신용카드", value: "CARD_BILLING" },
+                  ]}
+                  value={formState.cardSettlementMode}
+                />
+                {formState.cardSettlementMode === "BANK_DIRECT" ? <>
+                  <fieldset className="grid gap-2 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-white p-4">
+                    <legend className="px-1 text-sm font-bold">통장 건별출금 선택</legend>
+                    <p className="text-xs font-semibold text-[var(--color-stone)]">카드 데이터를 다시 입력하지 않고 통장 원본의 날짜·금액·사용처를 사용합니다.</p>
+                    <div className="max-h-64 space-y-2 overflow-y-auto pr-1">
+                      {bankTransactionCandidates.map((transaction) => {
+                        const checked = selectedBankTransactionIds.has(transaction.id);
+                        const linkedElsewhere = Boolean(transaction.linkedResolutionId && transaction.linkedResolutionNo !== formState.resolutionNo);
+                        return <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${linkedElsewhere ? "cursor-not-allowed bg-slate-50 text-slate-400" : "cursor-pointer bg-white"}`} key={transaction.id}>
+                          <input checked={checked} disabled={linkedElsewhere} onChange={() => toggleBankTransaction(transaction)} type="checkbox" />
+                          <span><strong>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원</strong><br/><span className="text-xs">{transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</span></span>
+                        </label>;
+                      })}
+                    </div>
+                    {!bankTransactionCandidates.length ? <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-900">선택할 통장 출금거래가 없습니다. 은행 거래를 먼저 불러와주세요.</p> : null}
+                  </fieldset>
+                  <div className={`rounded-lg border px-4 py-3 text-sm ${formState.bankTransactions.length ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
+                    <p className="font-bold">{formState.bankTransactions.length ? `통장 건별출금 ${formState.bankTransactions.length}건 확인완료` : "통장 건별출금 연결대기"}</p>
+                    <p className="mt-1 text-xs font-semibold">카드 승인내역을 다시 입력하지 않으며, 연결한 통장거래는 다른 지출에 중복 사용할 수 없습니다.</p>
+                  </div>
+                  <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} />
+                </> : <>
+                  <label className="grid gap-2 text-sm font-bold">
+                    <span>법인카드 승인내역</span>
+                    <select aria-label="법인카드 승인내역" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => onChange("cardTransactionId", event.target.value)} value={formState.cardTransactionId}>
+                      <option value="">아직 카드내역이 없음 · 연결대기로 임시등록</option>
+                      {displayedCardTransactions.map((transaction) => <option key={transaction.id} value={transaction.id}>{cardMatchCandidates.some((candidate) => candidate.id === transaction.id) ? "추천 · " : ""}{transaction.approvedAt.slice(0, 10)} · {transaction.merchantName} · {transaction.amount.toLocaleString("ko-KR")}원 · {transaction.cardName} 끝 {transaction.cardLastFour}{isTaxiCardTransaction(transaction) ? " · 택시 자동분류" : ""}</option>)}
+                    </select>
+                    {cardTransactionCandidates.length ? <span className="text-xs font-semibold text-[var(--color-stone)]">미결의 승인내역 {cardTransactionCandidates.length}건 · 이미 결의서에 연결된 거래는 표시하지 않습니다.</span> : <span className="rounded-lg bg-white px-3 py-2 text-xs font-semibold text-[var(--color-stone)]">불러온 미결의 카드 승인내역이 없습니다. 카드 내역 동기화 후 다시 확인해주세요.</span>}
+                  </label>
+                  <div className={`rounded-lg border px-4 py-3 text-sm ${formState.cardTransactionId ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)] text-[var(--color-green-ink)]" : "border-amber-300 bg-amber-50 text-amber-900"}`} role="status">
+                    <p className="font-bold">{formState.cardTransactionId ? "카드 승인내역 매칭완료" : "카드 승인내역 연결대기"}</p>
+                    <p className="mt-1 text-xs font-semibold">{formState.cardTransactionId ? "선택한 승인내역과 하나의 기록으로 통합해 중복 비용처리를 방지합니다." : "카드사 합계청구는 개별 사용내역을 확인해야 승인요청할 수 있습니다."}</p>
+                  </div>
+                  {!formState.cardTransactionId ? <TextInput label="카드번호 끝 4자리 (선택)" maxLength={4} onChange={(value) => onChange("cardLastFour", value.replace(/\D/g, "").slice(0, 4))} value={formState.cardLastFour} /> : null}
+                  {!formState.cardTransactionId && cardMatchCandidates.length ? <div className="rounded-lg border border-[var(--color-deep-cobalt)]/25 bg-white px-4 py-3 text-sm"><p className="font-bold text-[var(--color-deep-cobalt)]">일치 가능성이 높은 카드내역 {cardMatchCandidates.length}건</p><p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">금액과 결제일(±2일)이 일치합니다. 위 목록의 ‘추천’ 거래를 선택해 통합해주세요.</p></div> : null}
+                </>}
                 <QuestionChoiceGroup
                   label="어떤 비용인가요?"
                   onChange={(value) => onChange("quickExpenseCategory", value as ResolutionFormState["quickExpenseCategory"])}
@@ -639,7 +728,7 @@ export function ExpenseResolutionCreateModal({
               <TextInput label="회계 귀속일" onChange={(value) => onChange("accountingDate", value)} type="date" value={formState.accountingDate} />
               <TextInput label="실제 지출일" onChange={(value) => onChange("actualExpenseDate", value)} type="date" value={formState.actualExpenseDate} />
               <TextInput label="작성자" readOnly value={formState.author} />
-              {formState.expenseKind === "BANK_POST_APPROVAL" ? <label className="grid gap-1 text-sm font-semibold md:col-span-2"><span>통장 출금거래 연결</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => { const transaction = bankTransactionCandidates.find((item) => item.id === event.target.value); onChange("bankTransactionId", event.target.value); if (transaction) { onChange("actualExpenseDate", transaction.transactedAt.slice(0, 10)); onChange("vendorName", transaction.counterparty || transaction.description); } }} value={formState.bankTransactionId}><option value="">미결의 출금거래 선택</option>{bankTransactionCandidates.map((transaction) => <option disabled={Boolean(transaction.linkedResolutionId)} key={transaction.id} value={transaction.id}>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</option>)}</select></label> : null}
+              {formState.expenseKind === "BANK_POST_APPROVAL" ? <fieldset className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 md:col-span-2"><legend className="px-1 text-sm font-bold">통장 출금거래 연결</legend><p className="text-xs font-semibold text-[var(--color-stone)]">같은 회계월·계정과목·예산·세부항목과 동일한 승인·증빙·세무 기준을 확인한 거래만 함께 선택해줘.</p><div className="max-h-64 space-y-2 overflow-y-auto pr-1">{bankTransactionCandidates.map((transaction) => { const checked = selectedBankTransactionIds.has(transaction.id); const linkedElsewhere = Boolean(transaction.linkedResolutionId && transaction.linkedResolutionNo !== formState.resolutionNo); return <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${linkedElsewhere ? "cursor-not-allowed bg-slate-50 text-slate-400" : "cursor-pointer"}`} key={transaction.id}><input checked={checked} disabled={linkedElsewhere} onChange={() => toggleBankTransaction(transaction)} type="checkbox" /><span><span className="font-semibold">{transaction.sourceTransactionDate ?? transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}</span>{transaction.linkedResolutionNo ? <span className="block text-xs">{transaction.linkedResolutionNo} 연결됨</span> : null}</span></label>; })}</div><p className="text-xs font-semibold">선택 {formState.bankTransactions.length}건 · {formState.bankTransactions.reduce((sum, item) => sum + item.amount, 0).toLocaleString("ko-KR")}원</p></fieldset> : null}
               {formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? <><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /><TextInput label="조합의 정산일" onChange={(value) => onChange("settlementCompletedAt", value)} type="date" value={formState.settlementCompletedAt} /><div className="rounded-lg border bg-white px-4 py-3 text-sm font-bold">정산 상태: {formState.settlementCompletedAt ? "정산완료" : "정산예정"}</div></> : null}
               {formState.expenseTiming === "ADVANCE" ? <TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /> : null}
               <p className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)] md:col-span-3 xl:col-span-4">
@@ -977,7 +1066,7 @@ export function ExpenseResolutionCreateModal({
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 유형</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceKind", event.target.value as EvidenceKind)} value={formState.evidenceKind}><option value="E_TAX_INVOICE">전자세금계산서</option><option value="INVOICE">계산서</option><option value="CARD_RECEIPT">카드매출전표</option><option value="CASH_RECEIPT">현금영수증</option><option value="SIMPLE_RECEIPT">간이영수증</option><option value="BANK_TRANSFER">계좌이체확인증</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="BILL">청구서</option><option value="EXPENSE_FACT_CONFIRMATION">지출사실확인서</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option><option value="NONE">증빙 없음</option></select></label>
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 상태</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceStatus", event.target.value as EvidenceStatus)} value={formState.evidenceStatus}><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select></label>
               {formState.evidenceKind === "EXPENSE_FACT_CONFIRMATION" ? <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 md:col-span-3">지출사실확인서는 지출결의서를 대체하지 않으며 적격증빙으로 처리되지 않습니다.</p> : null}
-              {formState.evidenceStatus === "DEFICIENT" || formState.evidenceStatus === "NONE" || (formState.evidenceStatus === "ALTERNATIVE" && !formState.evidenceFiles.length) ? <TextInput label="증빙 미첨부·대체 사유" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} /> : null}
+              <TextInput label="출력 증빙·대체증빙 설명" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} />
               <label className="grid gap-1 text-sm font-semibold">
                 <span>거래 증빙 종류</span>
                 <select
@@ -1170,33 +1259,54 @@ export function ExpenseResolutionCreateModal({
               {incompleteReviewItems.length > 0 ? <p className="mt-3 text-xs font-semibold text-[var(--color-tangerine)]">승인요청 전 {incompleteReviewItems.length}개 항목을 확인해주세요.</p> : null}
             </section>
             <h3 className="text-base font-bold">결재선</h3>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">결재는 내부 승인 절차이며, 실제 계좌이체는 지급처리 단계에서 진행합니다.</p>
+            <ExpenseApprovalPolicyFields kind={formState.approvalRecordKind} originalDate={formState.originalApprovalDate} originalReference={formState.originalApprovalReference} canRestore={canRestoreHistorical} onKind={value => onChange("approvalRecordKind", value)} onDate={value => onChange("originalApprovalDate", value)} onReference={value => onChange("originalApprovalReference", value)} />
+            {selectedApprovalRoute.error ? <p role="alert" className="mt-2 text-xs text-red-700">{selectedApprovalRoute.error}</p> : null}
+            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">기준일에 참여 가능한 사람만 표시하고, 실제 로그인 결재는 선택한 경로의 필수 결재자만 진행합니다. 작성·생략·후열은 승인 서명이 아닙니다.</p>
+            <div className="mt-3 grid gap-2">
+              {expenseApprovalRouteOptions.map((option) => {
+                const selected = formState.approvalRoute === option.route;
+                const routeIssue = buildExpenseApprovalRoute(option.route, approvalReferenceDate).error;
+                return (
+                  <button
+                    aria-pressed={selected}
+                    disabled={Boolean(routeIssue)}
+                    title={routeIssue || undefined}
+                    className={`rounded-xl border px-3 py-3 text-left ${selected ? "border-[var(--color-deep-cobalt)] bg-blue-50" : "border-[var(--color-soft-border)] bg-white"}`}
+                    key={option.route}
+                    onClick={() => onChange("approvalRoute", option.route)}
+                    type="button"
+                  >
+                    <span className="block text-sm font-black">{option.label}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.route === "SECRETARY_CHAIR" && approvalReferenceDate < "2026-07-01" ? "오학동 작성 후 안동연이 최종 결재합니다. 장현제는 기간상 참여 대상이 아닙니다." : option.description}</span>
+                  </button>
+                );
+              })}
+            </div>
             <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-soft-border)] bg-white">
               <table className="w-full text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                   <tr>
-                    <th className="px-3 py-2">순서</th>
-                    <th className="px-3 py-2">결재자</th>
+                    <th className="px-3 py-2">표시</th>
+                    <th className="px-3 py-2">이름</th>
                     <th className="px-3 py-2">직책</th>
-                    <th className="px-3 py-2">결재상태</th>
-                    <th className="px-3 py-2">처리일</th>
+                    <th className="px-3 py-2">역할</th>
+                    <th className="px-3 py-2">실제 결재</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
-                  {buildApprovalLine().map((step) => (
-                    <tr key={step.order}>
-                      <td className="px-3 py-2">{step.order}차</td>
-                      <td className="px-3 py-2 font-semibold">{step.approver}</td>
-                      <td className="px-3 py-2">{step.role}</td>
-                      <td className="px-3 py-2">
-                        <Badge value={step.status} />
-                      </td>
-                      <td className="px-3 py-2 text-[var(--color-stone)]">-</td>
+                  {selectedApprovalRoute.participants.map((participant, index) => (
+                    <tr key={participant.name}>
+                      <td className="px-3 py-2">{index + 1}</td>
+                      <td className="px-3 py-2 font-semibold">{participant.name}</td>
+                      <td className="px-3 py-2">{participant.title}</td>
+                      <td className="px-3 py-2 font-semibold">{participant.action}</td>
+                      <td className="px-3 py-2 text-[var(--color-stone)]">{participant.approvalOrder ? `${participant.approvalOrder}차 필수` : "서명 없음"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
+            <p className="mt-2 text-xs font-semibold text-[var(--color-deep-cobalt)]">계정 연결 필요: 작성자 1명 · 실제 결재자 {selectedApprovalRoute.approvalLine.length}명</p>
             <div className="mt-3 rounded-lg bg-white p-3 text-sm">
               <p className="font-bold">초기 상태</p>
               <p className="mt-1 text-[var(--color-stone)]">승인상태: 작성중</p>
@@ -1233,11 +1343,11 @@ export function ExpenseResolutionCreateModal({
           </Button>
           <div className="flex gap-2">
             {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드 사용 임시등록" : "임시저장"}</Button>
+            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? "카드 사용 임시등록" : "임시저장"}</Button>
             {currentStep < 3 ? (
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
             ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId)} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !formState.cardTransactionId ? "카드내역 연결 후 승인" : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId))} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? (formState.cardSettlementMode === "BANK_DIRECT" ? "통장거래 연결 후 승인" : "카드내역 연결 후 승인") : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
             )}
           </div>
         </div>

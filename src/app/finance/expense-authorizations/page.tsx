@@ -8,7 +8,8 @@ import { ExpenseAuthorizationPage } from "@/features/finance/expense-authorizati
 import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 
 export const dynamic = "force-dynamic";
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ id?: string }> }) {
+  const query = await searchParams;
   let actor;
   try {
     actor = await requireExpenseActor("ADMIN");
@@ -50,7 +51,7 @@ export default async function Page() {
   const content = message ? (
     <p role="alert">{message}</p>
   ) : (
-    <ExpenseAuthorizationPage records={records ?? []} members={members} />
+    <ExpenseAuthorizationPage records={records ?? []} members={members} initialId={query.id} />
   );
   return (
     <ErpShell

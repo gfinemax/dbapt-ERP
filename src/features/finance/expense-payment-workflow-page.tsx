@@ -1,18 +1,23 @@
 "use client";
 
 import { Search, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
-  ExpenseResolutionDetailModal,
   getNextExpenseVoucherNo,
   getVoucherStatusLabel,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
+
+const ExpenseResolutionDetailModal = dynamic(
+  () => import("./expense-resolution-detail-modal").then((module) => module.ExpenseResolutionDetailModal),
+  { ssr: false },
+);
 
 type PaymentWorkflowMode = "waiting" | "completed";
 type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";
@@ -217,6 +222,7 @@ export function ExpensePaymentWorkflowPage({ dataLoadError, initialMode, initial
           onReject={() => undefined}
           onRequestApproval={() => undefined}
           resolution={selectedDetail}
+          voucherHref={`/finance?resolutionId=${selectedDetail.id}`}
         />
       ) : null}
 
@@ -388,13 +394,15 @@ function CompletedPaymentTable({
                         전표확정
                       </button>
                     ) : null}
-                    <button
-                      className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)] disabled:cursor-not-allowed disabled:opacity-40"
-                      disabled={resolution.voucherStatus !== "전표확정"}
-                      type="button"
-                    >
-                      전표보기
-                    </button>
+                    {resolution.voucherStatus === "전표확정" ? (
+                      <a className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" href={`/finance?resolutionId=${resolution.id}`}>
+                        전표보기
+                      </a>
+                    ) : (
+                      <span aria-disabled="true" className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)] opacity-40">
+                        전표보기
+                      </span>
+                    )}
                   </div>
                 </td>
               </tr>

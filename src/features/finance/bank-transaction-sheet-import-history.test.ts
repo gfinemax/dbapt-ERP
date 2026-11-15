@@ -6,6 +6,7 @@ describe("bank transaction sheet import history", () => {
   it("maps database numeric values into a UI-safe audited history entry", () => {
     expect(mapBankTransactionSheetImportHistoryRow({
       bank_account_id: "bank-10054",
+      erp_only_count: 0, field_override_count: 0, manual_match_count: 0, skipped_count: 0,
       id: "batch-76",
       imported_at: "2026-11-08T01:00:38.67399+00:00",
       imported_by: "user-1",
@@ -16,13 +17,13 @@ describe("bank transaction sheet import history", () => {
       source_row_count: "76",
       source_sheet: "시트1",
       source_withdrawal_total: "489147570",
-    }, "파인맥스", {
+    }, "오학동", {
       erpTransactionCount: 76,
       googleSheetSourceCount: 19,
       ledgerSourceCount: 57,
       otherSourceCount: 0,
     })).toEqual({
-      actorLabel: "파인맥스",
+      actorLabel: "오학동",
       bankAccountId: "bank-10054",
       batchId: "batch-76",
       currentTransactionCount: 76,

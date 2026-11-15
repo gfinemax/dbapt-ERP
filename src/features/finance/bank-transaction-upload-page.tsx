@@ -230,7 +230,7 @@ export function BankTransactionUploadPage({
       if (createBankTransactions) {
         const saved = await createBankTransactions(previewRows);
         setSavedTransactionIds(saved.transactions.filter((transaction) => transaction.isWithdrawal === true).map((transaction) => transaction.id));
-        setSaveMessage(`신규 ${saved.importedCount}건을 저장했고 중복 ${saved.duplicateCount}건을 제외했습니다. 전표 생성·확정은 별도 검토 단계에서 처리합니다.`);
+        setSaveMessage(`신규 ${saved.importedCount}건을 저장했고 중복 제외 ${saved.duplicateCount}건을 기록했습니다. 지출결의 최종 승인 후 거래별 전표를 자동 생성하며 확인 필요 계정만 검토합니다.`);
         return;
       }
 

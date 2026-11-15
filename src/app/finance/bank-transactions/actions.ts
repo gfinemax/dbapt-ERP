@@ -12,7 +12,7 @@ import {
 } from "@/features/finance/bank-transaction-sheet-enrichment-repository";
 import type { BankSheetSourceRow } from "@/features/finance/bank-transaction-sheet-enrichment";
 import type { BankTransactionDetailOverrideInput, BankTransactionReviewInput, BankTransactionSubjectAssignment } from "@/features/finance/bank-transaction-repository";
-import { confirmBankTransactionSubjects, createBankTransactionsInSupabase, saveBankTransactionDetailOverrides, saveBankTransactionReview } from "@/features/finance/bank-transaction-repository";
+import { confirmBankTransactionSubjects, createBankTransactionsInSupabase, refreshApprovedBankExpenseVouchers, saveBankTransactionDetailOverrides, saveBankTransactionReview } from "@/features/finance/bank-transaction-repository";
 import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { requireReimbursementIdentity } from "@/features/finance/reimbursement-auth";
 import { setLedgerBankAccountMapping, syncLedgerBankTransactions } from "@/features/finance/ledger-bank-transaction-backfill";
@@ -82,19 +82,31 @@ export async function applyBankTransactionSheetEnrichmentAction(input: ApplyBank
 export async function confirmBankTransactionSubjectsAction(assignments: BankTransactionSubjectAssignment[]) {
   const actor = await requireExpenseActor("ADMIN");
   const confirmed = await confirmBankTransactionSubjects(actor.organization_id, actor.user_id, assignments);
+  await refreshApprovedBankExpenseVouchers(
+    actor.organization_id,
+    actor.user_id,
+    confirmed.map((assignment) => assignment.transaction_id),
+  );
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/exp");
+  revalidatePath("/finance/accounting");
+  revalidatePath("/finance/expense-resolutions");
   return confirmed;
 }
 
 export async function saveBankTransactionReviewAction(input: BankTransactionReviewInput) {
   const actor = await requireExpenseActor("ADMIN");
   const saved = await saveBankTransactionReview(actor.organization_id, actor.user_id, input);
+  if (input.action === "CONFIRM" && input.accountSubjectId) {
+    await refreshApprovedBankExpenseVouchers(actor.organization_id, actor.user_id, [input.transactionId]);
+  }
   revalidatePath("/finance/bank-transactions");
   revalidatePath("/finance/bank-unmatched");
   revalidatePath("/finance/reports");
   revalidatePath("/finance/exp");
+  revalidatePath("/finance/accounting");
+  revalidatePath("/finance/expense-resolutions");
   return saved;
 }
 

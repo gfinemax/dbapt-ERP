@@ -1,5 +1,7 @@
 "use server";
 
+import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, prepareExpenseApprovalDraft } from "@/features/finance/expense-approval-period";
+
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
 
 import { assertExpenseRelatedRow, requireExpenseActor, requireExpenseRecord, requireExpenseFile, requireExpenseOcrJob, requireExpenseFact } from "@/features/finance/expense-authorization";
@@ -16,9 +18,9 @@ import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-
 import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
 import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
 import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
-import { getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseCommand, upsertExpenseResolutionInSupabase } from "@/features/finance/expense-resolution-repository";
-import { transitionExpenseApproval, type ApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
-import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "@/features/finance/expense-disbursement-workflow";
+import { getExpenseResolutionDetailFromSupabase, getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, commitExpenseSaveBatch, upsertExpenseResolutionInSupabase, type ExpenseBankDraftReviewContract } from "@/features/finance/expense-resolution-repository";
+import { transitionExpenseApproval, type ApprovalTransitionRequest, type BatchApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
+import { DisbursementWorkflowError, transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "@/features/finance/expense-disbursement-workflow";
 import { validateExpenseResolutionWorkflow } from "@/features/finance/expense-resolution-domain";
 import { normalizeEvidenceStatus } from "@/features/finance/expense-compliance";
 import { getExpenseComplianceSettings, listExpenseFactConfirmations, saveExpenseComplianceSettings, type ExpenseFactConfirmationInput } from "@/features/finance/expense-compliance-repository";
@@ -27,11 +29,24 @@ import type { ManagedExpenseResolution } from "@/features/finance/expense-resolu
 import { evaluateDirectExpensePolicy } from "@/features/finance/direct-expense-policy";
 import { assertLegacySmallExpenseReadOnly } from "@/features/finance/legacy-small-expense";
 import { convertQuickExpenseToResolution } from "@/features/finance/quick-expense-conversion-repository";
+import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
+import { getExpenseVoucherSyncTargets } from "@/features/finance/expense-voucher-sync";
+import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options.server";
+
+import { createExpenseBudgetDecisionSnapshot, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
 const expenseEvidenceBucket = "expense-evidence";
 
 const maxEvidenceFileSize = 10 * 1024 * 1024;
 const acceptedEvidenceTypes = new Set(["application/pdf", "image/jpeg", "image/png", "image/webp", "text/plain", "text/csv"]);
+
+export async function loadExpenseResolutionFormOptionsAction() {
+  return loadExpenseResolutionFormOptions();
+}
+
+export async function loadExpenseResolutionDetailAction(id: string) {
+  return getExpenseResolutionDetailFromSupabase(id);
+}
 
 async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolution, settings?: ExpenseComplianceSettings | null) {
   const supabase = getSupabaseServerClient();
@@ -348,11 +363,24 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   if (resolution.expenseKind) {
     resolution = { ...resolution, evidenceStatus: normalizeEvidenceStatus(resolution.evidenceKind ?? "NONE", resolution.evidenceStatus ?? "NONE") };
   }
+  resolution = prepareExpenseApprovalDraft(resolution, existingResolution ?? null, actor.permissions.includes("ADMIN"));
   const saved = await upsertExpenseResolutionInSupabase(resolution, existingResolution ?? null, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/exp");
   revalidatePath("/finance/approval-inbox");
   revalidatePath("/approval/inbox");
+  return saved;
+}
+
+export async function saveMonthlyBankExpenseDraftBatchAction(input: {
+  items: Array<{ resolution: ManagedExpenseResolution; reviewContract: ExpenseBankDraftReviewContract }>;
+  month: string;
+}) {
+  if (!input.items.length) throw new Error("저장할 월별 초안이 없어.");
+  const saved = await commitExpenseSaveBatch(input.items, input.month, randomUUID());
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/expense-resolutions/bank-draft-manifest");
+  revalidatePath("/finance/bank-transactions");
   return saved;
 }
 
@@ -428,9 +456,11 @@ export async function uploadExpenseFactSupportingFileAction(formData: FormData) 
 export async function linkBankTransactionAction(input: { bankTransactionId: string; resolutionId: string; actorLabel: string }) {
   const { actor, resolution, binding } = await requireExpenseRecord(input.resolutionId, true);
   await assertExpenseRelatedRow("bank_transactions", input.bankTransactionId, actor);
-  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,deposit_amount,transaction_kind").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
+  const { data: transaction, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions").select("transacted_at,withdrawal_amount,deposit_amount,transaction_kind,raw_payload").eq("id", input.bankTransactionId).eq("organization_id", actor.organization_id).single();
   if (error || !transaction || inferTransactionKind(transaction.transaction_kind, Number(transaction.deposit_amount), Number(transaction.withdrawal_amount)) !== "출금") throw new Error("연결할 통장 출금거래를 찾을 수 없습니다. 입출금 구분과 금액을 확인해줘.");
-  const actualExpenseDate = new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
+  const actualExpenseDate = typeof transaction.raw_payload?.transaction_date === "string" && transaction.raw_payload.transaction_date
+    ? transaction.raw_payload.transaction_date.slice(0, 10)
+    : new Date(transaction.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" });
   await upsertExpenseResolutionInSupabase({ ...resolution, authorization: binding, actualExpenseDate, bankTransactionId: input.bankTransactionId, expenseKind: "BANK_POST_APPROVAL", isPostApproval: true, approvalStatus: "작성중", currentApprover: undefined, approvedAt: undefined, approvalLine: resolution.approvalLine.map((step) => ({ ...step, status: "대기", processedAt: undefined })) }, resolution, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/bank-transactions");
@@ -448,7 +478,13 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   const { actor, resolution: current, binding } = await requireExpenseRecord(input.resolutionId);
   if (current.approvalStatus !== input.expectedStatus || current.currentApprover !== input.expectedCurrentApprover)
     throw new Error("다른 사용자가 먼저 결재 상태를 변경했습니다. 목록을 새로고침해주세요.");
-  if (!binding?.author_user_id || binding.steps.length !== current.approvalLine.length)
+  const bindingMatchesCurrentLine = binding?.steps.every((step) => {
+    const currentStep = current.approvalLine[step.order - 1];
+    return currentStep
+      && step.legacy_step?.approver === currentStep.approver
+      && step.legacy_step?.role === currentStep.role;
+  });
+  if (!binding?.author_user_id || binding.steps.length !== current.approvalLine.length || !bindingMatchesCurrentLine)
     throw new Error("작성자와 결재선의 로그인 계정 연결을 먼저 확인해주세요.");
   if (input.expectedAuthorizationVersion !== binding.version) throw new Error("계정 연결 또는 결의 내용이 변경되었습니다. 다시 조회해주세요.");
   const index = current.approvalLine.findIndex(step => step.status === "결재대기");
@@ -456,9 +492,22 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (input.command === "REQUEST" && binding.author_user_id !== actor.user_id) throw new Error("연결된 작성자만 승인요청할 수 있습니다.");
   if (["APPROVE", "REJECT"].includes(input.command) && assigned?.approver_user_id !== actor.user_id) throw new Error("현재 순서에 연결된 결재자만 처리할 수 있습니다.");
   if (input.command === "CANCEL" && !actor.permissions.includes("ADMIN")) throw new Error("승인취소는 관리자만 처리할 수 있습니다.");
+  if (input.command === "REQUEST" || input.command === "APPROVE" || input.command === "REJECT") {
+    assertExpenseApprovalPeriod(current, input.command === "REQUEST");
+    assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, input.command);
+  }
   const settings = await getExpenseComplianceSettings(actor.organization_id);
   const isFinal = index === current.approvalLine.length - 1;
-  const workflowCurrent = current;
+  const budgetPeriod = current.budgetSnapshot?.budgetPeriod;
+  const needsBudgetDecision = input.command === "REQUEST" || input.command === "APPROVE";
+  const budgetView = needsBudgetDecision && budgetPeriod
+    ? await loadExpenseResolutionBudgetView([current], actor.organization_id)
+    : undefined;
+  const liveBudgetResolution = budgetView?.resolutions[0] ?? current;
+  const budgetLookupStatus = budgetView?.lookupStatuses[current.id];
+  const budgetDecision = budgetLookupStatus
+    ? createExpenseBudgetDecisionSnapshot(liveBudgetResolution, budgetLookupStatus)
+    : undefined;
   if (input.command === "REQUEST" || input.command === "APPROVE" && isFinal) {
     if (input.command === "REQUEST") {
       const validation = validateExpenseResolutionWorkflow({ ...current,
@@ -468,7 +517,11 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
         itemCount: current.resolutionType === "BATCH" ? current.expenseItems.length : current.singleItems?.length ?? 0 });
       if (validation.errors.length) throw new Error(validation.errors.join(" "));
     }
-    if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
+    if (current.expenseBurdenType === "CORPORATE_CARD" && current.cardSettlementMode === "BANK_DIRECT") {
+      if (!isBankVerifiedCorporateCard(current)) throw new Error("법인 체크카드의 통장 건별출금 내역을 연결한 후 승인요청할 수 있습니다.");
+    } else if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) {
+      throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
+    }
     if (current.approvalDocumentId) await assertExpenseRelatedRow("documents", current.approvalDocumentId, actor, "approval");
     await validateDirectExpenseGovernance(current, settings);
   }
@@ -478,8 +531,9 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   }
   // UUID authorizes execution. Legacy labels are used only by the compatibility state calculator.
   const legacyLabel = input.command === "REQUEST" ? current.author : input.command === "CANCEL" ? actor.display_name : current.currentApprover!;
-  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: workflowCurrent });
+  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: current, settings: settings ?? undefined });
   const history = transitioned.history.map((item, i) => i < current.history.length ? item : { ...item, actorName: actor.display_name, actorTitle: "" });
+  if (budgetDecision && history[current.history.length]) history[current.history.length] = { ...history[current.history.length], budgetDecision };
   const saved = await commitExpenseCommand("APPROVAL", input.resolutionId, current, {
     command: input.command, after: { ...transitioned, history }, reason: input.reason,
     expected_binding_version: binding.version,
@@ -488,7 +542,119 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   revalidatePath("/finance/approval-inbox");
   revalidatePath("/approval/inbox");
   revalidatePath("/finance/workspace");
-  return saved as ManagedExpenseResolution;
+  const savedWithCheckedBudget = budgetView
+    ? { ...saved, budgetSnapshot: liveBudgetResolution.budgetSnapshot }
+    : saved;
+  // Refresh totals after the command updates approval reservations.
+  // Optional reads must not report a completed command as failed.
+  if (budgetPeriod && saved.approvalStatus !== "승인완료") {
+    try {
+      return (await loadExpenseResolutionBudgetView([saved], actor.organization_id)).resolutions[0];
+    } catch (error) {
+      console.warn("[expense-approval] Budget refresh after successful transition failed", error);
+    }
+  }
+  return savedWithCheckedBudget as ManagedExpenseResolution;
+}
+
+export async function transitionExpenseApprovalBatchAction(input: BatchApprovalTransitionRequest) {
+  if (!/^\d{4}-(0[1-9]|1[0-2])-([012]\d|3[01])$/.test(input.referenceDate)) {
+    throw new Error("업무 기준일을 확인해주세요.");
+  }
+  const reason = input.reason.trim();
+  if (!reason) throw new Error("일괄 결재 사유가 필요합니다.");
+  if (reason.length > 300) throw new Error("일괄 결재 사유는 300자 이하로 입력해주세요.");
+  if (!input.idempotencyKey.trim()) throw new Error("일괄 결재 처리키가 필요합니다.");
+  if (!input.items.length || input.items.length > 50) throw new Error("일괄 결재는 1건 이상 50건 이하만 처리할 수 있습니다.");
+  if (new Set(input.items.map((item) => item.resolutionId)).size !== input.items.length) throw new Error("중복된 지출결의가 있습니다.");
+
+  const accesses = await Promise.all(input.items.map((item) => requireExpenseRecord(item.resolutionId)));
+  const actor = accesses[0]?.actor ?? await requireExpenseActor();
+  if (accesses.some((access) => access.actor.organization_id !== actor.organization_id || access.actor.user_id !== actor.user_id)) {
+    throw new Error("같은 로그인 계정의 지출결의만 일괄 처리할 수 있습니다.");
+  }
+  const settings = await getExpenseComplianceSettings(actor.organization_id);
+  const currentResolutions = accesses.map((access) => access.resolution);
+  const periods = currentResolutions.map((resolution) => resolution.budgetSnapshot?.budgetPeriod).filter(Boolean);
+  const budgetView = periods.length
+    ? await loadExpenseResolutionBudgetView(currentResolutions, actor.organization_id)
+    : undefined;
+  const liveById = new Map((budgetView?.resolutions ?? currentResolutions).map((resolution) => [resolution.id, resolution]));
+  const batchComment = `업무 기준일 ${input.referenceDate} · ${reason} · 실제 승인시각 별도 기록`;
+
+  const commands = [] as Array<{ id: string; expected: ManagedExpenseResolution; payload: Record<string, unknown> }>;
+  for (let itemIndex = 0; itemIndex < input.items.length; itemIndex += 1) {
+    const request = input.items[itemIndex];
+    const { resolution: current, binding } = accesses[itemIndex];
+    assertExpenseApprovalPeriod(current);
+    assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, "APPROVE");
+    if (current.approvalStatus !== request.expectedStatus || current.currentApprover !== request.expectedCurrentApprover) {
+      throw new Error(`${current.resolutionNo}: 다른 사용자가 먼저 결재 상태를 변경했습니다.`);
+    }
+    const bindingMatchesCurrentLine = binding?.steps.every((step) => {
+      const currentStep = current.approvalLine[step.order - 1];
+      return currentStep && step.legacy_step?.approver === currentStep.approver && step.legacy_step?.role === currentStep.role;
+    });
+    if (!binding?.author_user_id || binding.steps.length !== current.approvalLine.length || !bindingMatchesCurrentLine) {
+      throw new Error(`${current.resolutionNo}: 작성자와 결재선의 로그인 계정 연결을 먼저 확인해주세요.`);
+    }
+    if (request.expectedAuthorizationVersion !== binding.version) throw new Error(`${current.resolutionNo}: 계정 연결 또는 결의 내용이 변경되었습니다.`);
+    const activeIndex = current.approvalLine.findIndex((step) => step.status === "결재대기");
+    const assigned = binding.steps.find((step) => step.order === activeIndex + 1);
+    if (activeIndex < 0 || assigned?.approver_user_id !== actor.user_id) throw new Error(`${current.resolutionNo}: 현재 순서에 연결된 결재자만 처리할 수 있습니다.`);
+    const isFinal = activeIndex === current.approvalLine.length - 1;
+    if (isFinal) {
+      if (current.expenseBurdenType === "CORPORATE_CARD" && current.cardSettlementMode === "BANK_DIRECT") {
+        if (!isBankVerifiedCorporateCard(current)) throw new Error(`${current.resolutionNo}: 현금카드의 통장 건별출금 내역을 먼저 연결해주세요.`);
+      } else if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) {
+        throw new Error(`${current.resolutionNo}: 실제 카드 승인내역을 먼저 연결해주세요.`);
+      }
+      if (current.approvalDocumentId) await assertExpenseRelatedRow("documents", current.approvalDocumentId, actor, "approval");
+      await validateDirectExpenseGovernance(current, settings);
+      if (current.evidenceStatus === "NONE") {
+        if (settings && !settings.allowNoEvidenceApproval) throw new Error(`${current.resolutionNo}: 설정에 따라 증빙 없는 지출은 승인할 수 없습니다.`);
+        if (settings?.noEvidenceApproverRole && assigned.legacy_step.role !== settings.noEvidenceApproverRole) {
+          throw new Error(`${current.resolutionNo}: 증빙 없는 지출의 지정 결재 역할을 확인해주세요.`);
+        }
+      }
+    }
+
+    const transitioned = transitionExpenseApproval({
+      actorLabel: current.currentApprover!,
+      command: "APPROVE",
+      reason: batchComment,
+      resolution: current,
+      settings: settings ?? undefined,
+    });
+    const history = transitioned.history.map((historyItem, historyIndex) => historyIndex < current.history.length
+      ? historyItem
+      : { ...historyItem, actorName: actor.display_name, actorTitle: "" });
+    const liveResolution = liveById.get(current.id) ?? current;
+    const lookupStatus = budgetView?.lookupStatuses[current.id];
+    if (lookupStatus && history[current.history.length]) {
+      history[current.history.length] = {
+        ...history[current.history.length],
+        budgetDecision: createExpenseBudgetDecisionSnapshot(liveResolution, lookupStatus),
+      };
+    }
+    commands.push({
+      id: current.id,
+      expected: current,
+      payload: {
+        command: "APPROVE",
+        after: { ...transitioned, history },
+        reason: batchComment,
+        expected_binding_version: binding.version,
+      },
+    });
+  }
+
+  const saved = await commitExpenseApprovalBatch(commands, input.idempotencyKey);
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/approval-inbox");
+  revalidatePath("/approval/inbox");
+  revalidatePath("/finance/workspace");
+  return saved;
 }
 
 export async function transitionExpenseDisbursementAction(input: DisbursementTransitionRequest) {
@@ -546,8 +712,31 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
 
   try {
     const current = await getExpenseResolutionSnapshotFromSupabase(input.resolutionId);
+    const canRecoverIncompleteDraft = input.command === "VOUCHER_CREATE"
+      && input.expectedVoucherStatus == null
+      && current.paymentStatus === input.expectedPaymentStatus
+      && current.voucherStatus === "전표초안"
+      && !!current.voucherNo;
+    if (canRecoverIncompleteDraft) {
+      await syncExpenseVoucherRecords(supabase, current, current, "VOUCHER_CREATE");
+      const { error: recoveryAuditError } = await supabase.schema("finance").from("expense_workflow_audit_logs").insert({
+        action: "VOUCHER_CREATE_RECOVERED",
+        actor_label: input.actorLabel,
+        after_data: current,
+        before_data: current,
+        operation_id: inserted.id,
+        resolution_id: input.resolutionId,
+      });
+      if (recoveryAuditError) throw new Error(`복구 감사로그 저장 실패: ${recoveryAuditError.message}`);
+      await completeExpenseWorkflowOperation(supabase, inserted.id, current);
+      revalidateExpenseDisbursementPaths();
+      return current;
+    }
     if (current.paymentStatus !== input.expectedPaymentStatus || current.voucherStatus !== input.expectedVoucherStatus) {
       throw new Error("다른 사용자가 먼저 지급 또는 전표 상태를 변경했습니다. 목록을 새로고침해주세요.");
+    }
+    if (input.command === "VOUCHER_CONFIRM") {
+      await syncExpenseVoucherRecords(supabase, current, current, "VOUCHER_CREATE");
     }
     const governedCurrent = ["PAYMENT_COMPLETE", "ITEM_PAYMENT_COMPLETE"].includes(input.command) ? await validateDirectExpenseGovernance(current) : current;
     const transitioned = transitionExpenseDisbursement({
@@ -569,15 +758,8 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
       resolution_id: input.resolutionId,
     });
     if (auditError) throw new Error(`감사로그 저장 실패: ${auditError.message}`);
-    const { error: completionError } = await supabase
-      .schema("finance")
-      .from("expense_workflow_operations")
-      .update({ completed_at: new Date().toISOString(), result_data: saved, status: "COMPLETED" })
-      .eq("id", inserted.id);
-    if (completionError) throw new Error(`처리결과 저장 실패: ${completionError.message}`);
-    revalidatePath("/finance/expense-resolutions");
-    revalidatePath("/finance/payment-waiting");
-    revalidatePath("/finance/payment-completed");
+    await completeExpenseWorkflowOperation(supabase, inserted.id, saved);
+    revalidateExpenseDisbursementPaths();
     return saved;
   } catch (error) {
     await supabase
@@ -589,10 +771,56 @@ export async function transitionExpenseDisbursementAction(input: DisbursementTra
   }
 }
 
+export async function transitionExpenseDisbursementResultAction(input: DisbursementTransitionRequest): Promise<DisbursementTransitionResult> {
+  try {
+    return { data: await transitionExpenseDisbursementAction(input), ok: true };
+  } catch (error) {
+    console.error("[expense-disbursement] Server action failed", error);
+    return { error: getSafeExpenseDisbursementError(error), ok: false };
+  }
+}
+
+function getSafeExpenseDisbursementError(error: unknown) {
+  if (error instanceof DisbursementWorkflowError) return error.message;
+  const message = error instanceof Error ? error.message : "";
+  const safePrefixes = [
+    "다른 사용자가",
+    "동일한 지급 처리가",
+    "이전 지급 처리가",
+    "통합 연결된 건의",
+    "확정할 전표초안이",
+    "취소할 지출전표가",
+    "전표취소 사유를",
+    "지급완료 문서만",
+    "연결된 통장거래 없이",
+  ];
+  const safeMessage = safePrefixes.find((prefix) => message.startsWith(prefix));
+  if (safeMessage) return message;
+  if (message.startsWith("지출전표 헤더 저장 실패")) return "전표 원본 연결을 확인하지 못했어. 새로고침 후 다시 시도해줘.";
+  return "전표 처리 중 서버 오류가 발생했어. 새로고침 후 다시 시도해줘.";
+}
+
+async function completeExpenseWorkflowOperation(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  operationId: string,
+  resolution: ManagedExpenseResolution,
+) {
+  const { error } = await supabase
+    .schema("finance")
+    .from("expense_workflow_operations")
+    .update({ completed_at: new Date().toISOString(), result_data: resolution, status: "COMPLETED" })
+    .eq("id", operationId);
+  if (error) throw new Error(`처리결과 저장 실패: ${error.message}`);
+}
+
+function revalidateExpenseDisbursementPaths() {
+  revalidatePath("/finance/expense-resolutions");
+  revalidatePath("/finance/payment-waiting");
+  revalidatePath("/finance/payment-completed");
+}
+
 async function syncExpenseVoucherRecords(supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>, before: ManagedExpenseResolution, afterResolution: ManagedExpenseResolution, command: "VOUCHER_CREATE" | "VOUCHER_CONFIRM" | "VOUCHER_CANCEL") {
-  const targets = afterResolution.resolutionType === "BATCH" && afterResolution.voucherCreationMode === "ITEM_VOUCHER"
-    ? afterResolution.expenseItems.filter((item) => item.voucherNo).map((item) => ({ amount: item.totalAmount, detailTransactionId: item.id, description: item.itemTitle, voucherNo: item.voucherNo! }))
-    : afterResolution.voucherNo ? [{ amount: afterResolution.totalPaymentAmount, detailTransactionId: null, description: afterResolution.subject || afterResolution.reason, voucherNo: afterResolution.voucherNo }] : [];
+  const targets = getExpenseVoucherSyncTargets(afterResolution);
   if (!targets.length) throw new Error("동기화할 지출전표 번호가 없습니다.");
   const voucherNumbers = [...new Set(targets.map((target) => target.voucherNo))];
   if (command !== "VOUCHER_CREATE") {
@@ -603,11 +831,11 @@ async function syncExpenseVoucherRecords(supabase: NonNullable<ReturnType<typeof
   }
   const { data: resolutionRow, error: resolutionError } = await supabase.schema("finance").from("expense_resolutions").select("organization_id").eq("id", afterResolution.id).single();
   if (resolutionError) throw new Error(`전표 조직정보 조회 실패: ${resolutionError.message}`);
-  for (const [index, target] of targets.entries()) {
+  for (const target of targets) {
     const { data: voucher, error: voucherError } = await supabase.schema("finance").from("vouchers").upsert({
       approval_status: "승인대기",
-      bank_transaction_id: index === 0 ? afterResolution.bankTransactionId ?? null : null,
-      detail_transaction_id: target.detailTransactionId,
+      bank_transaction_id: target.bankTransactionId,
+      detail_transaction_id: null,
       expense_resolution_id: afterResolution.id,
       memo: `${afterResolution.resolutionNo} · ${target.description}`,
       organization_id: resolutionRow.organization_id,

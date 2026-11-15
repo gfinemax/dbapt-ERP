@@ -1,28 +1,39 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { ReactElement } from "react";
 
 const navigation = vi.hoisted(() => ({ badges: vi.fn() }));
 vi.mock("@/app/finance/navigation/actions", () => ({ loadFinanceNavigationBadgesAction: navigation.badges }));
 
+vi.mock("@/app/finance/quick-menu/actions", () => ({
+  loadQuickMenuPreferencesAction: vi.fn(async () => ({ authenticated: false, menuIds: null, revision: 0 })),
+  saveQuickMenuPreferencesAction: vi.fn(),
+}));
 import { ErpShell } from "./erp-shell";
+import { clearFinanceBadgesCache } from "./finance-navigation-badges-client";
+async function renderShell(element: ReactElement) {
+  const mounted = render(element);
+  await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
+  return mounted;
+}
 
 describe("ErpShell", () => {
-  beforeEach(() => navigation.badges.mockReset().mockResolvedValue({}));
+  beforeEach(() => { clearFinanceBadgesCache(); localStorage.clear(); navigation.badges.mockReset().mockResolvedValue({}); });
 
-  it("links the logged-out user label to the ERP login screen", () => {
-    render(<ErpShell><p>로그인 전 화면</p></ErpShell>);
+  it("links the logged-out user label to the ERP login screen", async () => {
+    await renderShell(<ErpShell><p>로그인 전 화면</p></ErpShell>);
     expect(screen.getByRole("link", { name: "로그인 필요" })).toHaveAttribute("href", "/");
   });
 
-  it("highlights the explicitly selected approval detail menu", () => {
-    render(<ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재"><p>새 기안 작성</p></ErpShell>);
+  it("highlights the explicitly selected approval detail menu", async () => {
+    await renderShell(<ErpShell activeDetailLabel="새 기안" activeLabel="기안·결재"><p>새 기안 작성</p></ErpShell>);
     const detailMenu = screen.getByRole("navigation", { name: "기안·결재 상세 메뉴" });
     expect(within(detailMenu).getByRole("link", { name: "새 기안" })).toHaveAttribute("aria-current", "page");
     expect(navigation.badges).not.toHaveBeenCalled();
   });
 
-  it("orders finance workspaces by task priority and separates their sections", () => {
-    render(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
+  it("orders finance workspaces by task priority and separates their sections", async () => {
+    await renderShell(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
     const workspaceNavigation = screen.getByRole("navigation", { name: "회계·자금 업무 영역" });
     expect(within(workspaceNavigation).getAllByRole("link").map((link) => link.textContent)).toEqual([
       "업무 홈", "수납·지급", "거래·대사", "전표·증빙", "예산·결산", "보고서·공시",
@@ -37,8 +48,8 @@ describe("ErpShell", () => {
     expect(within(detailMenu).getByRole("link", { name: "업무현황" })).toHaveAttribute("aria-current", "page");
   });
 
-  it("routes every finance workspace to an implemented destination", () => {
-    render(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
+  it("routes every finance workspace to an implemented destination", async () => {
+    await renderShell(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
     const menu = screen.getByRole("navigation", { name: "회계·자금 업무 영역" });
     const expectedRoutes = {
       "업무 홈": "/finance/workspace",
@@ -68,23 +79,23 @@ describe("ErpShell", () => {
     ["기준정보", "은행계좌 관리", "/basic-info?section=bank-accounts"],
     ["연동·설정", "은행 거래 업로드", "/finance/bank-transactions/upload"],
     ["연동·설정", "시스템 속도", "/finance/performance"],
-  ])("renders %s with its own focused detail menu", (workspace, detail, href) => {
-    render(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel={workspace} activeDetailLabel={detail}><p>본문</p></ErpShell>);
+  ])("renders %s with its own focused detail menu", async (workspace, detail, href) => {
+    await renderShell(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel={workspace} activeDetailLabel={detail}><p>본문</p></ErpShell>);
     expect(screen.getByRole("link", { name: workspace })).toHaveAttribute("aria-current", "page");
     const detailMenu = screen.getByRole("navigation", { name: "회계·자금 상세 메뉴" });
     expect(within(detailMenu).getByRole("link", { name: detail })).toHaveAttribute("href", href);
     expect(within(detailMenu).getByRole("link", { name: detail })).toHaveAttribute("aria-current", "page");
   });
 
-  it("keeps old page labels mapped to the new workspace and detail names", () => {
-    render(<ErpShell activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" activeDetailLabel="계좌 연동 설정"><p>본문</p></ErpShell>);
+  it("keeps old page labels mapped to the new workspace and detail names", async () => {
+    await renderShell(<ErpShell activeLabel="회계/자금" activeWorkspaceLabel="통합 거래관리" activeDetailLabel="계좌 연동 설정"><p>본문</p></ErpShell>);
     expect(screen.getByRole("link", { name: "연동·설정" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "은행계좌 연동" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByText("회계·자금")).toBeInTheDocument();
   });
 
-  it("opens mobile navigation with the current focused workspace", () => {
-    render(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel="수납·지급" activeDetailLabel="조합 지급대기"><p>본문</p></ErpShell>);
+  it("opens mobile navigation with the current focused workspace", async () => {
+    await renderShell(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel="수납·지급" activeDetailLabel="조합 지급대기"><p>본문</p></ErpShell>);
     const toggle = screen.getByRole("button", { name: "회계·자금 · 조합 지급대기 메뉴 열기" });
     fireEvent.click(toggle);
     const menu = screen.getByRole("navigation", { name: "회계·자금 모바일 상세 메뉴" });
@@ -97,21 +108,22 @@ describe("ErpShell", () => {
 
   it("shows actionable queue badges on both workspace and detail links", async () => {
     navigation.badges.mockResolvedValue({ "전체 지출": 3, "지출 등록·신청": 2, "증빙자료 관리": 1 });
-    render(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel="전표·증빙" activeDetailLabel="전체 지출"><p>본문</p></ErpShell>);
+    await renderShell(<ErpShell activeLabel="회계·자금" activeWorkspaceLabel="전표·증빙" activeDetailLabel="전체 지출"><p>본문</p></ErpShell>);
     expect(await screen.findByLabelText("전표·증빙 대기 6건")).toHaveTextContent("6");
     const detailMenu = screen.getByRole("navigation", { name: "회계·자금 상세 메뉴" });
     expect(within(detailMenu).getByLabelText("전체 지출 대기 3건")).toHaveTextContent("3");
     await waitFor(() => expect(navigation.badges).toHaveBeenCalledTimes(1));
   });
 
-  it("opens a new expense resolution from the quick menu", () => {
-    render(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
-    fireEvent.click(screen.getByRole("button", { name: "퀵메뉴 펼치기" }));
-    expect(screen.getByRole("link", { name: "퀵메뉴 지출결의 작성" })).toHaveAttribute("href", "/finance/expense-entry?flow=before");
+  it("leaves room for the global favorites bar without duplicating it", async () => {
+    await renderShell(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
+    expect(screen.getByRole("banner")).toHaveClass("top-16");
+    expect(screen.getByRole("complementary", { name: "사이드바" })).toHaveClass("top-16");
+    expect(screen.queryByRole("navigation", { name: "즐겨찾기 바로가기" })).not.toBeInTheDocument();
   });
 
-  it("collapses to an accessible icon rail without hiding finance navigation", () => {
-    render(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
+  it("collapses to an accessible icon rail without hiding finance navigation", async () => {
+    await renderShell(<ErpShell activeLabel="회계·자금"><p>본문</p></ErpShell>);
     fireEvent.click(screen.getByRole("button", { name: "사이드바 닫기" }));
     const rail = screen.getByRole("navigation", { name: "축소된 전체 메뉴" });
     expect(within(rail).getByRole("link", { name: "회계·자금" })).toHaveAttribute("href", "/finance/workspace");

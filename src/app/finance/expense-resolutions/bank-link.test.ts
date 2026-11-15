@@ -13,6 +13,10 @@ it.each([[null,0,100],["출금",0,100]])("links an evidenced withdrawal with kin
  mocks.single.mockResolvedValue({data:{transacted_at:"2026-09-07T16:00:00Z",transaction_kind:kind,deposit_amount:deposit,withdrawal_amount:withdrawal},error:null});
  expect(await linkBankTransactionAction({resolutionId:"resolution",bankTransactionId:"bank",actorLabel:"ignored"})).toEqual({actualExpenseDate:"2026-09-08",withdrawalAmount:100});expect(mocks.upsert).toHaveBeenCalledTimes(1);
 });
+it("prefers the source transaction date from raw payload",async()=>{
+ mocks.single.mockResolvedValue({data:{transacted_at:"2026-09-07T16:00:00Z",raw_payload:{transaction_date:"2026-09-07"},transaction_kind:"출금",deposit_amount:0,withdrawal_amount:100},error:null});
+ expect(await linkBankTransactionAction({resolutionId:"resolution",bankTransactionId:"bank",actorLabel:"ignored"})).toEqual({actualExpenseDate:"2026-09-07",withdrawalAmount:100});
+});
 it.each([[null,100,100],[null,0,0],["입금",0,100]])("rejects ambiguous or conflicting amounts before updating",async(kind,deposit,withdrawal)=>{
  mocks.single.mockResolvedValue({data:{transacted_at:"2026-09-08",transaction_kind:kind,deposit_amount:deposit,withdrawal_amount:withdrawal},error:null});
  await expect(linkBankTransactionAction({resolutionId:"resolution",bankTransactionId:"bank",actorLabel:"ignored"})).rejects.toThrow("입출금 구분");expect(mocks.upsert).not.toHaveBeenCalled();

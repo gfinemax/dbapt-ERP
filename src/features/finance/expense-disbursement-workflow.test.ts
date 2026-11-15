@@ -61,6 +61,17 @@ describe("expense disbursement workflow", () => {
     expect(confirmed).toMatchObject({ voucherConfirmedBy: "오학동 사무장", voucherStatus: "전표확정" });
   });
 
+  it("creates a voucher for a paid batch post-approval with row-level bank links", () => {
+    const paid = createResolution({
+      bankTransactions: [{ amount: 30_000, description: "업무식대", id: "bank-1", itemId: "item-1", transactionDate: "2026-01-30" }],
+      expenseKind: "BANK_POST_APPROVAL",
+      paymentStatus: "지급완료",
+      resolutionType: "BATCH",
+    });
+    const draft = transitionExpenseDisbursement({ actorLabel: "오학동 사무장", command: "VOUCHER_CREATE", resolution: paid, voucherNo: "지출-2026-0001" });
+    expect(draft).toMatchObject({ voucherNo: "지출-2026-0001", voucherStatus: "전표초안" });
+  });
+
   it("rejects payment before final approval and voucher creation before payment", () => {
     expect(() => transitionExpenseDisbursement({ ...payment, command: "PAYMENT_COMPLETE", resolution: createResolution({ approvalStatus: "승인대기" }) })).toThrow(DisbursementWorkflowError);
     expect(() => transitionExpenseDisbursement({ actorLabel: "오학동 사무장", command: "VOUCHER_CREATE", resolution: createResolution(), voucherNo: "지출-2026-0001" })).toThrow(DisbursementWorkflowError);

@@ -10,13 +10,15 @@ type WebVitalsMetric = {
 type PendingNavigation = { startedAt: number; targetRoute: string };
 
 const endpoint = "/api/observability/performance";
-const metricNames = new Set<PerformanceMetricName>(["TTFB", "FCP", "LCP", "CLS", "INP", "ROUTE_READY", "NAVIGATION"]);
+const metricNames = new Set<PerformanceMetricName>(["TTFB", "FCP", "LCP", "CLS", "INP", "ROUTE_READY", "NAVIGATION", "LONG_TASK", "NAV_TRANSFER", "JS_TRANSFER"]);
 const pendingNavigationKey = "erp-performance-navigation";
 const sessionIdKey = "erp-performance-session";
 const measurementQueue: PerformanceMeasurementInput[] = [];
 let flushTimer: ReturnType<typeof setTimeout> | null = null;
 let routeFrameOne = 0;
 let routeFrameTwo = 0;
+let longTaskDuration = 0;
+let longTaskFlushTimer: ReturnType<typeof setTimeout> | null = null;
 
 function normalizeRoute(value: string) {
   const route = value.split(/[?#]/, 1)[0] || "/";
@@ -77,7 +79,7 @@ function clearPendingNavigation() {
   try { sessionStorage.removeItem(pendingNavigationKey); } catch { /* Measurement must never block ERP work. */ }
 }
 
-function scheduleRouteReady() {
+function scheduleRouteReady(initialNavigation = false) {
   cancelAnimationFrame(routeFrameOne);
   cancelAnimationFrame(routeFrameTwo);
   routeFrameOne = requestAnimationFrame(() => {
@@ -85,16 +87,21 @@ function scheduleRouteReady() {
       const route = normalizeRoute(window.location.pathname);
       if (!route) return;
       const pending = readPendingNavigation();
-      let routeReadyDuration = performance.now();
       if (pending && pending.targetRoute === route) {
         const duration = Date.now() - pending.startedAt;
         if (duration >= 0 && duration <= 120000) {
-          routeReadyDuration = duration;
           queueMeasurement({ metricName: "NAVIGATION", route, value: duration });
+          queueMeasurement({ metricName: "ROUTE_READY", route, value: duration });
+        }
+        clearPendingNavigation();
+        return;
+      }
+      if (initialNavigation) {
+        const duration = performance.now();
+        if (duration >= 0 && duration <= 120000) {
+          queueMeasurement({ metricName: "ROUTE_READY", navigationType: "initial", route, value: duration });
         }
       }
-      queueMeasurement({ metricName: "ROUTE_READY", route, value: routeReadyDuration });
-      clearPendingNavigation();
     });
   });
 }
@@ -123,13 +130,9 @@ function observeRouteChanges() {
     pushState(data, unused, url);
     scheduleRouteReady();
   };
-  const replaceState = history.replaceState.bind(history);
-  history.replaceState = (data, unused, url) => {
-    replaceState(data, unused, url);
-    scheduleRouteReady();
-  };
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", scheduleRouteReady, { once: true });
-  else scheduleRouteReady();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", () => scheduleRouteReady(true), { once: true });
+  } else scheduleRouteReady(true);
 }
 
 function reportWebVital(metric: WebVitalsMetric) {
@@ -155,7 +158,38 @@ function loadWebVitalsWhenIdle() {
   else setTimeout(() => { void register(); }, 0);
 }
 
+function measureTransferredResources() {
+  const route = normalizeRoute(location.pathname);
+  if (!route) return;
+  const navigation = performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming | undefined;
+  if (navigation?.transferSize && navigation.transferSize > 0) {
+    queueMeasurement({ metricName: "NAV_TRANSFER", navigationType: navigation.type, route, value: navigation.transferSize });
+  }
+  const scriptBytes = performance.getEntriesByType("resource")
+    .filter((entry): entry is PerformanceResourceTiming => entry.entryType === "resource" && "initiatorType" in entry && (entry as PerformanceResourceTiming).initiatorType === "script")
+    .reduce((total, entry) => total + Math.max(0, entry.transferSize), 0);
+  if (scriptBytes > 0) queueMeasurement({ metricName: "JS_TRANSFER", route, value: scriptBytes });
+}
+
+function observeLongTasks() {
+  if (!("PerformanceObserver" in window) || !PerformanceObserver.supportedEntryTypes?.includes("longtask")) return;
+  const observer = new PerformanceObserver((list) => {
+    longTaskDuration += list.getEntries().reduce((total, entry) => total + entry.duration, 0);
+    if (longTaskFlushTimer) clearTimeout(longTaskFlushTimer);
+    longTaskFlushTimer = setTimeout(() => {
+      const route = normalizeRoute(location.pathname);
+      if (route && longTaskDuration > 0) queueMeasurement({ metricName: "LONG_TASK", route, value: Math.min(longTaskDuration, 120000) });
+      longTaskDuration = 0;
+      longTaskFlushTimer = null;
+    }, 1000);
+  });
+  observer.observe({ entryTypes: ["longtask"] });
+}
+
 observeRouteChanges();
 loadWebVitalsWhenIdle();
+observeLongTasks();
+if (document.readyState === "complete") measureTransferredResources();
+else window.addEventListener("load", measureTransferredResources, { once: true });
 window.addEventListener("pagehide", flushMeasurements);
 document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushMeasurements(); });

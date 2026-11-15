@@ -67,6 +67,13 @@ const classificationClasses = {
   UNREVIEWED: "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]",
 } as const;
 
+const accountingResultClasses = {
+  "계좌대체": "bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]",
+  "전표 생성 완료": "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
+  "취소·환불 연결": "bg-[var(--color-cloud-veil)] text-[var(--color-stone)]",
+  "확인 필요": "bg-[var(--color-butter-soft)] text-[var(--color-mustard)]",
+} as const;
+
 const statusTabLabels: Array<{ label: string; value?: BankTransactionClassificationStatus }> = [
   { label: "전체" },
   { label: "미확인", value: "UNREVIEWED" },
@@ -391,7 +398,9 @@ export function BankTransactionListPage({
                       {isExternalRecognition ? <span className={`mt-0.5 block text-xs font-normal ${transaction.confirmedAccountSubjectName ? "text-[var(--color-green-ink)]" : "text-[var(--color-stone)]"}`}>{transaction.confirmedAccountSubjectName ? transaction.sourceKind === "dongil_fixed_certificate" ? "ERP 확정 · 정액필증 명단 대조" : "ERP 확정" : "Ledger 원장 분류"}</span> : transaction.confirmedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-green-ink)]">ERP 확정</span> : transaction.recommendedAccountSubjectName ? <span className="mt-0.5 block text-xs font-normal text-[var(--color-stone)]">추천</span> : null}
                     </td>
                     <td className="px-2 py-2.5 text-center align-middle">
-                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold ${classificationClasses[transaction.classificationStatus]}`}>{isExternalRecognition ? externalStatusLabel(transaction.recognitionStatus, transaction.accountingTreatment) : classificationLabels[transaction.classificationStatus]}</span>
+                      {!isExternalRecognition && transaction.accountingResult ? <span className={`mx-auto flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold ${accountingResultClasses[transaction.accountingResult]}`}>{transaction.accountingResult}</span> : null}
+                      <span className={`mx-auto flex w-fit rounded-full px-2 py-0.5 text-xs font-semibold ${!isExternalRecognition && transaction.accountingResult ? "mt-1" : ""} ${classificationClasses[transaction.classificationStatus]}`}>{isExternalRecognition ? externalStatusLabel(transaction.recognitionStatus, transaction.accountingTreatment) : classificationLabels[transaction.classificationStatus]}</span>
+                      {!isExternalRecognition && transaction.workflowStage ? <span className="mt-1 block text-xs font-semibold text-[var(--color-stone)]">{transaction.workflowStage}</span> : null}
                       {isExternalRecognition ? <span className="mt-1 block text-xs font-semibold text-[var(--color-stone)]">{externalRecognitionKindLabel(transaction.sourceKind)} 원본</span> : null}
                       {transaction.sourceReconciliationIssue ? <span className="mt-1 block text-xs font-bold text-[var(--color-mustard)]">원본 확인 필요</span> : null}
                     </td>

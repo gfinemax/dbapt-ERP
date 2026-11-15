@@ -39,10 +39,10 @@ describe("BankTransactionUploadPage", () => {
       <BankTransactionUploadPage
         initialBankAccounts={testBankAccounts}
         logoutAction={logoutAction}
-        userLabel="파인맥스"
+        userLabel="오학동"
       />,
     );
-    expect(screen.getByText("파인맥스")).toBeInTheDocument();
+    expect(screen.getByText("오학동")).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "로그인 필요" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "로그아웃" })).toBeInTheDocument();
   });
@@ -86,7 +86,7 @@ describe("BankTransactionUploadPage", () => {
       <BankTransactionUploadPage
         initialBankAccounts={testBankAccounts}
         initialSheetImportHistory={[{
-          actorLabel: "파인맥스",
+          actorLabel: "오학동",
           bankAccountId: "bank-001",
           batchId: "batch-76",
           currentTransactionCount: 76,
@@ -111,7 +111,7 @@ describe("BankTransactionUploadPage", () => {
 
     const history = screen.getByRole("region", { name: "최근 업로드·증분 반영 이력" });
     expect(within(history).getByText("국민은행 신탁계좌 · KB국민은행 (12345)")).toBeInTheDocument();
-    expect(within(history).getByText("담당자 파인맥스 · 원본 시트1 76행")).toBeInTheDocument();
+    expect(within(history).getByText("담당자 오학동 · 원본 시트1 76행")).toBeInTheDocument();
     expect(within(history).getByText("전체 ERP 거래")).toBeInTheDocument();
     expect(within(history).getByText("Ledger 원본 연계")).toBeInTheDocument();
     expect(within(history).getByText("Google 시트 신규")).toBeInTheDocument();
@@ -155,7 +155,7 @@ describe("BankTransactionUploadPage", () => {
         uploadedMajorCategory: "운영비",
       }),
     ]);
-    expect(await screen.findByText("신규 1건을 저장했고 중복 0건을 제외했습니다. 전표 생성·확정은 별도 검토 단계에서 처리합니다.")).toBeInTheDocument();
+    expect(await screen.findByText("신규 1건을 저장했고 중복 제외 0건을 기록했습니다. 지출결의 최종 승인 후 거래별 전표를 자동 생성하며 확인 필요 계정만 검토합니다.")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "1번 출금거래 사후결의 초안 작성" })).toHaveAttribute("href", "/finance/exp?bankTransactionId=bank-transaction-1");
     expect(screen.getByRole("link", { name: "1번 출금거래 간편 등록" })).toHaveAttribute("href", "/finance/quick-expenses?method=bank-transfer&sourceId=bank-transaction-1");
   });
@@ -228,7 +228,7 @@ it("shows ambiguous bank amounts as unresolved and never offers an expense link"
  fireEvent.click(screen.getByRole("button",{name:"미리보기 생성"}));
  expect(await screen.findByText("미확정")).toBeInTheDocument();
  fireEvent.click(screen.getByRole("button",{name:"거래내역 저장"}));
- expect(await screen.findByText(/신규 1건을 저장했고 중복 0건/)).toBeInTheDocument();
+ expect(await screen.findByText(/신규 1건을 저장했고 중복 제외 0건/)).toBeInTheDocument();
  expect(screen.queryByRole("link",{name:/사후결의 초안 작성/})).not.toBeInTheDocument();
 });
 
@@ -238,6 +238,6 @@ it("reports duplicate rows separately and only offers actions for newly saved wi
  fireEvent.change(screen.getByLabelText("거래내역 표 붙여넣기"),{target:{value:"거래일자\t출금\t적요\n2026/09/08\t100\t기존거래\n2026/09/08\t100\t기존거래"}});
  fireEvent.click(screen.getByRole("button",{name:"미리보기 생성"}));
  fireEvent.click(screen.getByRole("button",{name:"거래내역 저장"}));
- expect(await screen.findByText(/신규 0건을 저장했고 중복 2건을 제외/)).toBeInTheDocument();
+ expect(await screen.findByText(/신규 0건을 저장했고 중복 제외 2건/)).toBeInTheDocument();
  expect(screen.queryByRole("link",{name:/사후결의 초안 작성/})).not.toBeInTheDocument();
 });

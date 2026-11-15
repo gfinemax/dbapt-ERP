@@ -4,8 +4,11 @@ const metricLabels: Record<PerformanceMetricName, string> = {
   CLS: "화면 흔들림",
   FCP: "첫 화면 표시",
   INP: "클릭 반응",
+  JS_TRANSFER: "JavaScript 전송량",
   LCP: "주요 화면 표시",
+  LONG_TASK: "메인 스레드 장기 작업",
   NAVIGATION: "메뉴 이동",
+  NAV_TRANSFER: "문서 전송량",
   ROUTE_READY: "업무 준비 완료",
   TTFB: "서버 첫 응답",
 };
@@ -20,6 +23,7 @@ const routeLabels: Record<string, string> = {
 
 function formatValue(value: number, unit: string) {
   if (unit === "score") return value.toFixed(3);
+  if (unit === "bytes") return `${(value / 1024).toLocaleString("ko-KR", { maximumFractionDigits: 1 })}KB`;
   return `${Math.round(value).toLocaleString("ko-KR")}ms`;
 }
 

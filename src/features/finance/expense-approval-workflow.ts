@@ -1,5 +1,5 @@
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
-import { validateExpenseCompliance } from "./expense-compliance";
+import { validateExpenseCompliance, type ExpenseComplianceSettings } from "./expense-compliance";
 import type { ApprovalStep, ExpenseResolutionHistoryItem, ManagedExpenseResolution, PaymentStatus, SettlementStatus } from "./expense-resolution-page";
 import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
 
@@ -15,19 +15,28 @@ export type ApprovalTransitionRequest = {
   resolutionId: string;
 };
 
+export type BatchApprovalTransitionRequest = {
+  idempotencyKey: string;
+  items: Array<Pick<ApprovalTransitionRequest,
+    "expectedAuthorizationVersion" | "expectedCurrentApprover" | "expectedStatus" | "resolutionId">>;
+  reason: string;
+  referenceDate: string;
+};
+
 export type ApprovalWorkflowInput = {
   actorLabel: string;
   command: ApprovalWorkflowCommand;
   reason?: string;
   resolution: ManagedExpenseResolution;
+  settings?: ExpenseComplianceSettings;
   transitionedAt?: string;
 };
 
 export class ApprovalWorkflowError extends Error {}
 
-export function transitionExpenseApproval({ actorLabel, command, reason, resolution, transitionedAt = currentSeoulDateTime() }: ApprovalWorkflowInput) {
-  if (command === "REQUEST") return requestApproval(resolution, actorLabel, transitionedAt);
-  if (command === "APPROVE") return approveCurrentStep(resolution, actorLabel, transitionedAt);
+export function transitionExpenseApproval({ actorLabel, command, reason, resolution, settings, transitionedAt = currentSeoulDateTime() }: ApprovalWorkflowInput) {
+  if (command === "REQUEST") return requestApproval(resolution, actorLabel, transitionedAt, settings);
+  if (command === "APPROVE") return approveCurrentStep(resolution, actorLabel, transitionedAt, reason);
   if (command === "CANCEL") return cancelFinalApproval(resolution, actorLabel, reason, transitionedAt);
   return rejectCurrentStep(resolution, actorLabel, reason, transitionedAt);
 }
@@ -40,7 +49,7 @@ function cancelFinalApproval(resolution: ManagedExpenseResolution, actorLabel: s
   return { ...resolution, approvalLine: resetApprovalLine(resolution.approvalLine), approvalStatus: "작성중" as const, approvedAt: undefined, currentApprover: undefined, history: [...resolution.history, createHistory(transitionedAt, "승인취소", "UPDATED", actorLabel, comment)], paymentStatus: "지급전" as PaymentStatus };
 }
 
-function requestApproval(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string) {
+function requestApproval(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string, settings?: ExpenseComplianceSettings) {
   if (resolution.approvalStatus !== "작성중" && resolution.approvalStatus !== "반려") {
     throw new ApprovalWorkflowError("작성중 또는 반려 문서만 승인요청할 수 있습니다.");
   }
@@ -50,12 +59,14 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
       beforeExpense: normalizeExpenseTiming(resolution) === "ADVANCE",
       actualExpenseDate: resolution.actualExpenseDate,
       bankTransactionId: resolution.bankTransactionId,
+      bankTransactionCount: resolution.bankTransactions?.length,
       evidenceKind: resolution.evidenceKind ?? "NONE",
       evidenceStatus: resolution.evidenceStatus ?? "NONE",
       expenseKind: resolution.expenseKind,
       missingEvidenceReason: resolution.missingEvidenceReason,
       pettyCashItems: resolution.pettyCashTransactions,
       postApprovalReason: resolution.postApprovalReason,
+      settings,
     });
     if (compliance.errors.length) throw new ApprovalWorkflowError(compliance.errors.join(" "));
   }
@@ -74,7 +85,7 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
   };
 }
 
-function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string) {
+function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: string, transitionedAt: string, reason?: string) {
   assertCurrentApprover(resolution, actorLabel);
   const currentStepIndex = resolution.approvalLine.findIndex((step) => getApproverLabel(step) === actorLabel);
   if (currentStepIndex < 0) throw new ApprovalWorkflowError("현재 결재자를 결재선에서 찾을 수 없습니다.");
@@ -86,7 +97,7 @@ function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: st
     return step;
   });
   const nextStep = approvalLine[currentStepIndex + 1];
-  const approvedHistory = createHistory(transitionedAt, "결재승인", "APPROVED", actorLabel, `${actorLabel} 승인`);
+  const approvedHistory = createHistory(transitionedAt, "결재승인", "APPROVED", actorLabel, reason?.trim() || `${actorLabel} 승인`);
   if (nextStep) {
     return { ...resolution, approvalLine, currentApprover: getApproverLabel(nextStep), history: [...resolution.history, approvedHistory] };
   }

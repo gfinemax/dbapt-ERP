@@ -3,15 +3,16 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { AccountingWorkspacePage } from "./accounting-workspace-page";
 import type { AccountingWorkspace } from "./accounting-workspace-repository";
 
-const mocks = vi.hoisted(() => ({ confirm: vi.fn(), save: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
+const mocks = vi.hoisted(() => ({ confirm: vi.fn(), correct: vi.fn(), createBankSubject: vi.fn(), save: vi.fn(), refresh: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh, replace: mocks.replace }) }));
-vi.mock("@/app/finance/accounting-actions", () => ({ confirmAccountingDraftBatch: mocks.confirm, saveAccountingDraft: mocks.save }));
+vi.mock("@/app/finance/accounting-actions", () => ({ confirmAccountingDraftBatch: mocks.confirm, correctAccountingAccounts: mocks.correct, createAccountingBankSubject: mocks.createBankSubject, saveAccountingDraft: mocks.save }));
 
 function fixture(): AccountingWorkspace {
   return {
     viewer: { permissions: ["ADMIN"] }, policy: { confirmation_enabled: true },
     accounts: [{ id: "expense", code: "501", name: "운영비", subject_type: "지출", normal_balance: "차변", is_active: true },
       { id: "old", code: "102", name: "기존 예금", subject_type: "자산", normal_balance: "차변", is_active: false }],
+    bank_accounts: [],
     sources: [{ kind: "RECOGNITION", id: "tx1", number: "지결-2026-15", title: "사무실 임차료", amount: 1000, occurred_at: "2026-03-15", signature: "source-v1", existing_voucher_id: "draft" },
       { kind: "PAYMENT", id: "payment1", number: "지급-8", title: "임차료 실제 지급", amount: 600, occurred_at: "2026-06-15", signature: "payment-v1", existing_voucher_id: null }],
     vouchers: [{ id: "legacy", voucher_no: "기존-2025-007", voucher_date: "2025-12-31", approval_status: "승인완료", memo: "이전 회계 기록", managed: false, lock_version: null, source_kind: null, source_id: null, source_stale: false,
@@ -20,19 +21,32 @@ function fixture(): AccountingWorkspace {
         lines: [{ id: "line1", account_subject_id: null, description: "임차료 발생", debit_amount: 1000, credit_amount: 0, sort_order: 1 }, { id: "line2", account_subject_id: "old", description: "상대 계정 검토", debit_amount: 0, credit_amount: 600, sort_order: 2 }] }],
   };
 }
+function correctionFixture(linked: boolean) {
+  const workspace = fixture();
+  workspace.bank_accounts = [{ id: "bank", bank_name: "신협은행", account_name: "대방동지역주택조합", account_no_last4: "0467", account_type: "운영계좌", usage_status: "사용", account_purpose: "조합 운영비", opened_at: "2024-12-04", closed_at: null, linked_account_subject_id: linked ? "bank-subject" : null, linked_account_subject_name: linked ? "신협 보통예금(0467)" : null }];
+  if (linked) workspace.accounts.push({ id: "bank-subject", code: "BANK-87F99370", name: "신협 보통예금(0467)", subject_type: "자산", normal_balance: "차변", is_active: true });
+  workspace.vouchers[0] = { ...workspace.vouchers[0], expense_resolution_id: "resolution", bank_transaction_id: "transaction", bank_account_id: "bank", bank_account_label: "신협은행 · 대방동지역주택조합 · 끝 0467", bank_account_subject_id: linked ? "bank-subject" : null, suggested_debit_account_subject_id: "expense", lines: [
+    { id: "legacy-debit", account_subject_id: null, description: "업무식대", debit_amount: 1200, credit_amount: 0, sort_order: 1 },
+    { id: "legacy-credit", account_subject_id: null, description: "연결 통장 출금", debit_amount: 0, credit_amount: 1200, sort_order: 2 },
+  ] };
+  return workspace;
+}
 function openDraft() { fireEvent.click(screen.getByRole("button", { name: "연결 초안 수정" })); }
+function openSources() { fireEvent.click(screen.getByRole("tab", { name: /원본 연결 대기/ })); }
+function enterBatchMode() { fireEvent.click(screen.getByRole("button", { name: "일괄 선택" })); }
 function submit() { fireEvent.submit(screen.getByRole("button", { name: "초안 저장" }).closest("form")!); }
-beforeEach(() => { vi.resetAllMocks(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); mocks.confirm.mockResolvedValue({ confirmed_count: 1, confirmed_ids: ["draft"] }); });
+beforeEach(() => { vi.resetAllMocks(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); mocks.confirm.mockResolvedValue({ confirmed_count: 1, confirmed_ids: ["draft"] }); mocks.createBankSubject.mockResolvedValue({ bank_account_id: "bank", account_subject_id: "bank-subject", account_subject_name: "신협 보통예금(0467)" }); mocks.correct.mockResolvedValue({ corrected_count: 1, corrected_ids: ["legacy"] }); });
 
 describe("accounting drafts and original records", () => {
   it("shows an invalid source for review without treating unknown amounts as zero or allowing draft creation", () => {
     const workspace = fixture();
     workspace.sources.push({ kind: "PAYMENT", id: "invalid", number: "지급-미확인", title: "원본 확인 대상", amount: null, occurred_at: null, signature: "invalid-v1", existing_voucher_id: null, blocked_reason: "실제 지급 금액과 원본 연결을 확인해줘." });
     render(<AccountingWorkspacePage workspace={workspace} />);
-    const row = screen.getByText(/원본 확인 대상 · 금액 확인 필요/).parentElement!;
-    expect(within(row).getByRole("status")).toHaveTextContent("실제 지급 금액과 원본 연결을 확인해줘.");
-    expect(within(row).queryByRole("button")).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "원본 연결 초안 작성" }));
+    openSources();
+    const status = screen.getByRole("status");
+    expect(status).toHaveTextContent("실제 지급 금액과 원본 연결을 확인해줘.");
+    expect(within(status.parentElement!).queryByRole("button")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "원본으로 전표 작성" }));
     expect(screen.queryByRole("option", { name: /원본 확인 대상/ })).not.toBeInTheDocument();
     expect(mocks.save).not.toHaveBeenCalled();
   });
@@ -42,12 +56,83 @@ describe("accounting drafts and original records", () => {
     expect(within(detail).getByRole("heading", { name: "기존-2025-007" })).toBeInTheDocument();
     expect(within(detail).getByText("기존 예금")).toBeInTheDocument();
     expect(within(detail).getByText("원본 적요 그대로")).toBeInTheDocument();
-    expect(within(detail).getByText("1,200원")).toBeInTheDocument();
+    expect(within(detail).getAllByText("1,200원").length).toBeGreaterThan(0);
+    expect(within(detail).getByText("계정과목 연결이 필요해")).toBeInTheDocument();
+    expect(within(detail).getByText(/실제 출금계좌와 지출 성격을 확인/)).toBeInTheDocument();
+    expect(within(detail).getByRole("link", { name: "계정과목 관리 열기" })).toHaveAttribute("href", "/basic-info?section=account-subjects");
     expect(screen.getByRole("button", { name: /기존-2025-007.*승인완료/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "연결 초안 수정" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("조회 구분"), { target: { value: "LEGACY" } });
     expect(screen.getByRole("heading", { name: "전표 1건" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /전표-2026-001/ })).not.toBeInTheDocument();
+  });
+
+  it("fits all journal columns in the selected voucher without a horizontal scroll container", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />);
+    const detail = screen.getByRole("region", { name: "전표 상세" });
+    const table = within(detail).getByRole("table");
+    expect(table).toHaveClass("table-fixed");
+    expect(table).not.toHaveClass("min-w-[520px]");
+    expect(table.parentElement).not.toHaveClass("overflow-x-auto");
+    expect(within(table).getByRole("columnheader", { name: "대변" })).toBeInTheDocument();
+    expect(within(detail).getByText(/연결 초안 수정.*지출 성격에 맞는 계정/)).toBeInTheDocument();
+  });
+
+  it("creates a bank account subject from the registered bank account instead of guessing by name", async () => {
+    render(<AccountingWorkspacePage workspace={correctionFixture(false)} initialVoucherId="legacy" />);
+    const panel = within(screen.getByRole("region", { name: "전표 상세" })).getByLabelText("확정 전표 계정과목 연결");
+    expect(within(panel).getByText(/신협은행 · 대방동지역주택조합 · 끝 0467/)).toBeInTheDocument();
+    expect(within(panel).getByLabelText("생성할 계정과목 이름")).toHaveValue("신협 보통예금(0467)");
+    fireEvent.click(within(panel).getByRole("button", { name: "계좌정보로 예금 계정 만들기" }));
+    await waitFor(() => expect(mocks.createBankSubject).toHaveBeenCalledOnce());
+    expect(mocks.createBankSubject.mock.calls[0].slice(0, 2)).toEqual(["bank", "신협 보통예금(0467)"]);
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("applies debit expense and actual bank account to the confirmed voucher with an audit reason", async () => {
+    const workspace = correctionFixture(true);
+    workspace.vouchers.push({ ...structuredClone(workspace.vouchers[0]), id: "legacy-2", voucher_no: "기존-2025-008" });
+    mocks.correct.mockResolvedValueOnce({ corrected_count: 2, corrected_ids: ["legacy", "legacy-2"] });
+    render(<AccountingWorkspacePage workspace={workspace} initialVoucherId="legacy" />);
+    const panel = within(screen.getByRole("region", { name: "전표 상세" })).getByLabelText("확정 전표 계정과목 연결");
+    expect(within(panel).getByLabelText("차변 · 지출 계정")).toHaveValue("expense");
+    expect(within(panel).getByText("신협 보통예금(0467)")).toBeInTheDocument();
+    fireEvent.change(within(panel).getByLabelText("정정 근거"), { target: { value: "법인카드 사용분 조합통장 결제 대조 완료" } });
+    fireEvent.click(within(panel).getByRole("button", { name: "같은 지출결의 2건 계정 연결" }));
+    await waitFor(() => expect(mocks.correct).toHaveBeenCalledOnce());
+    expect(mocks.correct.mock.calls[0][0]).toEqual({ voucher_ids: ["legacy", "legacy-2"], bank_account_id: "bank", debit_account_subject_id: "expense", credit_account_subject_id: "bank-subject", reason: "법인카드 사용분 조합통장 결제 대조 완료" });
+    expect(mocks.refresh).toHaveBeenCalledOnce();
+  });
+
+  it("updates the adjacent detail panel and URL when another voucher is selected", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="legacy" />);
+    const detail = screen.getByRole("region", { name: "전표 상세" });
+    expect(within(detail).getByRole("heading", { name: "기존-2025-007" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /전표-2026-001.*승인대기/ }));
+    expect(within(screen.getByRole("region", { name: "전표 상세" })).getByRole("heading", { name: "전표-2026-001" })).toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft", { scroll: false });
+  });
+
+  it("filters voucher counts by accounting month and keeps the month in the URL", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} />);
+    fireEvent.change(screen.getByLabelText("전표 회계 귀속월"), { target: { value: "2026-03" } });
+    expect(screen.getByRole("heading", { name: "전표 1건" })).toBeInTheDocument();
+    expect(screen.getByText("2026년 3월 기준 1건", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /전표-2026-001.*승인대기/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /기존-2025-007.*승인완료/ })).not.toBeInTheDocument();
+    expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft&month=2026-03", { scroll: false });
+  });
+
+  it("filters from the status summary and hides confirmed voucher checkboxes in batch mode", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} />);
+    const summary = screen.getByRole("region", { name: "전표 현황" });
+    fireEvent.click(within(summary).getByText("확정").closest("button")!);
+    expect(screen.getByRole("heading", { name: "전표 1건" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /기존-2025-007.*승인완료/ })).toBeInTheDocument();
+    fireEvent.click(within(summary).getByText("전체 전표").closest("button")!);
+    enterBatchMode();
+    expect(screen.queryByLabelText("기존-2025-007 일괄 확정 선택")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("전표-2026-001 일괄 확정 선택")).toBeDisabled();
   });
 
   it("preserves null accounts and inactive selected accounts, and calculates actual debit-credit differences", async () => {
@@ -72,16 +157,18 @@ describe("accounting drafts and original records", () => {
 
   it("opens the existing linked voucher and excludes its original from new draft selection", () => {
     render(<AccountingWorkspacePage workspace={fixture()} />);
+    openSources();
     fireEvent.click(screen.getByRole("button", { name: "연결 전표 확인" }));
     expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft", { scroll: false });
     expect(screen.getByRole("region", { name: "전표 상세" })).toHaveTextContent("전표-2026-001");
-    fireEvent.click(screen.getByRole("button", { name: "원본 연결 초안 작성" }));
+    fireEvent.click(screen.getByRole("button", { name: "원본으로 전표 작성" }));
     expect(screen.queryByRole("option", { name: /사무실 임차료/ })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: /임차료 실제 지급.*600원/ })).toBeInTheDocument();
   });
 
   it("uses actual payment source and leaves dates and accounts for explicit review", async () => {
     render(<AccountingWorkspacePage workspace={fixture()} />);
+    openSources();
     fireEvent.click(screen.getByRole("button", { name: "이 원본으로 초안 작성" }));
     expect(screen.getByLabelText("회계 귀속일")).toHaveValue("");
     expect(screen.getByText(/발생·지급일 2026-06-15/)).toHaveTextContent("600원");
@@ -98,7 +185,9 @@ describe("accounting drafts and original records", () => {
     const workspace = fixture(); workspace.viewer.permissions = ["PAY"];
     render(<AccountingWorkspacePage workspace={workspace} initialVoucherId="draft" />);
     expect(screen.getByRole("region", { name: "전표 상세" })).toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: /초안/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "연결 초안 수정" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "원본으로 전표 작성" })).not.toBeInTheDocument();
+    openSources();
     expect(screen.getByRole("button", { name: "연결 전표 확인" })).toBeInTheDocument();
     expect(mocks.save).not.toHaveBeenCalled();
   });
@@ -146,6 +235,7 @@ describe("accounting drafts and original records", () => {
       { id: "line2", account_subject_id: "cash", description: "미지급금", debit_amount: 0, credit_amount: 1000, sort_order: 2 },
     ];
     render(<AccountingWorkspacePage workspace={workspace} />);
+    enterBatchMode();
     fireEvent.click(screen.getByLabelText("전표-2026-001 일괄 확정 선택"));
     expect(screen.getByRole("button", { name: "선택 1건 전표 확정" })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("일괄 확인 근거"), { target: { value: "9월 원본 대조 완료" } });
@@ -158,6 +248,7 @@ describe("accounting drafts and original records", () => {
 
   it("excludes incomplete drafts from batch confirmation and explains why", () => {
     render(<AccountingWorkspacePage workspace={fixture()} />);
+    enterBatchMode();
     expect(screen.getByLabelText("전표-2026-001 일괄 확정 선택")).toBeDisabled();
     expect(screen.getByText(/확정 제외 · 활성 계정과목이 지정되지 않은 분개/)).toBeInTheDocument();
     expect(mocks.confirm).not.toHaveBeenCalled();

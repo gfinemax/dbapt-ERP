@@ -6,7 +6,7 @@ describe("business partner data", () => {
     expect(businessPartners.map((partner) => partner.name)).toEqual([
       "대방개발 주식회사",
       "대한토지신탁",
-      "파인맥스 업무대행",
+      "오학동 업무대행",
     ]);
   });
 
