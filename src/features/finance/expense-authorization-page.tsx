@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { isDirector } from "@/features/approval/approval-effective-policy";
+import { ExpenseApprovalPeriodRepair } from "./expense-approval-period-repair";
 import { useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { bindExpenseAuthorization } from "@/app/finance/expense-authorizations/actions";
@@ -82,8 +84,11 @@ function BindingForm({ record, members }: { record: ManagedExpenseResolution; me
 
 export function ExpenseAuthorizationPage({ records, members, initialId }: { records: ManagedExpenseResolution[]; members: Member[]; initialId?: string }) {
   const [id, setId] = useState(records.some(record => record.id === initialId) ? initialId! : ""); const record = records.find(r => r.id === id);
+  const periodCandidates = records.filter(item => isDirector(item.author ?? "") || item.approvalLine.some(step => isDirector(step.approver)) || item.approvalParticipants?.some(person => isDirector(person.name)));
   return <div><h1 className="text-2xl font-bold">작성자·결재선 계정 연결</h1><p className="mt-3">기존 연결을 우선하고, 정확히 같은 이름의 활성 로그인 계정이 하나일 때만 자동 선택해. 동명이인과 미등록 계정은 직접 확인해.</p>
+    <details className="mt-4 rounded-lg border p-3"><summary className="cursor-pointer font-semibold">결재선 기간 확인 대상 {periodCandidates.length}건</summary><p className="mt-2 text-xs">장현제가 작성자·실제 결재자·표시 참여자로 등록된 문서입니다. 지출일은 참고 정보이며 원문 결재일은 별도 확인합니다.</p><div className="mt-3 overflow-x-auto"><table className="w-full text-left text-sm"><thead><tr><th>문서</th><th>지출일</th><th>확인된 기준일</th><th>상태</th><th>선택</th></tr></thead><tbody>{periodCandidates.map(item => <tr key={item.id}><td className="py-2">{item.resolutionNo}</td><td>{item.actualExpenseDate || "미확인"}</td><td>{item.approvalPolicy?.referenceDate || "원문 확인 필요"}</td><td>{item.approvalStatus}</td><td><button className={button} type="button" onClick={() => setId(item.id)}>{item.resolutionNo} 기간 정리 선택</button></td></tr>)}</tbody></table></div></details>
     <label className="mt-4 block">지출결의 원본<select className={field} value={id} onChange={e => setId(e.target.value)}><option value="">원본 선택</option>{records.map(r => <option key={r.id} value={r.id}>{r.resolutionNo} · {r.subject || r.reason}</option>)}</select></label>
+    {record && <ExpenseApprovalPeriodRepair key={"period:" + record.id + ":" + (record.authorization?.version ?? 0)} record={record} />}
     {record && <BindingForm key={`${record.id}:${record.authorization?.version ?? 0}`} record={record} members={members} />}
   </div>;
 }

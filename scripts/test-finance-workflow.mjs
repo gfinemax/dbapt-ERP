@@ -105,6 +105,7 @@ const testFiles = [
   "advance_settlement_drafts.sql",
   "advance_settlement_lifecycle.sql",
   "legacy_expense_authorization.sql",
+  "effective_expense_approval_policy.sql",
   "approval_document_authorization.sql",
   "approval_finance_handoff.sql",
   "expense_classification_axes.sql",

@@ -7,6 +7,8 @@ import { createPortal } from "react-dom";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { policySummary } from "./expense-approval-period";
+import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
@@ -220,6 +222,7 @@ export type ManagedExpenseResolution = {
   accountHolder: string;
   approvalLine: ApprovalStep[];
   approvalParticipants?: ExpenseApprovalParticipant[];
+  approvalPolicy?: ExpenseApprovalPolicy;
   approvalRoute?: ExpenseApprovalRoute;
   approvalStatus: ApprovalStatus;
   author: string;
@@ -393,6 +396,9 @@ function currentDateLabel(value: string) {
 }
 
 export type ResolutionFormState = {
+  approvalRecordKind?: ApprovalRecordKind;
+  originalApprovalDate?: string;
+  originalApprovalReference?: string;
   creationSource: ExpenseCreationSource;
   approvalDocumentId: string;
   approvalDocumentNo: string;
@@ -1553,6 +1559,9 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     approvalSkipReason: resolution.approvalSkipReason ?? "",
     approvalSkipReasonDetail: resolution.approvalSkipReason && !["승인 예산 내 일상 지출", "정기·반복 지출", "기존 계약에 따른 지급", "소액경비 일괄결의"].includes(resolution.approvalSkipReason) ? resolution.approvalSkipReason : "",
     approvalRoute: resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine),
+    approvalRecordKind: resolution.approvalPolicy?.kind ?? "CURRENT",
+    originalApprovalDate: resolution.approvalPolicy?.kind === "HISTORICAL" ? resolution.approvalPolicy.referenceDate : "",
+    originalApprovalReference: resolution.approvalPolicy?.originalReference ?? "",
     expenseKind: resolution.expenseKind ?? "GENERAL",
     accountingDate: resolution.accountingDate ?? resolution.actualExpenseDate ?? resolution.createdAt,
     actualExpenseDate: resolution.actualExpenseDate ?? "",
@@ -1658,6 +1667,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     approvalSkipReason: "",
     approvalSkipReasonDetail: "",
     approvalRoute: "SECRETARY_CHAIR",
+    approvalRecordKind: "CURRENT", originalApprovalDate: "", originalApprovalReference: "",
     expenseKind: "GENERAL",
     accountingDate: currentDate,
     actualExpenseDate: "",
@@ -3422,7 +3432,11 @@ export function ExpenseResolutionPage({
       }
     }
     const approvalStatus: ApprovalStatus = mode === "draft" || viewer ? "작성중" : "승인대기";
-    const approvalRoute = buildExpenseApprovalRoute(formState.approvalRoute);
+    let approvalPolicy: ExpenseApprovalPolicy;
+    try { approvalPolicy = createExpenseApprovalPolicy(formState.approvalRecordKind, formState.originalApprovalDate, undefined, formState.originalApprovalReference); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : "결재 기준일을 확인해주세요."); return false; }
+    const approvalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalPolicy.referenceDate);
+    if (approvalRoute.error) { setSaveError(approvalRoute.error); return false; }
     const firstApprover = approvalRoute.approvalLine[0];
     const isAlreadyPaid = formState.expenseTiming === "REIMBURSEMENT" && (formState.expenseBurdenType === "CORPORATE_CARD" || formState.expenseBurdenType === "ORGANIZATION_PAID");
     const usesAdvanceFields = formState.expenseTiming === "SETTLEMENT" || (formState.expenseTiming === "ADVANCE" && formState.executionMethod === "EMPLOYEE_ADVANCE");
@@ -3515,6 +3529,7 @@ export function ExpenseResolutionPage({
       evidenceAttached: formState.evidenceFiles.length > 0,
       evidenceType: formState.evidenceType,
       approvalLine,
+      approvalPolicy,
       approvalParticipants: approvalRoute.participants,
       approvalRoute: formState.approvalRoute,
       approvalStatus,
@@ -4255,6 +4270,7 @@ export function ExpenseResolutionPage({
           directExpenseSettings={directExpenseSettings}
           expenseDetails={initialExpenseDetails}
           settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
+          canRestoreHistorical={Boolean(viewer?.permissions.includes("ADMIN"))}
           isEditing={Boolean(editingResolutionId)}
           isQuickConversion={Boolean(quickConversionSourceId)}
           isEvidenceUploading={isEvidenceUploading}
@@ -4893,7 +4909,7 @@ export function ExpenseResolutionDetailModal({
         </div>
 
         <div className="flex-none overflow-x-auto border-b border-[var(--color-soft-border)] bg-white">
-          <ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} />
+          <div><p className="px-5 pt-2 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy)}</p><ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} /></div>
         </div>
 
         {compactExpenseDetailLayoutEnabled ? (

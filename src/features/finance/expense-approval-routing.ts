@@ -1,3 +1,4 @@
+import { canApproveOn, canAuthorOn, directorAppointment, seoulToday } from "@/features/approval/approval-effective-policy";
 import { organizationApprovalLine } from "@/features/approval/organization-approval-line";
 
 export type ExpenseApprovalRoute = "SECRETARY_CHAIR" | "DIRECTOR_DELEGATED" | "DIRECTOR_FULL";
@@ -70,7 +71,7 @@ function step(person: (typeof organizationApprovalLine)[number], order: number, 
   };
 }
 
-export function buildExpenseApprovalRoute(route: ExpenseApprovalRoute) {
+function buildUndatedExpenseApprovalRoute(route: ExpenseApprovalRoute) {
   if (route === "DIRECTOR_DELEGATED") {
     return {
       approvalLine: [step(secretaryGeneral, 1, "전결")],
@@ -112,4 +113,14 @@ export function inferExpenseApprovalRoute(approvers: Array<{ approver: string }>
 
 export function getExpenseApprovalRouteLabel(route: ExpenseApprovalRoute) {
   return expenseApprovalRouteOptions.find((option) => option.route === route)?.label ?? expenseApprovalRouteOptions[0].label;
+}
+
+export function buildExpenseApprovalRoute(route: ExpenseApprovalRoute, referenceDate = seoulToday()) {
+  const result = buildUndatedExpenseApprovalRoute(route);
+  const error = route !== "SECRETARY_CHAIR" && !canAuthorOn(directorAppointment.name, referenceDate) ? "장현제 입사일(2026-06-22) 이전에는 장현제 작성 경로를 선택할 수 없습니다." : "";
+  return {
+    approvalLine: result.approvalLine.filter(step => canApproveOn(step.approver, referenceDate)).map((step, index) => ({ ...step, order: index + 1 })),
+    participants: result.participants.filter(person => person.action === "작성" ? canAuthorOn(person.name, referenceDate) : canApproveOn(person.name, referenceDate)),
+    error,
+  };
 }

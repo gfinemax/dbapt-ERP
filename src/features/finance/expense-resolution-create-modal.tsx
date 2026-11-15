@@ -14,6 +14,8 @@ import { evaluateDirectExpensePolicy } from "./direct-expense-policy";
 import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./expense-batch-settlement";
 import { isBudgetProfilePeriodKey } from "./budget-profile-lookup";
 import { getEmployeeAdvanceSourceFacts } from "./expense-advance-source";
+import { ExpenseApprovalPolicyFields } from "./expense-approval-policy-fields";
+import { seoulToday } from "@/features/approval/approval-effective-policy";
 import { buildExpenseApprovalRoute, expenseApprovalRouteOptions } from "./expense-approval-routing";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import { expenseResolutionTypeOptions, formatExpenseResolutionAmount, type ExpenseResolutionType } from "./expense-resolution-data";
@@ -82,6 +84,7 @@ export function ExpenseResolutionCreateModal({
   budgetSnapshot,
   formState,
   settlementCandidates,
+  canRestoreHistorical = false,
   isEditing,
   isQuickConversion,
   isEvidenceUploading,
@@ -129,6 +132,7 @@ export function ExpenseResolutionCreateModal({
   budgetSnapshot: BudgetSnapshot;
   formState: ResolutionFormState;
   settlementCandidates: ManagedExpenseResolution[];
+  canRestoreHistorical?: boolean;
   isEditing: boolean;
   isQuickConversion: boolean;
   isEvidenceUploading: boolean;
@@ -162,7 +166,8 @@ export function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
-  const selectedApprovalRoute = buildExpenseApprovalRoute(formState.approvalRoute);
+  const approvalReferenceDate = formState.approvalRecordKind === "HISTORICAL" ? formState.originalApprovalDate || seoulToday() : seoulToday();
+  const selectedApprovalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalReferenceDate);
   const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
@@ -1252,20 +1257,25 @@ export function ExpenseResolutionCreateModal({
               {incompleteReviewItems.length > 0 ? <p className="mt-3 text-xs font-semibold text-[var(--color-tangerine)]">승인요청 전 {incompleteReviewItems.length}개 항목을 확인해주세요.</p> : null}
             </section>
             <h3 className="text-base font-bold">결재선</h3>
-            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">문서에는 세 사람을 모두 표시하고, 실제 로그인 결재는 선택한 경로의 필수 결재자만 진행해. 작성·생략·후열을 승인 서명으로 처리하지 않아.</p>
+            <ExpenseApprovalPolicyFields kind={formState.approvalRecordKind} originalDate={formState.originalApprovalDate} originalReference={formState.originalApprovalReference} canRestore={canRestoreHistorical} onKind={value => onChange("approvalRecordKind", value)} onDate={value => onChange("originalApprovalDate", value)} onReference={value => onChange("originalApprovalReference", value)} />
+            {selectedApprovalRoute.error ? <p role="alert" className="mt-2 text-xs text-red-700">{selectedApprovalRoute.error}</p> : null}
+            <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">기준일에 참여 가능한 사람만 표시하고, 실제 로그인 결재는 선택한 경로의 필수 결재자만 진행합니다. 작성·생략·후열은 승인 서명이 아닙니다.</p>
             <div className="mt-3 grid gap-2">
               {expenseApprovalRouteOptions.map((option) => {
                 const selected = formState.approvalRoute === option.route;
+                const routeIssue = buildExpenseApprovalRoute(option.route, approvalReferenceDate).error;
                 return (
                   <button
                     aria-pressed={selected}
+                    disabled={Boolean(routeIssue)}
+                    title={routeIssue || undefined}
                     className={`rounded-xl border px-3 py-3 text-left ${selected ? "border-[var(--color-deep-cobalt)] bg-blue-50" : "border-[var(--color-soft-border)] bg-white"}`}
                     key={option.route}
                     onClick={() => onChange("approvalRoute", option.route)}
                     type="button"
                   >
                     <span className="block text-sm font-black">{option.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.description}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.route === "SECRETARY_CHAIR" && approvalReferenceDate < "2026-07-01" ? "오학동 작성 후 안동연이 최종 결재합니다. 장현제는 기간상 참여 대상이 아닙니다." : option.description}</span>
                   </button>
                 );
               })}

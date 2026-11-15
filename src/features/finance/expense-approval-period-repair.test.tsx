@@ -1,0 +1,53 @@
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, expect, it, vi } from "vitest";
+const mocks = vi.hoisted(() => ({ preview: vi.fn(), apply: vi.fn(), refresh: vi.fn() }));
+vi.mock("@/app/finance/expense-authorizations/period-actions", () => ({ previewExpenseApprovalPeriodRepairAction: mocks.preview, applyExpenseApprovalPeriodRepairAction: mocks.apply }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: mocks.refresh }) }));
+import { ExpenseApprovalPeriodRepair } from "./expense-approval-period-repair";
+import { ExpenseApprovalPolicyFields } from "./expense-approval-policy-fields";
+import { previewExpenseApprovalRepair } from "./expense-approval-period";
+import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
+import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
+const record = expenseResolutionFixture({ id: "r", author: "오학동", actualExpenseDate: "2026-01-05", approvalLine: getOrganizationExpenseApprovalLine("2026-07-01") });
+beforeEach(() => { vi.clearAllMocks(); mocks.apply.mockResolvedValue(record); });
+it("does not infer an original approval date from the expense date and requires explicit preview", async () => {
+  render(<ExpenseApprovalPeriodRepair record={record} />);
+  expect(screen.getByLabelText("정리할 원문 결재 기준일")).toHaveValue("");
+  expect(screen.getByRole("button", { name: "결재선 변경 미리보기" })).toBeDisabled();
+  const preview = previewExpenseApprovalRepair(record, "2026-06-30", "원문 서명일");
+  mocks.preview.mockResolvedValue(preview);
+  fireEvent.change(screen.getByLabelText("정리할 원문 결재 기준일"), { target: { value: "2026-06-30" } });
+  fireEvent.change(screen.getByLabelText("결재선 정리 확인 근거"), { target: { value: "원문 서명일" } });
+  fireEvent.click(screen.getByRole("button", { name: "결재선 변경 미리보기" }));
+  await screen.findByRole("button", { name: "확인한 결재선 정리 적용" });
+  expect(mocks.apply).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "확인한 결재선 정리 적용" }));
+  await waitFor(() => expect(mocks.apply).toHaveBeenCalledWith(expect.objectContaining({ expected: record, referenceDate: "2026-06-30", reason: "원문 서명일", key: expect.any(String) })));
+  await waitFor(() => expect(mocks.refresh).toHaveBeenCalled());
+});
+it("invalidates reviewed changes after the original date or evidence changes", async () => {
+  mocks.preview.mockResolvedValue(previewExpenseApprovalRepair(record, "2026-06-30", "원문"));
+  render(<ExpenseApprovalPeriodRepair record={record} />);
+  fireEvent.change(screen.getByLabelText("정리할 원문 결재 기준일"), { target: { value: "2026-06-30" } });
+  fireEvent.change(screen.getByLabelText("결재선 정리 확인 근거"), { target: { value: "원문" } });
+  fireEvent.click(screen.getByRole("button", { name: "결재선 변경 미리보기" }));
+  await screen.findByRole("button", { name: "확인한 결재선 정리 적용" });
+  fireEvent.change(screen.getByLabelText("정리할 원문 결재 기준일"), { target: { value: "2026-07-01" } });
+  expect(screen.queryByRole("button", { name: "확인한 결재선 정리 적용" })).not.toBeInTheDocument();
+});
+it("keeps protected documents visible for review without enabling automatic writes", async () => {
+  const paid = { ...record, paymentStatus: "지급완료" as const };
+  mocks.preview.mockResolvedValue(previewExpenseApprovalRepair(paid, "2026-06-30", "원문"));
+  render(<ExpenseApprovalPeriodRepair record={paid} />);
+  fireEvent.change(screen.getByLabelText("정리할 원문 결재 기준일"), { target: { value: "2026-06-30" } });
+  fireEvent.change(screen.getByLabelText("결재선 정리 확인 근거"), { target: { value: "원문" } });
+  fireEvent.click(screen.getByRole("button", { name: "결재선 변경 미리보기" }));
+  expect(await screen.findByRole("alert")).toHaveTextContent("자동 변경");
+  expect(screen.getByRole("button", { name: "확인한 결재선 정리 적용" })).toBeDisabled();
+});
+it("prevents non-administrators from changing a historical reference in the editor", () => {
+  render(<ExpenseApprovalPolicyFields kind="HISTORICAL" originalDate="2026-06-30" originalReference="원문" canRestore={false} onKind={vi.fn()} onDate={vi.fn()} onReference={vi.fn()} />);
+  expect(screen.getByLabelText("결재 기준 구분")).toBeDisabled();
+  expect(screen.getByLabelText("원문 결재 기준일")).toBeDisabled();
+  expect(screen.getByText(/6월 22~30일은 작성만 가능/)).toBeInTheDocument();
+});

@@ -12,6 +12,7 @@ vi.mock("@/features/finance/expense-evidence-ocr.server", () => ({ extractExpens
 vi.mock("@/features/finance/expense-evidence-openai.server", () => ({ extractExpenseEvidenceWithOpenAI: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compressExpenseEvidenceFile: vi.fn() }));
 vi.mock("@/features/finance/budget-profile-repository", () => ({ listExpenseBudgetProfiles: mocks.budgets }));
+import { createExpenseApprovalPolicy, seoulToday } from "@/features/approval/approval-effective-policy";
 import { expenseResolutionFixture } from "@/features/finance/expense-resolution-test-fixture";
 import { budgetProfilePeriodKey } from "@/features/finance/budget-profile-lookup";
 import { transitionExpenseApprovalAction, transitionExpenseApprovalBatchAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
@@ -110,4 +111,22 @@ it("uses the live January budget for approval without overwriting the stored sou
   } finally {
     warning.mockRestore();
   }
+});
+
+function beforeJulyDirectorAccess() {
+  const access = fixture();
+  const approvalLine = access.resolution.approvalLine.map((step, index) => index === 0 ? { ...step, approver: "장현제", role: "이사" } : step);
+  const binding = { ...access.binding, steps: access.binding.steps.map((step, index) => index === 0 ? { ...step, legacy_step: { ...step.legacy_step, approver: "장현제", role: "이사" } } : step) };
+  return { ...access, binding, resolution: { ...access.resolution, approvalLine, currentApprover: "장현제 이사", approvalPolicy: createExpenseApprovalPolicy("HISTORICAL", "2026-06-30", undefined, "원문 서명일") } };
+}
+it("blocks before-July director approval before committing a single document", async () => {
+ mocks.access.mockResolvedValue(beforeJulyDirectorAccess());
+ await expect(transitionExpenseApprovalAction({ ...request, expectedCurrentApprover: "장현제 이사" })).rejects.toThrow("2026-07-01");
+ expect(mocks.commit).not.toHaveBeenCalled();
+ expect(mocks.transition).not.toHaveBeenCalled();
+});
+it("blocks a before-July director step in the atomic batch path", async () => {
+ const access = beforeJulyDirectorAccess(); mocks.access.mockResolvedValue(access); mocks.actor.mockResolvedValue(access.actor);
+ await expect(transitionExpenseApprovalBatchAction({ idempotencyKey: "before-july", reason: "원문 확인", referenceDate: seoulToday(), items: [{ resolutionId: "r", expectedStatus: "승인대기", expectedCurrentApprover: "장현제 이사", expectedAuthorizationVersion: 2 }] })).rejects.toThrow("2026-07-01");
+ expect(mocks.commitBatch).not.toHaveBeenCalled();
 });

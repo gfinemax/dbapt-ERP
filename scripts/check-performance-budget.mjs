@@ -10,8 +10,10 @@ const staticDirectory = resolve(buildDirectory, "static");
 
 const budgets = {
   // Bank/card evidence, measured A4 pagination, linked voucher navigation, monthly filtering, and accessible server sorting are part of the primary workspace.
-  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 382_000),
-  largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 95_000),
+  // Effective approval dates and the frozen reference-date snapshot add about 3 KB.
+  initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 386_000),
+  // Original-document date/source controls add about 2.6 KB to the create dialog.
+  largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 98_000),
   // The favorites editor is fetched only after the user opens it (up to 9 KB).
   totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 116_000),
 };

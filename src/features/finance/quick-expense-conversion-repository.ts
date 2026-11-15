@@ -1,3 +1,4 @@
+import { prepareExpenseApprovalDraft } from "./expense-approval-period";
 import { expenseBinding, expenseDb, requireExpenseActor } from "./expense-authorization";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
@@ -116,6 +117,7 @@ export async function convertQuickExpenseToResolution(sourceId: string, resoluti
   const { actor, snapshot } = await loadSnapshot(sourceId);
   if (snapshot.source.record_status !== "NEEDS_RESOLUTION" || snapshot.source.linked_resolution_id)
     throw new Error("정식결의가 필요한 미전환 간편지출만 전환할 수 있습니다.");
+  resolution = prepareExpenseApprovalDraft({ ...resolution, author: actor.display_name }, null, actor.permissions.includes("ADMIN"));
   const clean = stripExpenseAuthorization(resolution);
   const payload = {
     row: mapExpenseResolutionToUpsert(clean, actor.organization_id),

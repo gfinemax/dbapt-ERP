@@ -1,5 +1,7 @@
 "use server";
 
+import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, prepareExpenseApprovalDraft } from "@/features/finance/expense-approval-period";
+
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
 
 import { assertExpenseRelatedRow, requireExpenseActor, requireExpenseRecord, requireExpenseFile, requireExpenseOcrJob, requireExpenseFact } from "@/features/finance/expense-authorization";
@@ -352,6 +354,7 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   if (resolution.expenseKind) {
     resolution = { ...resolution, evidenceStatus: normalizeEvidenceStatus(resolution.evidenceKind ?? "NONE", resolution.evidenceStatus ?? "NONE") };
   }
+  resolution = prepareExpenseApprovalDraft(resolution, existingResolution ?? null, actor.permissions.includes("ADMIN"));
   const saved = await upsertExpenseResolutionInSupabase(resolution, existingResolution ?? null, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/exp");
@@ -466,6 +469,10 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (input.command === "REQUEST" && binding.author_user_id !== actor.user_id) throw new Error("연결된 작성자만 승인요청할 수 있습니다.");
   if (["APPROVE", "REJECT"].includes(input.command) && assigned?.approver_user_id !== actor.user_id) throw new Error("현재 순서에 연결된 결재자만 처리할 수 있습니다.");
   if (input.command === "CANCEL" && !actor.permissions.includes("ADMIN")) throw new Error("승인취소는 관리자만 처리할 수 있습니다.");
+  if (input.command === "REQUEST" || input.command === "APPROVE" || input.command === "REJECT") {
+    assertExpenseApprovalPeriod(current, input.command === "REQUEST");
+    assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, input.command);
+  }
   const settings = await getExpenseComplianceSettings(actor.organization_id);
   const isFinal = index === current.approvalLine.length - 1;
   const budgetPeriod = current.budgetSnapshot?.budgetPeriod;
@@ -556,6 +563,8 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
   for (let itemIndex = 0; itemIndex < input.items.length; itemIndex += 1) {
     const request = input.items[itemIndex];
     const { resolution: current, binding } = accesses[itemIndex];
+    assertExpenseApprovalPeriod(current);
+    assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, "APPROVE");
     if (current.approvalStatus !== request.expectedStatus || current.currentApprover !== request.expectedCurrentApprover) {
       throw new Error(`${current.resolutionNo}: 다른 사용자가 먼저 결재 상태를 변경했습니다.`);
     }
