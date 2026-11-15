@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve("supabase/migrations/20261115150034_safe_bank_post_approval_batch_drafts.sql"), "utf8");
+const detailStatusFix = readFileSync(resolve("supabase/migrations/20261116143000_fix_expense_detail_status_contract.sql"), "utf8");
 
 describe("safe bank-post-approval draft batch migration", () => {
   it("builds a read-only manifest from authoritative source dates and stable UUIDs", () => {
@@ -33,5 +34,10 @@ describe("safe bank-post-approval draft batch migration", () => {
     expect(migration).toContain("from finance.expense_resolution_bank_transactions l");
     expect(migration).toContain("create or replace view finance.bank_transaction_processing_status");
     expect(migration).toContain("when resolution.resolution_id is not null then '결의서 작성중'");
+  });
+
+  it("uses the actual confirmed expense-detail status in manifest and batch validation", () => {
+    expect(detailStatusFix).toContain("detail.status='CONFIRMED'");
+    expect(detailStatusFix).not.toContain("detail.status='ACTIVE'");
   });
 });
