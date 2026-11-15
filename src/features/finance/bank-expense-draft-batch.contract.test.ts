@@ -3,7 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const migration = readFileSync(resolve("supabase/migrations/20261115150034_safe_bank_post_approval_batch_drafts.sql"), "utf8");
-const detailStatusFix = readFileSync(resolve("supabase/migrations/20261116143000_fix_expense_detail_status_contract.sql"), "utf8");
+const detailStatusFix = readFileSync(resolve("supabase/migrations/20261115153128_fix_expense_detail_status_contract.sql"), "utf8");
 
 describe("safe bank-post-approval draft batch migration", () => {
   it("builds a read-only manifest from authoritative source dates and stable UUIDs", () => {
