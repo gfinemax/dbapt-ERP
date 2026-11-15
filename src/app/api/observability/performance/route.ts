@@ -25,7 +25,10 @@ export async function POST(request: Request) {
     if (!measurement) throw new Error("validated measurement missing");
     return {
       metric_name: measurement.metricName,
-      metric_type: ["ROUTE_READY", "NAVIGATION"].includes(measurement.metricName) ? "NAVIGATION" : "WEB_VITAL",
+      deployment_sha: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 40) ?? null,
+      metric_type: ["ROUTE_READY", "NAVIGATION"].includes(measurement.metricName)
+        ? "NAVIGATION"
+        : ["LONG_TASK", "NAV_TRANSFER", "JS_TRANSFER"].includes(measurement.metricName) ? "RUNTIME" : "WEB_VITAL",
       navigation_type: measurement.navigationType ?? null,
       organization_id: member.organization_id,
       rating: measurement.rating ?? null,

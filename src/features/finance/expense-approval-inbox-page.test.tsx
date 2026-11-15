@@ -20,7 +20,7 @@ describe("ExpenseApprovalInboxPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("지출결의 저장소에 연결하지 못했습니다.");
   });
 
-  it("opens the shared A4 preview from both print menu actions", () => {
+  it("opens the shared A4 preview from both print menu actions", async () => {
     const resolution = expenseResolutionFixture({
       id: "print-test",
       resolutionNo: "지결-2026-0033",
@@ -29,14 +29,14 @@ describe("ExpenseApprovalInboxPage", () => {
     });
     render(<ExpenseApprovalInboxPage initialDetailId={resolution.id} initialResolutions={[resolution]} />);
 
-    fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(await screen.findByRole("button", { name: "인쇄하기" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "A4 출력 미리보기" }));
-    expect(screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "출력 미리보기 닫기" }));
 
     fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "보관용 PDF 생성" }));
-    expect(screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
+    expect(await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
   });
 
   it("persists approval through the server transition with an optimistic state guard", async () => {
@@ -141,7 +141,7 @@ describe("ExpenseApprovalInboxPage", () => {
       viewer={{ user_id: "chair", organization_id: "org", display_name: "안동연 조합장", permissions: ["APPROVE", "PAY"], active: true }}
     />);
 
-    fireEvent.click(within(screen.getByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표초안 생성" }));
+    fireEvent.click(within(await screen.findByRole("region", { name: "다음 할 일" })).getByRole("button", { name: "전표초안 생성" }));
     await waitFor(() => expect(transitionDisbursement).toHaveBeenNthCalledWith(1, expect.objectContaining({
       actorLabel: "안동연 조합장",
       command: "VOUCHER_CREATE",

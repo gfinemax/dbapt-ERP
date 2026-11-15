@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { waitForExpensePrintLayout } from "./expense-resolution-page";
+import { waitForExpensePrintLayout } from "./expense-resolution-print-preview";
 
 describe("expense print readiness", () => {
   afterEach(() => {

@@ -1,18 +1,23 @@
 "use client";
 
 import { Search, X } from "lucide-react";
+import dynamic from "next/dynamic";
 import { useMemo, useState } from "react";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import {
-  ExpenseResolutionDetailModal,
   getNextExpenseVoucherNo,
   getVoucherStatusLabel,
 } from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest } from "./expense-disbursement-workflow";
+
+const ExpenseResolutionDetailModal = dynamic(
+  () => import("./expense-resolution-detail-modal").then((module) => module.ExpenseResolutionDetailModal),
+  { ssr: false },
+);
 
 type PaymentWorkflowMode = "waiting" | "completed";
 type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";

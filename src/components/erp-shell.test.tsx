@@ -10,6 +10,7 @@ vi.mock("@/app/finance/quick-menu/actions", () => ({
   saveQuickMenuPreferencesAction: vi.fn(),
 }));
 import { ErpShell } from "./erp-shell";
+import { clearFinanceBadgesCache } from "./finance-navigation-badges-client";
 async function renderShell(element: ReactElement) {
   const mounted = render(element);
   await waitFor(() => expect(screen.queryByText("설정을 불러오는 중입니다.")).not.toBeInTheDocument());
@@ -17,7 +18,7 @@ async function renderShell(element: ReactElement) {
 }
 
 describe("ErpShell", () => {
-  beforeEach(() => { localStorage.clear(); navigation.badges.mockReset().mockResolvedValue({}); });
+  beforeEach(() => { clearFinanceBadgesCache(); localStorage.clear(); navigation.badges.mockReset().mockResolvedValue({}); });
 
   it("links the logged-out user label to the ERP login screen", async () => {
     await renderShell(<ErpShell><p>로그인 전 화면</p></ErpShell>);

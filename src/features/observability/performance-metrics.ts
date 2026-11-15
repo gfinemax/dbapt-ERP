@@ -1,6 +1,6 @@
-export const performanceMetricNames = ["TTFB", "FCP", "LCP", "CLS", "INP", "ROUTE_READY", "NAVIGATION"] as const;
+export const performanceMetricNames = ["TTFB", "FCP", "LCP", "CLS", "INP", "ROUTE_READY", "NAVIGATION", "LONG_TASK", "NAV_TRANSFER", "JS_TRANSFER"] as const;
 export type PerformanceMetricName = typeof performanceMetricNames[number];
-export type PerformanceMetricUnit = "ms" | "score";
+export type PerformanceMetricUnit = "bytes" | "ms" | "score";
 export type PerformanceRating = "good" | "needs-improvement" | "poor";
 
 export type PerformanceMeasurementInput = {
@@ -90,7 +90,9 @@ export function parsePerformanceMeasurement(value: unknown): PerformanceMeasurem
 }
 
 export function performanceMetricUnit(metricName: PerformanceMetricName): PerformanceMetricUnit {
-  return metricName === "CLS" ? "score" : "ms";
+  if (metricName === "CLS") return "score";
+  if (metricName === "NAV_TRANSFER" || metricName === "JS_TRANSFER") return "bytes";
+  return "ms";
 }
 
 export function calculatePerformanceScore(metrics: PerformanceMetricSummary[]) {

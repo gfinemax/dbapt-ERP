@@ -5,17 +5,24 @@ import type { ReimbursementMember } from "./reimbursement-domain";
 import { Search, X } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
-import {
-  ExpenseResolutionDetailModal,
-  ExpenseResolutionPrintPreviewModal,
-} from "./expense-resolution-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest, BatchApprovalTransitionRequest } from "./expense-approval-workflow";
 import type { DisbursementTransitionRequest, DisbursementTransitionResult } from "./expense-disbursement-workflow";
+
+const ExpenseResolutionPrintPreviewModal = dynamic(
+  () => import("./expense-resolution-print-preview").then((module) => module.ExpenseResolutionPrintPreviewModal),
+  { ssr: false },
+);
+
+const ExpenseResolutionDetailModal = dynamic(
+  () => import("./expense-resolution-detail-modal").then((module) => module.ExpenseResolutionDetailModal),
+  { ssr: false },
+);
 
 function Badge({ value }: { value: string }) {
   const classes: Record<string, string> = {

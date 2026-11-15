@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionDetailModal, ExpenseResolutionPage, ExpenseResolutionPrintPreviewModal, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, paginateExpensePrintRowHeights, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { ExpenseResolutionDetailModal } from "./expense-resolution-detail-modal";
+import { ExpenseResolutionPrintPreviewModal, paginateExpensePrintRowHeights } from "./expense-resolution-print-preview";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 
 const navigation = vi.hoisted(() => ({ push: vi.fn() }));
@@ -867,6 +869,7 @@ describe("ExpenseResolutionPage", () => {
   });
 
   it("prints project identity and the detailed expense rows for a batch resolution", async () => {
+    vi.useRealTimers();
     render(<ExpenseResolutionPage initialResolutions={[]} />);
     fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
     const createDialog = await getExpenseResolutionDialog("지출결의서 작성");
@@ -877,12 +880,12 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(createDialog).getByRole("button", { name: "임시저장" }));
 
     fireEvent.click(screen.getByRole("button", { name: "상세보기" }));
-    const detailDialog = screen.getByRole("dialog", { name: "지출결의서 상세" });
+    const detailDialog = await screen.findByRole("dialog", { name: "지출결의서 상세" });
     fireEvent.click(within(detailDialog).getByRole("button", { name: "인쇄하기" }));
     fireEvent.click(within(detailDialog).getByRole("menuitem", { name: "A4 출력 미리보기" }));
     fireEvent.click(within(screen.getByRole("dialog", { name: "보관용 출력 전 확인" })).getByRole("button", { name: "그래도 출력하기" }));
 
-    const printDialog = screen.getByRole("dialog", { name: "지출결의서 출력 미리보기" });
+    const printDialog = await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" });
     expect(printDialog.querySelector(".expense-resolution-print-page")).toHaveClass("expense-resolution-document-page");
     expect(within(printDialog).getByRole("heading", { name: "지출결의서" })).toHaveClass("text-[35px]");
     const coreInfoHeading = within(printDialog).getByRole("heading", { name: "핵심 결의정보" });
@@ -951,7 +954,7 @@ describe("ExpenseResolutionPage", () => {
     expect(within(printDialog).queryByText("사무기기 구입")).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("비품비 > 사무기기")).not.toBeInTheDocument();
     expect(within(printDialog).queryByText("사무용품 및 소모품 구입")).not.toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("imports valid Excel-compatible rows and reports invalid rows", async () => {
     vi.useRealTimers();
