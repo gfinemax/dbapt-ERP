@@ -14,4 +14,10 @@ describe("expense resolution entry", () => {
   it("encodes the source identifier", () => {
     expect(expenseResolutionHref({ quickExpenseId: "quick&one" })).toBe("/finance/expense-resolutions?quickExpenseId=quick%26one");
   });
+  it("keeps an explicit edit intent for an existing resolution", () => {
+    expect(parseExpenseEntry({ mode: "edit", resolutionId: "resolution-one" }))
+      .toEqual({ editResolutionId: "resolution-one", resolutionId: "resolution-one", quickExpenseId: undefined, start: undefined });
+    expect(expenseResolutionHref({ resolutionId: "text/id & 1", mode: "edit" }))
+      .toBe("/finance/expense-resolutions?resolutionId=text%2Fid+%26+1&mode=edit");
+  });
 });

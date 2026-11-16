@@ -2352,6 +2352,7 @@ export function ExpenseResolutionPage({
   initialExpenseDetails = [],
   directExpenseSettings = defaultExpenseComplianceSettings,
   initialBankTransactionId,
+  initialEditResolutionId,
   initialEntryStart,
   initialQuickExpense,
   initialResolutionId,
@@ -2387,6 +2388,7 @@ export function ExpenseResolutionPage({
   initialExpenseDetails?: OperatingExpenseDetail[];
   directExpenseSettings?: ExpenseComplianceSettings;
   initialBankTransactionId?: string;
+  initialEditResolutionId?: string;
   initialEntryStart?: ExpenseEntryStart;
   initialQuickExpense?: QuickExpenseConversionDraft;
   initialResolutionId?: string;
@@ -2407,6 +2409,15 @@ export function ExpenseResolutionPage({
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() =>
     initialResolutions ?? [],
   );
+  const initialEditCandidate = initialEditResolutionId
+    ? initialResolutions?.find((resolution) => resolution.id === initialEditResolutionId)
+    : undefined;
+  const initialEditResolution = initialEditCandidate && !isLegacySmallExpenseResolution(initialEditCandidate) && (viewer
+    ? canEditExpense(initialEditCandidate, viewer)
+    : initialEditCandidate.author === currentUserName && ["작성중", "승인대기", "반려"].includes(initialEditCandidate.approvalStatus))
+    ? initialEditCandidate
+    : undefined;
+  const initialEditDenied = Boolean(initialEditCandidate && !initialEditResolution);
   const [formOptions, setFormOptions] = useState<ExpenseResolutionFormOptions>(() => initialFormOptions ?? {
     approvalDocuments: initialApprovalDocuments,
     bankTransactions: initialBankTransactions,
@@ -2448,8 +2459,8 @@ export function ExpenseResolutionPage({
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
-  const [editingResolutionId, setEditingResolutionId] = useState<string | null>(null);
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(Boolean(initialEditResolution) || !initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
+  const [editingResolutionId, setEditingResolutionId] = useState<string | null>(initialEditResolution?.id ?? null);
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
   const [factConfirmationTarget, setFactConfirmationTarget] = useState<{ detailItem?: BatchExpenseItem; resolution: ManagedExpenseResolution } | null>(null);
@@ -2459,6 +2470,7 @@ export function ExpenseResolutionPage({
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
     const nextResolutionNo = initialNextResolutionNo ?? formOptions.nextResolutionNo;
+    if (initialEditResolution) return createEditFormState(initialEditResolution);
     if (initialBankDraft) return { ...createBankTransactionDraftFormState(initialBankDraft, getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo)), author: currentUserName, settlementManager: currentUserName };
     if (initialQuickExpense) return createQuickExpenseConversionFormState(initialQuickExpense, getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo), currentUserName);
     const form = createFormState(getNextResolutionNoForLoadedPage(resolutions, nextResolutionNo), undefined, currentUserName);
@@ -2666,6 +2678,14 @@ export function ExpenseResolutionPage({
   }
 
   async function openEditModal(resolution: ManagedExpenseResolution) {
+    const canEdit = viewer
+      ? canEditExpense(resolution, viewer)
+      : resolution.author === currentUserName && ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus);
+    if (!canEdit) {
+      setSaveError("작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.");
+      setSelectedDetailId(resolution.id);
+      return;
+    }
     if (!(await ensureFormOptions())) return;
     setQuickConversionSourceId(null);
     setEvidenceUploadError("");
@@ -3975,6 +3995,8 @@ export function ExpenseResolutionPage({
         {saveError && !isCreateModalOpen ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
         {viewer?.permissions.includes("ADMIN") && <Link className="self-start rounded-lg border bg-white px-4 py-2 font-semibold" href="/finance/expense-authorizations">작성자·결재선 계정 연결</Link>}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
+        {initialEditResolutionId && initialResolutions !== undefined && !resolutions.some((resolution) => resolution.id === initialEditResolutionId) ? <p role="alert" className="rounded-xl border p-4">수정할 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
+        {initialEditDenied ? <p role="alert" className="rounded-xl border p-4">작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.</p> : null}
         {dataLoadError ? (
           <div className="rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
             {dataLoadError}

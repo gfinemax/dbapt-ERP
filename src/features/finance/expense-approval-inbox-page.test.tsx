@@ -1,12 +1,18 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExpenseApprovalInboxPage } from "./expense-approval-inbox-page";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 
-vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+const navigation = vi.hoisted(() => ({ push: vi.fn(), refresh: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => navigation }));
 
 describe("ExpenseApprovalInboxPage", () => {
+  beforeEach(() => {
+    navigation.push.mockReset();
+    navigation.refresh.mockReset();
+  });
+
   it("renders an empty approval inbox without sample resolutions", () => {
     render(<ExpenseApprovalInboxPage />);
 
@@ -60,6 +66,19 @@ describe("ExpenseApprovalInboxPage", () => {
     fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "보관용 PDF 생성" }));
     expect(await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" })).toBeInTheDocument();
+  });
+
+  it("opens an editable draft in the shared resolution form for an administrator", async () => {
+    const resolution = expenseResolutionFixture({ id: "editable-draft", resolutionNo: "지결-2026-0255" });
+    render(<ExpenseApprovalInboxPage
+      initialDetailId={resolution.id}
+      initialResolutions={[resolution]}
+      viewer={{ active: true, display_name: "관리자", organization_id: "org", permissions: ["ADMIN"], user_id: "admin" }}
+    />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "수정" }));
+
+    expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?resolutionId=editable-draft&mode=edit");
   });
 
   it("persists approval through the server transition with an optimistic state guard", async () => {

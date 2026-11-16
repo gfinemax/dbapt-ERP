@@ -29,7 +29,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   const organizationId = viewer.organization_id;
   const resolutionPromise = listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer);
   const budgetPromise = resolutionPromise.then((result) => loadExpenseResolutionBudgetView(result?.items ?? [], organizationId));
-  const formOptionsPromise = entry.start || entry.quickExpenseId
+  const formOptionsPromise = entry.start || entry.quickExpenseId || entry.editResolutionId
     ? loadExpenseResolutionFormOptions()
     : Promise.resolve(undefined);
   const [resolutionResult, quickResult, budgetResult, formOptionsResult] = await Promise.allSettled([
@@ -74,8 +74,9 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     <ExpenseResolutionPage
       key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}:${initialListPage?.month ?? ""}:${initialListPage?.sort ?? ""}`}
       viewer={viewer}
+      initialEditResolutionId={entry.editResolutionId}
       initialEntryStart={entry.start}
-      initialResolutionId={initialResolutionId}
+      initialResolutionId={entry.editResolutionId ? undefined : initialResolutionId}
       initialQuickExpense={initialQuickExpense}
       convertQuickExpense={convertQuickExpenseResolutionAction}
       createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction}

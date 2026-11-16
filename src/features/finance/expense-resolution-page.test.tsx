@@ -566,6 +566,21 @@ describe("ExpenseResolutionPage", () => {
     expect(persistResolution.mock.calls[0][0]).toMatchObject({ approvalStatus: "작성중", subject: "우편 발송비" });
   });
 
+  it("opens an authorized resolution directly in edit mode", async () => {
+    const resolution = expenseResolutionFixture({
+      author: "오학동 사무국장",
+      id: "direct-edit-draft",
+      resolutionNo: "지결-2026-0255",
+      subject: "축하화환 사후결의",
+    });
+
+    render(<ExpenseResolutionPage initialEditResolutionId={resolution.id} initialResolutions={[resolution]} />);
+
+    const editDialog = within(await getExpenseResolutionDialog("지출결의서 수정"));
+    expect(editDialog.getByLabelText("결의서번호")).toHaveValue("지결-2026-0255");
+    expect(editDialog.getByLabelText("건명 (필수)")).toHaveValue("축하화환 사후결의");
+  });
+
   it("keeps a directly edited payment account when a resolution is saved and reopened", async () => {
     vi.useRealTimers();
     const persistResolution = vi.fn(async (resolution) => resolution);

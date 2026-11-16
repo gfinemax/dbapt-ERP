@@ -1,6 +1,6 @@
 "use client";
 
-import { canApproveExpense } from "./expense-access-model";
+import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import { Search, X } from "lucide-react";
 import { Fragment, useRef, useState } from "react";
@@ -13,6 +13,7 @@ import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import type { ApprovalTransitionRequest, BatchApprovalTransitionRequest } from "./expense-approval-workflow";
 import type { DisbursementTransitionRequest, DisbursementTransitionResult } from "./expense-disbursement-workflow";
+import { expenseResolutionHref } from "./expense-entry";
 
 const ExpenseResolutionPrintPreviewModal = dynamic(
   () => import("./expense-resolution-print-preview").then((module) => module.ExpenseResolutionPrintPreviewModal),
@@ -395,6 +396,9 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
           onClose={() => setSelectedDetailId(null)}
           onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
+          onEdit={viewer && canEditExpense(selectedDetail, viewer)
+            ? () => router.push(expenseResolutionHref({ resolutionId: selectedDetail.id, mode: "edit" }))
+            : undefined}
           onPrintArchive={() => setPrintPreviewTargetId(selectedDetail.id)}
           onPrintPreview={() => setPrintPreviewTargetId(selectedDetail.id)}
           onReject={() => openRejectModal(selectedDetail.id)}
