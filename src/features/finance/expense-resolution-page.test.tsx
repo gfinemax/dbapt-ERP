@@ -582,6 +582,29 @@ describe("ExpenseResolutionPage", () => {
     expect(editDialog.getByLabelText("건명 (필수)")).toHaveValue("축하화환 사후결의");
   });
 
+  it("opens and saves a bank-backed draft whose imported record omits payment and optional text fields", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const resolution = expenseResolutionFixture({
+      author: "오학동 사무국장", id: "sparse-bank-draft", subject: "축하화환 사후결의",
+      expenseKind: "BANK_POST_APPROVAL", expenseTiming: "REIMBURSEMENT",
+      bankTransactionId: "bank-source", supplyAmount: 130000, totalPaymentAmount: 130000,
+    });
+    // Imported bank drafts have no payout account: the withdrawal already happened.
+    const sparse = resolution as Partial<typeof resolution>;
+    for (const key of ["accountHolder", "paymentAccountNo", "paymentBank", "budgetOverReason", "relatedContract", "relatedMeeting"] as const) delete sparse[key];
+    render(<ExpenseResolutionPage initialEditResolutionId={resolution.id} initialResolutions={[resolution]} persistResolution={persistResolution} />);
+    const dialog = within(await screen.findByRole("dialog", { name: "지출결의서 수정" }));
+    expect(dialog.getByText(/직접 입력 · 은행 미입력 계좌 미등록/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("button", { name: "다음 단계" }));
+    expect(dialog.getByRole("button", { name: "다음 단계" })).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("button", { name: "다음 단계" }));
+    expect(dialog.getByRole("button", { name: "수정 후 승인요청" })).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("button", { name: "수정사항 저장" }));
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    expect(persistResolution.mock.calls[0][0]).toMatchObject({ bankTransactionId: "bank-source", totalPaymentAmount: 130000, paymentAccountNo: "", paymentBank: "", accountHolder: "" });
+  });
+
   it("returns a direct edit route to the full list when editing is cancelled", async () => {
     vi.useRealTimers();
     const resolution = expenseResolutionFixture({ author: "오학동 사무국장", id: "direct-edit-cancel" });

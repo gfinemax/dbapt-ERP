@@ -823,8 +823,8 @@ function applyPaymentTarget(formState: ResolutionFormState, paymentTargetId: str
   };
 }
 
-export function maskAccountNumber(accountNumber: string) {
-  const digits = accountNumber.replace(/\D/g, "");
+export function maskAccountNumber(accountNumber?: string | null) {
+  const digits = (accountNumber ?? "").replace(/\D/g, "");
   const suffix = digits.slice(-4);
   return suffix ? `****${suffix}` : "계좌 미등록";
 }
@@ -1586,9 +1586,9 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     cardReconciliationStatus: resolution.cardReconciliationStatus ?? (resolution.cardTransactionId ? "MATCHED" : "PENDING"),
     cardSettlementMode: resolution.cardSettlementMode ?? (resolution.cardTransactionId ? "CARD_BILLING" : "BANK_DIRECT"),
     cardVerificationSource: resolution.cardVerificationSource ?? (resolution.cardTransactionId ? "CARD_TRANSACTION" : undefined),
-    settlementRecipient: resolution.settlementRecipient ?? resolution.accountHolder,
+    settlementRecipient: resolution.settlementRecipient ?? resolution.accountHolder ?? "",
     settlementCompletedAt: resolution.settlementCompletedAt ?? "",
-    accountHolder: resolution.accountHolder,
+    accountHolder: resolution.accountHolder ?? "",
     author: resolution.author,
     advancePaidAmount: String(resolution.advancePaidAmount ?? ""),
     advancePaidAt: resolution.advancePaidAt ?? "",
@@ -1597,7 +1597,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     actualUsedAmount: String(resolution.actualUsedAmount ?? ""),
     budgetItem: resolution.resolutionType === "BATCH" ? "운영비 > 임대료" : resolution.budgetItem,
     budgetRecommendation: null,
-    budgetOverReason: resolution.budgetOverReason,
+    budgetOverReason: resolution.budgetOverReason ?? "",
     budgetPeriod: resolution.budgetSnapshot.budgetPeriod,
     batchItems: resolution.resolutionType === "BATCH" ? resolution.expenseItems.map((item) => ({ ...item })) : [createBatchExpenseItem(1)],
     singleItems: resolution.singleItems?.length
@@ -1635,21 +1635,21 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
             ? "CASH"
             : "BANK_TRANSFER",
     quickExpenseCategory: resolution.subject.includes("택시") ? "택시" : resolution.subject.includes("주차") ? "주차" : resolution.subject.includes("통행료") ? "통행료" : resolution.subject.includes("식대") ? "식대" : resolution.subject.includes("소모품") ? "소모품" : "기타",
-    memo: resolution.memo,
+    memo: resolution.memo ?? "",
     operationExpenseDetail: resolution.operationExpenseDetail,
     expenseDetailId: resolution.expenseDetailId ?? "",
     paymentTargetId: getResolutionPaymentTargetId(resolution),
-    paymentAccountNo: resolution.paymentAccountNo,
-    paymentBank: resolution.paymentBank,
+    paymentAccountNo: resolution.paymentAccountNo ?? "",
+    paymentBank: resolution.paymentBank ?? "",
     paymentFlowType: resolution.paymentFlowType,
     plannedPaymentDate: resolution.plannedPaymentDate,
     postApprovalReason: resolution.postApprovalReason ?? "",
     originalResolutionId: resolution.originalResolutionId ?? "",
     settlementDueDate: resolution.settlementDueDate ?? "",
     settlementManager: resolution.settlementManager ?? "",
-    reason: resolution.reason,
-    relatedContract: resolution.relatedContract,
-    relatedMeeting: resolution.relatedMeeting,
+    reason: resolution.reason ?? "",
+    relatedContract: resolution.relatedContract ?? "",
+    relatedMeeting: resolution.relatedMeeting ?? "",
     resolutionNo: resolution.resolutionNo,
     resolutionMode: normalizeResolutionMode(resolution),
     subject: resolution.subject ?? "",
