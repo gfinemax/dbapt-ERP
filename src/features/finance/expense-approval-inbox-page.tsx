@@ -39,6 +39,11 @@ function Badge({ value }: { value: string }) {
   return <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${classes[value] ?? classes.작성중}`}>{value}</span>;
 }
 
+type InboxDateSort = {
+  direction: "asc" | "desc";
+  key: "createdAt" | "actualExpenseDate";
+} | null;
+
 export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEvidenceDownloadUrl, dataLoadError, initialResolutions, transitionApproval, transitionBatchApproval, transitionDisbursement, embedded = false, initialDetailId }: { budgetDataError?: string; createEvidenceDownloadUrl?: (storagePath: string) => Promise<string>; embedded?: boolean; initialDetailId?: string; viewer?: ReimbursementMember; dataLoadError?: string; initialResolutions?: ManagedExpenseResolution[]; transitionApproval?: (input: ApprovalTransitionRequest) => Promise<ManagedExpenseResolution>; transitionBatchApproval?: (input: BatchApprovalTransitionRequest) => Promise<ManagedExpenseResolution[]>; transitionDisbursement?: (input: DisbursementTransitionRequest) => Promise<DisbursementTransitionResult> } = {}) {
   const currentApproverLabel = viewer?.display_name ?? "로그인 필요";
   const router = useRouter();
@@ -46,6 +51,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
   const [processing, setProcessing] = useState(false);
   const [filter, setFilter] = useState("내 결재대기");
   const [search, setSearch] = useState("");
+  const [dateSort, setDateSort] = useState<InboxDateSort>(null);
   const [resolutions, setResolutions] = useState<ManagedExpenseResolution[]>(() => initialResolutions ?? []);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialDetailId ?? null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
@@ -74,6 +80,25 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
       (filter === "지급대기" && r.approvalStatus === "승인완료" && ["지급전", "지급대기"].includes(r.paymentStatus));
     return matchesStatus && [r.resolutionNo, r.subject, r.author, r.representativeVendorName, r.currentApprover].join(" ").toLowerCase().includes(search.trim().toLowerCase());
   });
+  const sortedFiltered = dateSort ? [...filtered].sort((left, right) => {
+    const leftDate = left[dateSort.key];
+    const rightDate = right[dateSort.key];
+    if (!leftDate && !rightDate) return 0;
+    if (!leftDate) return 1;
+    if (!rightDate) return -1;
+    return dateSort.direction === "asc" ? leftDate.localeCompare(rightDate) : rightDate.localeCompare(leftDate);
+  }) : filtered;
+
+  function toggleDateSort(key: NonNullable<InboxDateSort>["key"]) {
+    setDateSort((current) => current?.key === key
+      ? { key, direction: current.direction === "desc" ? "asc" : "desc" }
+      : { key, direction: "desc" });
+  }
+
+  function sortIndicator(key: NonNullable<InboxDateSort>["key"]) {
+    if (dateSort?.key !== key) return "↕";
+    return dateSort.direction === "desc" ? "↓" : "↑";
+  }
 
   async function runTransition(resolution: ManagedExpenseResolution, command: "APPROVE" | "REJECT", reason?: string) {
     if (busy.current || !viewer || !canApproveExpense(resolution, viewer)) return false;
@@ -273,8 +298,16 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
                 <tr>
                   <th className="px-3 py-3 text-center"><span className="sr-only">일괄 선택</span></th>
                   <th className="px-4 py-3 text-center">결의서번호</th>
-                  <th className="px-4 py-3 text-center">작성일</th>
-                  <th className="px-4 py-3 text-center">거래일</th>
+                  <th aria-sort={dateSort?.key === "createdAt" ? dateSort.direction === "asc" ? "ascending" : "descending" : "none"} className="px-4 py-3 text-center">
+                    <button aria-label="작성일 정렬" className="inline-flex items-center gap-1 font-semibold hover:text-[var(--color-deep-cobalt)]" onClick={() => toggleDateSort("createdAt")} type="button">
+                      작성일 <span aria-hidden="true">{sortIndicator("createdAt")}</span>
+                    </button>
+                  </th>
+                  <th aria-sort={dateSort?.key === "actualExpenseDate" ? dateSort.direction === "asc" ? "ascending" : "descending" : "none"} className="px-4 py-3 text-center">
+                    <button aria-label="거래일 정렬" className="inline-flex items-center gap-1 font-semibold hover:text-[var(--color-deep-cobalt)]" onClick={() => toggleDateSort("actualExpenseDate")} type="button">
+                      거래일 <span aria-hidden="true">{sortIndicator("actualExpenseDate")}</span>
+                    </button>
+                  </th>
                   <th className="px-4 py-3 text-center">작성자</th>
                   <th className="px-4 py-3 text-center">거래처</th>
                   <th className="px-4 py-3 text-center">지출구분</th>
@@ -286,7 +319,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
                 </tr>
               </thead>
               <tbody className="divide-y divide-[var(--color-soft-border)]">
-              {filtered.map((resolution) => {
+              {sortedFiltered.map((resolution) => {
                 const canApprove = !processing && !!viewer && canApproveExpense(resolution, viewer);
 
                   return (

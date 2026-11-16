@@ -20,6 +20,29 @@ describe("ExpenseApprovalInboxPage", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("지출결의 저장소에 연결하지 못했습니다.");
   });
 
+  it("sorts by transaction date and created date while keeping missing dates last", () => {
+    const resolutions = [
+      expenseResolutionFixture({ id: "sort-a", resolutionNo: "지결-2026-0001", createdAt: "2026-01-02", actualExpenseDate: "2026-01-08" }),
+      expenseResolutionFixture({ id: "sort-b", resolutionNo: "지결-2026-0002", createdAt: "2026-01-03", actualExpenseDate: "2026-01-05" }),
+      expenseResolutionFixture({ id: "sort-c", resolutionNo: "지결-2026-0003", createdAt: "2026-01-01", actualExpenseDate: undefined }),
+    ];
+    render(<ExpenseApprovalInboxPage initialResolutions={resolutions} />);
+    fireEvent.click(screen.getByRole("button", { name: "전체" }));
+    const visibleResolutionNos = () => Array.from(screen.getByRole("table", { name: "결재함 목록" }).querySelectorAll("tbody tr"))
+      .map((row) => within(row).getByText(/지결-2026-/).textContent);
+
+    fireEvent.click(screen.getByRole("button", { name: "거래일 정렬" }));
+    expect(visibleResolutionNos()).toEqual(["지결-2026-0001", "지결-2026-0002", "지결-2026-0003"]);
+    expect(screen.getByRole("columnheader", { name: /거래일/ })).toHaveAttribute("aria-sort", "descending");
+
+    fireEvent.click(screen.getByRole("button", { name: "거래일 정렬" }));
+    expect(visibleResolutionNos()).toEqual(["지결-2026-0002", "지결-2026-0001", "지결-2026-0003"]);
+
+    fireEvent.click(screen.getByRole("button", { name: "작성일 정렬" }));
+    expect(visibleResolutionNos()).toEqual(["지결-2026-0002", "지결-2026-0001", "지결-2026-0003"]);
+    expect(screen.getByRole("columnheader", { name: /작성일/ })).toHaveAttribute("aria-sort", "descending");
+  });
+
   it("opens the shared A4 preview from both print menu actions", async () => {
     const resolution = expenseResolutionFixture({
       id: "print-test",
