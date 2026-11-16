@@ -53,7 +53,7 @@ describe("Google Sheets bank transaction export", () => {
       if (url.includes("oauth2.googleapis.com/token")) return Response.json({ access_token: "google-token" });
       if (url.includes("drive/v3/files")) return Response.json({ id: "sheet-123", name: "통합 거래내역", webViewLink: "https://docs.google.com/spreadsheets/d/sheet-123/edit" });
       return Response.json({});
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     const result = await createBankTransactionGoogleSpreadsheet(data, {
       env: {

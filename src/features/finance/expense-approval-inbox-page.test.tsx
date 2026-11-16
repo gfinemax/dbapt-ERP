@@ -35,7 +35,7 @@ describe("ExpenseApprovalInboxPage", () => {
     render(<ExpenseApprovalInboxPage initialResolutions={resolutions} />);
     fireEvent.click(screen.getByRole("button", { name: "전체" }));
     const visibleResolutionNos = () => Array.from(screen.getByRole("table", { name: "결재함 목록" }).querySelectorAll("tbody tr"))
-      .map((row) => within(row).getByText(/지결-2026-/).textContent);
+      .map((row) => within(row as HTMLElement).getByText(/지결-2026-/).textContent);
 
     fireEvent.click(screen.getByRole("button", { name: "거래일 정렬" }));
     expect(visibleResolutionNos()).toEqual(["지결-2026-0001", "지결-2026-0002", "지결-2026-0003"]);
