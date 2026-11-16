@@ -4409,6 +4409,7 @@ export function ExpenseResolutionPage({
           actionError={saveError}
           budgetDataError={budgetDataError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
+          editHref={!isLegacySmallExpenseResolution(selectedDetail) && viewer && canEditExpense(selectedDetail, viewer) ? `/finance/expense-resolutions?resolutionId=${encodeURIComponent(selectedDetail.id)}&mode=edit` : undefined}
           linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
@@ -4418,7 +4419,7 @@ export function ExpenseResolutionPage({
           onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
           onDelete={isLegacySmallExpenseResolution(selectedDetail) ? undefined : () => removeResolution(selectedDetail.id)}
-          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && (viewer ? canEditExpense(selectedDetail, viewer) : selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus)) ? () => openEditModal(selectedDetail) : undefined}
+          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && !viewer && selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
           onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
           onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
           onProcessPayment={selectedDetail.workflowTransactionId ? undefined : () => openPaymentModal(selectedDetail)}

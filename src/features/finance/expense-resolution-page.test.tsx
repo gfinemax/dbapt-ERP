@@ -581,6 +581,22 @@ describe("ExpenseResolutionPage", () => {
     expect(editDialog.getByLabelText("건명 (필수)")).toHaveValue("축하화환 사후결의");
   });
 
+  it("uses a full edit URL for a signed-in viewer instead of switching the large form in place", async () => {
+    vi.useRealTimers();
+    const resolution = expenseResolutionFixture({ id: "stable-edit-draft", resolutionNo: "지결-2026-0255" });
+
+    render(<ExpenseResolutionPage
+      initialResolutionId={resolution.id}
+      initialResolutions={[resolution]}
+      viewer={{ active: true, display_name: "관리자", organization_id: "org", permissions: ["ADMIN"], user_id: "admin" }}
+    />);
+
+    expect(within(await screen.findByRole("dialog", { name: "지출결의서 상세" })).getByRole("link", { name: "수정" })).toHaveAttribute(
+      "href",
+      "/finance/expense-resolutions?resolutionId=stable-edit-draft&mode=edit",
+    );
+  });
+
   it("keeps a directly edited payment account when a resolution is saved and reopened", async () => {
     vi.useRealTimers();
     const persistResolution = vi.fn(async (resolution) => resolution);

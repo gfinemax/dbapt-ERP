@@ -76,9 +76,10 @@ describe("ExpenseApprovalInboxPage", () => {
       viewer={{ active: true, display_name: "관리자", organization_id: "org", permissions: ["ADMIN"], user_id: "admin" }}
     />);
 
-    fireEvent.click(await screen.findByRole("button", { name: "수정" }));
-
-    expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?resolutionId=editable-draft&mode=edit");
+    expect(await screen.findByRole("link", { name: "수정" })).toHaveAttribute(
+      "href",
+      "/finance/expense-resolutions?resolutionId=editable-draft&mode=edit",
+    );
   });
 
   it("persists approval through the server transition with an optimistic state guard", async () => {

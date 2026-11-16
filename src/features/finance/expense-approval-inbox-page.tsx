@@ -392,13 +392,13 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
           actionError={workflowError}
           budgetDataError={budgetDataError}
           canApprove={!processing && !!viewer && canApproveExpense(selectedDetail, viewer)}
+          editHref={viewer && canEditExpense(selectedDetail, viewer)
+            ? expenseResolutionHref({ resolutionId: selectedDetail.id, mode: "edit" })
+            : undefined}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={() => setSelectedDetailId(null)}
           onConfirmVoucher={() => confirmVoucher(selectedDetail.id)}
           onCreateVoucher={() => createVoucher(selectedDetail.id)}
-          onEdit={viewer && canEditExpense(selectedDetail, viewer)
-            ? () => router.push(expenseResolutionHref({ resolutionId: selectedDetail.id, mode: "edit" }))
-            : undefined}
           onPrintArchive={() => setPrintPreviewTargetId(selectedDetail.id)}
           onPrintPreview={() => setPrintPreviewTargetId(selectedDetail.id)}
           onReject={() => openRejectModal(selectedDetail.id)}

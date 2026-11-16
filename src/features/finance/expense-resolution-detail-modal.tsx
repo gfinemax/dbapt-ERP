@@ -460,6 +460,7 @@ export function ExpenseResolutionDetailModal({
   actionError,
   budgetDataError,
   canApprove = false,
+  editHref,
   linkedApproval,
   onApprove,
   onCancelApproval,
@@ -481,6 +482,7 @@ export function ExpenseResolutionDetailModal({
   actionError?: string;
   budgetDataError?: string;
   canApprove?: boolean;
+  editHref?: string;
   linkedApproval?: ApprovalDocumentCandidate;
   onApprove: () => boolean | void | Promise<boolean | void>;
   onCancelApproval?: () => void;
@@ -540,6 +542,11 @@ export function ExpenseResolutionDetailModal({
   function handlePrintArchive() {
     setIsPrintMenuOpen(false);
     onPrintArchive();
+  }
+
+  function renderEditAction(label: string) {
+    if (editHref) return <a className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-white px-4 text-sm font-semibold" href={editHref}>{label}</a>;
+    return onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">{label}</Button> : null;
   }
 
   return (
@@ -923,14 +930,14 @@ export function ExpenseResolutionDetailModal({
           ) : null}
           {resolution.approvalStatus === "작성중" ? (
             <>
-              {onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">수정</Button> : null}
+              {renderEditAction("수정")}
               <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending || !authorization.ready} onClick={() => { void handleRequestApproval(); }} title={!authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
                 {isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
               </Button>
             </>
           ) : null}
-          {resolution.approvalStatus === "승인대기" && onEdit ? (
-            <Button className="rounded-full" onClick={onEdit} variant="outline">수정 후 재요청</Button>
+          {resolution.approvalStatus === "승인대기" && (editHref || onEdit) ? (
+            renderEditAction("수정 후 재요청")
           ) : null}
           {resolution.approvalStatus === "승인대기" && canApprove ? (
             <>
@@ -958,10 +965,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.voucherStatus === "전표확정" ? (
             <>{voucherHref ? <a className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-white px-4 text-sm font-semibold" href={voucherHref}>전표보기</a> : null}{onCancelVoucher ? <Button className="rounded-full text-red-700" onClick={onCancelVoucher} variant="outline">전표취소</Button> : null}</>
           ) : null}
-          {resolution.approvalStatus === "반려" && onEdit ? (
-            <Button className="rounded-full" onClick={onEdit} variant="outline">
-              수정 후 재요청
-            </Button>
+          {resolution.approvalStatus === "반려" && (editHref || onEdit) ? (
+            renderEditAction("수정 후 재요청")
           ) : null}
           <Button className="rounded-full" onClick={onClose} variant="outline">
             닫기
