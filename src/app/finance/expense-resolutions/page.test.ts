@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const conversion = vi.hoisted(() => ({ load: vi.fn() }));
 vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseActor: async () => ({ user_id: "user", organization_id: "org", display_name: "담당자", active: true, permissions: ["ADMIN"] }) }));
 vi.mock("@/features/finance/quick-expense-conversion-repository", () => ({ loadQuickExpenseConversionDraft: conversion.load }));
-import ExpenseResolutionsRoute from "./page";
+import ExpenseResolutionsRoute, { selectExpenseResolutionRouteItems } from "./page";
 
 describe("expense resolutions route", () => {
   beforeEach(() => conversion.load.mockReset());
@@ -34,5 +34,14 @@ describe("expense resolutions route", () => {
     const page = await ExpenseResolutionsRoute({ searchParams: Promise.resolve({ quickExpenseId: "quick-one" }) });
     expect(page.props.initialQuickExpense).toBeUndefined();
     expect(page.props.initialResolutionId).toBe("resolution-one");
+  });
+  it("sends only the target resolution to a direct edit screen", () => {
+    const target = { id: "target" };
+    expect(selectExpenseResolutionRouteItems([
+      { id: "other-1" },
+      target,
+      { id: "other-2" },
+    ] as never, "target")).toEqual([target]);
+    expect(selectExpenseResolutionRouteItems([target] as never)).toEqual([target]);
   });
 });

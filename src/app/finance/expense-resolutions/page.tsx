@@ -12,6 +12,16 @@ import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-res
 import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, loadExpenseResolutionDetailAction, loadExpenseResolutionFormOptionsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementResultAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
 export const dynamic = "force-dynamic";
+
+export function selectExpenseResolutionRouteItems(
+  resolutions: ManagedExpenseResolution[],
+  editResolutionId?: string,
+) {
+  if (!editResolutionId) return resolutions;
+  const editResolution = resolutions.find((resolution) => resolution.id === editResolutionId);
+  return editResolution ? [editResolution] : [];
+}
+
 export default async function ExpenseResolutionsRoute({ searchParams }: { searchParams?: Promise<Record<string, string | string[] | undefined>> } = {}) {
   const params = await searchParams ?? {};
   const entry = parseExpenseEntry(params);
@@ -28,7 +38,10 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   let budgetDataError: string | undefined;
   const organizationId = viewer.organization_id;
   const resolutionPromise = listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer);
-  const budgetPromise = resolutionPromise.then((result) => loadExpenseResolutionBudgetView(result?.items ?? [], organizationId));
+  const budgetPromise = resolutionPromise.then((result) => loadExpenseResolutionBudgetView(
+    selectExpenseResolutionRouteItems(result?.items ?? [], entry.editResolutionId),
+    organizationId,
+  ));
   const formOptionsPromise = entry.start || entry.quickExpenseId || entry.editResolutionId
     ? loadExpenseResolutionFormOptions()
     : Promise.resolve(undefined);

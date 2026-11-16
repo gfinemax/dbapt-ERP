@@ -582,6 +582,17 @@ describe("ExpenseResolutionPage", () => {
     expect(editDialog.getByLabelText("건명 (필수)")).toHaveValue("축하화환 사후결의");
   });
 
+  it("returns a direct edit route to the full list when editing is cancelled", async () => {
+    vi.useRealTimers();
+    const resolution = expenseResolutionFixture({ author: "오학동 사무국장", id: "direct-edit-cancel" });
+    render(<ExpenseResolutionPage initialEditResolutionId={resolution.id} initialResolutions={[resolution]} />);
+
+    const editDialog = within(await screen.findByRole("dialog", { name: "지출결의서 수정" }));
+    fireEvent.click(editDialog.getByRole("button", { name: "취소" }));
+
+    expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions");
+  });
+
   it("uses a full edit URL for a signed-in viewer instead of switching the large form in place", async () => {
     vi.useRealTimers();
     const resolution = expenseResolutionFixture({ id: "stable-edit-draft", resolutionNo: "지결-2026-0255" });

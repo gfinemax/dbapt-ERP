@@ -2459,7 +2459,7 @@ export function ExpenseResolutionPage({
   const [dateFromFilter, setDateFromFilter] = useState("");
   const [dateToFilter, setDateToFilter] = useState("");
   const [overdueOnly, setOverdueOnly] = useState(false);
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(Boolean(initialEditResolution) || !initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialEditResolution && !initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(initialEditResolution?.id ?? null);
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
@@ -2608,6 +2608,12 @@ export function ExpenseResolutionPage({
     }
   }, [isLocalStorageHydrated, resolutions, initialResolutions, persistResolution, dataLoadError]);
 
+  useEffect(() => {
+    if (!initialEditResolution) return;
+    const openTimer = window.setTimeout(() => setIsCreateModalOpen(true), 0);
+    return () => window.clearTimeout(openTimer);
+  }, [initialEditResolution]);
+
   const applyAutomaticExpenseDetail = useEffectEvent(() => {
     if (!isCreateModalOpen || formState.resolutionType === "BATCH" || expenseDetailSelectionRef.current === "MANUAL") return;
     const evidenceText = formState.evidenceFiles.map((file) => [
@@ -2682,6 +2688,7 @@ export function ExpenseResolutionPage({
     setIsCreateModalOpen(false);
     setEditingResolutionId(null);
     setQuickConversionSourceId(null);
+    if (initialEditResolutionId) router.push("/finance/expense-resolutions");
   }
 
   async function openEditModal(resolution: ManagedExpenseResolution) {
