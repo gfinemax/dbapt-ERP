@@ -7,7 +7,7 @@ import { requireExpenseActor } from "@/features/finance/expense-authorization";
 import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 import { loadQuickExpenseConversionDraft, type QuickExpenseConversionDraft } from "@/features/finance/quick-expense-conversion-repository";
-import type { ExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options";
+import { getEditBankTransactionCandidates, type ExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options";
 import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options.server";
 import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAction, deleteExpenseEvidenceAction, deleteExpenseFactConfirmationAction, deleteExpenseResolutionAction, ensureBusinessPartnerFromOcrAction, getExpenseEvidenceOcrJobAction, listExpenseFactConfirmationsAction, loadExpenseResolutionDetailAction, loadExpenseResolutionFormOptionsAction, retryExpenseEvidenceOcrJobAction, saveExpenseFactConfirmationAction, saveExpenseResolutionAction, transitionExpenseApprovalAction, transitionExpenseDisbursementResultAction, uploadExpenseFactSupportingFileAction } from "./actions";
 
@@ -65,7 +65,16 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
     console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);
     budgetDataError = "공식 예산을 불러오지 못했습니다. 예산 미편성으로 판단하지 말고 잠시 후 새로고침해주세요.";
   }
-  if (formOptionsResult.status === "fulfilled") initialFormOptions = formOptionsResult.value;
+  if (formOptionsResult.status === "fulfilled") {
+    const loadedFormOptions = formOptionsResult.value;
+    const editResolution = entry.editResolutionId
+      ? initialResolutions.find((resolution) => resolution.id === entry.editResolutionId)
+      : undefined;
+    initialFormOptions = loadedFormOptions && editResolution ? {
+      ...loadedFormOptions,
+      bankTransactions: getEditBankTransactionCandidates(loadedFormOptions.bankTransactions, editResolution.id, editResolution),
+    } : loadedFormOptions;
+  }
   else {
     console.warn(`[expense-resolutions] Form options unavailable: ${formOptionsResult.reason instanceof Error ? formOptionsResult.reason.message : String(formOptionsResult.reason)}`);
     dataLoadError ??= "작성용 기준정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.";

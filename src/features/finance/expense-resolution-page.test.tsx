@@ -4,6 +4,7 @@ import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
 import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { getEditBankTransactionCandidates } from "./expense-resolution-form-options";
 import { ExpenseResolutionDetailModal } from "./expense-resolution-detail-modal";
 import { ExpenseResolutionPrintPreviewModal, paginateExpensePrintRowHeights } from "./expense-resolution-print-preview";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
@@ -595,6 +596,25 @@ describe("ExpenseResolutionPage", () => {
       "href",
       "/finance/expense-resolutions?resolutionId=stable-edit-draft&mode=edit",
     );
+  });
+
+  it("keeps only linked bank sources in an existing bank-backed edit form", () => {
+    const candidates = Array.from({ length: 500 }, (_, index) => ({
+      description: `통장거래 ${index + 1}`,
+      id: `bank-${index + 1}`,
+      resolutionStatus: "UNRESOLVED",
+      transactedAt: "2026-10-31T09:00:00+09:00",
+      withdrawalAmount: index + 1,
+    }));
+
+    expect(getEditBankTransactionCandidates(candidates, "resolution-1", {
+      bankTransactionId: "bank-6",
+      bankTransactions: [],
+    })).toEqual([expect.objectContaining({ id: "bank-6" })]);
+    expect(getEditBankTransactionCandidates(candidates, null, {
+      bankTransactionId: "bank-6",
+      bankTransactions: [],
+    })).toHaveLength(500);
   });
 
   it("keeps a directly edited payment account when a resolution is saved and reopened", async () => {

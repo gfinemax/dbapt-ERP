@@ -14,7 +14,7 @@ import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceM
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 import type { QuickExpenseConversionDraft } from "./quick-expense-conversion-repository";
 import type { ExpenseBudgetDecisionSnapshot } from "./expense-resolution-budget-view";
-import type { ExpenseResolutionFormOptions } from "./expense-resolution-form-options";
+import { getEditBankTransactionCandidates, type ExpenseResolutionFormOptions } from "./expense-resolution-form-options";
 
 import { ErpShell } from "@/components/erp-shell";
 import { Button } from "@/components/ui/button";
@@ -2546,6 +2546,13 @@ export function ExpenseResolutionPage({
   const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
   const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
   const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
+  const formBankTransactionCandidates = useMemo(
+    () => getEditBankTransactionCandidates(formOptions.bankTransactions, editingResolutionId, {
+      bankTransactionId: formState.bankTransactionId,
+      bankTransactions: formState.bankTransactions,
+    }),
+    [editingResolutionId, formOptions.bankTransactions, formState.bankTransactionId, formState.bankTransactions],
+  );
   const pendingEvidenceJobIds = formState.evidenceFiles
     .filter((file) => file.ocrJobId && file.ocrStatus === "REVIEW_REQUIRED")
     .map((file) => file.ocrJobId)
@@ -4363,7 +4370,7 @@ export function ExpenseResolutionPage({
           batchSummary={formBatchSummary}
           budgetSnapshot={formBudgetSnapshot}
           formState={formState}
-          bankTransactionCandidates={formOptions.bankTransactions}
+          bankTransactionCandidates={formBankTransactionCandidates}
           cardTransactionCandidates={formOptions.cardTransactions}
           approvalDocuments={formOptions.approvalDocuments}
           directExpenseSettings={formOptions.directExpenseSettings}
