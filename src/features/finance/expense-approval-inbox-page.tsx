@@ -268,12 +268,13 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
             <h2 className="text-lg font-bold">결재함 목록</h2>
           </div>
           <div className="overflow-x-auto">
-            <table aria-label="결재함 목록" className="w-full min-w-[1240px] border-collapse text-left text-sm">
+            <table aria-label="결재함 목록" className="w-full min-w-[1320px] border-collapse text-left text-sm">
               <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                 <tr>
                   <th className="px-3 py-3 text-center"><span className="sr-only">일괄 선택</span></th>
                   <th className="px-4 py-3 text-center">결의서번호</th>
                   <th className="px-4 py-3 text-center">작성일</th>
+                  <th className="px-4 py-3 text-center">거래일</th>
                   <th className="px-4 py-3 text-center">작성자</th>
                   <th className="px-4 py-3 text-center">거래처</th>
                   <th className="px-4 py-3 text-center">지출구분</th>
@@ -302,6 +303,7 @@ export function ExpenseApprovalInboxPage({ viewer, budgetDataError, createEviden
                       </td>
                       <td className="px-4 py-4 font-bold text-[var(--color-deep-cobalt)]">{resolution.resolutionNo}</td>
                       <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.createdAt}</td>
+                      <td className="px-4 py-4 text-[var(--color-stone)]">{resolution.actualExpenseDate ?? "미입력"}</td>
                       <td className="px-4 py-4">{resolution.author}</td>
                       <td className="px-4 py-4 font-semibold">{resolution.vendorName}</td>
                       <td className="px-4 py-4">{resolution.expenseType}</td>

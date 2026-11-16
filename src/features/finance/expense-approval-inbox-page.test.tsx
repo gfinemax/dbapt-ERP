@@ -44,6 +44,7 @@ describe("ExpenseApprovalInboxPage", () => {
       id: "approval-test-1",
       resolutionNo: "지결-2026-0001",
       createdAt: "2026-07-12",
+      actualExpenseDate: "2026-07-10",
       subject: "사무용품 구매",
       projectName: "사무국 비품 구입",
       resolutionType: "SINGLE" as const,
@@ -71,6 +72,8 @@ describe("ExpenseApprovalInboxPage", () => {
       currentApprover: "안동연 조합장",
     });
     render(<ExpenseApprovalInboxPage viewer={{ user_id: "reviewer", organization_id: "org", display_name: "오학동 사무국장", permissions: ["APPROVE"], active: true }} initialResolutions={[resolution]} transitionApproval={transitionApproval} />);
+    expect(screen.getByRole("columnheader", { name: "거래일" })).toBeInTheDocument();
+    expect(screen.getByText("2026-07-10")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "승인" }));
     await waitFor(() => expect(transitionApproval).toHaveBeenCalledWith(expect.objectContaining({
       actorLabel: "오학동 사무국장",
