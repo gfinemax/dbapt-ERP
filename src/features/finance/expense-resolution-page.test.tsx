@@ -562,7 +562,7 @@ describe("ExpenseResolutionPage", () => {
     render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
     expect(screen.getByText("계정: 업무추진비")).toBeInTheDocument();
     expect(screen.queryByText("계정: 사업추진비")).not.toBeInTheDocument();
-    expect(screen.getByText("업무목적: 유관기관 행사 축하")).toBeInTheDocument();
+    expect(screen.getByText("지출사유: 유관기관 행사 축하")).toBeInTheDocument();
   });
 
   it("lets the author reopen a pending resolution to correct its subject", async () => {

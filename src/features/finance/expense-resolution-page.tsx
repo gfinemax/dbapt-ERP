@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
-import { getResolutionAccountTitle, getResolutionBusinessPurpose } from "./expense-resolution-display";
+import { getResolutionAccountTitle } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
@@ -4177,11 +4177,11 @@ export function ExpenseResolutionPage({
               </Button>
             </div>
             <div className="overflow-x-auto">
-              <table aria-label="지출결의서 목록" className="w-full min-w-[1040px] border-collapse text-left text-sm">
+              <table aria-label="지출결의서 목록" className="w-full min-w-[1040px] table-fixed border-collapse text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
                   <tr>
-                    <th className="w-[180px] px-4 py-3 text-left">결의정보</th>
-                    <th aria-sort={sortOrder === "expense_date_asc" ? "ascending" : sortOrder === "expense_date_desc" ? "descending" : "none"} className="px-4 py-3 text-left">
+                    <th className="w-[160px] px-4 py-3 text-left">결의정보</th>
+                    <th aria-sort={sortOrder === "expense_date_asc" ? "ascending" : sortOrder === "expense_date_desc" ? "descending" : "none"} className="w-[26%] px-4 py-3 text-left">
                       <button
                         aria-label={sortOrder === "expense_date_asc" ? "결의내용을 실제 지출일 최신순으로 정렬" : "결의내용을 실제 지출일 오래된순으로 정렬"}
                         className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-semibold hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-deep-cobalt)]"
@@ -4195,10 +4195,10 @@ export function ExpenseResolutionPage({
                         </span>
                       </button>
                     </th>
-                    <th className="w-[180px] px-4 py-3 text-left">거래처</th>
-                    <th className="w-[140px] px-4 py-3 text-right">지급금액</th>
-                    <th className="sticky right-[150px] z-20 w-[190px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left">진행상태</th>
-                    <th className="sticky right-0 z-20 w-[150px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]">처리</th>
+                    <th className="px-4 py-3 text-left">거래처</th>
+                    <th className="w-[120px] px-4 py-3 text-right">지급금액</th>
+                    <th className="sticky right-[100px] z-20 w-[140px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left">진행상태</th>
+                    <th className="sticky right-0 z-20 w-[100px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]">처리</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
@@ -4270,11 +4270,11 @@ export function ExpenseResolutionPage({
                           <span className="sr-only">{getResolutionAccountTitle(resolution)}</span>
                         </td>
                         <td className="px-4 py-3 align-top text-sm font-semibold">
-                          <p>{resolution.representativeVendorName || resolution.vendorName || "-"}</p>
-                          <p className="mt-1 line-clamp-2 break-words text-xs font-normal text-[var(--color-stone)]" title={getResolutionBusinessPurpose(resolution)}>업무목적: {getResolutionBusinessPurpose(resolution)}</p>
+                          <p className="break-words">{resolution.representativeVendorName || resolution.vendorName || "-"}</p>
+                          <p className="mt-1 whitespace-pre-line break-words text-xs font-normal leading-5 text-[var(--color-stone)]">지출사유: {resolution.reason?.trim() || "미입력"}</p>
                         </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right align-top font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
-                        <td className="sticky right-[150px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
+                        <td className="sticky right-[100px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
                           <Badge value={primaryStatus} />
                           <span className="sr-only">{resolution.approvalStatus}</span>
                           <span className="sr-only">{resolution.paymentStatus}</span>

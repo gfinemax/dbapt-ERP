@@ -7,9 +7,3 @@ export function getResolutionAccountTitle(resolution: ManagedExpenseResolution) 
     .map((title) => title?.trim()).filter(Boolean))];
   return titles.length > 1 ? "복합계정" : titles[0] || resolution.representativeAccountTitle || "미지정";
 }
-
-export function getResolutionBusinessPurpose(resolution: ManagedExpenseResolution) {
-  if (resolution.resolutionType !== "BATCH") return resolution.reason?.trim() || "업무목적 미입력";
-  const purposes = [...new Set(resolution.expenseItems.map((item) => item.businessPurpose?.trim() || resolution.reason?.trim()).filter(Boolean))];
-  return purposes.length ? purposes.join(" · ") : resolution.reason?.trim() || "업무목적 미입력";
-}
