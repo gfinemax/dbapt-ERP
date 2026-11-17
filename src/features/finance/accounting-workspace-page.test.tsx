@@ -82,8 +82,8 @@ describe("accounting drafts and original records", () => {
     render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />);
     const detail = screen.getByRole("region", { name: "전표 상세" });
 
-    expect(detail.parentElement).toHaveClass("xl:sticky", "xl:top-4", "xl:self-start");
-    expect(detail).toHaveClass("xl:max-h-[calc(100vh-2rem)]", "xl:overflow-y-auto");
+    expect(detail.parentElement).toHaveClass("xl:sticky", "xl:top-36", "xl:self-start");
+    expect(detail).toHaveClass("xl:max-h-[calc(100vh-10rem)]", "xl:overflow-y-auto");
     expect(detail).not.toHaveClass("xl:sticky");
   });
 
