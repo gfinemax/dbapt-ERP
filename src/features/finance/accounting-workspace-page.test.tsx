@@ -80,8 +80,10 @@ describe("accounting drafts and original records", () => {
 
   it("keeps the selected voucher detail visible while the adjacent list scrolls", () => {
     render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />);
+    const list = screen.getByRole("region", { name: "전표 목록" });
     const detail = screen.getByRole("region", { name: "전표 상세" });
 
+    expect(list).toHaveClass("xl:max-h-[calc(100vh-10rem)]", "xl:overflow-y-auto");
     expect(detail.parentElement).toHaveClass("xl:sticky", "xl:top-36", "xl:self-start");
     expect(detail).toHaveClass("xl:max-h-[calc(100vh-10rem)]", "xl:overflow-y-auto");
     expect(detail).not.toHaveClass("xl:sticky");
