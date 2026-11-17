@@ -4208,6 +4208,9 @@ export function ExpenseResolutionPage({
                     </tr>
                   ) : null}
                   {visibleResolutions.map((resolution) => {
+                    const canEditAccount = !isLegacySmallExpenseResolution(resolution) && (viewer
+                      ? canEditExpense(resolution, viewer)
+                      : resolution.author === currentUserName && ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus));
                     const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution, viewer);
                     const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
                     const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
@@ -4239,6 +4242,18 @@ export function ExpenseResolutionPage({
                           <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
                           {resolution.projectName ? <p className="mt-1 truncate text-xs text-[var(--color-stone)]" title={resolution.projectName}>프로젝트: {resolution.projectName}</p> : null}
                           {resolution.representativeAccountTitle ? <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={resolution.representativeAccountTitle}>계정: {resolution.representativeAccountTitle}</p> : null}
+                          {canEditAccount ? (
+                            viewer ? <Link
+                              aria-label={`${resolution.resolutionNo} 계정 변경`}
+                              className="mt-1 inline-flex rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)] hover:bg-blue-50"
+                              href={`/finance/expense-resolutions?resolutionId=${encodeURIComponent(resolution.id)}&mode=edit`}
+                            >계정 변경</Link> : <button
+                              aria-label={`${resolution.resolutionNo} 계정 변경`}
+                              className="mt-1 inline-flex rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)] hover:bg-blue-50"
+                              onClick={() => { void openEditModal(resolution); }}
+                              type="button"
+                            >계정 변경</button>
+                          ) : null}
                           <div className="mt-1.5 flex flex-wrap gap-1">
                             {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
                             {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
