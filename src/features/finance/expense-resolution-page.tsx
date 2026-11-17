@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
-import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionOverBudgetAmount } from "./expense-resolution-display";
+import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionListSubject, getResolutionOverBudgetAmount, isPostApprovalResolution } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
@@ -4240,8 +4240,8 @@ export function ExpenseResolutionPage({
                           {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">{resolution.cardVerificationSource === "BANK_TRANSACTION" ? "통장거래 확인완료" : "카드내역 매칭완료"}</p> : null}
                         </td>
                         <td className="px-4 py-3 align-top">
-                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} title={getResolutionSubject(resolution)} type="button">
-                            {getResolutionSubject(resolution)}
+                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} title={getResolutionListSubject(resolution)} type="button">
+                            {getResolutionListSubject(resolution)}
                           </button>
                           <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
                           {resolution.projectName ? <p className="mt-1 truncate text-xs text-[var(--color-stone)]" title={resolution.projectName}>프로젝트: {resolution.projectName}</p> : null}
@@ -4259,7 +4259,7 @@ export function ExpenseResolutionPage({
                             >계정 변경</button>
                           ) : null}
                           <div className="mt-1.5 flex flex-wrap gap-1">
-                            {resolution.isPostApproval ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
+                            {isPostApprovalResolution(resolution) ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
                             {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
                             {resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId && !resolution.bankTransactions?.length ? <ComplianceBadge label="통장 미연결" tone="danger" /> : null}
                             {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}

@@ -1,5 +1,23 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
+export function isPostApprovalResolution(resolution: {
+  expenseKind?: string;
+  isPostApproval?: boolean;
+}) {
+  return resolution.isPostApproval === true || resolution.expenseKind === "BANK_POST_APPROVAL";
+}
+
+export function getResolutionListSubject(resolution: Pick<ManagedExpenseResolution,
+  "expenseKind" | "isPostApproval" | "operationExpenseDetail" | "projectName" | "resolutionType" | "subject"
+>) {
+  const subject = resolution.subject?.trim()
+    || (resolution.resolutionType === "BATCH" ? resolution.projectName : resolution.operationExpenseDetail)
+    || "건명 미입력";
+  if (!isPostApprovalResolution(resolution)) return subject;
+
+  return subject.replace(/\s*사후결의$/u, "").trim() || subject;
+}
+
 export function getBudgetOverageAmount(remainingBudgetAmount: number) {
   return Math.max(0, -remainingBudgetAmount);
 }

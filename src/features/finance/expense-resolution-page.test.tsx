@@ -566,6 +566,23 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText("지출사유: 유관기관 행사 축하")).toBeInTheDocument();
   });
 
+  it("shows one post-approval badge and removes the duplicate suffix from an older list title", () => {
+    const resolution = expenseResolutionFixture({
+      expenseKind: "BANK_POST_APPROVAL",
+      id: "legacy-post-approval-display",
+      isPostApproval: undefined,
+      subject: "2026-10-31 축하화환 사후결의",
+    });
+
+    render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
+
+    const row = screen.getByRole("button", { name: "TEST-0001" }).closest("tr");
+    expect(row).not.toBeNull();
+    expect(within(row!).getByRole("button", { name: "2026-10-31 축하화환" })).toBeInTheDocument();
+    expect(within(row!).queryByText("2026-10-31 축하화환 사후결의")).not.toBeInTheDocument();
+    expect(within(row!).getByText("사후결의")).toBeInTheDocument();
+  });
+
   it("does not show a positive remaining budget as an over-budget badge", () => {
     const resolution = expenseResolutionFixture({
       id: "remaining-budget-display",
