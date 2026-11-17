@@ -557,7 +557,7 @@ describe("ExpenseResolutionPage", () => {
   it("shows the selected expense detail instead of the broad allocation group in the list", () => {
     const resolution = expenseResolutionFixture({
       id: "account-display", representativeAccountTitle: "사업추진비", reason: "유관기관 행사 축하", vendorName: "축하화환",
-      expenseDetailId: "promotion", operationExpenseDetail: "업무추진비",
+      operationExpenseDetail: "업무추진비",
       accountAllocations: [{ id: "allocation", accountTitle: "사업추진비", amount: "130000", budgetItem: "업무추진비", description: "" }],
     });
     render(<ExpenseResolutionPage initialResolutions={[resolution]} />);

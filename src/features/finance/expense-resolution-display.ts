@@ -1,7 +1,7 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
 export function getResolutionAccountTitle(resolution: ManagedExpenseResolution) {
-  const selectedDetailTitle = resolution.resolutionType !== "BATCH" && resolution.expenseDetailId
+  const selectedDetailTitle = resolution.resolutionType !== "BATCH"
     ? resolution.operationExpenseDetail?.trim()
     : "";
   if (selectedDetailTitle) return selectedDetailTitle;
