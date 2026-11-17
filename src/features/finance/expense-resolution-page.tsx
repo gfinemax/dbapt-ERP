@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
-import { getResolutionAccountTitle } from "./expense-resolution-display";
+import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionOverBudgetAmount } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
@@ -1488,7 +1488,9 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution, budget
     representativeAccountTitle: resolution.representativeAccountTitle ?? (resolutionType === "BATCH" ? batchSummary.representativeAccountTitle : resolution.expenseType),
     itemCount: resolution.itemCount ?? (resolutionType === "BATCH" ? batchSummary.itemCount : 1),
     overBudgetItemCount: resolution.overBudgetItemCount ?? batchSummary.overBudgetItemCount,
-    totalOverBudgetAmount: resolution.totalOverBudgetAmount ?? batchSummary.totalOverBudgetAmount,
+    totalOverBudgetAmount: resolutionType === "BATCH"
+      ? resolution.totalOverBudgetAmount ?? batchSummary.totalOverBudgetAmount
+      : getBudgetOverageAmount(resolution.remainingBudgetAmount ?? 0),
     expenseItems,
     voucherCreationMode: resolution.voucherCreationMode ?? (batchSummary.representativeAccountTitle === "복합계정" || batchSummary.representativeVendorName === "다수 거래처" ? "ITEM_VOUCHER" : "GROUP_VOUCHER"),
     paymentBank: resolution.bankName,
@@ -2154,7 +2156,7 @@ function buildExpenseResolutionExportRow(resolution: ManagedExpenseResolution) {
     formatExpenseResolutionAmount(resolution.vat),
     formatExpenseResolutionAmount(resolution.totalPaymentAmount),
     `${resolution.overBudgetItemCount}건`,
-    formatExpenseResolutionAmount(resolution.totalOverBudgetAmount),
+    formatExpenseResolutionAmount(getResolutionOverBudgetAmount(resolution)),
     resolution.currentApprover ?? "없음",
     resolution.approvalStatus,
     resolution.paymentStatus,
@@ -3618,7 +3620,7 @@ export function ExpenseResolutionPage({
       representativeAccountTitle: isBatch ? batchSummary.representativeAccountTitle : new Set(formState.accountAllocations.map((allocation) => allocation.accountTitle)).size > 1 ? "복합계정" : formState.accountAllocations[0]?.accountTitle ?? formState.expenseType,
       itemCount: isBatch ? batchSummary.itemCount : formSingleSummary.items.length,
       overBudgetItemCount: isBatch ? batchSummary.overBudgetItemCount : formBudgetSnapshot.remainingBudgetAmount < 0 ? 1 : 0,
-      totalOverBudgetAmount: isBatch ? batchSummary.totalOverBudgetAmount : Math.max(0, Math.abs(formBudgetSnapshot.remainingBudgetAmount)),
+      totalOverBudgetAmount: isBatch ? batchSummary.totalOverBudgetAmount : getBudgetOverageAmount(formBudgetSnapshot.remainingBudgetAmount),
       batchPaymentMode: formState.batchPaymentMode,
       voucherCreationMode: formState.voucherCreationMode,
       expenseItems: isBatch ? batchSummary.items : [],
@@ -4263,7 +4265,7 @@ export function ExpenseResolutionPage({
                             {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
                             {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
                             {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
-                            {resolution.totalOverBudgetAmount > 0 ? <ComplianceBadge label={`예산초과 ${formatExpenseResolutionAmount(resolution.totalOverBudgetAmount)}`} tone="warning" /> : null}
+                            {getResolutionOverBudgetAmount(resolution) > 0 ? <ComplianceBadge label={`예산초과 ${formatExpenseResolutionAmount(getResolutionOverBudgetAmount(resolution))}`} tone="warning" /> : null}
                           </div>
                           <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>

@@ -1,5 +1,21 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
+export function getBudgetOverageAmount(remainingBudgetAmount: number) {
+  return Math.max(0, -remainingBudgetAmount);
+}
+
+export function getResolutionOverBudgetAmount(resolution: {
+  budgetSnapshot?: { remainingBudgetAmount?: number };
+  resolutionType?: string;
+  totalOverBudgetAmount?: number;
+}) {
+  if (resolution.resolutionType === "BATCH") {
+    return Math.max(0, resolution.totalOverBudgetAmount ?? 0);
+  }
+
+  return getBudgetOverageAmount(resolution.budgetSnapshot?.remainingBudgetAmount ?? 0);
+}
+
 export function getResolutionAccountTitle(resolution: ManagedExpenseResolution) {
   const selectedDetailTitle = resolution.resolutionType !== "BATCH"
     ? resolution.operationExpenseDetail?.trim()

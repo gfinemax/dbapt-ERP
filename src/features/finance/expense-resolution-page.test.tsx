@@ -566,6 +566,33 @@ describe("ExpenseResolutionPage", () => {
     expect(screen.getByText("지출사유: 유관기관 행사 축하")).toBeInTheDocument();
   });
 
+  it("does not show a positive remaining budget as an over-budget badge", () => {
+    const resolution = expenseResolutionFixture({
+      id: "remaining-budget-display",
+      overBudgetItemCount: 0,
+      totalOverBudgetAmount: 470_000,
+      budgetSnapshot: {
+        budgetCheckStatus: "정상",
+        budgetPeriod: "2026-10",
+        budgetUsageRate: 21.7,
+        calculationBasis: "사업추진 관련 업무추진비·경조사 등",
+        currentAnnualBudgetAmount: 7_200_000,
+        currentRequestAmount: 130_000,
+        expectedUsedAmount: 130_000,
+        monthlyBudgetAmount: 600_000,
+        paymentWaitingAmount: 0,
+        pendingApprovalAmount: 130_000,
+        previousAnnualBudgetAmount: 0,
+        remainingBudgetAmount: 470_000,
+        usedAmount: 0,
+      },
+    });
+
+    render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
+
+    expect(screen.queryByText("예산초과 470,000원")).not.toBeInTheDocument();
+  });
+
   it("lets the author reopen a pending resolution to correct its subject", async () => {
     vi.useRealTimers();
     const persistResolution = vi.fn(async (resolution) => resolution);
