@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import { getResolutionAccountTitle, getResolutionBusinessPurpose } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
@@ -2477,7 +2478,7 @@ export function ExpenseResolutionPage({
     return initialEntryStart === "reimbursement" ? { ...form, expenseTiming: "REIMBURSEMENT", paymentFlowType: "사후정산" } : form;
   });
   const [quickConversionSourceId, setQuickConversionSourceId] = useState<string | null>(initialQuickExpense?.sourceId ?? null);
-  const expenseDetailSelectionRef = useRef<"AUTO" | "MANUAL">("AUTO");
+  const expenseDetailSelectionRef = useRef<"AUTO" | "MANUAL">(initialEditResolution ? "MANUAL" : "AUTO");
   const [paymentForm, setPaymentForm] = useState<PaymentFormState>({
     actualPaidAmount: "",
     accountHolder: "",
@@ -2706,7 +2707,7 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
     setSelectedDetailId(null);
     setEditingResolutionId(resolution.id);
-    expenseDetailSelectionRef.current = resolution.expenseDetailId ? "MANUAL" : "AUTO";
+    expenseDetailSelectionRef.current = "MANUAL";
     setFormState(createEditFormState(resolution));
     setIsCreateModalOpen(true);
   }
@@ -3022,6 +3023,7 @@ export function ExpenseResolutionPage({
   }
 
   function updateAccountAllocation(id: string, key: keyof AccountAllocation, value: string) {
+    if (key === "accountTitle" || key === "budgetItem") expenseDetailSelectionRef.current = "MANUAL";
     setFormState((current) => {
       const targetIndex = current.accountAllocations.findIndex((allocation) => allocation.id === id);
       const accountAllocations = current.accountAllocations.map((allocation) => {
@@ -4241,7 +4243,7 @@ export function ExpenseResolutionPage({
                           </button>
                           <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
                           {resolution.projectName ? <p className="mt-1 truncate text-xs text-[var(--color-stone)]" title={resolution.projectName}>프로젝트: {resolution.projectName}</p> : null}
-                          {resolution.representativeAccountTitle ? <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={resolution.representativeAccountTitle}>계정: {resolution.representativeAccountTitle}</p> : null}
+                          <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={getResolutionAccountTitle(resolution)}>계정: {getResolutionAccountTitle(resolution)}</p>
                           {canEditAccount ? (
                             viewer ? <Link
                               aria-label={`${resolution.resolutionNo} 계정 변경`}
@@ -4265,9 +4267,12 @@ export function ExpenseResolutionPage({
                           </div>
                           <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
                           <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
-                          <span className="sr-only">{resolution.representativeAccountTitle}</span>
+                          <span className="sr-only">{getResolutionAccountTitle(resolution)}</span>
                         </td>
-                        <td className="px-4 py-3 align-top text-sm font-semibold">{resolution.representativeVendorName || resolution.vendorName || "-"}</td>
+                        <td className="px-4 py-3 align-top text-sm font-semibold">
+                          <p>{resolution.representativeVendorName || resolution.vendorName || "-"}</p>
+                          <p className="mt-1 line-clamp-2 break-words text-xs font-normal text-[var(--color-stone)]" title={getResolutionBusinessPurpose(resolution)}>업무목적: {getResolutionBusinessPurpose(resolution)}</p>
+                        </td>
                         <td className="whitespace-nowrap px-4 py-3 text-right align-top font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
                         <td className="sticky right-[150px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
                           <Badge value={primaryStatus} />

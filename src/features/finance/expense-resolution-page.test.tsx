@@ -537,6 +537,34 @@ describe("ExpenseResolutionPage", () => {
     await waitFor(() => expect(persistResolution).toHaveBeenCalledWith(expect.objectContaining({ budgetItem: "제세공과금>통신비", expenseDetailId: "detail-communications", operationExpenseDetail: "통신비" })));
   });
 
+  it("preserves an existing account when editing a document without an expense detail", async () => {
+    vi.useRealTimers();
+    const persistResolution = vi.fn(async (resolution) => resolution);
+    const resolution = expenseResolutionFixture({
+      id: "preserve-account", author: "오학동 사무국장", subject: "업무추진비 축하화환",
+      representativeAccountTitle: "업무추진비", reason: "유관기관 행사 축하",
+      totalPaymentAmount: 130000, supplyAmount: 130000,
+    });
+    const expenseDetails = [{ id: "promotion", code: "BUSINESS-PROMOTION", groupName: "업무추진비", name: "업무추진비", budgetItem: "업무추진비", status: "CONFIRMED" as const, quickExpenseEligible: false }];
+    render(<ExpenseResolutionPage initialEditResolutionId={resolution.id} initialResolutions={[resolution]} initialExpenseDetails={expenseDetails} persistResolution={persistResolution} />);
+    const dialog = within(await getExpenseResolutionDialog("지출결의서 수정"));
+    await act(async () => { await new Promise((resolve) => window.setTimeout(resolve, 20)); });
+    fireEvent.click(dialog.getByRole("button", { name: "수정사항 저장" }));
+    await waitFor(() => expect(persistResolution).toHaveBeenCalledOnce());
+    expect(persistResolution.mock.calls[0][0]).toMatchObject({ representativeAccountTitle: "업무추진비", accountAllocations: [expect.objectContaining({ accountTitle: "업무추진비" })] });
+  });
+
+  it("shows the allocation account and business purpose in the list", () => {
+    const resolution = expenseResolutionFixture({
+      id: "account-display", representativeAccountTitle: "사업추진비", reason: "유관기관 행사 축하", vendorName: "축하화환",
+      accountAllocations: [{ id: "allocation", accountTitle: "업무추진비", amount: "130000", budgetItem: "업무추진비", description: "" }],
+    });
+    render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
+    expect(screen.getByText("계정: 업무추진비")).toBeInTheDocument();
+    expect(screen.queryByText("계정: 사업추진비")).not.toBeInTheDocument();
+    expect(screen.getByText("업무목적: 유관기관 행사 축하")).toBeInTheDocument();
+  });
+
   it("lets the author reopen a pending resolution to correct its subject", async () => {
     vi.useRealTimers();
     const persistResolution = vi.fn(async (resolution) => resolution);

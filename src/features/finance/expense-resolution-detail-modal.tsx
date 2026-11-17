@@ -12,6 +12,7 @@ import { policySummary } from "./expense-approval-period";
 import type { ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
+import { getResolutionAccountTitle } from "./expense-resolution-display";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 import {
   Badge,
@@ -320,6 +321,7 @@ function ExpenseResolutionDetailWorkspace({
                   </div>
                   <dl className="mt-4 grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
                     <InlineFact label="지출내용" value={getResolutionSubject(resolution)} />
+                    <InlineFact label="계정과목" value={getResolutionAccountTitle(resolution)} />
                     <InlineFact label="예산귀속" value={resolution.budgetItem || "미지정"} />
                     <InlineFact label="공급가액 / 부가세" value={`${formatExpenseResolutionAmount(resolution.supplyAmount)} / ${formatExpenseResolutionAmount(resolution.vat)}`} />
                     <InlineFact label="지출예정일" value={resolution.plannedPaymentDate || "미정"} />
@@ -615,7 +617,7 @@ export function ExpenseResolutionDetailModal({
               <DetailSection title="프로젝트 일괄 지출결의 요약" wide>
                 <DetailItem label="작성방식" value={getResolutionTypeFullLabel(resolution.resolutionType)} />
                 <DetailItem label="프로젝트/사업과제" value={resolution.projectName || "-"} />
-                <DetailItem label="대표 계정항목" value={resolution.representativeAccountTitle} />
+                <DetailItem label="대표 계정항목" value={getResolutionAccountTitle(resolution)} />
                 <DetailItem label="대표 거래처" value={resolution.representativeVendorName} />
                 <DetailItem label="총지급액" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} />
                 <DetailItem label="항목수" value={`${resolution.itemCount}건`} />
