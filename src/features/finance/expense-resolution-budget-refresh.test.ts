@@ -26,4 +26,14 @@ describe("refreshOpenExpenseResolutionBudgetSnapshots", () => {
     const approved = expenseResolutionFixture({ approvalStatus: "승인완료" });
     expect(refreshOpenExpenseResolutionBudgetSnapshots([approved], {})[0]).toBe(approved);
   });
+
+  it("does not infer an official link from a similar display name without a budget ID", () => {
+    const resolution = expenseResolutionFixture({
+      approvalStatus: "작성중",
+      budgetItem: "운영비 > 복리후생비(식대)",
+    });
+    const profile = { budgetId: "budget-1", budgetPeriod: "2026-07", calculationBasis: "식비 등", currentAnnualBudgetAmount: 7_800_000, monthlyBudgetAmount: 650_000, paymentWaitingAmount: 0, pendingApprovalAmount: 0, previousAnnualBudgetAmount: 0, reservedAmount: 0, usedAmount: 0 };
+
+    expect(refreshOpenExpenseResolutionBudgetSnapshots([resolution], { 복리후생비: profile })[0]).toBe(resolution);
+  });
 });

@@ -1,5 +1,5 @@
 import type { BudgetProfile, ManagedExpenseResolution } from "./expense-resolution-page";
-import { resolveBudgetProfile } from "./budget-profile-lookup";
+import { resolveBudgetProfileById } from "./budget-profile-lookup";
 
 export function refreshOpenExpenseResolutionBudgetSnapshots(
   resolutions: ManagedExpenseResolution[],
@@ -8,7 +8,7 @@ export function refreshOpenExpenseResolutionBudgetSnapshots(
   return resolutions.map((resolution): ManagedExpenseResolution => {
     const stored = resolution.budgetSnapshot;
     if (resolution.approvalStatus === "승인완료") return resolution;
-    const profile = resolveBudgetProfile(resolution.budgetItem, stored.budgetPeriod, budgetProfiles);
+    const profile = resolveBudgetProfileById(resolution.budgetId, stored.budgetPeriod, budgetProfiles);
     if (!profile || (profile.monthlyBudgetAmount <= 0 && profile.currentAnnualBudgetAmount <= 0)) return resolution;
     const currentIncluded = Boolean(
       profile.budgetId

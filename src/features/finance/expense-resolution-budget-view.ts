@@ -1,5 +1,5 @@
 import { listExpenseBudgetProfiles } from "./budget-profile-repository";
-import { resolveBudgetProfile } from "./budget-profile-lookup";
+import { resolveBudgetProfileById } from "./budget-profile-lookup";
 import { refreshOpenExpenseResolutionBudgetSnapshots } from "./expense-resolution-budget-refresh";
 import type { BudgetProfile, ManagedExpenseResolution } from "./expense-resolution-page";
 
@@ -65,8 +65,8 @@ export async function loadExpenseResolutionBudgetView(
   const refreshed = refreshOpenExpenseResolutionBudgetSnapshots(resolutions, budgetProfiles)
     .map(applyApprovedBudgetDecision);
   const lookupStatuses = Object.fromEntries(refreshed.map((resolution) => {
-    const profile = resolveBudgetProfile(
-      resolution.budgetItem,
+    const profile = resolveBudgetProfileById(
+      resolution.budgetId,
       resolution.budgetSnapshot?.budgetPeriod,
       budgetProfiles,
     );
@@ -75,6 +75,27 @@ export async function loadExpenseResolutionBudgetView(
   })) as Record<string, ExpenseBudgetLookupStatus>;
 
   return { budgetProfiles, lookupStatuses, resolutions: refreshed };
+}
+
+export function getExpenseResolutionBudgetLinkError(
+  resolution: ManagedExpenseResolution,
+  lookupStatus: ExpenseBudgetLookupStatus | undefined,
+): string | undefined {
+  if (resolution.resolutionType === "BATCH") return undefined;
+  const governed = Boolean(resolution.creationSource) || resolution.expenseKind === "BANK_POST_APPROVAL";
+  if (!governed || resolution.budgetOverReason?.trim()) return undefined;
+
+  const budgetPeriod = resolution.budgetSnapshot?.budgetPeriod;
+  const expectedBudgetMonth = budgetPeriod ? `${budgetPeriod}-01` : undefined;
+  if (
+    !resolution.budgetId
+    || !resolution.budgetMonth
+    || resolution.budgetMonth !== expectedBudgetMonth
+    || lookupStatus !== "LINKED"
+  ) {
+    return "공식 예산 세부항목과 귀속월을 연결하거나 예산 외 집행 사유를 입력한 후 승인요청해줘.";
+  }
+  return undefined;
 }
 
 export function createExpenseBudgetDecisionSnapshot(

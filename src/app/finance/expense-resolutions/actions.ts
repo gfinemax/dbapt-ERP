@@ -18,7 +18,7 @@ import { extractExpenseEvidenceFile } from "@/features/finance/expense-evidence-
 import { extractExpenseEvidenceWithOpenAI } from "@/features/finance/expense-evidence-openai.server";
 import { compressExpenseEvidenceFile } from "@/features/finance/expense-evidence-compression.server";
 import { buildExpenseEvidenceOcrSourcePath, buildExpenseEvidenceStoragePath } from "@/features/finance/expense-evidence-storage";
-import { getExpenseResolutionDetailFromSupabase, getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, commitExpenseSaveBatch, upsertExpenseResolutionInSupabase, type ExpenseBankDraftReviewContract } from "@/features/finance/expense-resolution-repository";
+import { getExpenseResolutionSnapshotFromSupabase, updateExpenseDisbursementInSupabase, commitExpenseApprovalBatch, commitExpenseCommand, commitExpenseSaveBatch, upsertExpenseResolutionInSupabase, type ExpenseBankDraftReviewContract } from "@/features/finance/expense-resolution-repository";
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type BatchApprovalTransitionRequest } from "@/features/finance/expense-approval-workflow";
 import { DisbursementWorkflowError, transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "@/features/finance/expense-disbursement-workflow";
 import { validateExpenseResolutionWorkflow } from "@/features/finance/expense-resolution-domain";
@@ -33,7 +33,7 @@ import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-t
 import { getExpenseVoucherSyncTargets } from "@/features/finance/expense-voucher-sync";
 import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options.server";
 
-import { createExpenseBudgetDecisionSnapshot, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
+import { createExpenseBudgetDecisionSnapshot, getExpenseResolutionBudgetLinkError, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
 const expenseEvidenceBucket = "expense-evidence";
 
@@ -45,7 +45,14 @@ export async function loadExpenseResolutionFormOptionsAction() {
 }
 
 export async function loadExpenseResolutionDetailAction(id: string) {
-  return getExpenseResolutionDetailFromSupabase(id);
+  const { actor, resolution } = await requireExpenseRecord(id);
+  if (!resolution.budgetSnapshot?.budgetPeriod) return resolution;
+  try {
+    return (await loadExpenseResolutionBudgetView([resolution], actor.organization_id)).resolutions[0];
+  } catch (error) {
+    console.warn("[expense-resolution-detail] Live budget refresh failed", error);
+    return resolution;
+  }
 }
 
 async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolution, settings?: ExpenseComplianceSettings | null) {
@@ -363,6 +370,18 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
   if (resolution.expenseKind) {
     resolution = { ...resolution, evidenceStatus: normalizeEvidenceStatus(resolution.evidenceKind ?? "NONE", resolution.evidenceStatus ?? "NONE") };
   }
+  if (resolution.resolutionType === "SINGLE" && resolution.budgetId) {
+    const budgetView = await loadExpenseResolutionBudgetView([resolution], actor.organization_id);
+    if (budgetView.lookupStatuses[resolution.id] !== "LINKED") {
+      throw new Error("선택한 예산이 현재 공식 예산과 연결되지 않아. 예산 세부항목과 귀속월을 다시 선택해줘.");
+    }
+    const liveBudgetResolution = budgetView.resolutions[0];
+    resolution = {
+      ...resolution,
+      budgetMonth: `${liveBudgetResolution.budgetSnapshot.budgetPeriod}-01`,
+      budgetSnapshot: liveBudgetResolution.budgetSnapshot,
+    };
+  }
   resolution = prepareExpenseApprovalDraft(resolution, existingResolution ?? null, actor.permissions.includes("ADMIN"));
   const saved = await upsertExpenseResolutionInSupabase(resolution, existingResolution ?? null, randomUUID());
   revalidatePath("/finance/expense-resolutions");
@@ -509,6 +528,8 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
     ? createExpenseBudgetDecisionSnapshot(liveBudgetResolution, budgetLookupStatus)
     : undefined;
   if (input.command === "REQUEST" || input.command === "APPROVE" && isFinal) {
+    const budgetLinkError = getExpenseResolutionBudgetLinkError(current, budgetLookupStatus);
+    if (budgetLinkError) throw new Error(budgetLinkError);
     if (input.command === "REQUEST") {
       const validation = validateExpenseResolutionWorkflow({ ...current,
         accountAllocationTotal: current.resolutionType === "BATCH" ? undefined : current.accountAllocations?.reduce((sum, line) => sum + (Number(line.amount) || 0), 0),
@@ -586,6 +607,7 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
   for (let itemIndex = 0; itemIndex < input.items.length; itemIndex += 1) {
     const request = input.items[itemIndex];
     const { resolution: current, binding } = accesses[itemIndex];
+    const budgetLookupStatus = budgetView?.lookupStatuses[current.id];
     assertExpenseApprovalPeriod(current);
     assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, "APPROVE");
     if (current.approvalStatus !== request.expectedStatus || current.currentApprover !== request.expectedCurrentApprover) {
@@ -604,6 +626,8 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
     if (activeIndex < 0 || assigned?.approver_user_id !== actor.user_id) throw new Error(`${current.resolutionNo}: 현재 순서에 연결된 결재자만 처리할 수 있습니다.`);
     const isFinal = activeIndex === current.approvalLine.length - 1;
     if (isFinal) {
+      const budgetLinkError = getExpenseResolutionBudgetLinkError(current, budgetLookupStatus);
+      if (budgetLinkError) throw new Error(`${current.resolutionNo}: ${budgetLinkError}`);
       if (current.expenseBurdenType === "CORPORATE_CARD" && current.cardSettlementMode === "BANK_DIRECT") {
         if (!isBankVerifiedCorporateCard(current)) throw new Error(`${current.resolutionNo}: 현금카드의 통장 건별출금 내역을 먼저 연결해주세요.`);
       } else if (current.cardReconciliationStatus === "PENDING" && !current.cardTransactionId) {
@@ -630,11 +654,10 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
       ? historyItem
       : { ...historyItem, actorName: actor.display_name, actorTitle: "" });
     const liveResolution = liveById.get(current.id) ?? current;
-    const lookupStatus = budgetView?.lookupStatuses[current.id];
-    if (lookupStatus && history[current.history.length]) {
+    if (budgetLookupStatus && history[current.history.length]) {
       history[current.history.length] = {
         ...history[current.history.length],
-        budgetDecision: createExpenseBudgetDecisionSnapshot(liveResolution, lookupStatus),
+        budgetDecision: createExpenseBudgetDecisionSnapshot(liveResolution, budgetLookupStatus),
       };
     }
     commands.push({

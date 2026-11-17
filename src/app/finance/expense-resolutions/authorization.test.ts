@@ -113,6 +113,67 @@ it("uses the live January budget for approval without overwriting the stored sou
   }
 });
 
+it("blocks a new bank post-approval request when only a similar budget name exists", async () => {
+  const access = fixture();
+  const resolution = expenseResolutionFixture({
+    id: "r",
+    author: "author",
+    approvalStatus: "작성중",
+    currentApprover: undefined,
+    budgetItem: "운영비 > 복리후생비(식대)",
+    expenseKind: "BANK_POST_APPROVAL",
+    totalPaymentAmount: 69_000,
+    approvalLine: access.resolution.approvalLine.map((step, index) => ({ ...step, order: index + 1, status: "대기" as const })),
+  });
+  mocks.access.mockResolvedValue({ ...access, actor: { ...access.actor, user_id: "author" }, resolution });
+  mocks.budgets.mockResolvedValue({ 복리후생비: {
+    budgetId: "official-benefits",
+    budgetPeriod: "2026-07",
+    calculationBasis: "기존 편성예산",
+    currentAnnualBudgetAmount: 7_800_000,
+    monthlyBudgetAmount: 650_000,
+    paymentWaitingAmount: 0,
+    pendingApprovalAmount: 0,
+    previousAnnualBudgetAmount: 0,
+    reservedAmount: 0,
+    usedAmount: 0,
+  } });
+
+  await expect(transitionExpenseApprovalAction({
+    ...request,
+    command: "REQUEST",
+    expectedStatus: "작성중",
+    expectedCurrentApprover: undefined,
+  })).rejects.toThrow("공식 예산 세부항목과 귀속월");
+  expect(mocks.transition).not.toHaveBeenCalled();
+  expect(mocks.commit).not.toHaveBeenCalled();
+});
+
+it("blocks the same missing budget link at final approval in the batch path", async () => {
+  const access = fixture();
+  const approvalLine = [{ approver: "이전 이름", role: "담당자", status: "결재대기" as const, order: 1 }];
+  const resolution = expenseResolutionFixture({
+    id: "r",
+    resolutionNo: "지결-TEST",
+    approvalStatus: "승인대기",
+    currentApprover: "이전 이름 담당자",
+    approvalLine,
+    budgetItem: "운영비 > 복리후생비(식대)",
+    expenseKind: "BANK_POST_APPROVAL",
+    totalPaymentAmount: 69_000,
+  });
+  const binding = { ...access.binding, steps: [access.binding.steps[0]] };
+  mocks.access.mockResolvedValue({ ...access, resolution, binding });
+
+  await expect(transitionExpenseApprovalBatchAction({
+    idempotencyKey: "missing-budget",
+    items: [{ expectedAuthorizationVersion: 2, expectedCurrentApprover: "이전 이름 담당자", expectedStatus: "승인대기", resolutionId: "r" }],
+    reason: "최종 승인",
+    referenceDate: "2026-11-17",
+  })).rejects.toThrow("지결-TEST: 공식 예산 세부항목과 귀속월");
+  expect(mocks.commitBatch).not.toHaveBeenCalled();
+});
+
 function beforeJulyDirectorAccess() {
   const access = fixture();
   const approvalLine = access.resolution.approvalLine.map((step, index) => index === 0 ? { ...step, approver: "장현제", role: "이사" } : step);

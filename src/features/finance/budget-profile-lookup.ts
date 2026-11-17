@@ -44,3 +44,16 @@ export function resolveBudgetProfile<T>(
   }
   return budgetProfiles[matchingItem];
 }
+
+export function resolveBudgetProfileById<T extends { budgetId?: string; budgetPeriod?: string }>(
+  budgetId: string | undefined,
+  budgetPeriod: string | undefined,
+  budgetProfiles: Record<string, T>,
+): T | undefined {
+  if (!budgetId) return undefined;
+
+  const matches = Object.values(budgetProfiles).filter((profile) => profile.budgetId === budgetId);
+  if (!matches.length) return undefined;
+  if (!budgetPeriod) return matches[0];
+  return matches.find((profile) => profile.budgetPeriod === budgetPeriod);
+}

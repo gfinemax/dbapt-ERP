@@ -58,6 +58,30 @@ describe("expense resolution budget view", () => {
     });
   });
 
+  it("keeps a name-only match unbudgeted until an official budget ID is saved", async () => {
+    const resolution = expenseResolutionFixture({
+      budgetItem: "운영비 > 복리후생비(식대)",
+      id: "name-only",
+    });
+    mocks.budgets.mockResolvedValue({ 복리후생비: {
+      budgetId: "budget-jan",
+      budgetPeriod: "2026-07",
+      calculationBasis: "기존 편성예산",
+      currentAnnualBudgetAmount: 7_800_000,
+      monthlyBudgetAmount: 650_000,
+      paymentWaitingAmount: 0,
+      pendingApprovalAmount: 0,
+      previousAnnualBudgetAmount: 0,
+      reservedAmount: 0,
+      usedAmount: 0,
+    } });
+
+    const result = await loadExpenseResolutionBudgetView([resolution], "org");
+
+    expect(result.lookupStatuses).toEqual({ "name-only": "UNBUDGETED" });
+    expect(result.resolutions[0]).toBe(resolution);
+  });
+
   it("uses the approval-time official decision for an approved display without changing the stored record", async () => {
     const resolution = expenseResolutionFixture({
       approvalStatus: "승인완료",
