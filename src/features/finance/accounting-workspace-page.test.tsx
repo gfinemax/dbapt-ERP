@@ -78,6 +78,15 @@ describe("accounting drafts and original records", () => {
     expect(within(detail).getByText(/연결 초안 수정.*지출 성격에 맞는 계정/)).toBeInTheDocument();
   });
 
+  it("keeps the selected voucher detail visible while the adjacent list scrolls", () => {
+    render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="draft" />);
+    const detail = screen.getByRole("region", { name: "전표 상세" });
+
+    expect(detail.parentElement).toHaveClass("xl:sticky", "xl:top-4", "xl:self-start");
+    expect(detail).toHaveClass("xl:max-h-[calc(100vh-2rem)]", "xl:overflow-y-auto");
+    expect(detail).not.toHaveClass("xl:sticky");
+  });
+
   it("creates a bank account subject from the registered bank account instead of guessing by name", async () => {
     render(<AccountingWorkspacePage workspace={correctionFixture(false)} initialVoucherId="legacy" />);
     const panel = within(screen.getByRole("region", { name: "전표 상세" })).getByLabelText("확정 전표 계정과목 연결");
