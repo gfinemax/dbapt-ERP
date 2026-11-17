@@ -554,10 +554,11 @@ describe("ExpenseResolutionPage", () => {
     expect(persistResolution.mock.calls[0][0]).toMatchObject({ representativeAccountTitle: "업무추진비", accountAllocations: [expect.objectContaining({ accountTitle: "업무추진비" })] });
   });
 
-  it("shows the allocation account and business purpose in the list", () => {
+  it("shows the selected expense detail instead of the broad allocation group in the list", () => {
     const resolution = expenseResolutionFixture({
       id: "account-display", representativeAccountTitle: "사업추진비", reason: "유관기관 행사 축하", vendorName: "축하화환",
-      accountAllocations: [{ id: "allocation", accountTitle: "업무추진비", amount: "130000", budgetItem: "업무추진비", description: "" }],
+      expenseDetailId: "promotion", operationExpenseDetail: "업무추진비",
+      accountAllocations: [{ id: "allocation", accountTitle: "사업추진비", amount: "130000", budgetItem: "업무추진비", description: "" }],
     });
     render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
     expect(screen.getByText("계정: 업무추진비")).toBeInTheDocument();

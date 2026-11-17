@@ -1,6 +1,11 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
 export function getResolutionAccountTitle(resolution: ManagedExpenseResolution) {
+  const selectedDetailTitle = resolution.resolutionType !== "BATCH" && resolution.expenseDetailId
+    ? resolution.operationExpenseDetail?.trim()
+    : "";
+  if (selectedDetailTitle) return selectedDetailTitle;
+
   const titles = [...new Set((resolution.resolutionType === "BATCH"
     ? resolution.expenseItems.map((item) => item.accountTitle)
     : (resolution.accountAllocations ?? []).map((item) => item.accountTitle))
