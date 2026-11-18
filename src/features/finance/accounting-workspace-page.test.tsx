@@ -35,7 +35,7 @@ function openDraft() { fireEvent.click(screen.getByRole("button", { name: "연�
 function openSources() { fireEvent.click(screen.getByRole("tab", { name: /원본 연결 대기/ })); }
 function enterBatchMode() { fireEvent.click(screen.getByRole("button", { name: "일괄 선택" })); }
 function submit() { fireEvent.submit(screen.getByRole("button", { name: "초안 저장" }).closest("form")!); }
-beforeEach(() => { vi.resetAllMocks(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); mocks.confirm.mockResolvedValue({ confirmed_count: 1, confirmed_ids: ["draft"] }); mocks.createBankSubject.mockResolvedValue({ bank_account_id: "bank", account_subject_id: "bank-subject", account_subject_name: "신협 보통예금(0467)" }); mocks.correct.mockResolvedValue({ corrected_count: 1, corrected_ids: ["legacy"] }); });
+beforeEach(() => { vi.resetAllMocks(); window.sessionStorage.clear(); mocks.save.mockResolvedValue({ id: "saved-id", lock_version: 4 }); mocks.confirm.mockResolvedValue({ confirmed_count: 1, confirmed_ids: ["draft"] }); mocks.createBankSubject.mockResolvedValue({ bank_account_id: "bank", account_subject_id: "bank-subject", account_subject_name: "신협 보통예금(0467)" }); mocks.correct.mockResolvedValue({ corrected_count: 1, corrected_ids: ["legacy"] }); });
 
 describe("accounting drafts and original records", () => {
   it("shows an invalid source for review without treating unknown amounts as zero or allowing draft creation", () => {
@@ -116,12 +116,18 @@ describe("accounting drafts and original records", () => {
   });
 
   it("updates the adjacent detail panel and URL when another voucher is selected", () => {
-    render(<AccountingWorkspacePage workspace={fixture()} initialVoucherId="legacy" />);
+    const workspace = fixture();
+    const view = render(<AccountingWorkspacePage workspace={workspace} initialVoucherId="legacy" />);
     const detail = screen.getByRole("region", { name: "전표 상세" });
+    const list = screen.getByRole("region", { name: "전표 목록" });
+    list.scrollTop = 480;
     expect(within(detail).getByRole("heading", { name: "기존-2025-007" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /전표-2026-001.*승인대기/ }));
     expect(within(screen.getByRole("region", { name: "전표 상세" })).getByRole("heading", { name: "전표-2026-001" })).toBeInTheDocument();
     expect(mocks.replace).toHaveBeenCalledWith("/finance?voucherId=draft", { scroll: false });
+    list.scrollTop = 0;
+    view.rerender(<AccountingWorkspacePage workspace={workspace} initialVoucherId="draft" />);
+    expect(screen.getByRole("region", { name: "전표 목록" })).toHaveProperty("scrollTop", 480);
   });
 
   it("filters voucher counts by accounting month and keeps the month in the URL", () => {
