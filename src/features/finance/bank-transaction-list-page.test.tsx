@@ -130,9 +130,9 @@ describe("BankTransactionListPage", () => {
       }}
       bankAccounts={bankAccounts}
       externalRecognitionBreakdown={{
-        all: { activeCount: 2, rowCount: 3, total: 60000000 },
+        all: { activeCount: 2, rowCount: 2, total: 60000000 },
         fixed: { activeCount: 1, rowCount: 1, total: 30000000 },
-        general: { activeCount: 1, rowCount: 2, total: 30000000 },
+        general: { activeCount: 1, rowCount: 1, total: 30000000 },
       }}
       filters={{ originType: "EXTERNAL_RECOGNITION" }}
       pageData={{
@@ -175,9 +175,10 @@ describe("BankTransactionListPage", () => {
     expect(screen.getAllByText("비현금 인정").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "동일건설 정액 필증 3천만원" })).toHaveAttribute("href", "/finance/collections");
     const sourceTabs = screen.getByRole("navigation", { name: "외부납입 원본 구분" });
-    expect(within(sourceTabs).getByRole("link", { name: /전체 외부납입3건 · 인정 2건 · 60,000,000원/ })).toHaveAttribute("aria-current", "page");
-    expect(within(sourceTabs).getByRole("link", { name: /동일건설 정액 필증 3천만원1건 · 인정 1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=fixed");
-    expect(within(sourceTabs).getByRole("link", { name: /일반 외부납입2건 · 인정 1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=general");
+    expect(within(sourceTabs).getByRole("link", { name: /전체 외부납입2건 · 60,000,000원/ })).toHaveAttribute("aria-current", "page");
+    expect(within(sourceTabs).getByRole("link", { name: /동일건설 정액 필증 3천만원1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=fixed");
+    expect(within(sourceTabs).getByRole("link", { name: /일반 외부납입1건 · 30,000,000원/ })).toHaveAttribute("href", "/finance/bank-transactions?origin=EXTERNAL_RECOGNITION&externalKind=general");
+    expect(sourceTabs).toHaveTextContent("현재 유효한 외부납입 원본만 건수와 인정 합계에 반영해.");
     expect(screen.getByText("정액필증 3천만원")).toBeInTheDocument();
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });

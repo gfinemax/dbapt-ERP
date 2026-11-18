@@ -534,13 +534,13 @@ function ExternalRecognitionKindTabs({
             <span className="block text-sm font-black">{item.label}</span>
             <span className="mt-0.5 block text-xs text-[var(--color-stone)]">
               {item.summary
-                ? `${item.summary.rowCount.toLocaleString("ko-KR")}건 · 인정 ${item.summary.activeCount.toLocaleString("ko-KR")}건 · ${formatKrw(item.summary.total)}`
+                ? `${item.summary.rowCount.toLocaleString("ko-KR")}건 · ${formatKrw(item.summary.total)}`
                 : "원본 종류 기준"}
             </span>
           </Link>
         );
       })}
-      <p className="md:col-span-3 px-1 text-xs text-[var(--color-stone)]">취소·제외 원본은 건수에 남기고 인정 합계에서는 제외해.</p>
+      <p className="md:col-span-3 px-1 text-xs text-[var(--color-stone)]">현재 유효한 외부납입 원본만 건수와 인정 합계에 반영해.</p>
     </nav>
   );
 }
