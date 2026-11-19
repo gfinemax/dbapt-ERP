@@ -23,12 +23,21 @@ type Fetcher = (input: string, init?: RequestInit) => Promise<PeopleOnFetchRespo
 type PeopleOnClientOptions = {
   env?: Record<string, string | undefined>;
   fetcher?: Fetcher;
+  timeoutMs?: number;
 };
 
 type PeopleOnMemberRow = Record<string, unknown>;
 
 const DEFAULT_MEMBERS_TABLE_URL = "http://localhost:3001/api/members/table";
+const DEFAULT_MEMBERS_TABLE_TIMEOUT_MS = 2_000;
 const passthroughParams = ["q", "page", "pageSize", "sort", "order", "role", "tier", "status", "rel", "tag"];
+
+function membersTableTimeoutMs(options: PeopleOnClientOptions, env: Record<string, string | undefined>) {
+  const configured = options.timeoutMs ?? Number(env.PEOPLEON_MEMBERS_TIMEOUT_MS);
+  return Number.isFinite(configured)
+    ? Math.min(Math.max(Math.trunc(configured), 250), 10_000)
+    : DEFAULT_MEMBERS_TABLE_TIMEOUT_MS;
+}
 
 function readString(row: PeopleOnMemberRow, keys: string[], fallback = "") {
   for (const key of keys) {
@@ -175,6 +184,7 @@ export async function fetchPeopleOnMembersTable(
     headers: {
       "X-API-Key": apiKey,
     },
+    signal: AbortSignal.timeout(membersTableTimeoutMs(options, env)),
   });
 
   if (!response.ok) {

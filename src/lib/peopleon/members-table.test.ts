@@ -89,6 +89,7 @@ describe("peopleON members table client", () => {
     expect(calledOptions).toEqual(
       expect.objectContaining({
         headers: { "X-API-Key": "test-key" },
+        signal: expect.any(AbortSignal),
       }),
     );
     expect(result?.rows).toHaveLength(1);
@@ -156,5 +157,30 @@ describe("peopleON members table client", () => {
         headers: { "X-API-Key": "members-key" },
       }),
     );
+  });
+
+  it("stops waiting for a slow peopleON response after the configured timeout", async () => {
+    const controller = new AbortController();
+    const timeout = vi.spyOn(AbortSignal, "timeout").mockReturnValue(controller.signal);
+    const fetcher = vi.fn((_input: string, init?: RequestInit) => new Promise<never>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(init.signal?.reason), { once: true });
+    }));
+
+    const request = fetchPeopleOnMembersTable(
+      { tier: "등기조합원" },
+      {
+        env: {
+          PEOPLEON_MEMBERS_API_KEY: "members-key",
+          PEOPLEON_MEMBERS_TABLE_URL: "http://localhost:3001/api/members/table",
+        },
+        fetcher,
+        timeoutMs: 250,
+      },
+    );
+
+    expect(timeout).toHaveBeenCalledWith(250);
+    controller.abort(new Error("peopleON timeout"));
+    await expect(request).rejects.toBeInstanceOf(Error);
+    timeout.mockRestore();
   });
 });

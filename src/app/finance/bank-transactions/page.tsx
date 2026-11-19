@@ -75,20 +75,19 @@ export default async function FinanceBankTransactionsRoute({
   }
 
   const emptyStatusCounts: BankTransactionStatusCounts = { ALL: 0, CONFIRMED: 0, DEFERRED: 0, EXCLUDED: 0, RECOMMENDED: 0, UNREVIEWED: 0 };
-  const [bankAccounts, accountSubjects, sourceReconciliationSummary, activitySummary] = actor ? await Promise.all([
+  const sourceReconciliationPromise = actor && filters.originType !== "EXTERNAL_RECOGNITION"
+    ? loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined)
+    : Promise.resolve(undefined);
+  const sourceReviewTransactionIdsPromise = filters.sourceReconciliationStatus || filters.reviewRequired
+    ? sourceReconciliationPromise.then((summary) => summary?.issues.map((issue) => issue.bankTransactionId) ?? [])
+    : Promise.resolve(undefined);
+  const [bankAccounts, accountSubjects, sourceReconciliationSummary, activitySummary, pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary, externalRecognitionBreakdown] = actor ? await Promise.all([
     listBankAccountsFromSupabase(actor.organization_id),
     listAccountSubjectsFromSupabase(actor.organization_id),
-    filters.originType === "EXTERNAL_RECOGNITION"
-      ? Promise.resolve(undefined)
-      : loadBankTransactionSourceReconciliationSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined),
+    sourceReconciliationPromise,
     loadFinancialActivitySummary(actor.organization_id).catch(() => undefined),
-  ]) : [[], [], undefined, undefined];
-  const sourceReviewTransactionIds = filters.sourceReconciliationStatus || filters.reviewRequired
-    ? sourceReconciliationSummary?.issues.map((issue) => issue.bankTransactionId) ?? []
-    : undefined;
-  const [pageData, statusCounts, ledgerSourceSummary, rulePreview, filteredSummary, externalRecognitionBreakdown] = actor ? await Promise.all([
-    listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds),
-    countBankTransactionsByStatus(actor.organization_id, {
+    sourceReviewTransactionIdsPromise.then((sourceReviewTransactionIds) => listBankTransactions(actor.organization_id, page, filters, sourceReviewTransactionIds)),
+    sourceReviewTransactionIdsPromise.then((sourceReviewTransactionIds) => countBankTransactionsByStatus(actor.organization_id, {
       bankAccountId: filters.bankAccountId,
       dateFrom: filters.dateFrom,
       dateTo: filters.dateTo,
@@ -98,7 +97,7 @@ export default async function FinanceBankTransactionsRoute({
       reviewRequired: filters.reviewRequired,
       sourceReconciliationStatus: filters.sourceReconciliationStatus,
       transactionKind: filters.transactionKind,
-    }, sourceReviewTransactionIds).catch(() => emptyStatusCounts),
+    }, sourceReviewTransactionIds).catch(() => emptyStatusCounts)),
     filters.bankAccountId
       ? loadLedgerBankSourceSummary(actor.organization_id, filters.bankAccountId).catch(() => undefined)
       : Promise.resolve(undefined),
@@ -107,11 +106,15 @@ export default async function FinanceBankTransactionsRoute({
       : Promise.resolve(undefined),
     filters.transactionKind
       ? Promise.resolve(undefined)
-      : loadFilteredFinancialActivitySummary(actor.organization_id, filters, sourceReviewTransactionIds).catch(() => undefined),
+      : sourceReviewTransactionIdsPromise.then((sourceReviewTransactionIds) => loadFilteredFinancialActivitySummary(
+        actor.organization_id,
+        filters,
+        sourceReviewTransactionIds,
+      ).catch(() => undefined)),
     filters.originType === "EXTERNAL_RECOGNITION"
       ? loadExternalRecognitionBreakdown(actor.organization_id, filters).catch(() => undefined)
       : Promise.resolve(undefined),
-  ]) : [{ page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined, undefined, undefined];
+  ]) : [[], [], undefined, undefined, { page, pageSize: 50, rows: [], totalCount: 0, totalPages: 1 }, emptyStatusCounts, undefined, undefined, undefined, undefined];
   const issuesByTransaction = new Map(sourceReconciliationSummary?.issues.map((issue) => [issue.bankTransactionId, issue]) ?? []);
   const pageDataWithReconciliation = {
     ...pageData,

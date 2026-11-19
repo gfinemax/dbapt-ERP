@@ -242,6 +242,28 @@ export async function listExpenseResolutionsFromSupabase(verifiedActor?: Reimbur
   return hydrateExpenseResolutionRows(supabase, actor, sourceRows);
 }
 
+export async function listExpenseApprovalInboxCandidatesFromSupabase(
+  verifiedActor?: ReimbursementMember,
+): Promise<ManagedExpenseResolution[] | null> {
+  const actor = verifiedActor ?? await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) return null;
+
+  const { data, error } = await supabase
+    .schema(expenseResolutionRepositorySchema)
+    .from("expense_resolutions")
+    .select(expenseResolutionSelect)
+    .eq("organization_id", actor.organization_id)
+    .eq("approval_status", "승인대기")
+    .is("deleted_at", null)
+    .order("updated_at", { ascending: false });
+  if (error) throw new Error(`Failed to list pending expense approvals: ${error.message}`);
+
+  const sourceRows = (data ?? []) as ExpenseResolutionRow[];
+  if (!sourceRows.length) return [];
+  return hydrateExpenseAuthorizationRows(supabase, actor, sourceRows);
+}
+
 export async function listExpenseResolutionPageFromSupabase(
   request: ExpenseResolutionListRequest & { includeId?: string },
   verifiedActor?: ReimbursementMember,
@@ -436,6 +458,28 @@ async function hydrateExpenseResolutionListRows(
     ...row.resolution_data,
     authorization: bindingMap.get(row.resolution_data.id) ?? null,
     workflowTransactionId: workflowMap.get(row.resolution_data.id),
+  }));
+}
+
+async function hydrateExpenseAuthorizationRows(
+  supabase: NonNullable<ReturnType<typeof getSupabaseServerClient>>,
+  actor: ReimbursementMember,
+  sourceRows: ExpenseResolutionRow[],
+) {
+  const resolutionIds = sourceRows.map((row) => row.resolution_data.id);
+  const { data: bindingRows, error: bindingError } = await supabase.schema("finance")
+    .from("expense_authorization_bindings")
+    .select("resolution_id,author_user_id,steps,version")
+    .eq("organization_id", actor.organization_id)
+    .in("resolution_id", resolutionIds);
+  if (bindingError && !isMissingExpenseBinding(bindingError)) {
+    throw new Error("지출결의 계정 연결을 확인하지 못했습니다.");
+  }
+  const bindingMap = new Map(((bindingRows ?? []) as (ExpenseAuthorization & { resolution_id: string })[])
+    .map((binding) => [binding.resolution_id, binding]));
+  return sourceRows.map((row) => ({
+    ...row.resolution_data,
+    authorization: bindingMap.get(row.resolution_data.id) ?? null,
   }));
 }
 

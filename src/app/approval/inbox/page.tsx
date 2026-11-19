@@ -4,7 +4,7 @@ import { requireReimbursementIdentity } from "@/features/finance/reimbursement-a
 import { ReimbursementLogin } from "@/features/finance/reimbursement-login";
 import { koreaDate } from "@/features/finance/reimbursement-domain";
 import { listApprovalDocuments } from "@/features/approval/approval-repository";
-import { listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
+import { listExpenseApprovalInboxCandidatesFromSupabase, listExpenseResolutionsFromSupabase } from "@/features/finance/expense-resolution-repository";
 import { loadSmallExpenseWorkspace } from "@/features/approval/small-expense-repository";
 import { SmallExpensePage } from "@/features/approval/small-expense-page";
 import { ExpenseApprovalInboxPage } from "@/features/finance/expense-approval-inbox-page";
@@ -27,7 +27,10 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ t
   const canReadDocuments = viewer.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p));
   const results = await Promise.allSettled([
     canReadDocuments && ["all", "general"].includes(type) ? listApprovalDocuments(viewer.organization_id) : Promise.resolve([]),
-    canReadDocuments && ["all", "expense"].includes(type) ? listExpenseResolutionsFromSupabase(viewer).then(async rows => {
+    canReadDocuments && type === "all" ? listExpenseApprovalInboxCandidatesFromSupabase(viewer).then((rows) => {
+      if (!rows) throw new Error("지출결의 저장소 연결이 필요해.");
+      return { budgetDataError: undefined as string | undefined, budgetProfiles: {}, lookupStatuses: {}, resolutions: rows };
+    }) : canReadDocuments && type === "expense" ? listExpenseResolutionsFromSupabase(viewer).then(async rows => {
       if (!rows) throw new Error("지출결의 저장소 연결이 필요해.");
       try {
         const budgetView = await loadExpenseResolutionBudgetView(rows, viewer.organization_id);
