@@ -38,8 +38,8 @@ describe("home route", () => {
         hasPrevious: false,
         page: 1,
         pageSize: 1,
-        totalCount: 116,
-        totalPages: 116,
+        totalCount: 85,
+        totalPages: 85,
       },
       rows: [],
     });
@@ -55,7 +55,7 @@ describe("home route", () => {
     const kpiPanel = screen.getByRole("region", { name: "핵심 운영 지표" });
 
     expect(within(kpiPanel).getByText("등기조합원")).toBeInTheDocument();
-    expect(within(kpiPanel).getByText("116명")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("85명")).toBeInTheDocument();
     expect(screen.getByText("운영 관리자")).toBeInTheDocument();
   });
 

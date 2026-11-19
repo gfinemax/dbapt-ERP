@@ -22,11 +22,11 @@ describe("DashboardPage", () => {
     const kpiPanel = screen.getByRole("region", { name: "핵심 운영 지표" });
 
     expect(within(kpiPanel).getByText("등기조합원")).toBeInTheDocument();
-    expect(within(kpiPanel).getByText("116명")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("85명")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("지출결의 승인대기")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("3건")).toBeInTheDocument();
     expect(within(kpiPanel).getByText("다음 총회")).toBeInTheDocument();
-    expect(within(kpiPanel).getByText("D-12")).toBeInTheDocument();
+    expect(within(kpiPanel).getByText("12월 26일")).toBeInTheDocument();
     expect(within(kpiPanel).getByRole("progressbar", { name: "납부율 82.4%" })).toHaveAttribute("aria-valuenow", "82.4");
     expect(within(kpiPanel).getByRole("progressbar", { name: "예산 집행률 64.8%" })).toHaveAttribute("aria-valuenow", "64.8");
     expect(within(kpiPanel).getByRole("progressbar", { name: "토지 확보율 71.2%" })).toHaveAttribute("aria-valuenow", "71.2");

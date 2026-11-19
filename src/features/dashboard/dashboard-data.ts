@@ -156,7 +156,7 @@ export const depositBalanceWidget: DepositBalanceWidget = {
 export const dashboardStats: DashboardStat[] = [
   {
     label: "등기조합원",
-    value: "116명",
+    value: "85명",
     description: "peopleON 등기조합원 기준",
     kind: "count",
     tone: "blue",
@@ -194,15 +194,15 @@ export const dashboardStats: DashboardStat[] = [
   },
   {
     label: "다음 총회",
-    value: "D-12",
-    description: "2026 정기총회 준비중",
+    value: "12월 26일",
+    description: "2026년 정기총회 준비 중",
     kind: "deadline",
     tone: "purple",
   },
 ];
 
-export function buildDashboardStats(registeredMemberCount: number | null | undefined = 116): DashboardStat[] {
-  const count = typeof registeredMemberCount === "number" && Number.isFinite(registeredMemberCount) ? registeredMemberCount : 116;
+export function buildDashboardStats(registeredMemberCount: number | null | undefined = 85): DashboardStat[] {
+  const count = typeof registeredMemberCount === "number" && Number.isFinite(registeredMemberCount) ? registeredMemberCount : 85;
 
   return dashboardStats.map((stat) =>
     stat.kind === "count" && stat.label === "등기조합원"
@@ -233,7 +233,7 @@ export const dashboardModules: DashboardModule[] = [
     name: "총회관리",
     source: "VoteCast",
     description: "총회 출석, 위임, 서면결의, 안건 결과를 요약합니다.",
-    metric: "총회 D-12",
+    metric: "총회 12월 26일",
     tone: "purple",
   },
   {
