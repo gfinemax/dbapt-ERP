@@ -35,6 +35,9 @@ export function getResolutionOverBudgetAmount(resolution: {
 }
 
 export function getResolutionAccountTitle(resolution: ManagedExpenseResolution) {
+  if (resolution.correctedAccountSubjectId && resolution.representativeAccountTitle) {
+    return resolution.representativeAccountTitle;
+  }
   const selectedDetailTitle = resolution.resolutionType !== "BATCH"
     ? resolution.operationExpenseDetail?.trim()
     : "";

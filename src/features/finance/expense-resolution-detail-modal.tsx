@@ -12,6 +12,8 @@ import { policySummary } from "./expense-approval-period";
 import type { ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
+import { ExpenseCorrectionChanges, ExpenseResolutionCorrectionForm } from "./expense-resolution-correction-form";
+import type { ExpenseCorrectionInput, ExpenseCorrectionOptions } from "./expense-resolution-correction";
 import { getResolutionAccountTitle } from "./expense-resolution-display";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 import {
@@ -347,7 +349,7 @@ function ExpenseResolutionDetailWorkspace({
           <section className="mt-4" aria-labelledby="expense-history-view-title">
             <h3 className="text-base font-black" id="expense-history-view-title">처리이력 <span className="text-sm text-[var(--color-stone)]">({timelineItems.length}건)</span></h3>
             <ol className="mt-3 grid gap-2">
-              {timelineItems.length ? timelineItems.map((item) => <li className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm sm:grid-cols-[145px_1fr]" key={item.id}><time className="font-semibold text-[var(--color-stone)]">{item.actionAt}</time><div><p className="font-bold">{formatHistoryActor(item)} · {item.actionLabel}</p>{item.comment ? <p className="mt-1 text-[var(--color-stone)]">{item.comment}</p> : null}</div></li>) : <li className="rounded-xl border border-[var(--color-soft-border)] bg-white p-6 text-center text-sm text-[var(--color-stone)]">아직 처리이력이 없습니다.</li>}
+              {timelineItems.length ? timelineItems.map((item) => <li className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm sm:grid-cols-[145px_1fr]" key={item.id}><time className="font-semibold text-[var(--color-stone)]">{item.actionAt}</time><div><p className="font-bold">{formatHistoryActor(item)} · {item.actionLabel}</p>{item.comment ? <p className="mt-1 text-[var(--color-stone)]">{item.comment}</p> : null}{item.changes ? <ExpenseCorrectionChanges changes={item.changes} /> : null}</div></li>) : <li className="rounded-xl border border-[var(--color-soft-border)] bg-white p-6 text-center text-sm text-[var(--color-stone)]">아직 처리이력이 없습니다.</li>}
             </ol>
           </section>
         ) : null}
@@ -464,10 +466,12 @@ export function ExpenseResolutionDetailModal({
   canApprove = false,
   editHref,
   linkedApproval,
+  loadCorrectionOptions,
   onApprove,
   onCancelApproval,
   onCancelVoucher,
   onClose,
+  onCorrect,
   onConfirmVoucher,
   onCreateFactConfirmation,
   onDelete,
@@ -486,10 +490,12 @@ export function ExpenseResolutionDetailModal({
   canApprove?: boolean;
   editHref?: string;
   linkedApproval?: ApprovalDocumentCandidate;
+  loadCorrectionOptions?: (id: string) => Promise<ExpenseCorrectionOptions>;
   onApprove: () => boolean | void | Promise<boolean | void>;
   onCancelApproval?: () => void;
   onCancelVoucher?: () => void;
   onClose: () => void;
+  onCorrect?: (input: ExpenseCorrectionInput) => Promise<void>;
   onConfirmVoucher?: () => void;
   onCreateFactConfirmation?: (detailItem?: BatchExpenseItem) => void;
   onDelete?: () => void;
@@ -511,6 +517,7 @@ export function ExpenseResolutionDetailModal({
   const [isApprovalActionPending, setIsApprovalActionPending] = useState(false);
   const [isManageMenuOpen, setIsManageMenuOpen] = useState(false);
   const [isPrintMenuOpen, setIsPrintMenuOpen] = useState(false);
+  const [isCorrectionOpen, setIsCorrectionOpen] = useState(false);
   const timelineItems = [...resolution.history].sort((first, second) =>
     historySort === "asc" ? first.actionAt.localeCompare(second.actionAt) : second.actionAt.localeCompare(first.actionAt),
   );
@@ -567,6 +574,7 @@ export function ExpenseResolutionDetailModal({
             <p className="text-lg font-black">{resolution.resolutionNo}</p>
             <Badge value={resolution.approvalStatus} />
             <Badge value={resolution.paymentStatus} />
+            {resolution.correctionRevision ? <span className="text-sm font-bold">정정본 v{resolution.correctionRevision + 1}</span> : null}
             <span className="hidden h-7 w-px bg-[var(--color-soft-border)] sm:block" />
             <p className="text-xl font-black">총 {formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</p>
           </div>
@@ -579,7 +587,14 @@ export function ExpenseResolutionDetailModal({
           <div><p className="px-5 pt-2 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy)}</p><ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} /></div>
         </div>
 
-        {compactExpenseDetailLayoutEnabled ? (
+        {isCorrectionOpen && onCorrect ? (
+          <ExpenseResolutionCorrectionForm
+            loadOptions={loadCorrectionOptions}
+            onClose={() => setIsCorrectionOpen(false)}
+            onSave={onCorrect}
+            resolution={resolution}
+          />
+        ) : compactExpenseDetailLayoutEnabled ? (
           <ExpenseResolutionDetailWorkspace
             actionError={actionError}
             approvalLine={approvalLine}
@@ -872,6 +887,7 @@ export function ExpenseResolutionDetailModal({
                         <span className={`rounded-full px-2.5 py-1 text-xs font-semibold ${getHistoryTone(item.actionType)}`}>{item.actionLabel}</span>
                       </div>
                       {item.comment ? <p className="mt-2 leading-6 text-[var(--color-stone)]">{item.comment}</p> : null}
+                      {item.changes ? <ExpenseCorrectionChanges changes={item.changes} /> : null}
                     </div>
                   </li>
                 ))}
@@ -881,7 +897,8 @@ export function ExpenseResolutionDetailModal({
         </div>
         )}
 
-        <div className="flex flex-none flex-wrap justify-end gap-2 border-t border-[var(--color-soft-border)] bg-white px-5 py-3">
+        {!isCorrectionOpen ? <div className="flex flex-none flex-wrap justify-end gap-2 border-t border-[var(--color-soft-border)] bg-white px-5 py-3">
+          {onCorrect ? <Button className="rounded-full" onClick={() => setIsCorrectionOpen(true)} type="button" variant="outline">정정</Button> : null}
           {onCreateFactConfirmation ? <Button className="rounded-full" onClick={() => onCreateFactConfirmation()} variant="outline">지출사실확인서 작성</Button> : null}
           <div className="relative">
             <Button
@@ -973,7 +990,7 @@ export function ExpenseResolutionDetailModal({
           <Button className="rounded-full" onClick={onClose} variant="outline">
             닫기
           </Button>
-        </div>
+        </div> : null}
       </section>
     </div>
   );

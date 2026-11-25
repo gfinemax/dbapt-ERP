@@ -501,6 +501,7 @@ export function ExpenseResolutionPrintPreviewModal({
               <div className="min-w-0">
                 <p className="mb-2 inline-flex rounded-full bg-[var(--color-cloud-veil)] px-2.5 py-1 text-[9px] font-bold text-[var(--color-stone)]">{getExpenseTimingLabel(expenseTiming)}</p>
                 <h3 className="text-[35px] font-black tracking-[0.16em]">지출결의서</h3>
+                {resolution.correctionRevision ? <p className="text-xs font-bold">정정본 v{resolution.correctionRevision + 1}</p> : null}
                 <p className="mt-1.5 text-[15px] font-semibold text-[var(--color-stone)]">대방동 지역주택조합</p>
               </div>
               <ExpenseApprovalBox resolution={resolution} />

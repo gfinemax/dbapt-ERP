@@ -14,7 +14,8 @@ const budgets = {
   // Original-document date/source controls add about 2.6 KB to the create dialog.
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 98_000),
   // The favorites editor is fetched only after the user opens it (up to 9 KB).
-  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 175_000),
+  // Approved-document correction and its audit comparison ship with the on-demand detail view.
+  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 179_000),
 };
 
 const routeBudgets = [

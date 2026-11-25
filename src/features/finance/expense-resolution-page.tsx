@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
 import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionListSubject, getResolutionOverBudgetAmount, isPostApprovalResolution } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
@@ -108,6 +109,7 @@ export type ExpenseResolutionHistoryItem = {
   actorName: string;
   actorTitle: string;
   comment?: string;
+  changes?: { label: string; before: string; after: string }[];
   budgetDecision?: ExpenseBudgetDecisionSnapshot;
   id: string;
 };
@@ -282,6 +284,8 @@ export type ManagedExpenseResolution = {
   representativeVendorName: string;
   rejectionReason?: string;
   history: ExpenseResolutionHistoryItem[];
+  correctionRevision?: number;
+  correctedAccountSubjectId?: string;
   relatedContract: string;
   relatedMeeting: string;
   resolutionNo: string;
@@ -2360,6 +2364,8 @@ export function ExpenseResolutionPage({
   initialQuickExpense,
   initialResolutionId,
   convertQuickExpense,
+  correctApprovedResolution,
+  loadCorrectionOptions,
   persistResolution,
   saveFactConfirmation,
   listFactConfirmations,
@@ -2396,6 +2402,8 @@ export function ExpenseResolutionPage({
   initialQuickExpense?: QuickExpenseConversionDraft;
   initialResolutionId?: string;
   convertQuickExpense?: (sourceId: string, resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
+  correctApprovedResolution?: (input: ExpenseCorrectionInput) => Promise<ManagedExpenseResolution>;
+  loadCorrectionOptions?: (id: string) => Promise<ExpenseCorrectionOptions>;
   persistResolution?: (resolution: ManagedExpenseResolution) => Promise<ManagedExpenseResolution>;
   saveFactConfirmation?: (input: ExpenseFactConfirmationInput) => Promise<string>;
   listFactConfirmations?: (resolutionId: string) => Promise<ExpenseFactConfirmation[]>;
@@ -2723,7 +2731,7 @@ export function ExpenseResolutionPage({
     try {
       const detail = await loadResolutionDetail(id);
       setResolutions((current) => current.some((item) => item.id === id)
-        ? current.map((item) => item.id === id ? detail : item)
+        ? current.map((item) => item.id === id ? { ...detail, workflowTransactionId: detail.workflowTransactionId ?? item.workflowTransactionId } : item)
         : [detail, ...current]);
       setSelectedDetailId(id);
     } catch (error) {
@@ -4445,6 +4453,13 @@ export function ExpenseResolutionPage({
           actionError={saveError}
           budgetDataError={budgetDataError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
+          loadCorrectionOptions={viewer?.permissions.includes("ADMIN") ? loadCorrectionOptions : undefined}
+          onCorrect={correctApprovedResolution && canCorrectExpense(selectedDetail, viewer) ? async (input) => {
+            const saved = await correctApprovedResolution(input);
+            setResolutions((current) => current.map((item) => item.id === saved.id
+              ? { ...saved, authorization: item.authorization, workflowTransactionId: item.workflowTransactionId }
+              : item));
+          } : undefined}
           editHref={!isLegacySmallExpenseResolution(selectedDetail) && viewer && canEditExpense(selectedDetail, viewer) ? `/finance/expense-resolutions?resolutionId=${encodeURIComponent(selectedDetail.id)}&mode=edit` : undefined}
           linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}

@@ -32,6 +32,7 @@ import { convertQuickExpenseToResolution } from "@/features/finance/quick-expens
 import { isBankVerifiedCorporateCard } from "@/features/finance/corporate-card-transaction";
 import { getExpenseVoucherSyncTargets } from "@/features/finance/expense-voucher-sync";
 import { loadExpenseResolutionFormOptions } from "@/features/finance/expense-resolution-form-options.server";
+import type { ExpenseCorrectionInput, ExpenseCorrectionOptions } from "@/features/finance/expense-resolution-correction";
 
 import { createExpenseBudgetDecisionSnapshot, getExpenseResolutionBudgetLinkError, loadExpenseResolutionBudgetView } from "@/features/finance/expense-resolution-budget-view";
 
@@ -45,7 +46,8 @@ export async function loadExpenseResolutionFormOptionsAction() {
 }
 
 export async function loadExpenseResolutionDetailAction(id: string) {
-  const { actor, resolution } = await requireExpenseRecord(id);
+  const { actor, binding, resolution: snapshot } = await requireExpenseRecord(id);
+  const resolution = { ...snapshot, authorization: binding };
   if (!resolution.budgetSnapshot?.budgetPeriod) return resolution;
   try {
     return (await loadExpenseResolutionBudgetView([resolution], actor.organization_id)).resolutions[0];
@@ -53,6 +55,32 @@ export async function loadExpenseResolutionDetailAction(id: string) {
     console.warn("[expense-resolution-detail] Live budget refresh failed", error);
     return resolution;
   }
+}
+
+export async function loadApprovedExpenseCorrectionOptionsAction(id: string): Promise<ExpenseCorrectionOptions> {
+  const actor = await requireExpenseActor("ADMIN");
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았어.");
+  const { data, error } = await supabase.schema("finance").rpc("approved_expense_correction_options", {
+    p_org: actor.organization_id, p_actor: actor.user_id, p_id: id,
+  });
+  if (error) throw new Error(error.message);
+  return data as ExpenseCorrectionOptions;
+}
+
+export async function correctApprovedExpenseResolutionAction(input: ExpenseCorrectionInput): Promise<ManagedExpenseResolution> {
+  const actor = await requireExpenseActor();
+  const supabase = getSupabaseServerClient();
+  if (!supabase) throw new Error("지출 저장소가 설정되지 않았어.");
+  const { data, error } = await supabase.schema("finance").rpc("correct_approved_expense_resolution", {
+    p_org: actor.organization_id, p_actor: actor.user_id, p_id: input.id, p_revision: input.revision,
+    p_reason: input.reason, p_patch: input.patch, p_key: input.key,
+  });
+  if (error) throw new Error(error.message);
+  for (const path of ["/finance/expense-resolutions", "/finance/exp", "/finance", "/finance/reports", "/finance/month-close", "/approval/inbox"]) {
+    revalidatePath(path);
+  }
+  return data as ManagedExpenseResolution;
 }
 
 async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolution, settings?: ExpenseComplianceSettings | null) {
@@ -870,7 +898,7 @@ async function syncExpenseVoucherRecords(supabase: NonNullable<ReturnType<typeof
     const { error: removeLineError } = await supabase.schema("finance").from("voucher_lines").delete().eq("voucher_id", voucher.id);
     if (removeLineError) throw new Error(`기존 분개행 정리 실패: ${removeLineError.message}`);
     const { error: lineError } = await supabase.schema("finance").from("voucher_lines").insert([
-      { account_subject_id: null, credit_amount: 0, debit_amount: target.amount, description: target.description, sort_order: 1, voucher_id: voucher.id },
+      { account_subject_id: afterResolution.correctedAccountSubjectId ?? null, credit_amount: 0, debit_amount: target.amount, description: target.description, sort_order: 1, voucher_id: voucher.id },
       { account_subject_id: null, credit_amount: target.amount, debit_amount: 0, description: afterResolution.expenseKind === "BANK_POST_APPROVAL" ? "연결 통장 출금" : before.paymentAccountNo || "지급계정", sort_order: 2, voucher_id: voucher.id },
     ]);
     if (lineError) throw new Error(`지출전표 분개행 저장 실패: ${lineError.message}`);

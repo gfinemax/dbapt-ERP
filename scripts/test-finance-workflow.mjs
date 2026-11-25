@@ -115,6 +115,7 @@ const testFiles = [
   "top_favorite_menus.sql",
   "collection_ledger_bridge.sql",
   "bank_post_approval_budget_guard.sql",
+  "approved_expense_resolution_corrections.sql",
 ];
 const requestedTests = process.argv.slice(2);
 testFiles.push("budget_unknown_month_review.sql");

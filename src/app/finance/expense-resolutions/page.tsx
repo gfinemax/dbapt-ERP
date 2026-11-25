@@ -1,4 +1,5 @@
 import { ExpenseResolutionPage } from "@/features/finance/expense-resolution-page";
+import { correctApprovedExpenseResolutionAction, loadApprovedExpenseCorrectionOptionsAction } from "./actions";
 import { parseExpenseEntry } from "@/features/finance/expense-entry";
 import type { ManagedExpenseResolution } from "@/features/finance/expense-resolution-page";
 import { listExpenseResolutionPageFromSupabase } from "@/features/finance/expense-resolution-repository";
@@ -101,6 +102,8 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
       initialResolutionId={entry.editResolutionId ? undefined : initialResolutionId}
       initialQuickExpense={initialQuickExpense}
       convertQuickExpense={convertQuickExpenseResolutionAction}
+      correctApprovedResolution={correctApprovedExpenseResolutionAction}
+      loadCorrectionOptions={loadApprovedExpenseCorrectionOptionsAction}
       createEvidenceDownloadUrl={createExpenseEvidenceDownloadUrlAction}
       dataLoadError={dataLoadError}
       deleteEvidence={deleteExpenseEvidenceAction}
