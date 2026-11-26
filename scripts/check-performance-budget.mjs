@@ -11,11 +11,13 @@ const budgets = {
   // Bank/card evidence, measured A4 pagination, linked voucher navigation, monthly filtering, and accessible server sorting are part of the primary workspace.
   // Effective approval dates and the frozen reference-date snapshot add about 3 KB.
   initialJavaScript: Number(process.env.EXPENSE_RESOLUTION_INITIAL_JS_BUDGET || 330_000),
-  // Original-document date/source controls add about 2.6 KB to the create dialog.
-  largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 98_000),
+  // Original-document date/source controls and the reviewed accounting-route UI
+  // keep the create dialog just over 100 KB. Retain a narrow regression margin.
+  largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 103_000),
   // The favorites editor is fetched only after the user opens it (up to 9 KB).
   // Approved-document correction and its audit comparison ship with the on-demand detail view.
-  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 179_000),
+  // The measured production total is about 184.6 KB across six chunks.
+  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 187_000),
 };
 
 const routeBudgets = [
