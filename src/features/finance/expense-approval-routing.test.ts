@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExpenseApprovalRoute, inferExpenseApprovalRoute } from "./expense-approval-routing";
+import { buildExpenseApprovalRoute, hasExpenseApprovalRouteDrift, inferExpenseApprovalRoute } from "./expense-approval-routing";
 
 describe("expense approval routing", () => {
   it("requires accounting review before final approval when the secretary authors", () => {
@@ -32,5 +32,25 @@ describe("expense approval routing", () => {
       ["안동연", "최종결재"],
     ]);
     expect(inferExpenseApprovalRoute(route.approvalLine)).toBe("DIRECTOR_FULL");
+  });
+
+  it("detects a secretary draft that still carries the retired director-skip route", () => {
+    expect(hasExpenseApprovalRouteDrift({
+      approvalLine: [{ approver: "안동연", order: 1, role: "최종결재" }],
+      approvalParticipants: [
+        { name: "장현제", title: "이사", action: "규정상 생략" },
+        { name: "오학동", title: "사무국장", action: "작성" },
+        { name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 1 },
+      ],
+      approvalPolicy: { referenceDate: "2026-11-26" },
+      approvalRoute: "SECRETARY_CHAIR",
+    })).toBe(true);
+    const current = buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-11-26");
+    expect(hasExpenseApprovalRouteDrift({
+      approvalLine: current.approvalLine,
+      approvalParticipants: current.participants,
+      approvalPolicy: { referenceDate: "2026-11-26" },
+      approvalRoute: "SECRETARY_CHAIR",
+    })).toBe(false);
   });
 });

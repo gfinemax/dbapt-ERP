@@ -4,7 +4,7 @@ import { createExpenseApprovalPolicy } from "@/features/approval/approval-effect
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, createFormState, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, createFormState, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getDocumentApprovalParticipants, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import { getEditBankTransactionCandidates } from "./expense-resolution-form-options";
 import { ExpenseResolutionDetailModal } from "./expense-resolution-detail-modal";
 import { ExpenseResolutionCorrectionForm } from "./expense-resolution-correction-form";
@@ -74,6 +74,28 @@ describe("ExpenseResolutionPage", () => {
   it("selects an author-safe default approval route", () => {
     expect(createFormState("지결-2026-0001", "2026-11-26", "오학동 사무국장").approvalRoute).toBe("SECRETARY_CHAIR");
     expect(createFormState("지결-2026-0002", "2026-11-26", "장현제 이사").approvalRoute).toBe("DIRECTOR_FULL");
+  });
+
+  it("shows the current accounting-review route for an editable legacy draft without rewriting completed history", () => {
+    const legacyParticipants = [
+      { name: "장현제", title: "이사", action: "규정상 생략" as const },
+      { name: "오학동", title: "사무국장", action: "작성" as const },
+      { name: "안동연", title: "조합장", action: "최종결재" as const, approvalOrder: 1 },
+    ];
+    const legacyLine = [{ approver: "안동연", order: 1, role: "최종결재", status: "결재대기" as const }];
+    const draft = expenseResolutionFixture({
+      approvalLine: legacyLine,
+      approvalParticipants: legacyParticipants,
+      approvalPolicy: createExpenseApprovalPolicy("CURRENT", "", "2026-11-26"),
+      approvalRoute: "SECRETARY_CHAIR",
+      approvalStatus: "작성중",
+    });
+    expect(getDocumentApprovalParticipants(draft).map((person) => [person.name, person.action, person.statusLabel])).toEqual([
+      ["장현제", "회계검토", "서명란"],
+      ["오학동", "작성", "작성완료"],
+      ["안동연", "최종결재", "서명란"],
+    ]);
+    expect(getDocumentApprovalParticipants({ ...draft, approvalStatus: "승인완료" })[0].action).toBe("규정상 생략");
   });
 
   it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {

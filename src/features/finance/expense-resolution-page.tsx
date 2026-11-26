@@ -45,6 +45,8 @@ import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendo
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import {
   buildExpenseApprovalRoute,
+  getExpectedExpenseApprovalRoute,
+  hasExpenseApprovalRouteDrift,
   inferExpenseApprovalRoute,
   type ExpenseApprovalParticipant,
   type ExpenseApprovalRoute,
@@ -345,6 +347,7 @@ export type ManagedExpenseResolution = {
 };
 
 export function getExpenseAuthorizationReadiness(resolution: ManagedExpenseResolution) {
+  const routeCurrent = !hasExpenseApprovalRouteDrift(resolution);
   const expectedApproverCount = resolution.approvalLine.length;
   const linkedOrders = new Set(
     (resolution.authorization?.steps ?? [])
@@ -364,6 +367,7 @@ export function getExpenseAuthorizationReadiness(resolution: ManagedExpenseResol
     authorLinked,
     expectedApproverCount,
     linkedApproverCount,
+    routeCurrent,
     ready: authorLinked && expectedApproverCount > 0 && linkedApproverCount === expectedApproverCount,
   };
 }
@@ -1892,7 +1896,17 @@ type DocumentApprovalParticipant = ExpenseApprovalParticipant & {
 };
 
 export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolution): DocumentApprovalParticipant[] {
-  if (!resolution.approvalParticipants?.length) {
+  const useCurrentDraftRoute = Boolean(resolution.approvalRoute) && ["작성중", "반려"].includes(resolution.approvalStatus);
+  const expectedDraftRoute = useCurrentDraftRoute ? getExpectedExpenseApprovalRoute(resolution) : undefined;
+  const approvalLine = expectedDraftRoute
+    ? expectedDraftRoute.approvalLine.map((expectedStep) => {
+      const savedStep = resolution.approvalLine.find((step) => step.approver === expectedStep.approver && step.role === expectedStep.role);
+      return { ...expectedStep, processedAt: savedStep?.processedAt, status: savedStep?.status ?? "대기" as const };
+    })
+    : resolution.approvalLine;
+  const approvalParticipants = expectedDraftRoute?.participants ?? resolution.approvalParticipants;
+
+  if (!approvalParticipants?.length) {
     return getDisplayApprovalLine(resolution).map((step) => ({
       action: step.role as ExpenseApprovalParticipant["action"],
       approvalOrder: step.order,
@@ -1904,10 +1918,10 @@ export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolu
   }
 
   const referenceDate = resolution.approvalPolicy?.referenceDate;
-  const participants = resolution.approvalParticipants.filter((participant) => canShowExpenseApprovalParticipant(participant.name, referenceDate));
+  const participants = approvalParticipants.filter((participant) => canShowExpenseApprovalParticipant(participant.name, referenceDate));
   return participants.map((participant) => {
     const approvalStep = participant.approvalOrder
-      ? resolution.approvalLine.find((step) => step.order === participant.approvalOrder && canShowExpenseApprovalParticipant(step.approver, referenceDate))
+      ? approvalLine.find((step) => step.order === participant.approvalOrder && canShowExpenseApprovalParticipant(step.approver, referenceDate))
       : undefined;
     const statusLabel = approvalStep
       ? ["대기", "결재대기"].includes(approvalStep.status) ? "서명란" : approvalStep.status
@@ -3754,6 +3768,10 @@ export function ExpenseResolutionPage({
   async function runApprovalTransition(resolution: ManagedExpenseResolution, command: ApprovalWorkflowCommand, actorLabel: string, reason?: string) {
     setSaveError("");
     const authorization = getExpenseAuthorizationReadiness(resolution);
+    if (!authorization.routeCurrent) {
+      setSaveError("결재선 규칙이 변경되었습니다. 초안을 다시 저장한 뒤 장현제·안동연 결재 계정을 연결해 주세요.");
+      return false;
+    }
     if (!authorization.ready) {
       setSaveError(
         `결재 계정 연결이 필요합니다. 작성자 ${authorization.authorLinked ? "연결됨" : "미연결"} · 결재자 ${authorization.linkedApproverCount}/${authorization.expectedApproverCount}명. 결재자 로그인 계정을 등록한 뒤 작성자·결재선 계정 연결을 완료해 주세요.`,

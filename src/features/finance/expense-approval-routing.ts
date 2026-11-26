@@ -26,6 +26,13 @@ export type RoutedApprovalStep = {
   status: "대기";
 };
 
+type ExpenseApprovalRouteSnapshot = {
+  approvalLine: Array<Pick<RoutedApprovalStep, "approver" | "order" | "role">>;
+  approvalParticipants?: ExpenseApprovalParticipant[];
+  approvalPolicy?: { referenceDate?: string };
+  approvalRoute?: ExpenseApprovalRoute;
+};
+
 export const expenseApprovalRouteOptions: ReadonlyArray<{
   description: string;
   label: string;
@@ -124,4 +131,30 @@ export function buildExpenseApprovalRoute(route: ExpenseApprovalRoute, reference
     participants: result.participants.filter(person => person.action === "작성" ? canAuthorOn(person.name, referenceDate) : canApproveOn(person.name, referenceDate)),
     error,
   };
+}
+
+export function getExpectedExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot) {
+  const route = resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine);
+  return buildExpenseApprovalRoute(route, resolution.approvalPolicy?.referenceDate ?? seoulToday());
+}
+
+export function hasExpenseApprovalRouteDrift(resolution: ExpenseApprovalRouteSnapshot) {
+  const expected = getExpectedExpenseApprovalRoute(resolution);
+  const stepsMatch = resolution.approvalLine.length === expected.approvalLine.length
+    && resolution.approvalLine.every((step, index) => {
+      const expectedStep = expected.approvalLine[index];
+      return step.approver === expectedStep.approver
+        && step.order === expectedStep.order
+        && step.role === expectedStep.role;
+    });
+  const currentParticipants = resolution.approvalParticipants ?? [];
+  const participantsMatch = currentParticipants.length === expected.participants.length
+    && currentParticipants.every((person, index) => {
+      const expectedPerson = expected.participants[index];
+      return person.action === expectedPerson.action
+        && person.approvalOrder === expectedPerson.approvalOrder
+        && person.name === expectedPerson.name
+        && person.title === expectedPerson.title;
+    });
+  return Boolean(expected.error) || !stepsMatch || !participantsMatch;
 }
