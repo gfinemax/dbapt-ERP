@@ -138,6 +138,12 @@ export function getExpectedExpenseApprovalRoute(resolution: ExpenseApprovalRoute
   return buildExpenseApprovalRoute(route, resolution.approvalPolicy?.referenceDate ?? seoulToday());
 }
 
+export function getDraftExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot & { approvalStatus: string }) {
+  if (resolution.approvalRoute && ["작성중", "반려"].includes(resolution.approvalStatus)) {
+    return getExpectedExpenseApprovalRoute(resolution);
+  }
+}
+
 export function hasExpenseApprovalRouteDrift(resolution: ExpenseApprovalRouteSnapshot) {
   const expected = getExpectedExpenseApprovalRoute(resolution);
   const stepsMatch = resolution.approvalLine.length === expected.approvalLine.length

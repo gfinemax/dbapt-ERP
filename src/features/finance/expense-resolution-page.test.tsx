@@ -76,7 +76,8 @@ describe("ExpenseResolutionPage", () => {
     expect(createFormState("지결-2026-0002", "2026-11-26", "장현제 이사").approvalRoute).toBe("DIRECTOR_FULL");
   });
 
-  it("shows the current accounting-review route for an editable legacy draft without rewriting completed history", () => {
+  it("shows the current accounting-review route in the draft overview and document without rewriting completed history", async () => {
+    vi.useRealTimers();
     const legacyParticipants = [
       { name: "장현제", title: "이사", action: "규정상 생략" as const },
       { name: "오학동", title: "사무국장", action: "작성" as const },
@@ -96,6 +97,15 @@ describe("ExpenseResolutionPage", () => {
       ["안동연", "최종결재", "서명란"],
     ]);
     expect(getDocumentApprovalParticipants({ ...draft, approvalStatus: "승인완료" })[0].action).toBe("규정상 생략");
+
+    render(<ExpenseResolutionPage initialResolutions={[draft]} />);
+    fireEvent.click(screen.getByRole("button", { name: /상세보기$/ }));
+    const flow = await screen.findByRole("list", { name: "결의 진행 단계" });
+    expect(within(flow).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "작성 완료", "장현제 회계검토", "안동연 최종결재", "지급", "전표",
+    ]);
+    expect(within(flow).getByText("작성 완료")).toHaveAttribute("aria-current", "step");
+    expect(within(flow).getByText("장현제 회계검토")).not.toHaveAttribute("aria-current");
   });
 
   it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {
@@ -345,6 +355,9 @@ describe("ExpenseResolutionPage", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /상세보기$/ }));
     const detail = within(await screen.findByRole("region", { name: "지출결의서 상세" }));
+    const flow = within(detail.getByRole("list", { name: "결의 진행 단계" }));
+    expect(Boolean(flow.queryByText("장현제 결재대기"))).toBe(showDirector);
+    expect(flow.getByText("안동연 승인완료")).toBeInTheDocument();
     fireEvent.click(detail.getByText("결재선·예산·지급 정보"));
     const detailApproval = within(detail.getByRole("region", { name: "결재선" }));
     expect(Boolean(detailApproval.queryAllByText("장현제").length)).toBe(showDirector);

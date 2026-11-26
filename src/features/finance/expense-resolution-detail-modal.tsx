@@ -9,6 +9,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ApprovalDocumentCandidate } from "@/features/approval/approval-domain";
 import { policySummary } from "./expense-approval-period";
+import { getDraftExpenseApprovalRoute } from "./expense-approval-routing";
 import type { ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
@@ -116,25 +117,26 @@ type ExpenseDetailView = "evidence" | "history" | "overview" | "expenses";
 const compactExpenseDetailLayoutEnabled = true;
 
 function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: ApprovalStep[]; resolution: ManagedExpenseResolution }) {
+  const draftRoute = getDraftExpenseApprovalRoute(resolution);
   const approvalComplete = resolution.approvalStatus === "승인완료";
   const paymentComplete = resolution.paymentStatus === "지급완료";
   const voucherComplete = resolution.voucherStatus === "전표확정";
   const steps = [
     { complete: true, current: resolution.approvalStatus === "작성중", label: "작성 완료" },
-    ...approvalLine.map((step) => ({
+    ...(draftRoute?.approvalLine ?? approvalLine).map((step) => ({
       complete: step.status === "승인완료",
       current: step.status === "결재대기",
-      label: `${step.approver} ${step.status}`,
+      label: `${step.approver} ${draftRoute ? step.role : step.status}`,
     })),
     { complete: paymentComplete, current: approvalComplete && !paymentComplete, label: "지급" },
     { complete: voucherComplete, current: paymentComplete && !voucherComplete, label: "전표" },
   ];
 
   return (
-    <ol aria-label="결의 진행 단계" className="flex min-w-max items-center gap-1 px-5 py-2.5">
+    <ol aria-label="결의 진행 단계" className="flex flex-wrap items-center gap-1 py-2.5 sm:px-5">
       {steps.map((step, index) => (
         <li className="flex items-center gap-1" key={`${step.label}-${index}`}>
-          <span className={`inline-flex h-9 items-center rounded-full border px-3 text-xs font-bold ${
+          <span aria-current={step.current ? "step" : undefined} className={`inline-flex h-9 items-center rounded-full border px-3 text-xs font-bold ${
             step.current
               ? "border-blue-200 bg-blue-100 text-blue-900"
               : step.complete

@@ -45,7 +45,7 @@ import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendo
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import {
   buildExpenseApprovalRoute,
-  getExpectedExpenseApprovalRoute,
+  getDraftExpenseApprovalRoute,
   hasExpenseApprovalRouteDrift,
   inferExpenseApprovalRoute,
   type ExpenseApprovalParticipant,
@@ -1895,8 +1895,7 @@ type DocumentApprovalParticipant = ExpenseApprovalParticipant & {
 };
 
 export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolution): DocumentApprovalParticipant[] {
-  const useCurrentDraftRoute = Boolean(resolution.approvalRoute) && ["작성중", "반려"].includes(resolution.approvalStatus);
-  const expectedDraftRoute = useCurrentDraftRoute ? getExpectedExpenseApprovalRoute(resolution) : undefined;
+  const expectedDraftRoute = getDraftExpenseApprovalRoute(resolution);
   const approvalLine = expectedDraftRoute
     ? expectedDraftRoute.approvalLine.map((expectedStep) => {
       const savedStep = resolution.approvalLine.find((step) => step.approver === expectedStep.approver && step.role === expectedStep.role);
