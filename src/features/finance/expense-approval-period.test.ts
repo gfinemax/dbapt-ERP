@@ -25,7 +25,7 @@ describe("effective expense approval dates", () => {
   });
   it("allows director authority beginning July 1", () => {
     expect(getOrganizationExpenseApprovalLine("2026-07-01")[0].approver).toBe("장현제");
-    expect(buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-07-01").participants[0].action).toBe("규정상 생략");
+    expect(buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-07-01").participants[0]).toMatchObject({ action: "회계검토", approvalOrder: 1 });
   });
   it("allows authorship starting June 22 independently of authority", () => {
     expect(buildExpenseApprovalRoute("DIRECTOR_FULL", "2026-06-21").error).toContain("입사일");

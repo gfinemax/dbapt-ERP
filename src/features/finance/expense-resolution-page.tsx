@@ -6,7 +6,7 @@ import { createContext, Fragment, useDeferredValue, useEffectEvent, useContext, 
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
+import { createExpenseApprovalPolicy, isDirector, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
 import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
@@ -1689,7 +1689,7 @@ export function createFormState(nextNo: string, currentDate = getCurrentDateIso(
     approvalDocumentNo: "",
     approvalSkipReason: "",
     approvalSkipReasonDetail: "",
-    approvalRoute: "SECRETARY_CHAIR",
+    approvalRoute: isDirector(authorLabel) ? "DIRECTOR_FULL" : "SECRETARY_CHAIR",
     approvalRecordKind: "CURRENT", originalApprovalDate: "", originalApprovalReference: "",
     expenseKind: "GENERAL",
     accountingDate: currentDate,

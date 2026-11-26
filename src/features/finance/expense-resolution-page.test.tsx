@@ -4,7 +4,7 @@ import { createExpenseApprovalPolicy } from "@/features/approval/approval-effect
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
 import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
-import { buildExpenseResolutionPdfFileName, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
+import { buildExpenseResolutionPdfFileName, createFormState, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import { getEditBankTransactionCandidates } from "./expense-resolution-form-options";
 import { ExpenseResolutionDetailModal } from "./expense-resolution-detail-modal";
 import { ExpenseResolutionCorrectionForm } from "./expense-resolution-correction-form";
@@ -69,6 +69,11 @@ describe("ExpenseResolutionPage", () => {
     expect(getExpensePrintPersonName("오학동 사무장")).toBe("오학동");
     expect(getExpensePrintPersonName("장현제 부장")).toBe("장현제");
     expect(getExpensePrintPersonName("안동연")).toBe("안동연");
+  });
+
+  it("selects an author-safe default approval route", () => {
+    expect(createFormState("지결-2026-0001", "2026-11-26", "오학동 사무국장").approvalRoute).toBe("SECRETARY_CHAIR");
+    expect(createFormState("지결-2026-0002", "2026-11-26", "장현제 이사").approvalRoute).toBe("DIRECTOR_FULL");
   });
 
   it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {
@@ -1289,9 +1294,11 @@ describe("ExpenseResolutionPage", () => {
     expect(approvalTable?.querySelectorAll("col")[1]).toHaveClass("w-[67px]");
     expect(approvalTable?.querySelectorAll("col")[2]).toHaveClass("w-[67px]");
     expect(approvalTable?.querySelectorAll("col")[3]).toHaveClass("w-[67px]");
-    expect(within(approvalTable as HTMLTableElement).getByText("서명란").closest("td")).toHaveClass("h-[58px]", "px-0.5", "py-0.5");
+    const signatureCells = within(approvalTable as HTMLTableElement).getAllByText("서명란");
+    expect(signatureCells).toHaveLength(2);
+    expect(signatureCells[0].closest("td")).toHaveClass("h-[58px]", "px-0.5", "py-0.5");
     expect(approvalTable?.querySelector("td span:last-child")).toHaveClass("expense-approval-timestamp", "text-[9px]", "leading-tight", "tabular-nums");
-    expect(within(approvalTable as HTMLTableElement).getByText("규정상 생략")).toBeInTheDocument();
+    expect(within(approvalTable as HTMLTableElement).getByText("회계검토")).toBeInTheDocument();
     expect(within(approvalTable as HTMLTableElement).getByText("최종결재")).toBeInTheDocument();
     expect(within(approvalTable as HTMLTableElement).getByText("결").parentElement).toHaveStyle({ display: "inline-flex", flexDirection: "column", gap: "10px" });
     expect(within(printDialog).getByText("총 결의금액")).toHaveClass("text-[17px]", "font-bold");

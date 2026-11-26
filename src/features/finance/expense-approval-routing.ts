@@ -6,6 +6,7 @@ export type ExpenseApprovalRoute = "SECRETARY_CHAIR" | "DIRECTOR_DELEGATED" | "D
 export type ExpenseApprovalParticipantAction =
   | "작성"
   | "규정상 생략"
+  | "회계검토"
   | "검토"
   | "전결"
   | "최종결재"
@@ -31,8 +32,8 @@ export const expenseApprovalRouteOptions: ReadonlyArray<{
   route: ExpenseApprovalRoute;
 }> = [
   {
-    description: "장현제는 규정상 생략으로 표시하고 안동연이 최종 결재해.",
-    label: "오학동 작성 · 안동연 결재",
+    description: "장현제가 회계 내용을 검토하고 안동연이 최종 결재해.",
+    label: "오학동 작성 · 장현제 회계검토 · 안동연 결재",
     route: "SECRETARY_CHAIR",
   },
   {
@@ -95,11 +96,11 @@ function buildUndatedExpenseApprovalRoute(route: ExpenseApprovalRoute) {
   }
 
   return {
-    approvalLine: [step(chair, 1, "최종결재")],
+    approvalLine: [step(director, 1, "회계검토"), step(chair, 2, "최종결재")],
     participants: [
-      participant(director, "규정상 생략"),
+      participant(director, "회계검토", 1),
       participant(secretaryGeneral, "작성"),
-      participant(chair, "최종결재", 1),
+      participant(chair, "최종결재", 2),
     ],
   };
 }

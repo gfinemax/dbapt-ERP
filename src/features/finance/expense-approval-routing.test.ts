@@ -2,15 +2,16 @@ import { describe, expect, it } from "vitest";
 import { buildExpenseApprovalRoute, inferExpenseApprovalRoute } from "./expense-approval-routing";
 
 describe("expense approval routing", () => {
-  it("shows all three people but requires only the chair for the current secretary route", () => {
+  it("requires accounting review before final approval when the secretary authors", () => {
     const route = buildExpenseApprovalRoute("SECRETARY_CHAIR");
     expect(route.participants).toEqual([
-      expect.objectContaining({ name: "장현제", title: "이사", action: "규정상 생략", approvalOrder: undefined }),
+      expect.objectContaining({ name: "장현제", title: "이사", action: "회계검토", approvalOrder: 1 }),
       expect.objectContaining({ name: "오학동", title: "사무국장", action: "작성", approvalOrder: undefined }),
-      expect.objectContaining({ name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 1 }),
+      expect.objectContaining({ name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 2 }),
     ]);
     expect(route.approvalLine).toEqual([
-      { approver: "안동연", order: 1, role: "최종결재", status: "대기" },
+      { approver: "장현제", order: 1, role: "회계검토", status: "대기" },
+      { approver: "안동연", order: 2, role: "최종결재", status: "대기" },
     ]);
   });
 
