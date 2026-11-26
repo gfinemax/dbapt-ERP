@@ -47,7 +47,12 @@ export function previewExpenseApprovalRepair(record: ManagedExpenseResolution, r
   return { before: record, after, policy, issues, canApply: issues.length === 0, bindingSteps };
 }
 export function policySummary(policy?: ExpenseApprovalPolicy) {
-  return policy ? (policy.kind === "HISTORICAL" ? "과거 원문 기준 " : "상신일 기준 ") + policy.referenceDate : "결재 기준일 확인 필요";
+  if (!policy || !isIsoDay(policy.referenceDate)) return "원문 결재일 확인 필요";
+  return (policy.kind === "HISTORICAL" ? "과거 원문 기준 " : "상신일 기준 ") + policy.referenceDate;
+}
+
+export function canShowExpenseApprovalParticipant(name: string, referenceDate?: string) {
+  return !referenceDate || !isIsoDay(referenceDate) || canApproveOn(name, referenceDate);
 }
 
 export function prepareExpenseApprovalDraft(record: ManagedExpenseResolution, existing: ManagedExpenseResolution | null, isAdmin: boolean, today = seoulToday()) {

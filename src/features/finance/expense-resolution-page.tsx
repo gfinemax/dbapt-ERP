@@ -8,6 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
 import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
 import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionListSubject, getResolutionOverBudgetAmount, isPostApprovalResolution } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
@@ -550,6 +551,10 @@ export const projectNameOptions = [
   "기타",
 ];
 export const accountTitleOptions = [
+  "운영비",
+  "인건비",
+  "사업추진비",
+  "업무추진비",
   "임차료",
   "비품비",
   "소모품비",
@@ -1867,7 +1872,8 @@ function getNextResolutionNoForLoadedPage(resolutions: ManagedExpenseResolution[
 
 export function getDisplayApprovalLine(resolution: ManagedExpenseResolution) {
   const useCurrentOrganizationRole = ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus);
-  return resolution.approvalLine.map((step) => {
+  const steps = resolution.approvalLine.filter((step) => canShowExpenseApprovalParticipant(step.approver, resolution.approvalPolicy?.referenceDate));
+  return steps.map((step) => {
     const currentApprover = getApproverLabel(step) === resolution.currentApprover;
     const role = useCurrentOrganizationRole
       ? getOrganizationApproverDisplayRole(step.approver, step.role)
@@ -1897,9 +1903,11 @@ export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolu
     }));
   }
 
-  return resolution.approvalParticipants.map((participant) => {
+  const referenceDate = resolution.approvalPolicy?.referenceDate;
+  const participants = resolution.approvalParticipants.filter((participant) => canShowExpenseApprovalParticipant(participant.name, referenceDate));
+  return participants.map((participant) => {
     const approvalStep = participant.approvalOrder
-      ? resolution.approvalLine.find((step) => step.order === participant.approvalOrder)
+      ? resolution.approvalLine.find((step) => step.order === participant.approvalOrder && canShowExpenseApprovalParticipant(step.approver, referenceDate))
       : undefined;
     const statusLabel = approvalStep
       ? ["대기", "결재대기"].includes(approvalStep.status) ? "서명란" : approvalStep.status
@@ -2475,7 +2483,7 @@ export function ExpenseResolutionPage({
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
   const [factConfirmationTarget, setFactConfirmationTarget] = useState<{ detailItem?: BatchExpenseItem; resolution: ManagedExpenseResolution } | null>(null);
-  const [printWarning, setPrintWarning] = useState<{ mode: PrintRecordItem["printPurpose"]; resolutionId: string; warnings: string[] } | null>(null);
+  const [printWarning, setPrintWarning] = useState<{ resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
@@ -3039,7 +3047,7 @@ export function ExpenseResolutionPage({
       const accountAllocations = current.accountAllocations.map((allocation) => {
         if (allocation.id !== id) return allocation;
         if (key === "accountTitle") {
-          const keepsBudgetItem = allocation.budgetItem.startsWith(`${value} >`);
+          const keepsBudgetItem = allocation.budgetItem === value || allocation.budgetItem.startsWith(`${value} >`);
           return { ...allocation, accountTitle: value, budgetItem: keepsBudgetItem ? allocation.budgetItem : "" };
         }
         return { ...allocation, [key]: value };
@@ -3960,16 +3968,20 @@ export function ExpenseResolutionPage({
     });
   }
 
-  function openPrintWithValidation(resolution: ManagedExpenseResolution, printPurpose: PrintRecordItem["printPurpose"]) {
+  function openPrintPreview(resolutionId: string, printPurpose: PrintRecordItem["printPurpose"]) {
+    createPrintRecord(resolutionId, printPurpose);
+    setPrintPreviewTargetId(resolutionId);
+  }
+
+  function openArchivePrint(resolution: ManagedExpenseResolution) {
     const warnings = getPrintValidationWarnings(resolution);
 
     if (warnings.length > 0) {
-      setPrintWarning({ mode: printPurpose, resolutionId: resolution.id, warnings });
+      setPrintWarning({ resolutionId: resolution.id, warnings });
       return;
     }
 
-    createPrintRecord(resolution.id, printPurpose);
-    setPrintPreviewTargetId(resolution.id);
+    openPrintPreview(resolution.id, "보관용");
   }
 
   function continuePrintAfterWarning() {
@@ -3977,8 +3989,7 @@ export function ExpenseResolutionPage({
       return;
     }
 
-    createPrintRecord(printWarning.resolutionId, printWarning.mode);
-    setPrintPreviewTargetId(printWarning.resolutionId);
+    openPrintPreview(printWarning.resolutionId, "보관용");
     setPrintWarning(null);
   }
 
@@ -4414,6 +4425,7 @@ export function ExpenseResolutionPage({
           expenseDetails={formOptions.expenseDetails}
           settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
           canRestoreHistorical={Boolean(viewer?.permissions.includes("ADMIN"))}
+          editingApprovalStatus={formEditingResolution?.approvalStatus}
           isEditing={Boolean(editingResolutionId)}
           isQuickConversion={Boolean(quickConversionSourceId)}
           isEvidenceUploading={isEvidenceUploading}
@@ -4471,8 +4483,8 @@ export function ExpenseResolutionPage({
           onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
           onDelete={isLegacySmallExpenseResolution(selectedDetail) ? undefined : () => removeResolution(selectedDetail.id)}
           onEdit={!isLegacySmallExpenseResolution(selectedDetail) && !viewer && selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
-          onPrintArchive={() => openPrintWithValidation(selectedDetail, "보관용")}
-          onPrintPreview={() => openPrintWithValidation(selectedDetail, "미리보기")}
+          onPrintArchive={() => openArchivePrint(selectedDetail)}
+          onPrintPreview={() => openPrintPreview(selectedDetail.id, "미리보기")}
           onProcessPayment={selectedDetail.workflowTransactionId ? undefined : () => openPaymentModal(selectedDetail)}
           onReject={() => rejectResolution(selectedDetail.id)}
           onRequestApproval={() => requestApproval(selectedDetail.id)}
@@ -4796,6 +4808,11 @@ export function SingleExpenseItemsEditor({ items, onAdd, onChange, onDelete }: {
 
 export function AccountAllocationEditor({ allocations, allocationTotal, budgetRecommendation, onAdd, onChange, onDelete, totalAmount }: { allocations: AccountAllocation[]; allocationTotal: number; budgetRecommendation: ExpenseBudgetRecommendation | null; onAdd: () => void; onChange: (id: string, key: keyof AccountAllocation, value: string) => void; onDelete: (id: string) => void; totalAmount: number }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
+  const accountOptions = Array.from(new Set([
+    ...expenseResolutionTypeOptions,
+    ...accountTitleOptions,
+    ...allocations.map((allocation) => allocation.accountTitle),
+  ].filter(Boolean)));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
     budgetRecommendation?.budgetItem ?? "",
@@ -4818,7 +4835,7 @@ export function AccountAllocationEditor({ allocations, allocationTotal, budgetRe
       </div> : null}
       <div className="mt-3 grid gap-3">
         {allocations.map((allocation, index) => <div className="grid min-w-0 gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_auto]" key={allocation.id}>
-          <label className="grid min-w-0 gap-1 text-xs font-bold">예산 구분<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}>{expenseResolutionTypeOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
+          <label className="grid min-w-0 gap-1 text-xs font-bold">계정과목<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}><option value="">선택</option>{accountOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">세부 예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}><option value="">선택</option>{budgetItemOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">분할금액<input aria-label={`분할금액 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2 text-right" min="0" onChange={(event) => onChange(allocation.id, "amount", event.target.value)} type="number" value={allocation.amount} /></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">적요<input aria-label={`분할 적요 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "description", event.target.value)} value={allocation.description} /></label>
@@ -4931,16 +4948,21 @@ export function TextInput({
   );
 }
 
-export function TextareaInput({ id, label, onChange, value }: { id?: string; label: string; onChange: (value: string) => void; value: string }) {
+export function TextareaInput({ description, id, label, onChange, value }: { description?: string; id?: string; label: string; onChange: (value: string) => void; value: string }) {
+  const descriptionId = description && id ? `${id}-description` : undefined;
+  const labelId = descriptionId ? `${id}-label` : undefined;
   return (
-    <label className={`${fieldWrapperClassName} md:col-span-2`}>
-      <span className={fieldLabelClassName}>{label}</span>
+    <label className={`${fieldWrapperClassName} min-w-0 md:col-span-2`}>
+      <span className={fieldLabelClassName} id={labelId}>{label}</span>
       <textarea
+        aria-describedby={descriptionId}
+        aria-labelledby={labelId}
         id={id}
-        className="min-h-28 rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-base font-semibold leading-6 text-[var(--color-midnight-ink)] placeholder:text-[var(--color-fog)] focus:border-[var(--color-sky-blue)] focus:outline-none focus:ring-2 focus:ring-[var(--color-morning-tint)]"
+        className="min-h-28 w-full min-w-0 resize-y rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-base font-semibold leading-6 text-[var(--color-midnight-ink)] placeholder:text-[var(--color-fog)] focus:border-[var(--color-sky-blue)] focus:outline-none focus:ring-2 focus:ring-[var(--color-morning-tint)]"
         onChange={(event) => onChange(event.target.value)}
         value={value}
       />
+      {description ? <span className="text-xs font-normal text-[var(--color-stone)]" id={descriptionId}>{description}</span> : null}
     </label>
   );
 }

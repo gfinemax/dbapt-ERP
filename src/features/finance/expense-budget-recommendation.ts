@@ -1,7 +1,7 @@
 import type { OperatingExpenseDetail } from "./operating-budget-classification";
 
 export type ExpenseBudgetRecommendation = {
-  accountTitle: "인건비" | "사업추진비" | "운영비";
+  accountTitle: "인건비" | "사업추진비" | "업무추진비" | "운영비";
   budgetItem: string;
   confidence: "높음" | "보통";
   detailCode?: string;
@@ -36,7 +36,7 @@ const recommendationRules: RecommendationRule[] = [
   { accountTitle: "사업추진비", budgetItem: "회의비>이사회비", detailCode: "MEETING-ELECTION", keywords: ["선거관리", "정기총회", "임시총회", "총회비"] },
   { accountTitle: "사업추진비", budgetItem: "회의비>이사회비", detailCode: "MEETING-BOARD", keywords: ["대의원회의", "이사회비", "이사회", "임원회의", "회의수당"] },
   { accountTitle: "사업추진비", budgetItem: "회의비>이사회비", detailCode: "MEETING-OTHER", keywords: ["기타회의비", "실무회의"] },
-  { accountTitle: "사업추진비", budgetItem: "업무추진비", detailCode: "BUSINESS-PROMOTION", keywords: ["업무추진비", "업무추진"] },
+  { accountTitle: "업무추진비", budgetItem: "업무추진비", detailCode: "BUSINESS-PROMOTION", keywords: ["업무추진비", "업무추진"] },
   { accountTitle: "인건비", budgetItem: "인건비>급여>조합장", detailCode: "LABOR-CHAIR-SALARY", keywords: ["조합장급여", "조합장월급"] },
   { accountTitle: "인건비", budgetItem: "인건비>급여>상근임원", detailCode: "LABOR-EXEC-SALARY", keywords: ["상근임원급여", "사무장급여"] },
   { accountTitle: "인건비", budgetItem: "인건비>급여>직원", detailCode: "LABOR-STAFF-SALARY", keywords: ["사무직원급여", "직원급여"] },

@@ -7,11 +7,12 @@ import { getResolutionAccountTitle } from "./expense-resolution-display";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
 const fieldClass = "w-full rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2 font-normal";
-const fields = [
+const purposeField = { name: "reason", label: "업무목적", maxLength: 4000 } as const;
+const additionalFields = [
   { name: "subject", label: "건명", maxLength: 60 },
-  { name: "reason", label: "업무목적", maxLength: 4000 },
   { name: "memo", label: "내부메모", maxLength: 4000 },
 ] as const;
+const fields = [purposeField, ...additionalFields];
 
 export function ExpenseResolutionCorrectionForm({ resolution, loadOptions, onSave, onClose }: {
   resolution: ManagedExpenseResolution;
@@ -103,14 +104,11 @@ export function ExpenseResolutionCorrectionForm({ resolution, loadOptions, onSav
     <section aria-labelledby="expense-correction-title" className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-[var(--color-cloud-veil)] p-5">
       <h3 className="text-lg font-black" id="expense-correction-title">승인완료 문서 정정</h3>
       <form className={preview ? "hidden" : "mt-4 grid gap-4"} onSubmit={review}>
-        {fields.map(({ name, label, maxLength }) => (
-          <label className="grid gap-1 text-sm font-bold" key={name}>
-            {label}
-            {name === "subject"
-              ? <input className={fieldClass} defaultValue={resolution[name] ?? ""} maxLength={maxLength} name={name} />
-              : <textarea className={fieldClass} defaultValue={resolution[name] ?? ""} maxLength={maxLength} name={name} rows={3} />}
-          </label>
-        ))}
+        <div className="grid gap-1 text-sm">
+          <label className="font-bold" htmlFor="expense-correction-purpose">{purposeField.label}</label>
+          <textarea aria-describedby="expense-correction-purpose-help" className={fieldClass} defaultValue={resolution.reason ?? ""} id="expense-correction-purpose" maxLength={purposeField.maxLength} name={purposeField.name} rows={4} />
+          <p className="text-xs text-[var(--color-stone)]" id="expense-correction-purpose-help">무엇을 위해 지출했는지 적어주세요.</p>
+        </div>
         {resolution.resolutionType === "BATCH" && resolution.expenseItems.length ? (
           <details className="rounded-lg border p-3">
             <summary className="cursor-pointer text-sm font-bold">항목별 업무목적</summary>
@@ -124,6 +122,19 @@ export function ExpenseResolutionCorrectionForm({ resolution, loadOptions, onSav
             </div>
           </details>
         ) : null}
+        <details className="rounded-lg border p-3">
+          <summary className="cursor-pointer text-sm font-bold">건명·내부메모 정정</summary>
+          <div className="mt-3 grid gap-3">
+            {additionalFields.map(({ name, label, maxLength }) => (
+              <label className="grid gap-1 text-sm font-bold" key={name}>
+                {label}
+                {name === "subject"
+                  ? <input className={fieldClass} defaultValue={resolution[name] ?? ""} maxLength={maxLength} name={name} />
+                  : <textarea className={fieldClass} defaultValue={resolution[name] ?? ""} maxLength={maxLength} name={name} rows={3} />}
+              </label>
+            ))}
+          </div>
+        </details>
         {loadOptions ? (
           <div className="grid gap-2 text-sm">
             {options?.options.length ? (

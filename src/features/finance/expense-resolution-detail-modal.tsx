@@ -153,6 +153,7 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
 function ExpenseResolutionDetailWorkspace({
   actionError,
   approvalLine,
+  approvalLineNeedsReview,
   budgetDataError,
   canApprove,
   evidenceRows,
@@ -172,6 +173,7 @@ function ExpenseResolutionDetailWorkspace({
 }: {
   actionError?: string;
   approvalLine: ApprovalStep[];
+  approvalLineNeedsReview: boolean;
   budgetDataError?: string;
   canApprove: boolean;
   evidenceRows: ReturnType<typeof getEvidenceRows>;
@@ -365,9 +367,9 @@ function ExpenseResolutionDetailWorkspace({
         ) : null}
         <section aria-labelledby="approval-inspector-title">
           <h3 className="text-base font-black" id="approval-inspector-title">결재 진행</h3>
-          {resolution.approvalParticipants?.length ? (
+          {resolution.approvalParticipants?.length && documentApprovalParticipants.length ? (
             <div className="mt-3 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/45 p-3">
-              <p className="text-xs font-black text-[var(--color-stone)]">문서 표시 · 3명</p>
+              <p className="text-xs font-black text-[var(--color-stone)]">문서 표시 · {documentApprovalParticipants.length}명</p>
               <ol className="mt-2 grid gap-2">
                 {documentApprovalParticipants.map((participant) => (
                   <li className="grid grid-cols-[1fr_auto] items-center gap-2 text-xs" key={participant.name}>
@@ -390,7 +392,10 @@ function ExpenseResolutionDetailWorkspace({
             ))}
           </ol>
           <div className="mt-3 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/55 p-3">
-            {resolution.approvalStatus === "작성중" ? (
+            {approvalLineNeedsReview ? (
+              <p className="text-xs font-semibold leading-5 text-amber-900">저장된 결재선이 기준일과 맞지 않습니다. 원문 결재일과 결재선을 확인해 주세요.</p>
+            ) : null}
+            {resolution.approvalStatus === "작성중" && !approvalLineNeedsReview ? (
               authorization.ready ? (
                 <Button className="w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onRequestApproval}>
                   {isApprovalActionPending ? "승인요청 처리 중" : "결재 시작 · 승인요청"}
@@ -410,7 +415,7 @@ function ExpenseResolutionDetailWorkspace({
                 <Button className="rounded-lg text-[var(--color-tangerine)]" disabled={isApprovalActionPending} onClick={onReject} variant="outline">반려</Button>
               </div>
             ) : null}
-            {resolution.approvalStatus === "승인대기" && !canApprove ? (
+            {resolution.approvalStatus === "승인대기" && !canApprove && !approvalLineNeedsReview ? (
               <p className="text-xs font-semibold leading-5 text-[var(--color-stone)]">현재 결재자는 <strong className="text-[var(--color-midnight-ink)]">{resolution.currentApprover ?? approvalLine.find((step) => step.status === "결재대기")?.approver ?? "지정 결재자"}</strong>입니다. 해당 결재자 계정에서 승인·반려할 수 있습니다.</p>
             ) : null}
             {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">{resolution.paymentStatus === "지급완료" ? "모든 결재와 지급이 완료됐어. 전표 단계로 진행해." : "모든 결재가 완료됐어. 지급 단계로 진행해."}</p> : null}
@@ -463,7 +468,7 @@ function InspectorRow({ emphasized = false, label, value }: { emphasized?: boole
 export function ExpenseResolutionDetailModal({
   actionError,
   budgetDataError,
-  canApprove = false,
+  canApprove: hasApprovalPermission = false,
   editHref,
   linkedApproval,
   loadCorrectionOptions,
@@ -512,6 +517,8 @@ export function ExpenseResolutionDetailModal({
   const evidenceRows = getEvidenceRows(resolution);
   const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
   const approvalLine = getDisplayApprovalLine(resolution);
+  const approvalLineNeedsReview = approvalLine.length !== resolution.approvalLine.length;
+  const canApprove = hasApprovalPermission && !approvalLineNeedsReview;
   const authorization = getExpenseAuthorizationReadiness(resolution);
   const [historySort, setHistorySort] = useState<"asc" | "desc">("asc");
   const [isApprovalActionPending, setIsApprovalActionPending] = useState(false);
@@ -598,6 +605,7 @@ export function ExpenseResolutionDetailModal({
           <ExpenseResolutionDetailWorkspace
             actionError={actionError}
             approvalLine={approvalLine}
+            approvalLineNeedsReview={approvalLineNeedsReview}
             budgetDataError={budgetDataError}
             canApprove={canApprove}
             evidenceRows={evidenceRows}
@@ -701,7 +709,7 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="지출예정일" value={resolution.plannedPaymentDate || "-"} />
             <DetailItem label="승인상태" value={<Badge value={resolution.approvalStatus} />} />
             <DetailItem label="지급상태" value={<Badge value={resolution.paymentStatus} />} />
-            <DetailItem label="현재결재자" value={resolution.currentApprover ?? "없음"} />
+            <DetailItem label="현재결재자" value={approvalLineNeedsReview ? "결재선 확인 필요" : resolution.currentApprover ?? "없음"} />
           </DetailSection>
 
           <DetailSection title="지출정보">
@@ -950,8 +958,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.approvalStatus === "작성중" ? (
             <>
               {renderEditAction("수정")}
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending || !authorization.ready} onClick={() => { void handleRequestApproval(); }} title={!authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
-                {isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending || !authorization.ready || approvalLineNeedsReview} onClick={() => { void handleRequestApproval(); }} title={!authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
+                {approvalLineNeedsReview ? "결재선 확인 필요" : isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
               </Button>
             </>
           ) : null}

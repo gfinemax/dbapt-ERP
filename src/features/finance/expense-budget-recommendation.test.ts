@@ -2,6 +2,11 @@ import { describe, expect, it } from "vitest";
 import { recommendExpenseBudget, recommendOperatingExpenseDetail } from "./expense-budget-recommendation";
 
 describe("expense budget recommendation", () => {
+  it("keeps business promotion expense as 업무추진비 rather than 사업추진비", () => {
+    expect(recommendExpenseBudget({ subject: "업무추진비 축하화환" })).toMatchObject({
+      accountTitle: "업무추진비", budgetItem: "업무추진비", detailCode: "BUSINESS-PROMOTION",
+    });
+  });
   it("recommends book and printing expense for custom envelope printing", () => {
     expect(recommendExpenseBudget({ itemName: "소봉투제작(5백매)", vendorBusinessCategory: "각종인쇄물디자인" })).toEqual({
       accountTitle: "운영비",

@@ -1,6 +1,6 @@
 "use client";
 
-import { FileSpreadsheet, X } from "lucide-react";
+import { ChevronDown, FileSpreadsheet, X } from "lucide-react";
 import type { ChangeEvent } from "react";
 import { useContext, useEffect, useMemo, useRef, useState } from "react";
 
@@ -15,7 +15,8 @@ import { calculateBatchEvidenceSettlement, findDuplicateEvidenceIds } from "./ex
 import { isBudgetProfilePeriodKey } from "./budget-profile-lookup";
 import { getEmployeeAdvanceSourceFacts } from "./expense-advance-source";
 import { ExpenseApprovalPolicyFields } from "./expense-approval-policy-fields";
-import { seoulToday } from "@/features/approval/approval-effective-policy";
+import { directorAppointment, isIsoDay, seoulToday } from "@/features/approval/approval-effective-policy";
+import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
 import { buildExpenseApprovalRoute, expenseApprovalRouteOptions } from "./expense-approval-routing";
 import { buildExpenseOcrFormSuggestions } from "./expense-ocr-form-suggestions";
 import { expenseResolutionTypeOptions, formatExpenseResolutionAmount, type ExpenseResolutionType } from "./expense-resolution-data";
@@ -85,6 +86,7 @@ export function ExpenseResolutionCreateModal({
   formState,
   settlementCandidates,
   canRestoreHistorical = false,
+  editingApprovalStatus,
   isEditing,
   isQuickConversion,
   isEvidenceUploading,
@@ -133,6 +135,7 @@ export function ExpenseResolutionCreateModal({
   formState: ResolutionFormState;
   settlementCandidates: ManagedExpenseResolution[];
   canRestoreHistorical?: boolean;
+  editingApprovalStatus?: ManagedExpenseResolution["approvalStatus"];
   isEditing: boolean;
   isQuickConversion: boolean;
   isEvidenceUploading: boolean;
@@ -166,8 +169,11 @@ export function ExpenseResolutionCreateModal({
   onAccountAllocationChange: (id: string, key: keyof AccountAllocation, value: string) => void;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
-  const approvalReferenceDate = formState.approvalRecordKind === "HISTORICAL" ? formState.originalApprovalDate || seoulToday() : seoulToday();
-  const selectedApprovalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalReferenceDate);
+  const today = seoulToday();
+  const approvalReferenceDate = formState.approvalRecordKind === "HISTORICAL" ? formState.originalApprovalDate ?? "" : today;
+  const selectedApprovalRoute = isIsoDay(approvalReferenceDate) && approvalReferenceDate <= today
+    ? buildExpenseApprovalRoute(formState.approvalRoute, approvalReferenceDate)
+    : undefined;
   const operatingExpenseDetailOptions = Array.from(new Set(expenseDetails.length ? [...expenseDetails.map((detail) => detail.name), formState.operationExpenseDetail].filter(Boolean) : legacyOperatingExpenseDetailOptions));
   const budgetItemOptions = Array.from(new Set([
     ...Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key)),
@@ -234,14 +240,20 @@ export function ExpenseResolutionCreateModal({
   const directPolicy = evaluateDirectExpensePolicy({ amount: totalAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, directExpenseSettings);
   const selectedApprovalDocument = approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
   const [isExpenseDetailOpen, setIsExpenseDetailOpen] = useState(false);
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(1);
+  const [currentStep, setCurrentStep] = useState<1 | 2 | 3 | "overview" | "evidence">(isEditing ? "overview" : 1);
+  const creationStep = typeof currentStep === "number" ? currentStep : 1;
+  const showEvidence = isEditing ? currentStep === "evidence" : currentStep === 2;
+  const showRelatedInformation = isEditing ? showEvidence : currentStep === 3;
+  const hasUnlinkedCorporateCard = formState.quickEntryMode === "BUDGET_DIRECT"
+    && formState.quickPaymentMethod === "CORPORATE_CARD"
+    && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId);
   const [evidenceProcessingFileName, setEvidenceProcessingFileName] = useState("");
   const [evidenceProcessingStartedAt, setEvidenceProcessingStartedAt] = useState<number | null>(null);
   const [ocrElapsedSeconds, setOcrElapsedSeconds] = useState(0);
   const [lastSavedAt, setLastSavedAt] = useState("");
   const [ocrUndoSnapshot, setOcrUndoSnapshot] = useState<Pick<ResolutionFormState, "plannedPaymentDate" | "vendorName" | "vendorAddress" | "vendorBusinessCategory" | "vendorBusinessNumber" | "vendorBusinessType" | "vendorContact" | "vendorRepresentative" | "singleItems" | "accountAllocations" | "budgetItem" | "budgetRecommendation" | "budgetPeriod" | "operationExpenseDetail" | "supplyAmount" | "vat"> | null>(null);
   const evidenceFileInputRef = useRef<HTMLInputElement>(null);
-  const moveToField = (step: 1 | 2, fieldId: string) => {
+  const moveToField = (step: typeof currentStep, fieldId: string) => {
     setCurrentStep(step);
     window.setTimeout(() => {
       const field = document.getElementById(fieldId);
@@ -277,7 +289,8 @@ export function ExpenseResolutionCreateModal({
   const moveToReviewField = (label: string) => {
     if (label === "건명 입력") return moveToField(1, "expense-subject");
     if (label === "프로젝트 선택") return moveToField(1, "expense-project-name");
-    if (label === "지출사유 입력") return moveToField(2, "expense-reason");
+    if (label === "지출사유 입력") return moveToField(isEditing ? "overview" : 2, "expense-reason");
+    if (label === `${formState.evidenceType} 첨부` && isEditing) return moveToField("evidence", "expense-evidence-add");
     setCurrentStep(["지급계좌 확인", "집행방식", "비용부담 유형", "원 사전결의 연결"].includes(label) ? 1 : 2);
   };
   const reviewItems = [
@@ -323,6 +336,11 @@ export function ExpenseResolutionCreateModal({
     { key: 2 as const, label: "금액·증빙", remaining: stepTwoRemaining },
     { key: 3 as const, label: "검토·승인", remaining: incompleteReviewItems.length },
   ];
+  const editSections = [
+    { key: 2, label: "금액·계정·예산", summary: `${formatExpenseResolutionAmount(totalAmount)} · ${formState.budgetItem || "예산항목 미선택"}` },
+    { key: 1, label: "지급·거래", summary: `${formState.vendorName || "거래처 미입력"} · ${formState.projectName || "프로젝트 미선택"}` },
+    { key: "evidence", label: "증빙·결재", summary: `증빙 ${formState.evidenceFiles.length}개 · ${editingApprovalStatus ?? "작성중"}` },
+  ] as const;
   const duplicateEvidenceIds = findDuplicateEvidenceIds(formState.evidenceFiles);
   const displayedSupplyAmount = isBatch ? batchSummary.totalSupplyAmount : formState.singleItems.reduce((sum, item) => sum + item.supplyAmount, 0);
   const displayedVatAmount = isBatch ? batchSummary.totalVatAmount : formState.singleItems.reduce((sum, item) => sum + item.vatAmount, 0);
@@ -351,7 +369,7 @@ export function ExpenseResolutionCreateModal({
     setOcrElapsedSeconds(0);
     captureBeforeOcr();
     const uploadedCount = await onUploadEvidenceFiles(files);
-    if (uploadedCount > 0) setCurrentStep(2);
+    if (uploadedCount > 0) setCurrentStep(isEditing ? "evidence" : 2);
   }
 
   useEffect(() => {
@@ -414,11 +432,11 @@ export function ExpenseResolutionCreateModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[var(--color-sky-wash)]/88 px-4 py-8" onClick={onCancel}>
+    <div className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[var(--color-sky-wash)]/88 ${isEditing ? "p-2 sm:p-6" : "px-4 py-8"}`} onClick={onCancel}>
       <section
         aria-labelledby="expense-resolution-dialog-title"
         aria-modal="true"
-        className="w-full max-w-7xl overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] shadow-[0_24px_80px_rgba(16,20,24,0.22)]"
+        className={`w-full overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] shadow-[0_24px_80px_rgba(16,20,24,0.22)] ${isEditing ? "flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col sm:max-h-[calc(100dvh-3rem)]" : "max-w-7xl"}`}
         onClick={(event) => event.stopPropagation()}
         role="dialog"
       >
@@ -429,44 +447,89 @@ export function ExpenseResolutionCreateModal({
           disabled={isEvidenceUploading}
           onChange={handleEvidenceChange}
           ref={evidenceFileInputRef}
+          tabIndex={isEditing ? -1 : undefined}
           type="file"
         />
-        <div className="flex items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-6 py-5">
-          <div>
+        <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-4 py-4 sm:px-6 sm:py-5">
+          <div className="min-w-0">
             <h2 className="text-2xl font-bold" id="expense-resolution-dialog-title">
               {isEditing ? "지출결의서 수정" : isQuickConversion ? "간편지출을 정식결의로 전환" : "지출결의서 작성"}
             </h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">
-              {isEditing
-                ? "누락된 결의 내용을 보완합니다. 승인대기 문서는 저장 시 결재 상태를 다시 시작합니다."
-                : isQuickConversion
+            {isEditing ? (
+              <p className="mt-1 break-words text-sm font-semibold text-[var(--color-stone)]">{formState.resolutionNo} · {formState.subject || "건명 미입력"}</p>
+            ) : <>
+              <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">
+                {isQuickConversion
                   ? "기존 사용내용과 증빙을 가져왔어. 프로젝트·계정·세금 구분을 확인하면 원본과 연결된 지출결의 초안으로 저장돼."
-                : "조합 지출 전에 결의서를 작성하고 결재 승인 후 지급대기 및 지출전표 생성으로 연결합니다."}
-            </p>
-            <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">{lastSavedAt ? `마지막 임시저장 ${lastSavedAt}` : "아직 저장되지 않음 · 변경사항은 임시저장으로 보관할 수 있습니다."}</p>
+                  : "조합 지출 전에 결의서를 작성하고 결재 승인 후 지급대기 및 지출전표 생성으로 연결합니다."}
+              </p>
+              <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">{lastSavedAt ? `마지막 임시저장 ${lastSavedAt}` : "아직 저장되지 않음 · 변경사항은 임시저장으로 보관할 수 있습니다."}</p>
+            </>}
           </div>
           <button aria-label="닫기" className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onCancel} type="button">
             <X className="size-4" />
           </button>
         </div>
 
-        <nav aria-label="지출결의 작성 단계" className="grid grid-cols-3 border-b border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-5 py-3">
+        <div className={isEditing ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : undefined}>
+        {isEditing ? (
+          <div className="grid gap-4 px-4 pt-4 sm:px-6 sm:pt-5">
+            <dl aria-label="현재 결의 요약" className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm sm:grid-cols-4">
+              <div className="min-w-0"><dt className="text-xs text-[var(--color-stone)]">거래처</dt><dd className="break-words font-bold">{formState.vendorName || "미입력"}</dd></div>
+              <div><dt className="text-xs text-[var(--color-stone)]">지출일</dt><dd className="font-bold">{formState.actualExpenseDate || formState.plannedPaymentDate || "미입력"}</dd></div>
+              <div><dt className="text-xs text-[var(--color-stone)]">총지급액</dt><dd className="font-bold">{formatExpenseResolutionAmount(totalAmount)}</dd></div>
+              <div><dt className="text-xs text-[var(--color-stone)]">결재상태</dt><dd className="font-bold">{editingApprovalStatus ?? "작성중"}</dd></div>
+            </dl>
+            <section aria-label="업무목적 입력" className="grid min-w-0 gap-3 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 sm:p-5">
+              <TextareaInput
+                description="무엇을 위해 지출했는지 적어주세요. 예) 사무국 문서 보관용 소모품 구입"
+                id="expense-reason"
+                label="업무목적"
+                onChange={(value) => onChange("reason", value)}
+                value={formState.reason}
+              />
+              {isBatch && formState.batchItems.length ? (
+                <CollapsibleFormSection summary={`${formState.batchItems.length}개 항목`} title="항목별 업무목적">
+                  {formState.batchItems.map((item) => (
+                    <TextareaInput key={item.id} label={`${item.itemNo}행 업무목적${item.itemTitle ? ` · ${item.itemTitle}` : ""}`} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} value={item.businessPurpose} />
+                  ))}
+                </CollapsibleFormSection>
+              ) : null}
+            </section>
+            <div aria-label="상세 수정" className="grid gap-2 sm:grid-cols-3" role="group">
+              {editSections.map(({ key, label, summary }) => (
+                <button
+                  aria-controls="expense-edit-details"
+                  aria-expanded={currentStep === key}
+                  aria-label={label}
+                  className={`flex min-w-0 items-center justify-between gap-3 rounded-xl border px-4 py-3 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-deep-cobalt)] ${currentStep === key ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]" : "border-[var(--color-soft-border)] bg-white"}`}
+                  key={key}
+                  onClick={() => setCurrentStep(currentStep === key ? "overview" : key)}
+                  type="button"
+                >
+                  <span className="min-w-0"><span className="block text-sm font-bold">{label}</span><span className="mt-0.5 block break-words text-xs text-[var(--color-stone)]">{summary}</span></span>
+                  <ChevronDown aria-hidden="true" className={`size-4 shrink-0 ${currentStep === key ? "rotate-180" : ""}`} />
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : <nav aria-label="지출결의 작성 단계" className="grid grid-cols-3 border-b border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-5 py-3">
           {stepItems.map((step) => (
             <button
               aria-current={currentStep === step.key ? "step" : undefined}
               className={`flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-bold transition ${
-                currentStep === step.key ? "bg-[var(--color-pressed-charcoal)] text-white" : currentStep > step.key ? "text-[var(--color-green-ink)]" : "text-[var(--color-stone)]"
+                currentStep === step.key ? "bg-[var(--color-pressed-charcoal)] text-white" : creationStep > step.key ? "text-[var(--color-green-ink)]" : "text-[var(--color-stone)]"
               }`}
               key={step.key}
               onClick={() => setCurrentStep(step.key)}
               type="button"
             >
-              <span className="flex size-6 items-center justify-center rounded-full border border-current text-xs">{currentStep > step.key ? "✓" : step.key}</span>
+              <span className="flex size-6 items-center justify-center rounded-full border border-current text-xs">{creationStep > step.key ? "✓" : step.key}</span>
               {step.label}
               {step.remaining > 0 ? <span className="rounded-full bg-white/85 px-2 py-0.5 text-[10px] font-black text-[var(--color-tangerine)]">{step.remaining}</span> : null}
             </button>
           ))}
-        </nav>
+        </nav>}
         <input
           accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
           aria-label="증빙자료 파일 선택"
@@ -476,10 +539,11 @@ export function ExpenseResolutionCreateModal({
           multiple={isBatch && formState.inputMethod === "EVIDENCE_OCR"}
           onChange={(event) => void handleEvidenceChange(event)}
           ref={evidenceFileInputRef}
+          tabIndex={isEditing ? -1 : undefined}
           type="file"
         />
 
-        <div className="grid gap-4 p-5 xl:grid-cols-[1fr_320px]">
+        <div className={`grid gap-4 p-4 sm:p-5 ${isEditing && currentStep !== 2 && currentStep !== 3 ? "" : "xl:grid-cols-[minmax(0,1fr)_320px]"}`} id={isEditing ? "expense-edit-details" : undefined}>
           <div className="grid min-w-0 gap-4">
             {evidenceUploadError ? (
               <div className="rounded-xl border border-[var(--color-tangerine)]/35 bg-[var(--color-sunset-soft)] px-5 py-4" role="alert">
@@ -519,7 +583,7 @@ export function ExpenseResolutionCreateModal({
                 <p className="mt-1 text-sm text-[var(--color-stone)]">{latestOcrProgress.errorMessage ?? "원본을 보면서 직접 입력하거나 다시 분석할 수 있습니다."}</p>
                 {latestEvidenceFile ? <Button className="mt-3" onClick={() => void onRetryEvidenceFile(latestEvidenceFile.id)} type="button" variant="outline">다시 분석</Button> : null}
               </div>
-            ) : currentStep === 2 && latestEvidenceFile && formState.inputMethod === "EVIDENCE_OCR" ? (
+            ) : showEvidence && latestEvidenceFile && formState.inputMethod === "EVIDENCE_OCR" ? (
               <div className={`rounded-xl border px-5 py-4 ${latestEvidenceFile.ocrStatus === "CONFIRMED" ? "border-[var(--color-green-ink)]/25 bg-[var(--color-mint-wash)]" : "border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)]"}`} role="status">
                 <p className="font-bold">{latestEvidenceFile.ocrStatus === "CONFIRMED" ? "OCR 자동입력이 완료되었습니다." : "OCR 분석 결과를 확인해 주세요."}</p>
                 <p className="mt-1 text-sm text-[var(--color-stone)]">{latestEvidenceFile.fileName} · 아래 추출값과 원본을 비교한 뒤 필요한 항목을 수정해 주세요.</p>
@@ -954,9 +1018,9 @@ export function ExpenseResolutionCreateModal({
                     <TextareaInput label="예산초과 사유" onChange={(value) => onChange("budgetOverReason", value)} value={formState.budgetOverReason} />
                   </div>
                 ) : null}
-                <div className="mt-3">
+                {!isEditing ? <div className="mt-3">
                   <TextareaInput id="expense-reason" label="지출사유" onChange={(value) => onChange("reason", value)} value={formState.reason} />
-                </div>
+                </div> : null}
               </div>
               ) : null}
             </FormSection>
@@ -973,6 +1037,7 @@ export function ExpenseResolutionCreateModal({
                 onCopyBatchItem={onCopyBatchItem}
                 onDeleteBatchItem={onDeleteBatchItem}
                 onReviewBatchBudget={onReviewBatchBudget}
+                showBusinessPurpose={!isEditing}
               />
             ) : null}
 
@@ -1004,7 +1069,7 @@ export function ExpenseResolutionCreateModal({
               <FormSection title="사후 지출 정보">
                 <TextInput label="비용부담자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} />
                 <TextInput label="실제 사용금액" onChange={(value) => onChange("actualUsedAmount", value)} type="number" value={formState.actualUsedAmount} />
-                <TextareaInput label="사후 지출사유" onChange={(value) => onChange("postApprovalReason", value)} value={formState.postApprovalReason} />
+                <TextareaInput description={isEditing ? "지출 후에 결의를 올리게 된 경위를 적어주세요." : undefined} id="expense-post-approval-reason" label={isEditing ? "사후결의 사유" : "사후 지출사유"} onChange={(value) => onChange("postApprovalReason", value)} value={formState.postApprovalReason} />
               </FormSection>
             ) : null}
 
@@ -1040,11 +1105,11 @@ export function ExpenseResolutionCreateModal({
                     <p className={batchEvidenceSettlement.canApprove ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{batchEvidenceSettlement.canApprove ? "정산 대사가 완료되었습니다." : batchEvidenceSettlement.errors.join(" ")}</p>
                   </div>
                 ) : null}
-                <TextareaInput label="정산사유" onChange={(value) => onChange("postApprovalReason", value)} value={formState.postApprovalReason} />
+                <TextareaInput id="expense-settlement-reason" label="정산사유" onChange={(value) => onChange("postApprovalReason", value)} value={formState.postApprovalReason} />
               </FormSection>
             ) : null}
 
-            {currentStep === 2 ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
+            {showEvidence ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
               {formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? (
                 <fieldset className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 md:col-span-3">
                   <legend className="px-1 text-sm font-bold">영수증 또는 대체증빙 상태</legend>
@@ -1081,12 +1146,18 @@ export function ExpenseResolutionCreateModal({
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold md:col-span-2" htmlFor="expense-evidence-file">
+              <div className="grid gap-1 text-sm font-semibold md:col-span-2">
                 <span>증빙자료</span>
-                <span className="flex min-h-24 cursor-pointer items-center justify-center rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-center text-sm text-[var(--color-stone)]">
+                <button
+                  className="min-h-24 cursor-pointer rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-center text-sm text-[var(--color-stone)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-deep-cobalt)] disabled:cursor-wait"
+                  disabled={isEvidenceUploading}
+                  id="expense-evidence-add"
+                  onClick={() => evidenceFileInputRef.current?.click()}
+                  type="button"
+                >
                   {isEvidenceUploading ? "최대 3개씩 안전한 저장소에 업로드 중입니다…" : isBatch && formState.inputMethod === "EVIDENCE_OCR" ? `영수증을 여러 개 선택하세요. 최대 10개 · 현재 ${formState.evidenceFiles.length}개` : "PDF, 이미지, TXT, CSV 증빙을 선택하세요. 최대 10MB"}
-                </span>
-              </label>
+                </button>
+              </div>
               {isBatch && formState.inputMethod === "EVIDENCE_OCR" ? (
                 <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3 text-sm md:col-span-3 md:grid-cols-4">
                   <p><span className="block text-xs font-bold text-[var(--color-stone)]">전체 증빙</span><strong>{batchEvidenceSettlement.totalCount}개</strong></p>
@@ -1184,7 +1255,7 @@ export function ExpenseResolutionCreateModal({
                 <DetailItem label="총지급액" value={formatExpenseResolutionAmount(totalAmount)} />
                 <DetailItem label="계정과목" value={formState.accountAllocations.map((item) => item.accountTitle).join(", ") || "-"} />
               </div>
-              <div className="rounded-lg bg-white p-3"><div className="flex items-center justify-between gap-3"><div><p className="font-bold">지출내역·증빙</p><p className="mt-1 text-sm text-[var(--color-stone)]">품목 {isBatch ? formState.batchItems.length : formState.singleItems.length}건 · 증빙 {formState.evidenceFiles.length}개 · {formState.reason || "지출사유 미입력"}</p></div><Button onClick={() => setCurrentStep(2)} size="sm" type="button" variant="outline">금액·증빙 수정</Button></div></div>
+              <div className="rounded-lg bg-white p-3"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="font-bold">지출내역·증빙</p><p className="mt-1 break-words text-sm text-[var(--color-stone)]">품목 {isBatch ? formState.batchItems.length : formState.singleItems.length}건 · 증빙 {formState.evidenceFiles.length}개 · {formState.reason || "지출사유 미입력"}</p></div><Button onClick={() => setCurrentStep(2)} size="sm" type="button" variant="outline">{isEditing ? "금액·계정 수정" : "금액·증빙 수정"}</Button></div></div>
               <div className="grid gap-3 md:grid-cols-2">
                 <div className="rounded-lg bg-white p-3"><p className="font-bold">지출 품목</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{(isBatch ? formState.batchItems.map((item) => ({ id: item.id, label: item.itemTitle, total: item.totalAmount })) : formState.singleItems.map((item) => ({ id: item.id, label: item.itemName, total: item.totalAmount }))).map((item) => <p key={item.id}>{item.label || "품목명 미입력"} · {formatExpenseResolutionAmount(item.total)}</p>)}</div></div>
                 <div className="rounded-lg bg-white p-3"><p className="font-bold">증빙자료</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{formState.evidenceFiles.length ? formState.evidenceFiles.map((file) => <p key={file.id}>{file.fileName} · {file.ocrStatus === "CONFIRMED" ? "확인완료" : "확인 필요"}</p>) : <p>첨부된 증빙 없음</p>}</div></div>
@@ -1193,18 +1264,18 @@ export function ExpenseResolutionCreateModal({
               </div>
             </section> : null}
 
-            {currentStep === 3 ? <FormSection title="계약·회의 연결">
+            {showRelatedInformation ? <FormSection title="계약·회의 연결">
               <TextInput label="관련계약" onChange={(value) => onChange("relatedContract", value)} value={formState.relatedContract} />
               <TextInput label="관련회의/의결" onChange={(value) => onChange("relatedMeeting", value)} value={formState.relatedMeeting} />
             </FormSection> : null}
 
-            {currentStep === 3 ? <CollapsibleFormSection summary={formState.memo.trim() ? "내부메모 입력됨" : "내부메모 없음"} title="기타">
+            {showRelatedInformation ? <CollapsibleFormSection summary={formState.memo.trim() ? "내부메모 입력됨" : "내부메모 없음"} title="기타">
               <TextareaInput label="내부메모" onChange={(value) => onChange("memo", value)} value={formState.memo} />
             </CollapsibleFormSection> : null}
           </div>
 
-          <aside className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3">
-            <section className="mb-3 rounded-lg bg-white p-3">
+          {!isEditing || currentStep === 2 || currentStep === 3 ? <aside className="min-w-0 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3">
+            {!isEditing ? <section className="mb-3 rounded-lg bg-white p-3">
               <h3 className="text-base font-bold">현재 결의 요약</h3>
               <div className="mt-3 grid gap-2 text-sm">
                 <BudgetRow label={isCorporateCardPayment ? "결제수단" : "지급대상"} value={isCorporateCardPayment ? "공용 법인카드 · 별도 지급 없음" : selectedPaymentTarget.label} />
@@ -1212,7 +1283,7 @@ export function ExpenseResolutionCreateModal({
                 <BudgetRow label="총지급액" value={formatExpenseResolutionAmount(totalAmount)} />
                 <BudgetRow label="예산상태" value={budgetSnapshot.budgetCheckStatus} />
               </div>
-            </section>
+            </section> : null}
 
             {currentStep === 2 ? <section className="mb-3 rounded-lg bg-white p-3">
               <h3 className="text-base font-bold">이번 달 예산현황</h3>
@@ -1242,13 +1313,13 @@ export function ExpenseResolutionCreateModal({
             </section> : null}
 
             {currentStep === 3 ? <><section className="mb-3 rounded-lg bg-white p-3">
-              <h3 className="text-base font-bold">승인 전 확인</h3>
+              <h3 className="text-base font-bold" id="expense-approval-review-title" tabIndex={-1}>승인 전 확인</h3>
               <div className="mt-3 grid gap-2">
                 {reviewItems.map((item) => (
                   <div className={`flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${item.complete ? "bg-[var(--color-sprout)] text-[var(--color-green-ink)]" : "bg-[var(--color-sunset-soft)] text-[var(--color-tangerine)]"}`} key={item.label}>
                     <span>{item.complete ? "✓" : "!"}</span>
                     <span className="min-w-0 flex-1">
-                      <span className="block">{item.label}</span>
+                      <span className="block">{isEditing && item.label === "지출사유 입력" ? "업무목적 입력" : item.label}</span>
                       {!item.complete && getReviewSuggestion(item.label) ? <span className="mt-0.5 block truncate text-[10px] font-semibold text-[var(--color-stone)]">추천: {getReviewSuggestion(item.label)}</span> : null}
                     </span>
                     {!item.complete && getReviewSuggestion(item.label) ? <button className="rounded-full border border-current bg-white px-2 py-1 text-[10px] font-black" onClick={() => applyReviewSuggestion(item.label)} type="button">추천 적용</button> : null}
@@ -1260,6 +1331,7 @@ export function ExpenseResolutionCreateModal({
             </section>
             <h3 className="text-base font-bold">결재선</h3>
             <ExpenseApprovalPolicyFields kind={formState.approvalRecordKind} originalDate={formState.originalApprovalDate} originalReference={formState.originalApprovalReference} canRestore={canRestoreHistorical} onKind={value => onChange("approvalRecordKind", value)} onDate={value => onChange("originalApprovalDate", value)} onReference={value => onChange("originalApprovalReference", value)} />
+            {selectedApprovalRoute ? <>
             {selectedApprovalRoute.error ? <p role="alert" className="mt-2 text-xs text-red-700">{selectedApprovalRoute.error}</p> : null}
             <p className="mt-1 text-xs leading-5 text-[var(--color-stone)]">기준일에 참여 가능한 사람만 표시하고, 실제 로그인 결재는 선택한 경로의 필수 결재자만 진행합니다. 작성·생략·후열은 승인 서명이 아닙니다.</p>
             <div className="mt-3 grid gap-2">
@@ -1277,13 +1349,13 @@ export function ExpenseResolutionCreateModal({
                     type="button"
                   >
                     <span className="block text-sm font-black">{option.label}</span>
-                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.route === "SECRETARY_CHAIR" && approvalReferenceDate < "2026-07-01" ? "오학동 작성 후 안동연이 최종 결재합니다. 장현제는 기간상 참여 대상이 아닙니다." : option.description}</span>
+                    <span className="mt-1 block text-xs leading-5 text-[var(--color-stone)]">{option.route === "SECRETARY_CHAIR" && approvalReferenceDate < directorAppointment.approvalFrom ? "오학동 작성 후 안동연이 최종 결재합니다." : option.description}</span>
                   </button>
                 );
               })}
             </div>
             <div className="mt-3 overflow-hidden rounded-lg border border-[var(--color-soft-border)] bg-white">
-              <table className="w-full text-left text-sm">
+              <table aria-label="문서 결재란" className="w-full text-left text-sm">
                 <thead className="bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                   <tr>
                     <th className="px-3 py-2">표시</th>
@@ -1294,7 +1366,7 @@ export function ExpenseResolutionCreateModal({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
-                  {selectedApprovalRoute.participants.map((participant, index) => (
+                  {selectedApprovalRoute.participants.filter((participant) => canShowExpenseApprovalParticipant(participant.name, approvalReferenceDate)).map((participant, index) => (
                     <tr key={participant.name}>
                       <td className="px-3 py-2">{index + 1}</td>
                       <td className="px-3 py-2 font-semibold">{participant.name}</td>
@@ -1307,22 +1379,25 @@ export function ExpenseResolutionCreateModal({
               </table>
             </div>
             <p className="mt-2 text-xs font-semibold text-[var(--color-deep-cobalt)]">계정 연결 필요: 작성자 1명 · 실제 결재자 {selectedApprovalRoute.approvalLine.length}명</p>
+            </> : <p className="mt-3 text-sm font-semibold text-amber-900" role="status">원문 결재일 확인 필요</p>}
             <div className="mt-3 rounded-lg bg-white p-3 text-sm">
               <p className="font-bold">초기 상태</p>
               <p className="mt-1 text-[var(--color-stone)]">승인상태: 작성중</p>
               <p className="mt-1 text-[var(--color-stone)]">지급상태: 지급전</p>
             </div>
             </> : null}
-          </aside>
+          </aside> : null}
+        </div>
         </div>
 
-        <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--color-soft-border)] px-6 py-4">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-t border-[var(--color-soft-border)] bg-white px-4 py-3 sm:px-6 sm:py-4">
           {saveError ? (
             <div className="w-full rounded-lg bg-[var(--color-sunset-soft)] px-4 py-2 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
               <div className="flex flex-wrap gap-x-1 gap-y-1">
                 {saveError.includes("건명을 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(1, "expense-subject")} type="button">건명을 입력해주세요.</button> : null}
                 {saveError.includes("프로젝트/사업과제를 선택해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(1, "expense-project-name")} type="button">프로젝트/사업과제를 선택해주세요.</button> : null}
-                {saveError.includes("지출사유를 입력해주세요.") || saveError.includes("정산사유를 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(2, "expense-reason")} type="button">{saveError.includes("정산사유를 입력해주세요.") ? "정산사유를 입력해주세요." : "지출사유를 입력해주세요."}</button> : null}
+                {saveError.includes("지출사유를 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(isEditing ? "overview" : 2, "expense-reason")} type="button">{isEditing ? "업무목적을 입력해주세요." : "지출사유를 입력해주세요."}</button> : null}
+                {saveError.includes("정산사유를 입력해주세요.") ? <button className="underline decoration-1 underline-offset-2 hover:text-[var(--color-midnight-ink)] focus-visible:outline focus-visible:outline-2" onClick={() => moveToField(2, "expense-settlement-reason")} type="button">정산사유를 입력해주세요.</button> : null}
                 {saveError
                   .replace("건명을 입력해주세요.", "")
                   .replace("프로젝트/사업과제를 선택해주세요.", "")
@@ -1338,17 +1413,23 @@ export function ExpenseResolutionCreateModal({
               <p className="mt-1 text-xs font-medium">항목을 누르면 해당 입력창으로 이동해.</p>
             </div>
           ) : null}
+          {isEditing && editingApprovalStatus === "승인대기" ? <p className="w-full text-sm font-medium text-[var(--color-stone)]">수정사항을 저장하면 작성중으로 돌아갑니다. 결재를 다시 요청해야 합니다.</p> : null}
           <Button disabled={isSaving} className="rounded-full" onClick={onCancel} variant="outline">
             취소
           </Button>
-          <div className="flex gap-2">
-            {currentStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep((currentStep - 1) as 1 | 2)} variant="outline">이전</Button> : null}
-            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant="outline">{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? "카드 사용 임시등록" : "임시저장"}</Button>
-            {currentStep < 3 ? (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep((currentStep + 1) as 2 | 3)}>다음 단계</Button>
-            ) : (
-              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || (formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId))} onClick={onRequestApproval}>{formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" && !(formState.cardSettlementMode === "BANK_DIRECT" ? formState.bankTransactions.length : formState.cardTransactionId) ? (formState.cardSettlementMode === "BANK_DIRECT" ? "통장거래 연결 후 승인" : "카드내역 연결 후 승인") : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
-            )}
+          <div className="flex flex-wrap justify-end gap-2">
+            {!isEditing && creationStep > 1 ? <Button className="rounded-full" onClick={() => setCurrentStep(creationStep === 3 ? 2 : 1)} variant="outline">이전</Button> : null}
+            {isEditing ? (
+              <Button className="rounded-full" disabled={isSaving} onClick={() => currentStep === 3 ? moveToField("overview", "expense-reason") : moveToField(3, "expense-approval-review-title")} type="button" variant="outline">
+                {currentStep === 3 ? "검토 닫기" : "승인요청 검토"}
+              </Button>
+            ) : null}
+            <Button disabled={isSaving} className="rounded-full" onClick={() => void handleSaveDraft()} variant={isEditing && currentStep !== 3 ? "default" : "outline"}>{isSaving ? "저장 중…" : isEditing ? "수정사항 저장" : hasUnlinkedCorporateCard ? "카드 사용 임시등록" : "임시저장"}</Button>
+            {!isEditing && creationStep < 3 ? (
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={() => setCurrentStep(creationStep === 1 ? 2 : 3)}>다음 단계</Button>
+            ) : currentStep === 3 ? (
+              <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isSaving || hasUnlinkedCorporateCard} onClick={onRequestApproval}>{hasUnlinkedCorporateCard ? (formState.cardSettlementMode === "BANK_DIRECT" ? "통장거래 연결 후 승인" : "카드내역 연결 후 승인") : isEditing ? "수정 후 승인요청" : "승인요청"}</Button>
+            ) : null}
           </div>
         </div>
       </section>
@@ -1365,6 +1446,7 @@ function BatchExpenseItemsSection({
   onCopyBatchItem,
   onDeleteBatchItem,
   onReviewBatchBudget,
+  showBusinessPurpose,
 }: {
   batchSummary: ReturnType<typeof summarizeBatchItems>;
   items: BatchExpenseItem[];
@@ -1374,6 +1456,7 @@ function BatchExpenseItemsSection({
   onCopyBatchItem: (itemNo: number) => void;
   onDeleteBatchItem: (itemNo: number) => void;
   onReviewBatchBudget: (itemNo: number) => void;
+  showBusinessPurpose: boolean;
 }) {
   const budgetProfiles = useContext(BudgetProfilesContext);
   const batchBudgetItemOptions = Object.keys(budgetProfiles).filter((key) => !isBudgetProfilePeriodKey(key));
@@ -1434,7 +1517,7 @@ function BatchExpenseItemsSection({
               <BatchInput ariaLabel={`${item.itemNo}행 지출항목명`} label="지출항목명" value={item.itemTitle} onChange={(value) => onBatchItemChange(item.itemNo, "itemTitle", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 지급방법`} label="지급방법" options={["계좌이체", "카드결제", "현금", "기타"]} value={item.paymentMethod} onChange={(value) => onBatchItemChange(item.itemNo, "paymentMethod", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} className="xl:col-span-2" label="내역 및 산출근거" value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
-              <BatchInput ariaLabel={`${item.itemNo}행 업무목적`} className="xl:col-span-2" label="업무목적" value={item.businessPurpose} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} />
+              {showBusinessPurpose ? <BatchInput ariaLabel={`${item.itemNo}행 업무목적`} className="xl:col-span-2" label="업무목적" value={item.businessPurpose} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} /> : null}
               <BatchInput ariaLabel={`${item.itemNo}행 공급가액`} label="공급가액" type="number" value={item.supplyAmount} onChange={(value) => onBatchItemChange(item.itemNo, "supplyAmount", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 부가세`} label="부가세" type="number" value={item.vatAmount} onChange={(value) => onBatchItemChange(item.itemNo, "vatAmount", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 증빙유형`} label="증빙유형" options={batchEvidenceTypeOptions} value={item.evidenceType} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceType", value)} />

@@ -6,6 +6,8 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
+import { isIsoDay } from "@/features/approval/approval-effective-policy";
+import { policySummary } from "./expense-approval-period";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, type ExpenseTiming } from "./expense-resolution-domain";
@@ -662,10 +664,11 @@ function ExpensePrintReasonEvidence({
 
 function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResolution }) {
   const approvalLine = getDocumentApprovalParticipants(resolution);
+  const needsReferenceDate = !isIsoDay(resolution.approvalPolicy?.referenceDate ?? "");
   return (
-    <section className="expense-resolution-print-approval min-w-0 self-end">
-      <h4 className="sr-only">결재선</h4>
-      <table className="ml-auto w-[219px] table-fixed border-collapse text-center text-[13px]">
+    <section aria-labelledby="expense-print-approval-heading" className="expense-resolution-print-approval min-w-0 self-end">
+      <h4 className="sr-only" id="expense-print-approval-heading">결재선</h4>
+      {approvalLine.length ? <table className="ml-auto w-[219px] table-fixed border-collapse text-center text-[13px]">
         <colgroup>
           <col className="w-[18px]" />
           {approvalLine.map((step) => <col className="w-[67px]" key={`approval-column-${step.name}`} />)}
@@ -692,7 +695,8 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
             })}
           </tr>
         </tbody>
-      </table>
+      </table> : null}
+      {needsReferenceDate ? <p className="mt-1 text-right text-[10px]">{policySummary(resolution.approvalPolicy)}</p> : null}
     </section>
   );
 }
