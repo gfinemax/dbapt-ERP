@@ -244,6 +244,8 @@ function ExpenseResolutionDetailWorkspace({
           ))}
         </nav>
 
+        {workspace && actionError ? <p className="mt-3 rounded-md bg-red-50 p-2 text-sm font-semibold text-red-700" role="alert">{actionError}</p> : null}
+
         {isLegacySmallExpenseResolution(resolution) ? (
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-950">
             <strong>기존 소액 일괄결의 · 조회 전용</strong>
@@ -281,7 +283,6 @@ function ExpenseResolutionDetailWorkspace({
             {canRequestApproval && resolution.approvalStatus === "작성중" && (!authorization.ready || approvalLineNeedsReview) ? (
               <p className="mt-3 text-xs font-semibold text-amber-900">{approvalLineNeedsReview ? "원문 결재일과 결재선을 확인해줘." : "승인요청 전 작성자와 결재자의 계정 연결을 확인해줘."}</p>
             ) : null}
-            {actionError ? <p className="mt-3 rounded-md bg-red-50 p-2 text-sm font-semibold text-red-700" role="alert">{actionError}</p> : null}
           </>
         ) : null}
         {(!workspace && activeView === "overview") || activeView === "expenses" ? (
@@ -472,7 +473,7 @@ function ExpenseResolutionDetailWorkspace({
               <p className="text-xs font-semibold leading-5 text-[var(--color-stone)]">현재 결재자는 <strong className="text-[var(--color-midnight-ink)]">{resolution.currentApprover ?? approvalLine.find((step) => step.status === "결재대기")?.approver ?? "지정 결재자"}</strong>입니다. 해당 결재자 계정에서 승인·반려할 수 있습니다.</p>
             ) : null}
             {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">{resolution.paymentStatus === "지급완료" ? "모든 결재와 지급이 완료됐어. 전표 단계로 진행해." : "모든 결재가 완료됐어. 지급 단계로 진행해."}</p> : null}
-            {actionError ? <p role="alert" className="mt-2 rounded-md bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700">{actionError}</p> : null}
+            {!workspace && actionError ? <p role="alert" className="mt-2 rounded-md bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700">{actionError}</p> : null}
           </div>
         </section>
 
@@ -625,7 +626,7 @@ export function ExpenseResolutionDetailModal({
 
   function renderEditAction(label: string) {
     if (editHref) return <a className="inline-flex h-10 items-center justify-center rounded-full border border-[var(--color-soft-border)] bg-white px-4 text-sm font-semibold" href={editHref}>{label}</a>;
-    return onEdit ? <Button className="rounded-full" onClick={onEdit} variant="outline">{label}</Button> : null;
+    return onEdit ? <Button className="rounded-full" id={workspace ? "expense-resolution-edit-action" : undefined} onClick={onEdit} variant="outline">{label}</Button> : null;
   }
 
   return (

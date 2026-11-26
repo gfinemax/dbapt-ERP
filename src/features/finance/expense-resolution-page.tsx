@@ -2461,7 +2461,7 @@ export function ExpenseResolutionPage({
     directExpenseSettings,
     expenseDetails: initialExpenseDetails,
   });
-  const [formOptionsLoaded, setFormOptionsLoaded] = useState(Boolean(initialFormOptions) || !loadFormOptions);
+  const [formOptionsLoaded, setFormOptionsLoaded] = useState(!loadFormOptions || Boolean(initialFormOptions && !initialEditResolutionId));
   const [isFormOptionsLoading, setIsFormOptionsLoading] = useState(false);
   const formOptionsRequest = useRef<Promise<ExpenseResolutionFormOptions> | null>(null);
   const initialBankDraft = formOptions.bankTransactions.find((item) => item.id === initialBankTransactionId && !item.linkedResolutionId);
@@ -2497,12 +2497,16 @@ export function ExpenseResolutionPage({
   const [overdueOnly, setOverdueOnly] = useState(false);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(!initialEditResolution && !initialResolutionId && Boolean(initialBankDraft || initialEntryStart || initialQuickExpense));
   const [editingResolutionId, setEditingResolutionId] = useState<string | null>(initialEditResolution?.id ?? null);
+  const isEditingInWorkspace = Boolean(editingResolutionId && !isCreateModalOpen);
+  const isFormOpen = isCreateModalOpen || isEditingInWorkspace;
+  const retainedEditId = useRef<string | null>(null);
+  const [offPageResolutionId, setOffPageResolutionId] = useState<string>();
   const [isOperatingBudgetPrintOpen, setIsOperatingBudgetPrintOpen] = useState(false);
   const [paymentTargetId, setPaymentTargetId] = useState<string | null>(null);
   const [factConfirmationTarget, setFactConfirmationTarget] = useState<{ detailItem?: BatchExpenseItem; resolution: ManagedExpenseResolution } | null>(null);
   const [printWarning, setPrintWarning] = useState<{ resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
-  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
+  const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialEditResolution?.id ?? initialResolutionId ?? null);
   const detailRequest = useRef(0);
   const [pendingDetailId, setPendingDetailId] = useState<string>();
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
@@ -2569,7 +2573,7 @@ export function ExpenseResolutionPage({
     query: clientSearchQuery,
   });
   const visibleResolutions = sortExpenseResolutionsByExpenseDate(
-    resolutionsAfterFilters.filter((resolution) => !monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter),
+    resolutionsAfterFilters.filter((resolution) => resolution.id !== offPageResolutionId && (!monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter)),
     sortOrder,
   );
   const selectedIndex = visibleResolutions.findIndex((resolution) => resolution.id === selectedDetailId);
@@ -2623,7 +2627,13 @@ export function ExpenseResolutionPage({
     }
     const restoreTimer = window.setTimeout(() => {
       if (initialResolutions !== undefined) {
-        setResolutions(initialResolutions);
+        const editId = retainedEditId.current;
+        const missingEdit = editId && !initialResolutions.some((resolution) => resolution.id === editId) ? editId : undefined;
+        setOffPageResolutionId(missingEdit);
+        setResolutions((current) => {
+          const retained = missingEdit && current.find((resolution) => resolution.id === missingEdit);
+          return retained ? [...initialResolutions, retained] : initialResolutions;
+        });
       }
       else if (storedResolutions) setResolutions(storedResolutions);
       setIsLocalStorageHydrated(true);
@@ -2639,14 +2649,8 @@ export function ExpenseResolutionPage({
     }
   }, [isLocalStorageHydrated, resolutions, initialResolutions, persistResolution, dataLoadError]);
 
-  useEffect(() => {
-    if (!initialEditResolution) return;
-    const openTimer = window.setTimeout(() => setIsCreateModalOpen(true), 0);
-    return () => window.clearTimeout(openTimer);
-  }, [initialEditResolution]);
-
   const applyAutomaticExpenseDetail = useEffectEvent(() => {
-    if (!isCreateModalOpen || formState.resolutionType === "BATCH" || expenseDetailSelectionRef.current === "MANUAL") return;
+    if (!isFormOpen || formState.resolutionType === "BATCH" || expenseDetailSelectionRef.current === "MANUAL") return;
     const evidenceText = formState.evidenceFiles.map((file) => [
       file.ocrData.itemName,
       file.ocrData.recognizedText,
@@ -2678,9 +2682,10 @@ export function ExpenseResolutionPage({
   useEffect(() => {
     const timer = window.setTimeout(applyAutomaticExpenseDetail, 0);
     return () => window.clearTimeout(timer);
-  }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, formOptions.expenseDetails, isCreateModalOpen]);
+  }, [formState.evidenceFiles, formState.expenseDetailId, formState.memo, formState.reason, formState.resolutionType, formState.singleItems, formState.subject, formState.vendorBusinessCategory, formState.vendorBusinessType, formState.vendorName, formOptions.expenseDetails, isFormOpen]);
 
   async function openCreateModal() {
+    if (isEditingInWorkspace) return;
     const options = await ensureFormOptions();
     if (!options) return;
     setQuickConversionSourceId(null);
@@ -2696,6 +2701,7 @@ export function ExpenseResolutionPage({
   }
 
   async function openExcelImportModal() {
+    if (isEditingInWorkspace) return;
     const options = await ensureFormOptions();
     if (!options) return;
     setQuickConversionSourceId(null);
@@ -2714,34 +2720,51 @@ export function ExpenseResolutionPage({
     setIsCreateModalOpen(true);
   }
 
-  function closeCreateModal() {
+  function closeResolutionForm() {
     if (savingResolution.current) return;
     setIsCreateModalOpen(false);
     setEditingResolutionId(null);
     setQuickConversionSourceId(null);
-    if (initialEditResolutionId) {
-      router.push(expenseResolutionListHref(initialListPage?.page ?? 1, initialListPage?.query ?? "", monthFilter, sortOrder, initialListPage?.scope));
+    setSaveError("");
+    if (isEditingInWorkspace) {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("mode") === "edit" && url.searchParams.get("resolutionId") === editingResolutionId) {
+        url.searchParams.delete("mode");
+        window.history.replaceState(null, "", url);
+      }
+      requestAnimationFrame(() => {
+        document.getElementById("expense-resolution-edit-action")?.focus({ preventScroll: true });
+      });
     }
   }
 
-  async function openEditModal(resolution: ManagedExpenseResolution) {
-    const canEdit = viewer
+  function canEditResolution(resolution: ManagedExpenseResolution) {
+    return !isLegacySmallExpenseResolution(resolution) && (viewer
       ? canEditExpense(resolution, viewer)
-      : resolution.author === currentUserName && ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus);
-    if (!canEdit) {
+      : resolution.author === currentUserName && ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus));
+  }
+
+  async function openEditWorkspace(resolution: ManagedExpenseResolution) {
+    if (!canEditResolution(resolution)) {
       setSaveError("작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.");
       setSelectedDetailId(resolution.id);
       return;
     }
-    if (!(await ensureFormOptions())) return;
-    setQuickConversionSourceId(null);
-    setEvidenceUploadError("");
+    const request = ++detailRequest.current;
+    setPendingDetailId(undefined);
+    setSaveError("");
     setPrintWarning(null);
-    setSelectedDetailId(null);
+    if (!(await ensureFormOptions()) || request !== detailRequest.current) return;
+    setQuickConversionSourceId(null);
+    setBatchImportResult(null);
+    setBatchImportFileName("");
+    setBatchImportError("");
+    setEvidenceUploadError("");
+    setVendorRegistrationNotice("");
+    setSelectedDetailId(resolution.id);
     setEditingResolutionId(resolution.id);
     expenseDetailSelectionRef.current = "MANUAL";
     setFormState(createEditFormState(resolution));
-    setIsCreateModalOpen(true);
   }
 
   async function openDetailModal(id: string) {
@@ -2769,7 +2792,7 @@ export function ExpenseResolutionPage({
   function editPrintWarningResolution() {
     if (!printWarning) return;
     const resolution = resolutions.find((item) => item.id === printWarning.resolutionId);
-    if (resolution) void openEditModal(resolution);
+    if (resolution) void openEditWorkspace(resolution);
   }
 
   function closeDetailModal() {
@@ -2781,11 +2804,6 @@ export function ExpenseResolutionPage({
     requestAnimationFrame(() => {
       document.getElementById(`expense-row-${selectedId}`)?.focus({ preventScroll: true });
     });
-  }
-
-  function getResolutionEditHref(id: string) {
-    const listHref = expenseResolutionListHref(initialListPage?.page ?? 1, initialListPage?.query ?? "", monthFilter, sortOrder, initialListPage?.scope);
-    return `${listHref}${listHref.includes("?") ? "&" : "?"}resolutionId=${encodeURIComponent(id)}&mode=edit`;
   }
 
   async function openDetailEvidence(storagePath: string) {
@@ -3451,7 +3469,7 @@ export function ExpenseResolutionPage({
   }
 
   useEffect(() => {
-    if (!isCreateModalOpen || !getEvidenceOcrJob || !pendingEvidenceJobIds) return;
+    if (!isFormOpen || !getEvidenceOcrJob || !pendingEvidenceJobIds) return;
     const fetchOcrJob = getEvidenceOcrJob;
     let cancelled = false;
     const jobIds = pendingEvidenceJobIds.split(",");
@@ -3507,7 +3525,7 @@ export function ExpenseResolutionPage({
     };
   // applyEvidenceOcrToFormState reads the current automatic/manual selection ref and must not restart OCR polling on every render.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [formState.evidenceFiles, getEvidenceOcrJob, isCreateModalOpen, pendingEvidenceJobIds]);
+  }, [formState.evidenceFiles, getEvidenceOcrJob, isFormOpen, pendingEvidenceJobIds]);
 
   async function openEvidenceOriginal(storagePath: string) {
     if (!createEvidenceDownloadUrl) {
@@ -3761,6 +3779,7 @@ export function ExpenseResolutionPage({
       savingResolution.current = true;
       setIsSavingResolution(true);
       setSaveError("");
+      if (isEditingInWorkspace) retainedEditId.current = editingResolutionId;
       const savedDraft = quickConversionSourceId && convertQuickExpense
         ? await convertQuickExpense(quickConversionSourceId, resolutionToSave)
         : persistResolution ? await persistResolution(resolutionToSave) : resolutionToSave;
@@ -3781,7 +3800,7 @@ export function ExpenseResolutionPage({
           : [savedResolution, ...current],
       );
       savingResolution.current = false;
-      closeCreateModal();
+      closeResolutionForm();
       return true;
     } catch (error) {
       setSaveError(`${viewer && mode === "approval-request" ? "승인요청을 완료하지 못했습니다. 저장된 초안과 입력을 유지했습니다." : "저장하지 못했습니다. 입력 내용을 유지했으니 확인 후 다시 저장해주세요."} ${error instanceof Error ? error.message : "저장소 연결을 확인해주세요."}`);
@@ -4069,6 +4088,60 @@ export function ExpenseResolutionPage({
     if (initialListPage) navigateList(1, searchQuery, monthFilter, nextSort);
   }
 
+  const editor = isFormOpen ? (
+    <ExpenseResolutionCreateModal
+      workspace={isEditingInWorkspace}
+      batchImportError={batchImportError}
+      batchImportFileName={batchImportFileName}
+      batchImportResult={batchImportResult}
+      evidenceUploadError={evidenceUploadError}
+      vendorRegistrationNotice={vendorRegistrationNotice}
+      evidenceOcrProgress={evidenceOcrProgress}
+      batchSummary={formBatchSummary}
+      budgetSnapshot={formBudgetSnapshot}
+      formState={formState}
+      bankTransactionCandidates={formBankTransactionCandidates}
+      cardTransactionCandidates={formOptions.cardTransactions}
+      approvalDocuments={formOptions.approvalDocuments}
+      directExpenseSettings={formOptions.directExpenseSettings}
+      expenseDetails={formOptions.expenseDetails}
+      settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
+      canRestoreHistorical={Boolean(viewer?.permissions.includes("ADMIN"))}
+      editingApprovalStatus={formEditingResolution?.approvalStatus}
+      isEditing={Boolean(editingResolutionId)}
+      isQuickConversion={Boolean(quickConversionSourceId)}
+      isEvidenceUploading={isEvidenceUploading}
+      saveError={saveError}
+      isSaving={isSavingResolution}
+      onAddBatchItem={addBatchItem}
+      onAddSingleItem={addSingleItem}
+      onAddAccountAllocation={addAccountAllocation}
+      onAttachBatchEvidence={attachBatchEvidence}
+      onCancel={closeResolutionForm}
+      onChange={updateFormValue}
+      onCopyBatchItem={copyBatchItem}
+      onDeleteBatchItem={deleteBatchItem}
+      onDeleteSingleItem={deleteSingleItem}
+      onDeleteAccountAllocation={deleteAccountAllocation}
+      onDownloadBatchImportTemplate={downloadBatchImportTemplate}
+      onImportBatchExpenseFile={importBatchExpenseFile}
+      onApplyEvidenceOcr={applyEvidenceOcr}
+      onOpenEvidenceOriginal={openEvidenceOriginal}
+      onRemoveEvidenceFile={removeEvidenceFile}
+      onRetryEvidenceFile={retryEvidenceFile}
+      onReviewBatchBudget={reviewBatchBudget}
+      onBatchItemChange={updateBatchItem}
+      onSingleItemChange={updateSingleItem}
+      onAccountAllocationChange={updateAccountAllocation}
+      onRequestApproval={async () => { await saveResolution("approval-request"); }}
+      onSaveDraft={() => saveResolution("draft")}
+      onUploadEvidenceFiles={uploadEvidenceFiles}
+      settlementDifference={settlementDifference}
+      totalAmount={effectiveFormTotalAmount}
+      accountAllocationTotal={accountAllocationTotal}
+    />
+  ) : null;
+
   return (
     <BudgetProfilesContext.Provider value={initialBudgetProfiles}>
     <ErpShell
@@ -4083,7 +4156,7 @@ export function ExpenseResolutionPage({
       }}
     >
       <div className="mx-auto flex max-w-[1560px] flex-col gap-3">
-        {saveError && !isCreateModalOpen ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
+        {saveError && !isFormOpen && !selectedDetail ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditResolutionId && initialResolutions !== undefined && !resolutions.some((resolution) => resolution.id === initialEditResolutionId) ? <p role="alert" className="rounded-xl border p-4">수정할 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditDenied ? <p role="alert" className="rounded-xl border p-4">작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.</p> : null}
@@ -4101,12 +4174,12 @@ export function ExpenseResolutionPage({
               </summary>
               <div className="absolute right-0 z-20 mt-1 grid w-56 gap-1 rounded-xl border border-[var(--color-soft-border)] bg-white p-2 text-sm shadow-md">
                 <Link className="rounded-md px-3 py-2 font-semibold hover:bg-blue-50" href="/finance/expense-resolutions/bank-draft-manifest">통장거래 작성 예정표</Link>
-                <button className="rounded-md px-3 py-2 text-left font-semibold hover:bg-blue-50" disabled={isFormOptionsLoading} onClick={openExcelImportModal} type="button">엑셀 가져오기</button>
+                <button className="rounded-md px-3 py-2 text-left font-semibold hover:bg-blue-50 disabled:opacity-50" disabled={isFormOptionsLoading || isEditingInWorkspace} onClick={openExcelImportModal} type="button">엑셀 가져오기</button>
                 <button className="rounded-md px-3 py-2 text-left font-semibold hover:bg-blue-50" onClick={() => setIsOperatingBudgetPrintOpen(true)} type="button">운영비 예산표 출력</button>
                 {viewer?.permissions.includes("ADMIN") ? <Link className="rounded-md px-3 py-2 font-semibold hover:bg-blue-50" href="/finance/expense-authorizations">작성자·결재선 계정 연결</Link> : null}
               </div>
             </details>
-            <Button className="rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isFormOptionsLoading} onClick={openCreateModal}>
+            <Button className="rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isFormOptionsLoading || isEditingInWorkspace} onClick={openCreateModal}>
               <FilePlus2 className="size-4" />
               {isFormOptionsLoading ? "작성 정보 불러오는 중" : "지출결의 작성"}
             </Button>
@@ -4115,6 +4188,7 @@ export function ExpenseResolutionPage({
 
         <div className="grid min-w-0 gap-3 xl:h-[max(26rem,min(48rem,calc(100dvh-13rem)))] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
           <section aria-label="지출결의서 검색 및 목록" className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] ${selectedDetail ? "hidden xl:flex" : "flex"}`}>
+            <fieldset className="flex min-h-0 min-w-0 flex-1 flex-col" disabled={isEditingInWorkspace}>
             <div className="max-h-[55%] shrink-0 space-y-3 overflow-y-auto p-4">
               <div aria-label="결의서 보기 범위" className="flex flex-wrap items-center gap-2" role="group">
                 <button aria-pressed={activeTab === "all"} className={scopeButtonClass(activeTab === "all")} disabled={isListNavigationPending} onClick={() => changeListScope("all")} type="button">전체 결의서</button>
@@ -4222,9 +4296,10 @@ export function ExpenseResolutionPage({
                 <Button disabled={isListNavigationPending || initialListPage.page >= initialListPage.totalPages} onClick={() => navigateList(initialListPage.page + 1)} size="sm" variant="outline">다음</Button>
               </nav>
             ) : null}
+            </fieldset>
           </section>
           <div aria-label="선택한 지출결의서" className="min-h-0 min-w-0">
-      {selectedDetail ? (
+      {isEditingInWorkspace ? editor : selectedDetail ? (
         <ExpenseResolutionDetailModal
           key={selectedDetail.id}
           workspace
@@ -4242,7 +4317,6 @@ export function ExpenseResolutionPage({
               ? { ...saved, authorization: item.authorization, workflowTransactionId: item.workflowTransactionId }
               : item));
           } : undefined}
-          editHref={!isLegacySmallExpenseResolution(selectedDetail) && viewer && canEditExpense(selectedDetail, viewer) ? getResolutionEditHref(selectedDetail.id) : undefined}
           linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
           onApprove={() => approveResolution(selectedDetail.id)}
           onClose={closeDetailModal}
@@ -4252,7 +4326,7 @@ export function ExpenseResolutionPage({
           onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); }}
           onDelete={deleteResolution && !isLegacySmallExpenseResolution(selectedDetail) && (!viewer || canEditExpense(selectedDetail, viewer)) ? () => removeResolution(selectedDetail.id) : undefined}
-          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && !viewer && selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
+          onEdit={canEditResolution(selectedDetail) ? () => { void openEditWorkspace(selectedDetail); } : undefined}
           onPrintArchive={() => openArchivePrint(selectedDetail)}
           onPrintPreview={() => openPrintPreview(selectedDetail.id, "미리보기")}
           onProcessPayment={!selectedDetail.workflowTransactionId && (!viewer || viewer.permissions.some((permission) => permission === "ADMIN" || permission === "PAY")) ? () => openPaymentModal(selectedDetail) : undefined}
@@ -4267,58 +4341,7 @@ export function ExpenseResolutionPage({
         </div>
       </div>
 
-      {isCreateModalOpen ? (
-        <ExpenseResolutionCreateModal
-          batchImportError={batchImportError}
-          batchImportFileName={batchImportFileName}
-          batchImportResult={batchImportResult}
-          evidenceUploadError={evidenceUploadError}
-          vendorRegistrationNotice={vendorRegistrationNotice}
-          evidenceOcrProgress={evidenceOcrProgress}
-          batchSummary={formBatchSummary}
-          budgetSnapshot={formBudgetSnapshot}
-          formState={formState}
-          bankTransactionCandidates={formBankTransactionCandidates}
-          cardTransactionCandidates={formOptions.cardTransactions}
-          approvalDocuments={formOptions.approvalDocuments}
-          directExpenseSettings={formOptions.directExpenseSettings}
-          expenseDetails={formOptions.expenseDetails}
-          settlementCandidates={resolutions.filter(isEmployeeAdvanceSettlementSource)}
-          canRestoreHistorical={Boolean(viewer?.permissions.includes("ADMIN"))}
-          editingApprovalStatus={formEditingResolution?.approvalStatus}
-          isEditing={Boolean(editingResolutionId)}
-          isQuickConversion={Boolean(quickConversionSourceId)}
-          isEvidenceUploading={isEvidenceUploading}
-          saveError={saveError}
-          isSaving={isSavingResolution}
-          onAddBatchItem={addBatchItem}
-          onAddSingleItem={addSingleItem}
-          onAddAccountAllocation={addAccountAllocation}
-          onAttachBatchEvidence={attachBatchEvidence}
-          onCancel={closeCreateModal}
-          onChange={updateFormValue}
-          onCopyBatchItem={copyBatchItem}
-          onDeleteBatchItem={deleteBatchItem}
-          onDeleteSingleItem={deleteSingleItem}
-          onDeleteAccountAllocation={deleteAccountAllocation}
-          onDownloadBatchImportTemplate={downloadBatchImportTemplate}
-          onImportBatchExpenseFile={importBatchExpenseFile}
-          onApplyEvidenceOcr={applyEvidenceOcr}
-          onOpenEvidenceOriginal={openEvidenceOriginal}
-          onRemoveEvidenceFile={removeEvidenceFile}
-          onRetryEvidenceFile={retryEvidenceFile}
-          onReviewBatchBudget={reviewBatchBudget}
-          onBatchItemChange={updateBatchItem}
-          onSingleItemChange={updateSingleItem}
-          onAccountAllocationChange={updateAccountAllocation}
-          onRequestApproval={async () => { await saveResolution("approval-request"); }}
-          onSaveDraft={() => saveResolution("draft")}
-          onUploadEvidenceFiles={uploadEvidenceFiles}
-          settlementDifference={settlementDifference}
-          totalAmount={effectiveFormTotalAmount}
-          accountAllocationTotal={accountAllocationTotal}
-        />
-      ) : null}
+      {isCreateModalOpen ? editor : null}
 
 
       {factConfirmationTarget ? <ExpenseFactConfirmationModal actorLabel={currentUserName} deleteConfirmation={deleteFactConfirmation} detailItem={factConfirmationTarget.detailItem} listConfirmations={listFactConfirmations} onClose={() => setFactConfirmationTarget(null)} onSave={saveFactConfirmation} onUploadSupportingFile={uploadFactSupportingFile} resolution={factConfirmationTarget.resolution} /> : null}
@@ -4662,7 +4685,7 @@ export function AccountAllocationEditor({ allocations, allocationTotal, budgetRe
         <span className="rounded-full bg-white px-3 py-1 text-xs font-bold text-[var(--color-green-ink)]">자동 적용됨</span>
       </div> : null}
       <div className="mt-3 grid gap-3">
-        {allocations.map((allocation, index) => <div className="grid min-w-0 gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 md:grid-cols-2 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_auto]" key={allocation.id}>
+        {allocations.map((allocation, index) => <div className="grid min-w-0 gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 @lg:grid-cols-2 @5xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_140px_minmax(0,1fr)_auto]" key={allocation.id}>
           <label className="grid min-w-0 gap-1 text-xs font-bold">계정과목<select aria-label={`분할 계정과목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "accountTitle", event.target.value)} value={allocation.accountTitle}><option value="">선택</option>{accountOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">세부 예산항목<select aria-label={`분할 예산항목 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2" onChange={(event) => onChange(allocation.id, "budgetItem", event.target.value)} value={allocation.budgetItem}><option value="">선택</option>{budgetItemOptions.map((option) => <option key={option} value={option}>{option}</option>)}</select></label>
           <label className="grid min-w-0 gap-1 text-xs font-bold">분할금액<input aria-label={`분할금액 ${index + 1}`} className="h-9 min-w-0 w-full bg-white px-2 text-right" min="0" onChange={(event) => onChange(allocation.id, "amount", event.target.value)} type="number" value={allocation.amount} /></label>
@@ -4714,8 +4737,8 @@ export function QuestionChoiceGroup({
 export function FormSection({ children, layout = "default", title }: { children: ReactNode; layout?: "compact" | "default"; title: string }) {
   const gridClassName =
     layout === "compact"
-      ? "grid gap-3 md:grid-cols-3 xl:grid-cols-4 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]"
-      : "grid gap-3 md:grid-cols-2 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]";
+      ? "grid gap-3 @lg:grid-cols-2 @3xl:grid-cols-3 @5xl:grid-cols-4 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]"
+      : "grid gap-3 @lg:grid-cols-2 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]";
 
   return (
     <section className="rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
@@ -4734,7 +4757,7 @@ export function CollapsibleFormSection({ children, defaultOpen = false, summary,
           <span className="text-right text-sm font-semibold text-[var(--color-stone)]">{summary}</span>
         </div>
       </summary>
-      <div className="mt-3 grid gap-3 border-t border-[var(--color-soft-border)] pt-3 md:grid-cols-2 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]">
+      <div className="mt-3 grid gap-3 border-t border-[var(--color-soft-border)] pt-3 @lg:grid-cols-2 [&_label>span]:text-xs [&_label>span]:font-bold [&_label>span]:text-[var(--color-stone)] [&_select]:h-12 [&_select]:rounded-lg [&_select]:px-4 [&_select]:text-base [&_select]:font-bold [&_select]:text-[var(--color-midnight-ink)]">
         {children}
       </div>
     </details>

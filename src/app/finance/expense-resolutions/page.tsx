@@ -14,7 +14,7 @@ import { convertQuickExpenseResolutionAction, createExpenseEvidenceDownloadUrlAc
 
 export const dynamic = "force-dynamic";
 
-export function selectExpenseResolutionRouteItems(
+export function selectExpenseResolutionBudgetItems(
   resolutions: ManagedExpenseResolution[],
   editResolutionId?: string,
 ) {
@@ -40,7 +40,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   const organizationId = viewer.organization_id;
   const resolutionPromise = listExpenseResolutionPageFromSupabase({ ...listRequest, includeId: entry.resolutionId }, viewer);
   const budgetPromise = resolutionPromise.then((result) => loadExpenseResolutionBudgetView(
-    selectExpenseResolutionRouteItems(result?.items ?? [], entry.editResolutionId),
+    selectExpenseResolutionBudgetItems(result?.items ?? [], entry.editResolutionId),
     organizationId,
   ));
   const formOptionsPromise = entry.start || entry.quickExpenseId || entry.editResolutionId
@@ -73,7 +73,10 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
 
   if (budgetResult.status === "fulfilled") {
     initialBudgetProfiles = budgetResult.value.budgetProfiles;
-    initialResolutions = budgetResult.value.resolutions;
+    const refreshed = budgetResult.value.resolutions;
+    initialResolutions = entry.editResolutionId
+      ? initialResolutions.map((resolution) => refreshed[0]?.id === resolution.id ? refreshed[0] : resolution)
+      : refreshed;
   }
   else {
     console.warn(`[expense-resolutions] Budget data unavailable: ${budgetResult.reason instanceof Error ? budgetResult.reason.message : String(budgetResult.reason)}`);

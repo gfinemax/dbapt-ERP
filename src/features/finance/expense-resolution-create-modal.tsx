@@ -88,6 +88,7 @@ export function ExpenseResolutionCreateModal({
   canRestoreHistorical = false,
   editingApprovalStatus,
   isEditing,
+  workspace = false,
   isQuickConversion,
   isEvidenceUploading,
   onAddBatchItem,
@@ -137,6 +138,7 @@ export function ExpenseResolutionCreateModal({
   canRestoreHistorical?: boolean;
   editingApprovalStatus?: ManagedExpenseResolution["approvalStatus"];
   isEditing: boolean;
+  workspace?: boolean;
   isQuickConversion: boolean;
   isEvidenceUploading: boolean;
   onAddBatchItem: () => void;
@@ -431,14 +433,18 @@ export function ExpenseResolutionCreateModal({
     setLastSavedAt(new Intl.DateTimeFormat("ko-KR", { hour: "2-digit", minute: "2-digit", second: "2-digit" }).format(new Date()));
   }
 
-  return (
-    <div className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[var(--color-sky-wash)]/88 ${isEditing ? "p-2 sm:p-6" : "px-4 py-8"}`} onClick={onCancel}>
+  const headingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (workspace) headingRef.current?.focus();
+  }, [workspace]);
+
+  const editor = (
       <section
         aria-labelledby="expense-resolution-dialog-title"
-        aria-modal="true"
-        className={`w-full overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] shadow-[0_24px_80px_rgba(16,20,24,0.22)] ${isEditing ? "flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col sm:max-h-[calc(100dvh-3rem)]" : "max-w-7xl"}`}
+        aria-modal={workspace ? undefined : true}
+        className={`@container w-full min-w-0 overflow-hidden border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] ${workspace ? "flex h-full max-h-[max(20rem,calc(100dvh-14rem))] min-h-0 flex-col rounded-xl xl:max-h-none" : `rounded-2xl shadow-[0_24px_80px_rgba(16,20,24,0.22)] ${isEditing ? "flex max-h-[calc(100dvh-1rem)] max-w-5xl flex-col sm:max-h-[calc(100dvh-3rem)]" : "max-w-7xl"}`}`}
         onClick={(event) => event.stopPropagation()}
-        role="dialog"
+        role={workspace ? "region" : "dialog"}
       >
         <input
           accept=".pdf,.jpg,.jpeg,.png,.webp,.txt,.csv"
@@ -452,7 +458,7 @@ export function ExpenseResolutionCreateModal({
         />
         <div className="flex shrink-0 items-start justify-between gap-4 border-b border-[var(--color-soft-border)] px-4 py-4 sm:px-6 sm:py-5">
           <div className="min-w-0">
-            <h2 className="text-2xl font-bold" id="expense-resolution-dialog-title">
+            <h2 className="text-2xl font-bold" id="expense-resolution-dialog-title" ref={headingRef} tabIndex={workspace ? -1 : undefined}>
               {isEditing ? "지출결의서 수정" : isQuickConversion ? "간편지출을 정식결의로 전환" : "지출결의서 작성"}
             </h2>
             {isEditing ? (
@@ -466,7 +472,7 @@ export function ExpenseResolutionCreateModal({
               <p className="mt-2 text-xs font-semibold text-[var(--color-green-ink)]">{lastSavedAt ? `마지막 임시저장 ${lastSavedAt}` : "아직 저장되지 않음 · 변경사항은 임시저장으로 보관할 수 있습니다."}</p>
             </>}
           </div>
-          <button aria-label="닫기" className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)]" onClick={onCancel} type="button">
+          <button aria-label={workspace ? "수정 닫기" : "닫기"} className="rounded-full border border-[var(--color-soft-border)] bg-white p-2 text-[var(--color-stone)] disabled:opacity-50" disabled={isSaving} onClick={onCancel} type="button">
             <X className="size-4" />
           </button>
         </div>
@@ -474,7 +480,7 @@ export function ExpenseResolutionCreateModal({
         <div className={isEditing ? "min-h-0 flex-1 overflow-y-auto overscroll-contain" : undefined}>
         {isEditing ? (
           <div className="grid gap-4 px-4 pt-4 sm:px-6 sm:pt-5">
-            <dl aria-label="현재 결의 요약" className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm sm:grid-cols-4">
+            <dl aria-label="현재 결의 요약" className="grid grid-cols-2 gap-x-4 gap-y-3 rounded-xl bg-[var(--color-cloud-veil)] p-4 text-sm @lg:grid-cols-4">
               <div className="min-w-0"><dt className="text-xs text-[var(--color-stone)]">거래처</dt><dd className="break-words font-bold">{formState.vendorName || "미입력"}</dd></div>
               <div><dt className="text-xs text-[var(--color-stone)]">지출일</dt><dd className="font-bold">{formState.actualExpenseDate || formState.plannedPaymentDate || "미입력"}</dd></div>
               <div><dt className="text-xs text-[var(--color-stone)]">총지급액</dt><dd className="font-bold">{formatExpenseResolutionAmount(totalAmount)}</dd></div>
@@ -496,7 +502,7 @@ export function ExpenseResolutionCreateModal({
                 </CollapsibleFormSection>
               ) : null}
             </section>
-            <div aria-label="상세 수정" className="grid gap-2 sm:grid-cols-3" role="group">
+            <div aria-label="상세 수정" className="grid gap-2 @lg:grid-cols-3" role="group">
               {editSections.map(({ key, label, summary }) => (
                 <button
                   aria-controls="expense-edit-details"
@@ -543,7 +549,7 @@ export function ExpenseResolutionCreateModal({
           type="file"
         />
 
-        <div className={`grid gap-4 p-4 sm:p-5 ${isEditing && currentStep !== 2 && currentStep !== 3 ? "" : "xl:grid-cols-[minmax(0,1fr)_320px]"}`} id={isEditing ? "expense-edit-details" : undefined}>
+        <div className={`grid min-w-0 gap-4 p-4 sm:p-5 ${workspace || (isEditing && currentStep !== 2 && currentStep !== 3) ? "" : "xl:grid-cols-[minmax(0,1fr)_320px]"}`} id={isEditing ? "expense-edit-details" : undefined}>
           <div className="grid min-w-0 gap-4">
             {evidenceUploadError ? (
               <div className="rounded-xl border border-[var(--color-tangerine)]/35 bg-[var(--color-sunset-soft)] px-5 py-4" role="alert">
@@ -726,7 +732,7 @@ export function ExpenseResolutionCreateModal({
                 <p className="rounded-lg bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)]">사후 지출 · 공용 법인카드 · {formState.quickExpenseCategory === "택시" || formState.quickExpenseCategory === "주차" || formState.quickExpenseCategory === "통행료" ? "여비교통비" : "계정과목 직접 확인"}으로 설정했습니다.</p>
                 </> : null}
                 {formState.quickPaymentMethod === "BANK_TRANSFER" || formState.quickPaymentMethod === "AUTO_DEBIT" ? <label className="grid gap-2 text-sm font-bold"><span>통장 출금거래</span><select aria-label="간편지출 통장 출금거래" className="h-12 rounded-lg border border-[var(--color-deep-cobalt)]/30 bg-white px-3" onChange={(event) => { const transaction = bankTransactionCandidates.find((item) => item.id === event.target.value); onChange("bankTransactionId", event.target.value); if (transaction) { const amount = String(transaction.withdrawalAmount); onChange("actualExpenseDate", transaction.transactedAt.slice(0, 10)); onChange("vendorName", transaction.counterparty || transaction.description); onChange("reason", transaction.description); onChange("singleItems", [createSingleExpenseItem({ itemName: transaction.description, quantity: "1", taxCategory: "NO_VAT", unitPrice: amount })]); onChange("accountAllocations", [createAccountAllocation({ amount, description: transaction.description })]); } }} value={formState.bankTransactionId}><option value="">미결의 출금거래 선택</option>{bankTransactionCandidates.map((transaction) => <option disabled={Boolean(transaction.linkedResolutionId)} key={transaction.id} value={transaction.id}>{transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}{transaction.linkedResolutionNo ? ` · ${transaction.linkedResolutionNo} 연결됨` : ""}</option>)}</select><span className="text-xs font-semibold text-[var(--color-stone)]">{formState.quickPaymentMethod === "AUTO_DEBIT" ? "정기·반복 지출로 기록하고 선택한 출금내역과 중복되지 않게 연결합니다." : "선택한 출금내역의 날짜·금액·거래처를 사용합니다."}</span></label> : null}
-                {formState.quickPaymentMethod === "PERSONAL_PREPAID" ? <div className="grid gap-3 md:grid-cols-2"><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /></div> : null}
+                {formState.quickPaymentMethod === "PERSONAL_PREPAID" ? <div className="grid gap-3 @lg:grid-cols-2"><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /></div> : null}
                 {formState.quickPaymentMethod === "CASH" ? <p className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-900">현금영수증 또는 적격증빙을 첨부해야 하며, 관리자 설정 한도와 직접지출 정책을 그대로 적용합니다.</p> : null}
                 {formState.quickPaymentMethod !== "CORPORATE_CARD" ? <p className="rounded-lg bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)]">사용내용과 예산항목을 입력하면 예산 차감·처리자·증빙·수정이력을 간편 지출기록으로 남깁니다.</p> : null}
               </section>
@@ -777,7 +783,7 @@ export function ExpenseResolutionCreateModal({
             </> : null}
             {currentStep === 1 ? <section className="grid gap-4 rounded-xl border border-[var(--color-soft-border)] bg-white p-5">
               <div><h3 className="font-bold">작성 방식</h3><p className="mt-1 text-sm text-[var(--color-stone)]">일상·정기 지출은 바로 작성하고, 계약·고액·예산 외 지출은 승인된 기안을 연결합니다.</p></div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 @lg:grid-cols-2">
                 <button aria-pressed={formState.creationSource === "DIRECT"} className={`rounded-xl border p-4 text-left ${formState.creationSource === "DIRECT" ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]/45" : "border-[var(--color-soft-border)]"}`} onClick={() => { onChange("creationSource", "DIRECT"); onChange("approvalDocumentId", ""); onChange("approvalDocumentNo", ""); }} type="button"><b>기안 없이 직접 작성</b><span className="mt-1 block text-xs text-[var(--color-stone)]">승인 예산 내 일상·정기 지출</span></button>
                 <button aria-pressed={formState.creationSource === "APPROVAL_LINKED"} className={`rounded-xl border p-4 text-left ${formState.creationSource === "APPROVAL_LINKED" ? "border-[var(--color-deep-cobalt)] bg-[var(--color-morning-tint)]/45" : "border-[var(--color-soft-border)]"}`} onClick={() => onChange("creationSource", "APPROVAL_LINKED")} type="button"><b>승인된 기안에서 작성</b><span className="mt-1 block text-xs text-[var(--color-stone)]">계약·고액·예산 외·의결 대상</span></button>
               </div>
@@ -792,10 +798,10 @@ export function ExpenseResolutionCreateModal({
               <TextInput label="회계 귀속일" onChange={(value) => onChange("accountingDate", value)} type="date" value={formState.accountingDate} />
               <TextInput label="실제 지출일" onChange={(value) => onChange("actualExpenseDate", value)} type="date" value={formState.actualExpenseDate} />
               <TextInput label="작성자" readOnly value={formState.author} />
-              {formState.expenseKind === "BANK_POST_APPROVAL" ? <fieldset className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 md:col-span-2"><legend className="px-1 text-sm font-bold">통장 출금거래 연결</legend><p className="text-xs font-semibold text-[var(--color-stone)]">같은 회계월·계정과목·예산·세부항목과 동일한 승인·증빙·세무 기준을 확인한 거래만 함께 선택해줘.</p><div className="max-h-64 space-y-2 overflow-y-auto pr-1">{bankTransactionCandidates.map((transaction) => { const checked = selectedBankTransactionIds.has(transaction.id); const linkedElsewhere = Boolean(transaction.linkedResolutionId && transaction.linkedResolutionNo !== formState.resolutionNo); return <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${linkedElsewhere ? "cursor-not-allowed bg-slate-50 text-slate-400" : "cursor-pointer"}`} key={transaction.id}><input checked={checked} disabled={linkedElsewhere} onChange={() => toggleBankTransaction(transaction)} type="checkbox" /><span><span className="font-semibold">{transaction.sourceTransactionDate ?? transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}</span>{transaction.linkedResolutionNo ? <span className="block text-xs">{transaction.linkedResolutionNo} 연결됨</span> : null}</span></label>; })}</div><p className="text-xs font-semibold">선택 {formState.bankTransactions.length}건 · {formState.bankTransactions.reduce((sum, item) => sum + item.amount, 0).toLocaleString("ko-KR")}원</p></fieldset> : null}
+              {formState.expenseKind === "BANK_POST_APPROVAL" ? <fieldset className="grid gap-2 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 @lg:col-span-2"><legend className="px-1 text-sm font-bold">통장 출금거래 연결</legend><p className="text-xs font-semibold text-[var(--color-stone)]">같은 회계월·계정과목·예산·세부항목과 동일한 승인·증빙·세무 기준을 확인한 거래만 함께 선택해줘.</p><div className="max-h-64 space-y-2 overflow-y-auto pr-1">{bankTransactionCandidates.map((transaction) => { const checked = selectedBankTransactionIds.has(transaction.id); const linkedElsewhere = Boolean(transaction.linkedResolutionId && transaction.linkedResolutionNo !== formState.resolutionNo); return <label className={`flex items-start gap-3 rounded-lg border px-3 py-2 text-sm ${linkedElsewhere ? "cursor-not-allowed bg-slate-50 text-slate-400" : "cursor-pointer"}`} key={transaction.id}><input checked={checked} disabled={linkedElsewhere} onChange={() => toggleBankTransaction(transaction)} type="checkbox" /><span><span className="font-semibold">{transaction.sourceTransactionDate ?? transaction.transactedAt.slice(0, 10)} · {transaction.withdrawalAmount.toLocaleString("ko-KR")}원 · {transaction.counterparty || transaction.description}</span>{transaction.linkedResolutionNo ? <span className="block text-xs">{transaction.linkedResolutionNo} 연결됨</span> : null}</span></label>; })}</div><p className="text-xs font-semibold">선택 {formState.bankTransactions.length}건 · {formState.bankTransactions.reduce((sum, item) => sum + item.amount, 0).toLocaleString("ko-KR")}원</p></fieldset> : null}
               {formState.expenseKind === "PERSONAL_REIMBURSEMENT" ? <><TextInput label="실제 지출자" onChange={(value) => onChange("advancePayer", value)} value={formState.advancePayer} /><TextInput label="정산받을 사람" onChange={(value) => onChange("settlementRecipient", value)} value={formState.settlementRecipient} /><TextInput label="조합의 정산일" onChange={(value) => onChange("settlementCompletedAt", value)} type="date" value={formState.settlementCompletedAt} /><div className="rounded-lg border bg-white px-4 py-3 text-sm font-bold">정산 상태: {formState.settlementCompletedAt ? "정산완료" : "정산예정"}</div></> : null}
               {formState.expenseTiming === "ADVANCE" ? <TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /> : null}
-              <p className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)] md:col-span-3 xl:col-span-4">
+              <p className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 text-sm font-semibold text-[var(--color-stone)] col-span-full">
                 작성자는 로그인 사용자 기준으로 자동 입력되며 결재선과 별도로 관리됩니다.
               </p>
               <label className="grid gap-1 text-sm font-semibold">
@@ -814,7 +820,7 @@ export function ExpenseResolutionCreateModal({
                   ))}
                 </select>
               </label>
-              <label className="grid gap-1 text-sm font-semibold md:col-span-3 xl:col-span-4">
+              <label className="grid gap-1 text-sm font-semibold col-span-full">
                 <span>건명 (필수)</span>
                 <input
                   id="expense-subject"
@@ -849,7 +855,7 @@ export function ExpenseResolutionCreateModal({
                 </label>
               ) : null}
               {formState.expenseTiming === "SETTLEMENT" ? (
-                <label className="grid gap-1 text-sm font-semibold md:col-span-2">
+                <label className="grid gap-1 text-sm font-semibold @lg:col-span-2">
                   <span>원 사전결의</span>
                   <select aria-label="원 사전결의" className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm" onChange={(event) => onChange("originalResolutionId", event.target.value)} value={formState.originalResolutionId}>
                     <option value="">정산할 결의 선택</option>
@@ -887,20 +893,20 @@ export function ExpenseResolutionCreateModal({
               ) : null}
               </> : null}
               {currentStep === 2 ? (
-              <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 md:col-span-3 xl:col-span-4">
-                <div className="mb-4 grid gap-3 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm md:grid-cols-2 xl:grid-cols-4">
+              <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 col-span-full">
+                <div className="mb-4 grid gap-3 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm @lg:grid-cols-2 @5xl:grid-cols-4">
                   <div><p className="text-xs font-bold text-[var(--color-stone)]">프로젝트</p><p className="mt-1 font-bold">{formState.projectName || "미선택"}</p></div>
                   <div><p className="text-xs font-bold text-[var(--color-stone)]">지급대상</p><p className="mt-1 font-bold">{selectedPaymentTarget?.label ?? formState.author}</p></div>
                   <div><p className="text-xs font-bold text-[var(--color-stone)]">비용부담</p><p className="mt-1 font-bold">{getExpenseBurdenLabel(formState.expenseBurdenType)}</p></div>
                   <div className="flex items-end justify-between gap-2"><div><p className="text-xs font-bold text-[var(--color-stone)]">지급계좌</p><p className="mt-1 font-bold">{formState.paymentBank || "미입력"} {maskAccountNumber(formState.paymentAccountNo)}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
                 </div>
-                 {formState.expenseTiming !== "ADVANCE" ? <div className="mb-4 grid gap-3 md:grid-cols-2"><TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /><TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} /></div> : null}
+                 {formState.expenseTiming !== "ADVANCE" ? <div className="mb-4 grid gap-3 @lg:grid-cols-2"><TextInput label={getExpenseDateLabel(formState.expenseTiming)} onChange={(value) => onChange("plannedPaymentDate", value)} type="date" value={formState.plannedPaymentDate} /><TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} /></div> : null}
                  <section className="mb-4 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
                    <div className="mb-3">
                      <h3 className="text-sm font-black">판매처 정보</h3>
                      <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">증빙에서 인식한 판매처 정보를 확인하고 필요한 경우 수정해줘.</p>
                    </div>
-                   <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                   <div className="grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-3">
                      <TextInput label="판매처 상호명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} />
                      <TextInput label="사업자등록번호" onChange={(value) => onChange("vendorBusinessNumber", value)} value={formState.vendorBusinessNumber} />
                      <TextInput label="대표자명" onChange={(value) => onChange("vendorRepresentative", value)} value={formState.vendorRepresentative} />
@@ -939,7 +945,7 @@ export function ExpenseResolutionCreateModal({
                 )}
 
                 {!isBatch && isExpenseDetailOpen ? (
-                  <div className="mt-3 grid min-w-0 gap-3 md:grid-cols-2 xl:grid-cols-4 [&>*]:min-w-0 [&_input]:min-w-0 [&_input]:w-full [&_select]:min-w-0 [&_select]:w-full">
+                  <div className="mt-3 grid min-w-0 gap-3 @lg:grid-cols-2 @5xl:grid-cols-4 [&>*]:min-w-0 [&_input]:min-w-0 [&_input]:w-full [&_select]:min-w-0 [&_select]:w-full">
                     <label className="grid gap-1 text-sm font-semibold">
                       <span>지출구분</span>
                       <select
@@ -994,7 +1000,7 @@ export function ExpenseResolutionCreateModal({
                   </div>
                 ) : null}
 
-                <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="mt-3 grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-3">
                   <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                     <p className="text-sm font-semibold text-[var(--color-stone)]">공급가액 합계</p>
                     <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(displayedSupplyAmount)}</p>
@@ -1008,7 +1014,7 @@ export function ExpenseResolutionCreateModal({
                     <p className="mt-2 text-xl font-bold">{formatExpenseResolutionAmount(totalAmount)}</p>
                   </div>
                 </div>
-                <div className="mt-3 grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm md:grid-cols-2">
+                <div className="mt-3 grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm @lg:grid-cols-2">
                   <p className={Math.abs(amountEquationDifference) <= 0.5 ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{Math.abs(amountEquationDifference) <= 0.5 ? "✓ 공급가액 + 부가세 = 총액" : `! 공급가액과 부가세 합계가 총액과 ${formatExpenseResolutionAmount(Math.abs(amountEquationDifference))} 차이 납니다.`}</p>
                   {!isBatch ? <p className={Math.abs(allocationDifference) <= 0.5 ? "font-bold text-[var(--color-green-ink)]" : "font-bold text-[var(--color-tangerine)]"}>{Math.abs(allocationDifference) <= 0.5 ? "✓ 계정과목 분할합계 = 총지급액" : `! 계정과목 분할금액을 ${formatExpenseResolutionAmount(Math.abs(allocationDifference))} ${allocationDifference > 0 ? "늘려" : "줄여"}주세요.`}</p> : null}
                   {formState.expenseTiming === "SETTLEMENT" ? <p className="font-bold text-[var(--color-deep-cobalt)]">선지급액 - 실제 사용액 = {formatExpenseResolutionAmount(settlementDifference)}</p> : null}
@@ -1098,7 +1104,7 @@ export function ExpenseResolutionCreateModal({
                   <p className="mt-2 text-lg font-bold">{settlementDifference > 0 ? `반납액 ${formatExpenseResolutionAmount(settlementDifference)}` : settlementDifference < 0 ? `추가 지급액 ${formatExpenseResolutionAmount(Math.abs(settlementDifference))}` : "차액 없음"}</p>
                 </div>
                 {isBatch && formState.inputMethod === "EVIDENCE_OCR" ? (
-                  <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm md:col-span-2">
+                  <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white p-3 text-sm @lg:col-span-2">
                     <p className="font-bold">영수증 정산 대사</p>
                     <p>전체 {batchEvidenceSettlement.totalCount}개 · 확정 {batchEvidenceSettlement.confirmedCount}개 · 확인 대기 {batchEvidenceSettlement.pendingCount}개 · 실패 {batchEvidenceSettlement.failedCount}개</p>
                     <p>확정 영수증 합계 <strong>{formatExpenseResolutionAmount(batchEvidenceSettlement.confirmedReceiptTotal)}</strong></p>
@@ -1111,9 +1117,9 @@ export function ExpenseResolutionCreateModal({
 
             {showEvidence ? <CollapsibleFormSection defaultOpen summary={`${formState.evidenceType} · ${formState.evidenceFiles.length}개 첨부`} title="증빙자료·OCR 결과">
               {formState.quickEntryMode === "BUDGET_DIRECT" && formState.quickPaymentMethod === "CORPORATE_CARD" ? (
-                <fieldset className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 md:col-span-3">
+                <fieldset className="grid gap-3 rounded-xl border border-[var(--color-deep-cobalt)]/20 bg-[var(--color-morning-tint)]/35 p-4 col-span-full">
                   <legend className="px-1 text-sm font-bold">영수증 또는 대체증빙 상태</legend>
-                  <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="grid gap-2 @@lg:grid-cols-2 @5xl:grid-cols-4">
                     {[
                       { kind: "CARD_RECEIPT", label: "영수증 있음", reason: "", status: "QUALIFIED" },
                       { kind: "OTHER_ALTERNATIVE", label: "카드 승인내역으로 대체", reason: "공용 법인카드 승인내역으로 대체", status: "ALTERNATIVE" },
@@ -1130,7 +1136,7 @@ export function ExpenseResolutionCreateModal({
               {vendorRegistrationNotice ? <p className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-sprout)] px-4 py-3 text-sm font-bold text-[var(--color-green-ink)]">{vendorRegistrationNotice}</p> : null}
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 유형</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceKind", event.target.value as EvidenceKind)} value={formState.evidenceKind}><option value="E_TAX_INVOICE">전자세금계산서</option><option value="INVOICE">계산서</option><option value="CARD_RECEIPT">카드매출전표</option><option value="CASH_RECEIPT">현금영수증</option><option value="SIMPLE_RECEIPT">간이영수증</option><option value="BANK_TRANSFER">계좌이체확인증</option><option value="TRANSACTION_STATEMENT">거래명세서</option><option value="BILL">청구서</option><option value="EXPENSE_FACT_CONFIRMATION">지출사실확인서</option><option value="OTHER_ALTERNATIVE">기타 대체증빙</option><option value="NONE">증빙 없음</option></select></label>
               <label className="grid gap-1 text-sm font-semibold"><span>증빙 상태</span><select className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3" onChange={(event) => onChange("evidenceStatus", event.target.value as EvidenceStatus)} value={formState.evidenceStatus}><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select></label>
-              {formState.evidenceKind === "EXPENSE_FACT_CONFIRMATION" ? <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 md:col-span-3">지출사실확인서는 지출결의서를 대체하지 않으며 적격증빙으로 처리되지 않습니다.</p> : null}
+              {formState.evidenceKind === "EXPENSE_FACT_CONFIRMATION" ? <p className="rounded-lg bg-amber-50 px-4 py-3 text-sm font-bold text-amber-900 col-span-full">지출사실확인서는 지출결의서를 대체하지 않으며 적격증빙으로 처리되지 않습니다.</p> : null}
               <TextInput label="출력 증빙·대체증빙 설명" onChange={(value) => onChange("missingEvidenceReason", value)} value={formState.missingEvidenceReason} />
               <label className="grid gap-1 text-sm font-semibold">
                 <span>거래 증빙 종류</span>
@@ -1146,7 +1152,7 @@ export function ExpenseResolutionCreateModal({
                   ))}
                 </select>
               </label>
-              <div className="grid gap-1 text-sm font-semibold md:col-span-2">
+              <div className="grid gap-1 text-sm font-semibold @lg:col-span-2">
                 <span>증빙자료</span>
                 <button
                   className="min-h-24 cursor-pointer rounded-lg border border-dashed border-[var(--color-soft-border)] bg-white px-4 text-center text-sm text-[var(--color-stone)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--color-deep-cobalt)] disabled:cursor-wait"
@@ -1159,7 +1165,7 @@ export function ExpenseResolutionCreateModal({
                 </button>
               </div>
               {isBatch && formState.inputMethod === "EVIDENCE_OCR" ? (
-                <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3 text-sm md:col-span-3 md:grid-cols-4">
+                <div className="grid gap-2 rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-3 text-sm col-span-full @3@5xl:grid-cols-4">
                   <p><span className="block text-xs font-bold text-[var(--color-stone)]">전체 증빙</span><strong>{batchEvidenceSettlement.totalCount}개</strong></p>
                   <p><span className="block text-xs font-bold text-[var(--color-stone)]">확정 합계</span><strong>{formatExpenseResolutionAmount(batchEvidenceSettlement.confirmedReceiptTotal)}</strong></p>
                   <p><span className="block text-xs font-bold text-[var(--color-stone)]">선지급액</span><strong>{formatExpenseResolutionAmount(toNumber(formState.advancePaidAmount))}</strong></p>
@@ -1167,7 +1173,7 @@ export function ExpenseResolutionCreateModal({
                 </div>
               ) : null}
               {formState.evidenceFiles.length ? (
-                <div className="grid gap-3 md:col-span-3" aria-label="첨부 증빙 목록">
+                <div className="grid gap-3 col-span-full" aria-label="첨부 증빙 목록">
                   {formState.evidenceFiles.map((file) => (
                     <article className="rounded-xl border border-[var(--color-soft-border)] bg-white p-4" key={file.id}>
                       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1185,7 +1191,7 @@ export function ExpenseResolutionCreateModal({
                         </div>
                       </div>
                       {Object.keys(file.ocrData).length ? (
-                        <div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm md:grid-cols-5">
+                        <div className="mt-3 grid gap-2 rounded-lg bg-[var(--color-cloud-veil)] p-3 text-sm @3xl:grid-cols-5">
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="거래처" value={file.ocrData.issuer ?? "-"} />
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="사업자등록번호" value={file.ocrData.issuerBusinessNumber ?? "-"} />
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="대표자" value={file.ocrData.issuerRepresentative ?? "-"} />
@@ -1193,18 +1199,18 @@ export function ExpenseResolutionCreateModal({
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="공급가액" value={file.ocrData.supplyAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.supplyAmount)} />
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="부가세" value={file.ocrData.vatAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.vatAmount)} />
                           <OcrValue confirmed={file.ocrStatus === "CONFIRMED"} label="합계" value={file.ocrData.totalAmount === undefined ? "-" : formatExpenseResolutionAmount(file.ocrData.totalAmount)} />
-                          <div className="md:col-span-5">
+                          <div className="col-span-full">
                             <div className="flex flex-wrap gap-2"><Button disabled={file.ocrStatus === "CONFIRMED"} onClick={() => void handleApplyEvidenceOcr(file.id)} size="sm" type="button">
                               {file.ocrStatus === "CONFIRMED" ? "추출값 반영완료" : "추출값을 결의서에 반영"}
                             </Button>{ocrUndoSnapshot ? <Button onClick={restoreBeforeOcr} size="sm" type="button" variant="outline">자동입력 이전으로 되돌리기</Button> : null}</div>
                           </div>
                           {file.ocrData.recognizedText ? (
-                            <details className="md:col-span-5 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
+                            <details className="col-span-full rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2">
                               <summary className="cursor-pointer font-bold">인식된 원문 확인</summary>
                               <pre className="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-words text-xs leading-5 text-[var(--color-stone)]">{file.ocrData.recognizedText}</pre>
                             </details>
                           ) : null}
-                          {duplicateEvidenceIds.has(file.id) ? <p className="md:col-span-5 rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-xs font-bold text-[var(--color-tangerine)]">같은 거래처·날짜·금액의 증빙이 이미 첨부되어 있습니다. 중복 영수증인지 확인해줘.</p> : null}
+                          {duplicateEvidenceIds.has(file.id) ? <p className="col-span-full rounded-lg bg-[var(--color-sunset-soft)] px-3 py-2 text-xs font-bold text-[var(--color-tangerine)]">같은 거래처·날짜·금액의 증빙이 이미 첨부되어 있습니다. 중복 영수증인지 확인해줘.</p> : null}
                         </div>
                       ) : null}
                     </article>
@@ -1215,7 +1221,7 @@ export function ExpenseResolutionCreateModal({
 
             {currentStep === 1 && !isCorporateCardPayment ? <CollapsibleFormSection summary={getPaymentTargetHeaderSummary(selectedPaymentTarget, formState)} title="지급정보">
               <TextInput label="거래처명" onChange={(value) => onChange("vendorName", value)} value={formState.vendorName} />
-              <label className="grid gap-1 text-sm font-semibold md:col-span-2">
+              <label className="grid gap-1 text-sm font-semibold @lg:col-span-2">
                 <span>지급대상</span>
                 <select
                   className="h-10 rounded-md border border-[var(--color-soft-border)] bg-white px-3 text-sm"
@@ -1229,7 +1235,7 @@ export function ExpenseResolutionCreateModal({
                   ))}
                 </select>
               </label>
-              <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 md:col-span-2">
+              <div className="rounded-lg border border-[var(--color-soft-border)] bg-white px-4 py-3 @lg:col-span-2">
                 <p className="text-xs font-bold text-[var(--color-stone)]">{selectedPaymentTarget.sourceLabel}</p>
                 <p className="mt-2 text-base font-bold text-[var(--color-midnight-ink)]">{getPaymentTargetSummary(selectedPaymentTarget, formState)}</p>
                 <p className="mt-1 break-keep text-sm font-semibold text-[var(--color-stone)]">
@@ -1246,7 +1252,7 @@ export function ExpenseResolutionCreateModal({
 
             {currentStep === 3 ? <section className="grid gap-4 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-bold">기본·지급정보</h3><p className="mt-1 text-sm text-[var(--color-stone)]">{formState.projectName || "프로젝트 미선택"} · {formState.subject || "건명 미입력"} · {isCorporateCardPayment ? "공용 법인카드 결제완료" : selectedPaymentTarget.label}</p></div><Button onClick={() => setCurrentStep(1)} size="sm" type="button" variant="outline">기본정보 수정</Button></div>
-              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+              <div className="grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">
                 <DetailItem label="지출일" value={formState.plannedPaymentDate || "-"} />
                 <DetailItem label="거래처" value={formState.vendorName || "-"} />
                 <DetailItem label="사업자등록번호" value={formState.vendorBusinessNumber || "-"} />
@@ -1256,7 +1262,7 @@ export function ExpenseResolutionCreateModal({
                 <DetailItem label="계정과목" value={formState.accountAllocations.map((item) => item.accountTitle).join(", ") || "-"} />
               </div>
               <div className="rounded-lg bg-white p-3"><div className="flex items-center justify-between gap-3"><div className="min-w-0"><p className="font-bold">지출내역·증빙</p><p className="mt-1 break-words text-sm text-[var(--color-stone)]">품목 {isBatch ? formState.batchItems.length : formState.singleItems.length}건 · 증빙 {formState.evidenceFiles.length}개 · {formState.reason || "지출사유 미입력"}</p></div><Button onClick={() => setCurrentStep(2)} size="sm" type="button" variant="outline">{isEditing ? "금액·계정 수정" : "금액·증빙 수정"}</Button></div></div>
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 @lg:grid-cols-2">
                 <div className="rounded-lg bg-white p-3"><p className="font-bold">지출 품목</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{(isBatch ? formState.batchItems.map((item) => ({ id: item.id, label: item.itemTitle, total: item.totalAmount })) : formState.singleItems.map((item) => ({ id: item.id, label: item.itemName, total: item.totalAmount }))).map((item) => <p key={item.id}>{item.label || "품목명 미입력"} · {formatExpenseResolutionAmount(item.total)}</p>)}</div></div>
                 <div className="rounded-lg bg-white p-3"><p className="font-bold">증빙자료</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{formState.evidenceFiles.length ? formState.evidenceFiles.map((file) => <p key={file.id}>{file.fileName} · {file.ocrStatus === "CONFIRMED" ? "확인완료" : "확인 필요"}</p>) : <p>첨부된 증빙 없음</p>}</div></div>
                 <div className="rounded-lg bg-white p-3"><p className="font-bold">계정과목 분할</p><div className="mt-2 grid gap-1 text-sm text-[var(--color-stone)]">{isBatch ? <p>일괄결의 항목별 계정과목 적용</p> : formState.accountAllocations.map((item) => <p key={item.id}>{item.accountTitle} · {item.budgetItem} · {formatExpenseResolutionAmount(toNumber(item.amount))}</p>)}</div></div>
@@ -1433,6 +1439,12 @@ export function ExpenseResolutionCreateModal({
           </div>
         </div>
       </section>
+  );
+
+  if (workspace) return editor;
+  return (
+    <div className={`fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-[var(--color-sky-wash)]/88 ${isEditing ? "p-2 sm:p-6" : "px-4 py-8"}`} onClick={onCancel}>
+      {editor}
     </div>
   );
 }
@@ -1475,7 +1487,7 @@ function BatchExpenseItemsSection({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-3 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 md:grid-cols-5">
+      <div className="mt-4 grid gap-3 rounded-xl border border-[var(--color-soft-border)] bg-white p-4 @3xl:grid-cols-5">
         <SummaryTile label="전체 항목 수" value={`${batchSummary.itemCount}건`} />
         <SummaryTile label="정상 항목 수" value={`${batchSummary.itemCount - batchSummary.overBudgetItemCount}건`} />
         <SummaryTile label="예산초과 항목 수" value={getBudgetOverLabel(batchSummary.overBudgetItemCount)} />
@@ -1506,7 +1518,7 @@ function BatchExpenseItemsSection({
               </div>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+            <div className="mt-4 grid gap-3 @lg:grid-cols-2 @5xl:grid-cols-4">
               <BatchInput ariaLabel={`${item.itemNo}행 지출예정일`} label="지출예정일" type="date" value={item.expenseDate} onChange={(value) => onBatchItemChange(item.itemNo, "expenseDate", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 거래처`} label="거래처" value={item.vendorName} onChange={(value) => onBatchItemChange(item.itemNo, "vendorName", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 실제 지출자`} label="실제 지출자" value={item.actualSpender} onChange={(value) => onBatchItemChange(item.itemNo, "actualSpender", value)} />
@@ -1516,13 +1528,13 @@ function BatchExpenseItemsSection({
               <BatchSelect ariaLabel={`${item.itemNo}행 예산항목`} label="예산항목" options={batchBudgetItemOptions} value={item.budgetItem} onChange={(value) => onBatchItemChange(item.itemNo, "budgetItem", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 지출항목명`} label="지출항목명" value={item.itemTitle} onChange={(value) => onBatchItemChange(item.itemNo, "itemTitle", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 지급방법`} label="지급방법" options={["계좌이체", "카드결제", "현금", "기타"]} value={item.paymentMethod} onChange={(value) => onBatchItemChange(item.itemNo, "paymentMethod", value)} />
-              <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} className="xl:col-span-2" label="내역 및 산출근거" value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
-              {showBusinessPurpose ? <BatchInput ariaLabel={`${item.itemNo}행 업무목적`} className="xl:col-span-2" label="업무목적" value={item.businessPurpose} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} /> : null}
+              <BatchInput ariaLabel={`${item.itemNo}행 내역 및 산출근거`} className="@5xl:col-span-2" label="내역 및 산출근거" value={item.description} onChange={(value) => onBatchItemChange(item.itemNo, "description", value)} />
+              {showBusinessPurpose ? <BatchInput ariaLabel={`${item.itemNo}행 업무목적`} className="@5xl:col-span-2" label="업무목적" value={item.businessPurpose} onChange={(value) => onBatchItemChange(item.itemNo, "businessPurpose", value)} /> : null}
               <BatchInput ariaLabel={`${item.itemNo}행 공급가액`} label="공급가액" type="number" value={item.supplyAmount} onChange={(value) => onBatchItemChange(item.itemNo, "supplyAmount", value)} />
               <BatchInput ariaLabel={`${item.itemNo}행 부가세`} label="부가세" type="number" value={item.vatAmount} onChange={(value) => onBatchItemChange(item.itemNo, "vatAmount", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 증빙유형`} label="증빙유형" options={batchEvidenceTypeOptions} value={item.evidenceType} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceType", value)} />
               <BatchSelect ariaLabel={`${item.itemNo}행 증빙상태`} label="증빙상태" options={["QUALIFIED", "GENERAL", "ALTERNATIVE", "DEFICIENT", "NONE"]} value={item.evidenceStatus} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceStatus", value)} />
-              <BatchInput ariaLabel={`${item.itemNo}행 증빙파일명`} className="xl:col-span-2" label="증빙파일명" value={item.evidenceFileName} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceFileName", value)} />
+              <BatchInput ariaLabel={`${item.itemNo}행 증빙파일명`} className="@5xl:col-span-2" label="증빙파일명" value={item.evidenceFileName} onChange={(value) => onBatchItemChange(item.itemNo, "evidenceFileName", value)} />
               <div className="rounded-lg border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3">
                 <p className="text-xs font-bold text-[var(--color-stone)]">합계</p>
                 <p className="mt-2 text-lg font-bold">{formatExpenseResolutionAmount(item.totalAmount)}</p>
