@@ -1,5 +1,16 @@
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
+import { canApproveExpense } from "./expense-access-model";
+import type { ReimbursementMember } from "./reimbursement-domain";
+
+export function isActionableExpenseResolution(resolution: ManagedExpenseResolution, viewer?: ReimbursementMember) {
+  if (!viewer?.active || isLegacySmallExpenseResolution(resolution)) return false;
+  if (canApproveExpense(resolution, viewer)) return true;
+  if (resolution.authorization?.author_user_id === viewer.user_id && ["작성중", "반려"].includes(resolution.approvalStatus)) return true;
+  if (resolution.workflowTransactionId || resolution.approvalStatus !== "승인완료") return false;
+  return viewer.permissions.some((permission) => permission === "ADMIN" || permission === "PAY")
+    && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
+}
 
 export type ExpenseResolutionFilters = {
   approvalStatus?: string;
@@ -35,6 +46,7 @@ export function filterExpenseResolutions(resolutions: ManagedExpenseResolution[]
       resolution.author,
       resolution.currentApprover,
       resolution.representativeVendorName,
+      resolution.vendorName,
       resolution.representativeAccountTitle,
       resolution.expenseType,
       resolution.approvalStatus,

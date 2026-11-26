@@ -275,3 +275,27 @@ Blocker: browser access host unavailable for rendered screenshot capture and sid
 - Compare typography, spacing, colors, and copy against the source visual.
 
 final result: blocked
+
+## 지출결의서 관리 디자인 검증
+
+검증 이미지는 모두 `C:/Users/finemax/.codex/generated_images/01a214ff-1115-7200-9d71-271b3a9cc37e/`에 있다.
+
+| 자료 | 파일 | 크기 |
+| --- | --- | --- |
+| 기준 시안 | `exec-67df0c2d-b899-43d5-a46d-a430a73892f5.png` | 1487×1058 |
+| 데스크톱 구현 | `expense-resolution-implemented-desktop.png` | 1487×1058 |
+| 모바일 구현 | `expense-resolution-implemented-mobile.png` | 390×1058 |
+| 전체 비교 | `expense-resolution-qa-overview.png` | 좌우 배치 |
+| 검색·목록·상세 확대 비교 | `expense-resolution-qa-workspace.png` | 좌우 배치 |
+
+Chrome의 데스크톱 CSS 뷰포트는 1487×1058, 모바일은 390×1058로 설정했다. 브라우저 원본은 각각 2974×2116, 780×2116으로 캡처되어 2배 밀도를 CSS 크기에 맞춰 정규화했다. 구현 화면은 샘플 데이터에서 작성 중인 ‘사무용품 구매’ 결의서를 선택한 상태다.
+
+### 비교 결과
+
+- 검색창, 목록의 네 열, 파란색 선택 행, 상세의 제목·금액·요약 배치를 시안과 대조했다. 첫 화면에서 검색과 여러 목록 행을 볼 수 있다.
+- 최초 넓은 화면 검증에서 상세 영역이 화면 높이를 많이 차지했다. 두 패널에 동일한 높이와 내부 스크롤을 적용했다. 재검증한 데스크톱 이미지 오른쪽에서 목록과 상세 하단이 맞고 작업 버튼이 패널 내부에 표시된다.
+- ERP의 글꼴, 상태 색상, 선 아이콘을 적용했다. 날짜 아래에 결의번호를 유지했다. 검색 버튼과 상세필터를 따로 배치했고, 기존 세부 거래 조회를 위해 ‘지출내역’을 추가했다. 이미지나 장식용 그래픽이 필요한 화면은 아니다.
+- 샘플의 증빙 파일·작성자 계정 연결이 비어 있어 빈 증빙 상태와 ‘계정 연결 필요’ 버튼을 캡처했다. 목록의 이전·다음 동작, 모바일 상세 전환 및 닫은 뒤 검색 목록 복귀를 브라우저에서 확인했다. 행의 선택 상태와 검색·이동 버튼 이름은 접근성 트리에 표시된다. 1062픽셀 폭에서 상세 전환도 확인했다.
+- 개발자 콘솔의 hydration 경고는 브라우저 확장이 문서 루트에 추가한 커서 스타일과 속성에서 발생했다. 운영 계정의 실결재·지급·증빙 다운로드까지 실행하는 검증은 포함하지 않았다.
+
+final result: passed

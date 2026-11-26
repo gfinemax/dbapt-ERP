@@ -6,6 +6,7 @@ import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { normalizeExpenseTiming, normalizeInputMethod, normalizeResolutionMode } from "./expense-resolution-domain";
 import { getExpenseResolutionSearchPattern, nextFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionListRequest } from "./expense-resolution-list";
 import type { ReimbursementMember } from "./reimbursement-domain";
+import { isActionableExpenseResolution } from "./expense-resolution-insights";
 
 export const expenseResolutionRepositorySchema = "finance";
 
@@ -288,12 +289,17 @@ export async function listExpenseResolutionPageFromSupabase(
       `project_name.ilike.${pattern}`,
       `author_label.ilike.${pattern}`,
       `current_approver_label.ilike.${pattern}`,
+      `resolution_data->>vendorName.ilike.${pattern}`,
+      `resolution_data->>representativeVendorName.ilike.${pattern}`,
     ].join(","));
   }
   if (request.month) {
     query = query
       .gte("actual_expense_date", `${request.month}-01`)
       .lt("actual_expense_date", `${nextFinanceMonth(request.month)}-01`);
+  }
+  if (request.scope === "actionable") {
+    query = query.or("approval_status.in.(작성중,반려,승인대기),and(approval_status.eq.승인완료,payment_status.in.(지급대기,부분지급))");
   }
   const orderedQuery = request.sort === "expense_date_asc"
     ? query
@@ -308,13 +314,32 @@ export async function listExpenseResolutionPageFromSupabase(
       : query
         .order("updated_at", { ascending: false })
         .order("id", { ascending: false });
-  const pageResult = await orderedQuery.range(offset, offset + request.pageSize - 1);
-  const { data, error, count } = pageResult;
-  if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
-
-  const sourceRows = (data ?? []) as ExpenseResolutionRow[];
-  const hydratedItems = sourceRows.length ? await hydrateExpenseResolutionListRows(supabase, actor, sourceRows) : [];
-  let items: ManagedExpenseResolution[] = hydratedItems;
+  async function readRange(from: number, size: number) {
+    const { data, error, count } = await orderedQuery.range(from, from + size - 1);
+    if (error) throw new Error(`Failed to list expense resolutions: ${error.message}`);
+    const rows = (data ?? []) as ExpenseResolutionRow[];
+    return {
+      count: count ?? rows.length,
+      candidates: rows.length ? await hydrateExpenseResolutionListRows(supabase!, actor, rows) : [],
+    };
+  }
+  let items: ManagedExpenseResolution[];
+  let total: number;
+  if (request.scope === "actionable") {
+    const matches: ManagedExpenseResolution[] = [];
+    const batchSize = 150;
+    for (let from = 0; ; from += batchSize) {
+      const { candidates, count } = await readRange(from, batchSize);
+      matches.push(...candidates.filter((resolution) => isActionableExpenseResolution(resolution, actor)));
+      if (candidates.length < batchSize || from + batchSize >= count) break;
+    }
+    total = matches.length;
+    items = matches.slice(offset, offset + request.pageSize);
+  } else {
+    const { candidates, count } = await readRange(offset, request.pageSize);
+    items = candidates;
+    total = count;
+  }
   if (request.includeId) {
     try {
       const detail = await getExpenseResolutionDetailFromSupabase(request.includeId, actor);
@@ -325,7 +350,6 @@ export async function listExpenseResolutionPageFromSupabase(
       // The page renders its existing not-found guidance for missing or unauthorized deep links.
     }
   }
-  const total = count ?? 0;
   return {
     items,
     pagination: {
@@ -334,6 +358,7 @@ export async function listExpenseResolutionPageFromSupabase(
       month: request.month,
       query: request.query,
       sort: request.sort,
+      ...(request.scope ? { scope: request.scope } : {}),
       total,
       totalPages: Math.max(1, Math.ceil(total / request.pageSize)),
     },

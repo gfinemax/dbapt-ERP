@@ -95,7 +95,7 @@ export default async function ExpenseResolutionsRoute({ searchParams }: { search
   }
   return (
     <ExpenseResolutionPage
-      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}:${initialListPage?.month ?? ""}:${initialListPage?.sort ?? ""}`}
+      key={`${viewer.organization_id}:${viewer.user_id}:${JSON.stringify(entry)}:${initialListPage?.page ?? "local"}:${initialListPage?.query ?? ""}:${initialListPage?.month ?? ""}:${initialListPage?.sort ?? ""}:${initialListPage?.scope ?? ""}`}
       viewer={viewer}
       initialEditResolutionId={entry.editResolutionId}
       initialEntryStart={entry.start}

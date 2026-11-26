@@ -30,6 +30,7 @@ export type ExpenseResolutionListRequest = {
   pageSize: number;
   query: string;
   sort: ExpenseResolutionSort;
+  scope?: "actionable";
 };
 
 export type ExpenseResolutionListPage = ExpenseResolutionListRequest & {
@@ -51,7 +52,8 @@ export function parseExpenseResolutionListRequest(params: Record<string, string 
   const query = (firstString(params.q) ?? "").trim().slice(0, 100);
   const month = normalizeFinanceMonth(firstString(params.month));
   const sort = normalizeExpenseResolutionSort(firstString(params.sort));
-  return { month, page, pageSize: expenseResolutionListPageSize, query, sort };
+  const scope = firstString(params.scope) === "actionable" ? "actionable" : undefined;
+  return { month, page, pageSize: expenseResolutionListPageSize, query, sort, ...(scope ? { scope } : {}) };
 }
 
 export function getExpenseResolutionSearchPattern(query: string) {
@@ -59,12 +61,13 @@ export function getExpenseResolutionSearchPattern(query: string) {
   return tokens.join("%");
 }
 
-export function expenseResolutionListHref(page: number, query: string, month = "", sort: ExpenseResolutionSort = defaultExpenseResolutionSort) {
+export function expenseResolutionListHref(page: number, query: string, month = "", sort: ExpenseResolutionSort = defaultExpenseResolutionSort, scope?: ExpenseResolutionListRequest["scope"]) {
   const params = new URLSearchParams();
   if (page > 1) params.set("page", String(page));
   if (query.trim()) params.set("q", query.trim().slice(0, 100));
   if (normalizeFinanceMonth(month)) params.set("month", month);
   if (sort !== defaultExpenseResolutionSort) params.set("sort", sort);
+  if (scope) params.set("scope", scope);
   const serialized = params.toString();
   return `/finance/expense-resolutions${serialized ? `?${serialized}` : ""}`;
 }

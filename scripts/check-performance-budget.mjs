@@ -16,8 +16,9 @@ const budgets = {
   largestAsyncChunk: Number(process.env.EXPENSE_RESOLUTION_ASYNC_CHUNK_BUDGET || 103_000),
   // The favorites editor is fetched only after the user opens it (up to 9 KB).
   // Approved-document correction and its audit comparison ship with the on-demand detail view.
-  // The measured production total is about 184.6 KB across six chunks.
-  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 187_000),
+  // The split workspace adds an on-demand summary, evidence actions, and document navigation.
+  // Measured production output is about 189.2 KB across six chunks.
+  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 190_000),
 };
 
 const routeBudgets = [

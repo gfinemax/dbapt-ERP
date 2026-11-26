@@ -1,8 +1,8 @@
 "use client";
 
-import { CheckCircle2, FilePlus2, FileSpreadsheet, Search, X } from "lucide-react";
+import { ArrowDownUp, ChevronDown, FilePlus2, FileSpreadsheet, Search, SlidersHorizontal, X } from "lucide-react";
 import type { FormEvent, ReactNode } from "react";
-import { createContext, Fragment, useDeferredValue, useEffectEvent, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { createContext, useDeferredValue, useEffectEvent, useContext, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -10,7 +10,7 @@ import { createExpenseApprovalPolicy, isDirector, type ExpenseApprovalPolicy, ty
 import { canApproveExpense, canEditExpense } from "./expense-access-model";
 import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
 import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
-import { getBudgetOverageAmount, getResolutionAccountTitle, getResolutionListSubject, getResolutionOverBudgetAmount, isPostApprovalResolution } from "./expense-resolution-display";
+import { getBudgetOverageAmount, getResolutionListSubject, getResolutionOverBudgetAmount } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
 import type { ExpenseEntryStart } from "./expense-entry";
 import { defaultExpenseResolutionSort, expenseResolutionListHref, formatFinanceMonth, normalizeFinanceMonth, type ExpenseResolutionListPage, type ExpenseResolutionSort } from "./expense-resolution-list";
@@ -52,7 +52,7 @@ import {
   type ExpenseApprovalRoute,
 } from "./expense-approval-routing";
 import { transitionExpenseDisbursement, type DisbursementTransitionRequest, type DisbursementTransitionResult } from "./expense-disbursement-workflow";
-import { buildExpenseResolutionAlerts, filterExpenseResolutions, getExpenseResolutionDashboard } from "./expense-resolution-insights";
+import { filterExpenseResolutions, isActionableExpenseResolution } from "./expense-resolution-insights";
 import { isLegacySmallExpenseResolution } from "./legacy-small-expense";
 import {
   buildExpenseResolutionImportTemplateCsv,
@@ -537,7 +537,6 @@ export const paymentTargets: PaymentTarget[] = [
   },
 ];
 const resolutionNoPrefix = "지결";
-const resolutionFlow = "지출결의서 작성 → 승인요청 → 승인완료 → 지급대기 → 지급완료 → 지출전표 생성 → 증빙자료 연결";
 const evidenceTypeOptions: EvidenceType[] = ["세금계산서", "계산서", "영수증", "현금영수증", "이체확인증", "계약서", "견적서", "의결서", "기타"];
 export const transactionEvidenceTypeOptions: EvidenceType[] = ["세금계산서", "계산서", "영수증", "현금영수증", "이체확인증", "기타"];
 export const projectNameOptions = [
@@ -647,7 +646,7 @@ const ExpenseFactConfirmationModal = dynamic(
   { ssr: false },
 );
 
-type ResolutionTabKey = "all" | "mine" | "approvalInbox" | "rejected" | "paymentWaiting" | "partialPaid" | "paid" | "hold" | "voucherCreated";
+type ResolutionTabKey = "all" | "actionable" | "mine" | "approvalInbox" | "rejected" | "paymentWaiting" | "partialPaid" | "paid" | "hold" | "voucherCreated";
 export type PaymentMethod = "계좌이체" | "카드결제" | "현금" | "기타";
 
 type PaymentFormState = {
@@ -2265,11 +2264,6 @@ export function Badge({ value }: { value: string }) {
   );
 }
 
-function ComplianceBadge({ label, tone = "default" }: { label: string; tone?: "default" | "danger" | "success" | "warning" }) {
-  const classes = tone === "danger" ? "bg-rose-100 text-rose-800" : tone === "success" ? "bg-emerald-100 text-emerald-800" : tone === "warning" ? "bg-amber-100 text-amber-900" : "bg-slate-100 text-slate-700";
-  return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-black ${classes}`}>{label}</span>;
-}
-
 export function getHistoryTone(actionType: ExpenseResolutionHistoryActionType) {
   const tones: Record<ExpenseResolutionHistoryActionType, string> = {
     APPROVED: "bg-[var(--color-sprout)] text-[var(--color-green-ink)]",
@@ -2300,6 +2294,11 @@ function getResolutionTabItems(resolutions: ManagedExpenseResolution[], viewer?:
       key: "all" as const,
       label: "전체",
       resolutions,
+    },
+    {
+      key: "actionable" as const,
+      label: "내가 처리할 건",
+      resolutions: resolutions.filter((resolution) => isActionableExpenseResolution(resolution, viewer)),
     },
     {
       key: "mine" as const,
@@ -2342,6 +2341,10 @@ function getResolutionTabItems(resolutions: ManagedExpenseResolution[], viewer?:
       resolutions: resolutions.filter((resolution) => Boolean(resolution.voucherNo)),
     },
   ];
+}
+
+function scopeButtonClass(active: boolean) {
+  return `rounded-full border border-[var(--color-soft-border)] px-3 py-1.5 text-sm font-bold ${active ? "bg-[var(--color-pressed-charcoal)] text-white" : "bg-white text-[var(--color-stone)] hover:bg-[var(--color-cloud-veil)]"}`;
 }
 
 export function sortExpenseResolutionsByExpenseDate(resolutions: ManagedExpenseResolution[], sort: ExpenseResolutionSort) {
@@ -2473,7 +2476,7 @@ export function ExpenseResolutionPage({
   const [vendorRegistrationNotice, setVendorRegistrationNotice] = useState("");
   const [isEvidenceUploading, setIsEvidenceUploading] = useState(false);
   const [evidenceOcrProgress, setEvidenceOcrProgress] = useState<Record<string, EvidenceOcrJobProgress>>({});
-  const [activeTab, setActiveTab] = useState<ResolutionTabKey>("all");
+  const [activeTab, setActiveTab] = useState<ResolutionTabKey>(initialListPage?.scope ?? "all");
   const [searchQuery, setSearchQuery] = useState(initialListPage?.query ?? "");
   const [monthFilter, setMonthFilter] = useState(initialListPage?.month ?? "");
   const [sortOrder, setSortOrder] = useState<ExpenseResolutionSort>(initialListPage?.sort ?? defaultExpenseResolutionSort);
@@ -2500,6 +2503,8 @@ export function ExpenseResolutionPage({
   const [printWarning, setPrintWarning] = useState<{ resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialResolutionId ?? null);
+  const detailRequest = useRef(0);
+  const [pendingDetailId, setPendingDetailId] = useState<string>();
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
   const [formState, setFormState] = useState<ResolutionFormState>(() => {
     const nextResolutionNo = initialNextResolutionNo ?? formOptions.nextResolutionNo;
@@ -2527,15 +2532,6 @@ export function ExpenseResolutionPage({
   const printWarningResolution = printWarning ? resolutions.find((resolution) => resolution.id === printWarning.resolutionId) : undefined;
   const legacySmallExpenseCount = resolutions.filter(isLegacySmallExpenseResolution).length;
 
-  const summary = useMemo(() => {
-    const pendingApprovalItems = resolutions.filter((resolution) => resolution.approvalStatus === "승인대기");
-
-    return {
-      pendingApprovalCount: pendingApprovalItems.length,
-      waitingPaymentCount: resolutions.filter((resolution) => resolution.approvalStatus === "승인완료" && resolution.paymentStatus === "지급대기").length,
-      totalPendingAmount: pendingApprovalItems.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0),
-    };
-  }, [resolutions]);
   const formSingleSummary = summarizeSingleExpenseItems(formState.singleItems);
   const formTotalAmount = formSingleSummary.totalAmount;
   const accountAllocationTotal = formState.accountAllocations.reduce((sum, allocation) => sum + toNumber(allocation.amount), 0);
@@ -2555,7 +2551,7 @@ export function ExpenseResolutionPage({
   const settlementDifference = toNumber(formState.advancePaidAmount) - toNumber(formState.actualUsedAmount || String(formTotalAmount));
   const tabItems = getResolutionTabItems(resolutions, viewer);
   const activeTabItem = tabItems.find((item) => item.key === activeTab) ?? tabItems[0];
-  const clientSearchQuery = initialListPage && deferredSearchQuery === initialListPage.query ? "" : deferredSearchQuery;
+  const clientSearchQuery = initialListPage ? "" : deferredSearchQuery;
   const resolutionsAfterFilters = filterExpenseResolutions(activeTabItem.resolutions, {
     approvalStatus: approvalFilter,
     dateFrom: dateFromFilter,
@@ -2576,9 +2572,11 @@ export function ExpenseResolutionPage({
     resolutionsAfterFilters.filter((resolution) => !monthFilter || normalizeFinanceMonth(resolution.actualExpenseDate?.slice(0, 7)) === monthFilter),
     sortOrder,
   );
-  const dashboard = useMemo(() => getExpenseResolutionDashboard(resolutions, getCurrentDateIso()), [resolutions]);
-  const repeatedMissingEvidenceSpenders = useMemo(() => new Set(Object.entries(resolutions.filter((item) => item.evidenceStatus === "NONE" || item.evidenceStatus === "DEFICIENT").reduce<Record<string, number>>((counts, item) => { const spender = item.advancePayer || item.author; counts[spender] = (counts[spender] ?? 0) + 1; return counts; }, {})).filter(([, count]) => count >= 2).map(([spender]) => spender)), [resolutions]);
-  const workflowAlerts = useMemo(() => buildExpenseResolutionAlerts(resolutions, getCurrentDateIso()), [resolutions]);
+  const selectedIndex = visibleResolutions.findIndex((resolution) => resolution.id === selectedDetailId);
+  const previousResolution = selectedIndex > 0 ? visibleResolutions[selectedIndex - 1] : undefined;
+  const nextResolution = selectedIndex >= 0 ? visibleResolutions[selectedIndex + 1] : undefined;
+  const activeFilterCount = [approvalFilter, paymentFilter, expenseKindFilter, evidenceStatusFilter, postApprovalFilter,
+    bankLinkedFilter, spenderFilter, accountTitleFilter, vendorFilter, pettyCashBatchFilter, dateFromFilter, dateToFilter, overdueOnly].filter(Boolean).length;
   const formBankTransactionCandidates = useMemo(
     () => getEditBankTransactionCandidates(formOptions.bankTransactions, editingResolutionId, {
       bankTransactionId: formState.bankTransactionId,
@@ -2721,7 +2719,9 @@ export function ExpenseResolutionPage({
     setIsCreateModalOpen(false);
     setEditingResolutionId(null);
     setQuickConversionSourceId(null);
-    if (initialEditResolutionId) router.push("/finance/expense-resolutions");
+    if (initialEditResolutionId) {
+      router.push(expenseResolutionListHref(initialListPage?.page ?? 1, initialListPage?.query ?? "", monthFilter, sortOrder, initialListPage?.scope));
+    }
   }
 
   async function openEditModal(resolution: ManagedExpenseResolution) {
@@ -2745,19 +2745,24 @@ export function ExpenseResolutionPage({
   }
 
   async function openDetailModal(id: string) {
+    const request = ++detailRequest.current;
     setSaveError("");
     if (!loadResolutionDetail) {
       setSelectedDetailId(id);
       return;
     }
+    setPendingDetailId(id);
     try {
       const detail = await loadResolutionDetail(id);
+      if (request !== detailRequest.current) return;
       setResolutions((current) => current.some((item) => item.id === id)
         ? current.map((item) => item.id === id ? { ...detail, workflowTransactionId: detail.workflowTransactionId ?? item.workflowTransactionId } : item)
         : [detail, ...current]);
       setSelectedDetailId(id);
     } catch (error) {
-      setSaveError(error instanceof Error ? error.message : "지출결의서 상세를 불러오지 못했습니다.");
+      if (request === detailRequest.current) setSaveError(error instanceof Error ? error.message : "지출결의서 상세를 불러오지 못했습니다.");
+    } finally {
+      if (request === detailRequest.current) setPendingDetailId(undefined);
     }
   }
 
@@ -2768,14 +2773,36 @@ export function ExpenseResolutionPage({
   }
 
   function closeDetailModal() {
+    detailRequest.current++;
+    setPendingDetailId(undefined);
+    const selectedId = selectedDetailId;
     setSelectedDetailId(null);
     setSaveError("");
+    requestAnimationFrame(() => {
+      document.getElementById(`expense-row-${selectedId}`)?.focus({ preventScroll: true });
+    });
   }
 
-  function exportAllExpenseResolutions() {
+  function getResolutionEditHref(id: string) {
+    const listHref = expenseResolutionListHref(initialListPage?.page ?? 1, initialListPage?.query ?? "", monthFilter, sortOrder, initialListPage?.scope);
+    return `${listHref}${listHref.includes("?") ? "&" : "?"}resolutionId=${encodeURIComponent(id)}&mode=edit`;
+  }
+
+  async function openDetailEvidence(storagePath: string) {
+    if (!createEvidenceDownloadUrl) return;
+    setSaveError("");
+    try {
+      const url = await createEvidenceDownloadUrl(storagePath);
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "증빙 원본을 열지 못했습니다.");
+    }
+  }
+
+  function exportVisibleExpenseResolutions() {
     downloadTextFile({
-      content: buildExpenseResolutionExportCsv(resolutions),
-      fileName: `지출결의서_전체_${getCurrentDateIso()}.csv`,
+      content: buildExpenseResolutionExportCsv(visibleResolutions),
+      fileName: `지출결의서_${getCurrentDateIso()}.csv`,
       mimeType: "text/csv;charset=utf-8",
     });
   }
@@ -3501,7 +3528,6 @@ export function ExpenseResolutionPage({
 
   function openPaymentModal(resolution: ManagedExpenseResolution) {
     setPaymentTargetId(resolution.id);
-    setSelectedDetailId(null);
     setPaymentForm({
       actualPaidAmount: String(resolution.totalPaymentAmount),
       accountHolder: resolution.accountHolder,
@@ -4011,9 +4037,19 @@ export function ExpenseResolutionPage({
     setPrintWarning(null);
   }
 
-  function navigateList(page: number, query = initialListPage?.query ?? "", month = monthFilter, sort = sortOrder) {
+  function navigateList(page: number, query = initialListPage?.query ?? "", month = monthFilter, sort = sortOrder, scope = initialListPage?.scope) {
     if (!initialListPage) return;
-    startListNavigation(() => router.push(expenseResolutionListHref(page, query, month, sort)));
+    startListNavigation(() => router.push(expenseResolutionListHref(page, query, month, sort, scope)));
+  }
+
+  function changeListScope(tab: ResolutionTabKey) {
+    const scope = tab === "actionable" ? "actionable" : undefined;
+    if (initialListPage && scope !== initialListPage.scope) {
+      const href = expenseResolutionListHref(1, searchQuery, monthFilter, sortOrder, scope);
+      startListNavigation(() => router.push(href));
+    } else {
+      setActiveTab(tab);
+    }
   }
 
   function submitListSearch(event: FormEvent<HTMLFormElement>) {
@@ -4046,9 +4082,8 @@ export function ExpenseResolutionPage({
         }
       }}
     >
-      <div className="mx-auto flex max-w-[1480px] flex-col gap-6">
+      <div className="mx-auto flex max-w-[1560px] flex-col gap-3">
         {saveError && !isCreateModalOpen ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
-        {viewer?.permissions.includes("ADMIN") && <Link className="self-start rounded-lg border bg-white px-4 py-2 font-semibold" href="/finance/expense-authorizations">작성자·결재선 계정 연결</Link>}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditResolutionId && initialResolutions !== undefined && !resolutions.some((resolution) => resolution.id === initialEditResolutionId) ? <p role="alert" className="rounded-xl border p-4">수정할 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditDenied ? <p role="alert" className="rounded-xl border p-4">작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.</p> : null}
@@ -4057,102 +4092,46 @@ export function ExpenseResolutionPage({
             {dataLoadError}
           </div>
         ) : null}
-        <section className="flex flex-col gap-4 rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5 lg:flex-row lg:items-end lg:justify-between lg:p-7">
-          <div>
-            <p className="mb-3 inline-flex rounded-full bg-[var(--color-morning-tint)] px-3 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]">
-              회계·자금 &gt; 전표·증빙 &gt; 지출결의서 관리
-            </p>
-            <h1 className="text-3xl font-bold tracking-normal">지출결의서 관리</h1>
-            <p className="mt-3 max-w-3xl text-base leading-7 text-[var(--color-stone)]">
-              운영비, 용역비, 토지매입비, 환불금 등 조합 지출을 결의서 작성과 승인 절차 이후 지급 및 지출전표 생성으로 연결합니다.
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link className="inline-flex h-11 items-center rounded-full border bg-white px-5 font-semibold" href="/finance/expense-resolutions/bank-draft-manifest">
-              통장거래 작성 예정표
-            </Link>
-            <Button className="rounded-full" disabled={isFormOptionsLoading} onClick={openExcelImportModal} size="lg" variant="outline">
-              <FileSpreadsheet className="size-4" />
-              {isFormOptionsLoading ? "작성 정보 불러오는 중" : "엑셀 가져오기"}
-            </Button>
-            <Button className="rounded-full" onClick={() => setIsOperatingBudgetPrintOpen(true)} size="lg" variant="outline">
-              <FileSpreadsheet className="size-4" />
-              운영비 예산표 출력
-            </Button>
-            <Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" disabled={isFormOptionsLoading} onClick={openCreateModal} size="lg">
+        <header className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-2xl font-black tracking-tight sm:text-3xl">지출결의서 관리</h1>
+          <div className="flex flex-wrap items-center gap-2">
+            <details className="group relative">
+              <summary className="flex h-9 cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 text-sm font-semibold [&::-webkit-details-marker]:hidden">
+                더보기 <ChevronDown aria-hidden="true" className="size-4" />
+              </summary>
+              <div className="absolute right-0 z-20 mt-1 grid w-56 gap-1 rounded-xl border border-[var(--color-soft-border)] bg-white p-2 text-sm shadow-md">
+                <Link className="rounded-md px-3 py-2 font-semibold hover:bg-blue-50" href="/finance/expense-resolutions/bank-draft-manifest">통장거래 작성 예정표</Link>
+                <button className="rounded-md px-3 py-2 text-left font-semibold hover:bg-blue-50" disabled={isFormOptionsLoading} onClick={openExcelImportModal} type="button">엑셀 가져오기</button>
+                <button className="rounded-md px-3 py-2 text-left font-semibold hover:bg-blue-50" onClick={() => setIsOperatingBudgetPrintOpen(true)} type="button">운영비 예산표 출력</button>
+                {viewer?.permissions.includes("ADMIN") ? <Link className="rounded-md px-3 py-2 font-semibold hover:bg-blue-50" href="/finance/expense-authorizations">작성자·결재선 계정 연결</Link> : null}
+              </div>
+            </details>
+            <Button className="rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isFormOptionsLoading} onClick={openCreateModal}>
               <FilePlus2 className="size-4" />
               {isFormOptionsLoading ? "작성 정보 불러오는 중" : "지출결의 작성"}
             </Button>
           </div>
-        </section>
+        </header>
 
-        <section className="grid gap-4 lg:grid-cols-4">
-          <SummaryTile label="지출결의 승인대기" value={`${summary.pendingApprovalCount}건`} />
-          <SummaryTile label="지급대기" value={`${summary.waitingPaymentCount}건`} />
-          <SummaryTile label="승인대기 금액" value={formatExpenseResolutionAmount(summary.totalPendingAmount)} />
-          <SummaryTile label="처리 알림" value={`${dashboard.alertCount}건`} />
-        </section>
-
-        {workflowAlerts.length ? (
-          <section className="rounded-2xl border border-orange-200 bg-orange-50 p-5">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="font-bold text-orange-900">확인이 필요한 업무 {workflowAlerts.length}건</h2>
-              <span className="text-sm font-semibold text-orange-700">정산기한 경과 {dashboard.overdueSettlementCount}건 · 전표확정 대기 {dashboard.voucherWaitingCount}건</span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {workflowAlerts.slice(0, 6).map((alert) => (
-                <button className="rounded-full border border-orange-200 bg-white px-3 py-1.5 text-xs font-semibold text-orange-800" key={alert.id} onClick={() => { void openDetailModal(alert.resolutionId); }} type="button">{alert.label}</button>
-              ))}
-            </div>
-          </section>
-        ) : null}
-
-        <section className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
-          <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <div className="flex items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-[var(--color-morning-tint)] text-[var(--color-deep-cobalt)]">
-                <CheckCircle2 className="size-5" />
+        <div className="grid min-w-0 gap-3 xl:h-[max(26rem,min(48rem,calc(100dvh-13rem)))] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
+          <section aria-label="지출결의서 검색 및 목록" className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] ${selectedDetail ? "hidden xl:flex" : "flex"}`}>
+            <div className="max-h-[55%] shrink-0 space-y-3 overflow-y-auto p-4">
+              <div aria-label="결의서 보기 범위" className="flex flex-wrap items-center gap-2" role="group">
+                <button aria-pressed={activeTab === "all"} className={scopeButtonClass(activeTab === "all")} disabled={isListNavigationPending} onClick={() => changeListScope("all")} type="button">전체 결의서</button>
+                <button aria-pressed={activeTab === "actionable"} className={scopeButtonClass(activeTab === "actionable")} disabled={isListNavigationPending} onClick={() => changeListScope("actionable")} type="button">내가 처리할 건</button>
               </div>
-              <div>
-                <h2 className="text-lg font-bold">업무흐름</h2>
-                <p className="mt-2 text-sm leading-6 text-[var(--color-stone)]">{resolutionFlow}</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <h2 className="text-lg font-bold">지출구분</h2>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {expenseResolutionTypeOptions.map((option) => (
-                <span className="rounded-full bg-[var(--color-cloud-veil)] px-3 py-1.5 text-xs font-semibold text-[var(--color-stone)]" key={option}>
-                  {option}
-                </span>
-              ))}
-            </div>
-          </div>
-        </section>
-
-        <section className="flex flex-col gap-6">
-          <section className="rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-5">
-            <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-              <form className="flex min-w-0 flex-1 flex-wrap gap-2 xl:max-w-[760px]" onSubmit={submitListSearch}>
-                <label className="min-w-[170px] text-xs font-semibold text-[var(--color-stone)]">
-                  실제 지출월
-                  <input aria-label="지출결의 실제 지출월" className="mt-1 w-full rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-midnight-ink)]" onChange={(event) => changeResolutionMonth(event.target.value)} type="month" value={monthFilter} />
+              <form className="flex flex-wrap items-center gap-2" onSubmit={submitListSearch}>
+                <label className="flex min-w-44 flex-1 items-center gap-2 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-2 text-[var(--color-stone)]">
+                  <Search aria-hidden="true" className="size-4 shrink-0" />
+                  <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-sm text-[var(--color-midnight-ink)] focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)]" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 거래처 검색" value={searchQuery} />
                 </label>
-                <label className="flex min-w-0 flex-1 items-center gap-2 rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2.5 text-sm text-[var(--color-fog)]">
-                  <Search className="size-4 shrink-0" />
-                  <input aria-label="지출결의서 검색" className="min-w-0 flex-1 bg-transparent text-[var(--color-midnight-ink)] outline-none" onChange={(event) => setSearchQuery(event.target.value)} placeholder="결의서번호, 건명, 프로젝트, 작성자 검색" value={searchQuery} />
-                </label>
-                {initialListPage ? <button className="rounded-full bg-[var(--color-pressed-charcoal)] px-4 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={isListNavigationPending} type="submit">검색</button> : null}
-                {initialListPage?.query ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, "", monthFilter, sortOrder); }} type="button">검색 초기화</button> : null}
-                {monthFilter ? <button className="self-end rounded-full border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm font-semibold" disabled={isListNavigationPending} onClick={() => changeResolutionMonth("")} type="button">전체 기간</button> : null}
+                <input aria-label="지출결의 실제 지출월" className="max-w-36 rounded-lg border border-[var(--color-soft-border)] bg-white px-2 py-2 text-sm" onChange={(event) => changeResolutionMonth(event.target.value)} type="month" value={monthFilter} />
+                <button className="rounded-lg bg-[var(--color-pressed-charcoal)] px-3 py-2 text-sm font-bold text-white disabled:opacity-60" disabled={isListNavigationPending} type="submit">검색</button>
               </form>
-              <div className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold text-[var(--color-stone)]">
-                현재 사용자: {currentUserName}
-              </div>
-            </div>
-            <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <details className="w-full">
+                  <summary className="inline-flex cursor-pointer list-none items-center gap-1.5 rounded-lg border border-[var(--color-soft-border)] bg-white px-3 py-1.5 text-xs font-bold [&::-webkit-details-marker]:hidden"><SlidersHorizontal aria-hidden="true" className="size-3.5" /> 상세필터{activeFilterCount ? ` ${activeFilterCount}` : ""}</summary>
+            <div className="mt-3 grid gap-2 md:grid-cols-2 2xl:grid-cols-3">
               <select aria-label="지출 유형 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setExpenseKindFilter(event.target.value)} value={expenseKindFilter}><option value="">지출 유형 전체</option><option value="GENERAL">일반 지출</option><option value="PERSONAL_REIMBURSEMENT">개인 선지출 정산</option><option value="BANK_POST_APPROVAL">통장 선출금 사후결의</option><option value="RECURRING_BATCH">정기비용 일괄결의</option></select>
               <select aria-label="증빙 상태 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setEvidenceStatusFilter(event.target.value)} value={evidenceStatusFilter}><option value="">증빙 상태 전체</option><option value="QUALIFIED">적격증빙</option><option value="GENERAL">일반증빙</option><option value="ALTERNATIVE">대체증빙</option><option value="DEFICIENT">증빙불비</option><option value="NONE">증빙 없음</option></select>
               <select aria-label="사후결의 필터" className="rounded-xl border border-[var(--color-soft-border)] bg-white px-3 py-2 text-sm" onChange={(event) => setPostApprovalFilter(event.target.value)} value={postApprovalFilter}><option value="">사후결의 전체</option><option value="YES">사후결의</option><option value="NO">사전결의</option></select>
@@ -4183,246 +4162,109 @@ export function ExpenseResolutionPage({
                 </button>
               ) : null}
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              {tabItems.map((item) => (
-                <button
-                  className={`rounded-full border border-[var(--color-soft-border)] px-3 py-2 text-sm font-semibold ${
-                    activeTab === item.key ? "bg-[var(--color-pressed-charcoal)] text-white" : "bg-white text-[var(--color-stone)]"
-                  }`}
-                  key={item.key}
-                  onClick={() => setActiveTab(item.key)}
-                  type="button"
-                >
-                  {item.label} {item.key === "all" && initialListPage ? initialListPage.total : item.resolutions.length}
-                </button>
-              ))}
-            </div>
-            {initialListPage ? <p className="mt-3 text-xs text-[var(--color-stone)]">전체 건수는 서버 조회 기준이며, 상태별 건수와 요약은 현재 페이지 기준입니다.</p> : null}
-          </section>
-
-          <section className="overflow-hidden rounded-2xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)]">
-            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--color-soft-border)] p-4">
-              <div>
-                <h2 className="text-lg font-bold">지출결의서 목록</h2>
-                <p className="mt-1 text-sm text-[var(--color-stone)]">
-                  {formatFinanceMonth(monthFilter)} · {activeTabItem.label} 기준 {visibleResolutions.length}건
-                  {initialListPage ? ` · 전체 ${initialListPage.total}건 · ${initialListPage.page}/${initialListPage.totalPages} 페이지` : ""}
-                </p>
-                {monthFilter ? <p className="mt-1 text-xs text-[var(--color-stone)]">실제 지출일 기준이며, 실제 지출일이 없는 결의서는 월 검색에서 제외됩니다.</p> : null}
+                  <label className="mt-3 flex flex-wrap items-center gap-2 text-xs font-semibold">
+                    처리 상태
+                    <select aria-label="처리 상태 탭" className="rounded-lg border bg-white px-2 py-1.5" onChange={(event) => setActiveTab(event.target.value as ResolutionTabKey)} value={activeTab}>
+                      {tabItems.filter((item) => item.key !== "actionable" || activeTab === "actionable").map((item) => <option key={item.key} value={item.key}>{item.label}</option>)}
+                    </select>
+                  </label>
+                </details>
+                {initialListPage?.query || searchQuery ? <button className="text-xs font-semibold text-[var(--color-deep-cobalt)] underline" disabled={isListNavigationPending} onClick={() => { setSearchQuery(""); navigateList(1, ""); }} type="button">검색 초기화</button> : null}
+                {monthFilter ? <button className="text-xs font-semibold text-[var(--color-deep-cobalt)] underline" onClick={() => changeResolutionMonth("")} type="button">전체 기간</button> : null}
               </div>
-              <Button className="rounded-full" onClick={exportAllExpenseResolutions} size="sm" variant="outline">
-                <FileSpreadsheet className="size-4" />
-                {initialListPage ? "현재 페이지 엑셀" : "엑셀"}
-              </Button>
+              <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-[var(--color-stone)]">
+                <p aria-live="polite">{formatFinanceMonth(monthFilter)} · {activeTabItem.label} 기준 {visibleResolutions.length}건{initialListPage ? ` · 전체 ${initialListPage.total}건 · ${initialListPage.page}/${initialListPage.totalPages} 페이지` : ""}</p>
+                <button className="inline-flex items-center gap-1 font-semibold hover:underline" onClick={exportVisibleExpenseResolutions} type="button"><FileSpreadsheet aria-hidden="true" className="size-3.5" /> {initialListPage ? "현재 페이지 엑셀" : "엑셀"}</button>
+                {initialListPage && ((activeTab !== "all" && activeTab !== "actionable") || activeFilterCount > 0) ? <p className="w-full">상태와 상세필터는 현재 페이지에 적용돼.</p> : null}
+                {monthFilter ? <p className="w-full">실제 지출일이 없는 결의서는 월 검색에서 제외돼.</p> : null}
+              </div>
             </div>
-            <div className="overflow-x-auto">
-              <table aria-label="지출결의서 목록" className="w-full min-w-[1040px] table-fixed border-collapse text-left text-sm">
-                <thead className="bg-[var(--color-cloud-veil)] text-xs font-semibold text-[var(--color-stone)]">
+            <div aria-busy={isListNavigationPending} className="max-h-[calc(100dvh-21rem)] min-h-36 flex-1 overflow-auto xl:max-h-none">
+              <table aria-label="지출결의서 목록" className="w-full table-fixed border-collapse text-left text-sm">
+                <thead className="sticky top-0 z-[1] bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                   <tr>
-                    <th className="w-[160px] px-4 py-3 text-left">결의정보</th>
-                    <th aria-sort={sortOrder === "expense_date_asc" ? "ascending" : sortOrder === "expense_date_desc" ? "descending" : "none"} className="w-[26%] px-4 py-3 text-left">
-                      <button
-                        aria-label={sortOrder === "expense_date_asc" ? "결의내용을 실제 지출일 최신순으로 정렬" : "결의내용을 실제 지출일 오래된순으로 정렬"}
-                        className="inline-flex items-center gap-1.5 rounded-md px-1 py-0.5 text-left font-semibold hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-deep-cobalt)]"
-                        disabled={isListNavigationPending}
-                        onClick={toggleExpenseDateSort}
-                        type="button"
-                      >
-                        결의내용
-                        <span aria-hidden="true" className="text-[10px] text-[var(--color-stone)]">
-                          {sortOrder === "expense_date_asc" ? "지출일 ↑" : sortOrder === "expense_date_desc" ? "지출일 ↓" : "↕"}
-                        </span>
-                      </button>
+                    <th aria-sort={sortOrder === "expense_date_asc" ? "ascending" : sortOrder === "expense_date_desc" ? "descending" : "none"} className="w-[23%] px-2 py-2.5 sm:px-3" scope="col">
+                      <button aria-label={sortOrder === "expense_date_asc" ? "실제 지출일 최신순으로 정렬" : "실제 지출일 오래된순으로 정렬"} className="inline-flex items-center gap-1 hover:underline" disabled={isListNavigationPending} onClick={toggleExpenseDateSort} type="button">지출일 <ArrowDownUp aria-hidden="true" className="size-3" /></button>
                     </th>
-                    <th className="px-4 py-3 text-left">거래처</th>
-                    <th className="w-[120px] px-4 py-3 text-right">지급금액</th>
-                    <th className="sticky right-[100px] z-20 w-[140px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left">진행상태</th>
-                    <th className="sticky right-0 z-20 w-[100px] border-l border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] px-4 py-3 text-left shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)]">처리</th>
+                    <th className="px-2 py-2.5 sm:px-3" scope="col">건명 / 거래처</th>
+                    <th className="w-[24%] px-2 py-2.5 text-right sm:px-3" scope="col">지급금액</th>
+                    <th className="w-[20%] px-2 py-2.5 text-center sm:px-3" scope="col">상태</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[var(--color-soft-border)]">
-                  {visibleResolutions.length === 0 ? (
-                    <tr>
-                      <td className="px-4 py-12 text-center text-sm text-[var(--color-stone)]" colSpan={6}>
-                        등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요.
-                      </td>
-                    </tr>
-                  ) : null}
+                  {visibleResolutions.length === 0 ? <tr><td className="p-8 text-center text-sm text-[var(--color-stone)]" colSpan={4}>{resolutions.length || initialListPage?.query || monthFilter || activeFilterCount ? "검색 조건에 맞는 지출결의서가 없어." : "등록된 지출결의서가 없습니다. 상단의 지출결의 작성 버튼으로 첫 결의서를 등록해주세요."}</td></tr> : null}
                   {visibleResolutions.map((resolution) => {
-                    const canEditAccount = !isLegacySmallExpenseResolution(resolution) && (viewer
-                      ? canEditExpense(resolution, viewer)
-                      : resolution.author === currentUserName && ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus));
-                    const canApprove = resolution.approvalStatus === "승인대기" && isCurrentUserApprover(resolution, viewer);
-                    const canPay = resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus);
-                    const canCreateVoucher = resolution.paymentStatus === "지급완료" && !resolution.voucherNo;
-                    const canConfirmVoucher = resolution.paymentStatus === "지급완료" && resolution.voucherStatus === "전표초안";
-                    const expenseKindLabel = resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "개인 선지출 정산" : resolution.expenseKind === "BANK_POST_APPROVAL" ? "통장 선출금" : isLegacySmallExpenseResolution(resolution) ? "기존 소액 일괄결의" : resolution.expenseKind === "RECURRING_BATCH" ? "정기비용 일괄" : "일반 지출";
-                    const primaryStatus = resolution.approvalStatus === "반려"
-                      ? "반려"
-                      : resolution.approvalStatus !== "승인완료"
-                        ? resolution.approvalStatus
-                        : resolution.paymentStatus !== "지급완료"
-                          ? resolution.paymentStatus
-                          : getVoucherStatusLabel(resolution);
-
+                    const selected = resolution.id === selectedDetailId;
+                    const subject = getResolutionListSubject(resolution);
+                    const vendor = resolution.representativeVendorName || resolution.vendorName || "거래처 미입력";
                     return (
-                      <tr className="group bg-white/70 [content-visibility:auto] hover:bg-[var(--color-cloud-veil)]/55" key={resolution.id}>
-                        <td className="px-4 py-3 align-top">
-                          <button className="font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} type="button">
-                            {resolution.resolutionNo}
-                          </button>
-                          <p className="mt-1 text-xs text-[var(--color-stone)]">작성 {resolution.createdAt}</p>
-                          {resolution.actualExpenseDate ? <p className="mt-0.5 text-xs text-[var(--color-stone)]">지출 {resolution.actualExpenseDate}</p> : null}
-                          <p className="mt-1 text-[11px] font-semibold text-[var(--color-stone)]">{resolution.creationSource === "APPROVAL_LINKED" ? "기안연결" : isLegacySmallExpenseResolution(resolution) ? "기존자료" : resolution.creationSource === "CONTRACT_PAYMENT" ? "계약지급" : "직접작성"}</p>
-                          {resolution.cardReconciliationStatus === "PENDING" ? <p className="mt-1 w-fit rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-900">카드내역 연결대기</p> : resolution.cardReconciliationStatus === "MATCHED" ? <p className="mt-1 w-fit rounded-full bg-[var(--color-mint-wash)] px-2 py-0.5 text-[10px] font-bold text-[var(--color-green-ink)]">{resolution.cardVerificationSource === "BANK_TRANSACTION" ? "통장거래 확인완료" : "카드내역 매칭완료"}</p> : null}
+                      <tr className={`relative ${selected ? "bg-[var(--color-morning-tint)]/80" : "hover:bg-[var(--color-cloud-veil)]"}`} key={resolution.id}>
+                        <td className={`border-l-2 px-2 py-2.5 sm:px-3 ${selected ? "border-l-[var(--color-deep-cobalt)]" : "border-l-transparent"}`}>
+                          <p className="whitespace-nowrap text-xs tabular-nums">{resolution.actualExpenseDate || "—"}</p>
+                          <p className="truncate text-[11px] text-[var(--color-stone)]" title={resolution.resolutionNo}>{resolution.resolutionNo}</p>
                         </td>
-                        <td className="px-4 py-3 align-top">
-                          <button className="block max-w-full truncate text-left font-bold text-[var(--color-midnight-ink)] hover:text-[var(--color-deep-cobalt)] hover:underline" onClick={() => { void openDetailModal(resolution.id); }} title={getResolutionListSubject(resolution)} type="button">
-                            {getResolutionListSubject(resolution)}
-                          </button>
-                          <p className="mt-1 text-xs font-semibold text-[var(--color-stone)]">{expenseKindLabel} · {getResolutionTypeLabel(resolution.resolutionType)}</p>
-                          {resolution.projectName ? <p className="mt-1 truncate text-xs text-[var(--color-stone)]" title={resolution.projectName}>프로젝트: {resolution.projectName}</p> : null}
-                          <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={getResolutionAccountTitle(resolution)}>계정: {getResolutionAccountTitle(resolution)}</p>
-                          {canEditAccount ? (
-                            viewer ? <Link
-                              aria-label={`${resolution.resolutionNo} 계정 변경`}
-                              className="mt-1 inline-flex rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)] hover:bg-blue-50"
-                              href={`/finance/expense-resolutions?resolutionId=${encodeURIComponent(resolution.id)}&mode=edit`}
-                            >계정 변경</Link> : <button
-                              aria-label={`${resolution.resolutionNo} 계정 변경`}
-                              className="mt-1 inline-flex rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)] hover:bg-blue-50"
-                              onClick={() => { void openEditModal(resolution); }}
-                              type="button"
-                            >계정 변경</button>
-                          ) : null}
-                          <div className="mt-1.5 flex flex-wrap gap-1">
-                            {isPostApprovalResolution(resolution) ? <ComplianceBadge label="사후결의" tone="warning" /> : null}
-                            {resolution.evidenceStatus === "DEFICIENT" || resolution.evidenceStatus === "NONE" ? <ComplianceBadge label="증빙불비" tone="danger" /> : null}
-                            {resolution.expenseKind === "BANK_POST_APPROVAL" && !resolution.bankTransactionId && !resolution.bankTransactions?.length ? <ComplianceBadge label="통장 미연결" tone="danger" /> : null}
-                            {resolution.complianceWarnings?.some((warning) => warning.includes("분할결제")) ? <ComplianceBadge label="중복의심" tone="warning" /> : null}
-                            {resolution.evidenceStatus === "NONE" || resolution.complianceWarnings?.some((warning) => warning.includes("추가 확인")) ? <ComplianceBadge label="소명필요" tone="danger" /> : null}
-                            {repeatedMissingEvidenceSpenders.has(resolution.advancePayer || resolution.author) ? <ComplianceBadge label="무증빙 반복" tone="danger" /> : null}
-                            {getResolutionOverBudgetAmount(resolution) > 0 ? <ComplianceBadge label={`예산초과 ${formatExpenseResolutionAmount(getResolutionOverBudgetAmount(resolution))}`} tone="warning" /> : null}
-                          </div>
-                          <span className="sr-only">{getResolutionTypeLabel(resolution.resolutionType)}</span>
-                          <span className="sr-only">{resolution.projectName || "프로젝트 없음"}</span>
-                          <span className="sr-only">{getResolutionAccountTitle(resolution)}</span>
+                        <td className="px-2 py-2.5 sm:px-3">
+                          <button aria-current={selected || undefined} aria-label={`${resolution.resolutionNo} ${subject} 상세보기`} className="block w-full cursor-pointer truncate rounded text-left font-bold after:absolute after:inset-0 hover:underline focus-visible:outline-2 focus-visible:outline-[var(--color-deep-cobalt)]" id={`expense-row-${resolution.id}`} onClick={() => { void openDetailModal(resolution.id); }} title={subject} type="button">{subject}</button>
+                          <p className="mt-0.5 truncate text-xs text-[var(--color-stone)]" title={vendor}>{vendor}</p>
                         </td>
-                        <td className="px-4 py-3 align-top text-sm font-semibold">
-                          <p className="break-words">{resolution.representativeVendorName || resolution.vendorName || "-"}</p>
-                          <p className="mt-1 whitespace-pre-line break-words text-xs font-normal leading-5 text-[var(--color-stone)]">지출사유: {resolution.reason?.trim() || "미입력"}</p>
-                        </td>
-                        <td className="whitespace-nowrap px-4 py-3 text-right align-top font-bold">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
-                        <td className="sticky right-[100px] z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top group-hover:bg-[var(--color-cloud-veil)]">
-                          <Badge value={primaryStatus} />
-                          <span className="sr-only">{resolution.approvalStatus}</span>
-                          <span className="sr-only">{resolution.paymentStatus}</span>
-                          <span className="sr-only">{getVoucherStatusLabel(resolution)}</span>
-                          {resolution.currentApprover ? <span className="sr-only">{resolution.currentApprover}</span> : null}
-                          {resolution.currentApprover ? <p className="mt-1 text-xs text-[var(--color-stone)]">{resolution.currentApprover} 결재 대기</p> : null}
-                          {resolution.rejectionReason ? <p className="mt-1 text-xs text-[var(--color-tangerine)]">{resolution.rejectionReason}</p> : null}
-                          {resolution.paidAt ? <p className="mt-1 text-xs text-[var(--color-stone)]">지급일 {resolution.paidAt}</p> : null}
-                          {resolution.transferReceiptStatus ? (
-                            <label className="mt-2 inline-flex cursor-pointer rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]">
-                              이체확인증 첨부
-                              <input className="sr-only" type="file" />
-                            </label>
-                          ) : null}
-                        </td>
-                        <td className="sticky right-0 z-10 border-l border-[var(--color-soft-border)] bg-white px-4 py-3 align-top shadow-[-8px_0_12px_-12px_rgba(15,23,42,0.35)] group-hover:bg-[var(--color-cloud-veil)]">
-                          <div className="flex flex-col items-start gap-1.5">
-                            <button
-                              aria-label="상세보기"
-                              className="order-last rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-stone)]"
-                              onClick={() => { void openDetailModal(resolution.id); }}
-                              type="button"
-                            >
-                              상세
-                            </button>
-                            {resolution.approvalStatus === "작성중" ? (
-                              <>
-                                <button
-                                  className="rounded-full bg-[var(--color-deep-cobalt)] px-3 py-1.5 text-xs font-bold text-white"
-                                  onClick={() => requestApproval(resolution.id)}
-                                  type="button"
-                                >
-                                  승인요청
-                                </button>
-                              </>
-                            ) : null}
-                            {canApprove ? (
-                              <>
-                                <button
-                                  className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                  onClick={() => { void openDetailModal(resolution.id); }}
-                                  type="button"
-                                >
-                                  결재하기
-                                </button>
-                              </>
-                            ) : null}
-                            {canPay ? (
-                              <button
-                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]"
-                                onClick={() => openPaymentModal(resolution)}
-                                type="button"
-                              >
-                                지급처리
-                              </button>
-                            ) : null}
-                            {canCreateVoucher ? (
-                              <button
-                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                onClick={() => createVoucher(resolution.id)}
-                                type="button"
-                              >
-                                전표초안 생성
-                              </button>
-                            ) : null}
-                            {canConfirmVoucher ? (
-                              <button
-                                className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-deep-cobalt)]"
-                                onClick={() => confirmVoucher(resolution.id)}
-                                type="button"
-                              >
-                                전표확정
-                              </button>
-                            ) : null}
-                            {resolution.voucherStatus === "전표확정" ? (
-                              <a className="rounded-full border border-[var(--color-soft-border)] bg-white px-2.5 py-1 text-xs font-semibold text-[var(--color-green-ink)]" href={`/finance?resolutionId=${resolution.id}`}>
-                                전표보기
-                              </a>
-                            ) : null}
-                          </div>
-                        </td>
+                        <td className="whitespace-nowrap px-2 py-2.5 text-right text-xs font-bold tabular-nums sm:px-3 sm:text-sm">{formatExpenseResolutionAmount(resolution.totalPaymentAmount)}</td>
+                        <td className="px-1 py-2.5 text-center"><Badge value={resolution.approvalStatus === "승인완료" ? (resolution.voucherStatus ?? (resolution.paymentStatus === "지급전" ? "승인완료" : resolution.paymentStatus)) : resolution.approvalStatus} /></td>
                       </tr>
                     );
                   })}
                 </tbody>
-                  <tfoot className="border-t border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)] text-sm font-bold">
-                    <tr>
-                    <td className="px-4 py-3 text-right" colSpan={3}>
-                      {activeTabItem.label} 합계
-                    </td>
-                    <td className="px-4 py-3 text-right">
-                      {formatExpenseResolutionAmount(visibleResolutions.reduce((sum, resolution) => sum + resolution.totalPaymentAmount, 0))}
-                    </td>
-                    <td className="px-4 py-3" colSpan={2}>
-                      표시 건수 {visibleResolutions.length}건
-                    </td>
-                  </tr>
-                </tfoot>
               </table>
             </div>
             {initialListPage && initialListPage.totalPages > 1 ? (
-              <nav aria-label="지출결의서 페이지" className="flex items-center justify-center gap-3 border-t border-[var(--color-soft-border)] p-4">
-                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40" disabled={isListNavigationPending || initialListPage.page <= 1} onClick={() => navigateList(initialListPage.page - 1)} type="button">이전</button>
-                <span className="text-sm font-semibold text-[var(--color-stone)]">{initialListPage.page} / {initialListPage.totalPages}</span>
-                <button className="rounded-full border border-[var(--color-soft-border)] bg-white px-4 py-2 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-40" disabled={isListNavigationPending || initialListPage.page >= initialListPage.totalPages} onClick={() => navigateList(initialListPage.page + 1)} type="button">다음</button>
+              <nav aria-label="지출결의서 페이지" className="flex items-center justify-center gap-3 border-t border-[var(--color-soft-border)] p-3">
+                <Button disabled={isListNavigationPending || initialListPage.page <= 1} onClick={() => navigateList(initialListPage.page - 1)} size="sm" variant="outline">이전</Button>
+                <span className="text-sm tabular-nums">{initialListPage.page} / {initialListPage.totalPages}</span>
+                <Button disabled={isListNavigationPending || initialListPage.page >= initialListPage.totalPages} onClick={() => navigateList(initialListPage.page + 1)} size="sm" variant="outline">다음</Button>
               </nav>
             ) : null}
           </section>
-        </section>
+          <div aria-label="선택한 지출결의서" className="min-h-0 min-w-0">
+      {selectedDetail ? (
+        <ExpenseResolutionDetailModal
+          key={selectedDetail.id}
+          workspace
+          onPrevious={previousResolution ? () => { void openDetailModal(previousResolution.id); } : undefined}
+          onNext={nextResolution ? () => { void openDetailModal(nextResolution.id); } : undefined}
+          onOpenEvidence={createEvidenceDownloadUrl ? openDetailEvidence : undefined}
+          canRequestApproval={!viewer || canEditExpense(selectedDetail, viewer)}
+          actionError={saveError}
+          budgetDataError={budgetDataError}
+          canApprove={isCurrentUserApprover(selectedDetail, viewer)}
+          loadCorrectionOptions={viewer?.permissions.includes("ADMIN") ? loadCorrectionOptions : undefined}
+          onCorrect={correctApprovedResolution && canCorrectExpense(selectedDetail, viewer) ? async (input) => {
+            const saved = await correctApprovedResolution(input);
+            setResolutions((current) => current.map((item) => item.id === saved.id
+              ? { ...saved, authorization: item.authorization, workflowTransactionId: item.workflowTransactionId }
+              : item));
+          } : undefined}
+          editHref={!isLegacySmallExpenseResolution(selectedDetail) && viewer && canEditExpense(selectedDetail, viewer) ? getResolutionEditHref(selectedDetail.id) : undefined}
+          linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
+          onApprove={() => approveResolution(selectedDetail.id)}
+          onClose={closeDetailModal}
+          onCancelApproval={() => cancelApproval(selectedDetail.id)}
+          onCancelVoucher={() => cancelVoucher(selectedDetail.id)}
+          onConfirmVoucher={selectedDetail.workflowTransactionId ? undefined : () => confirmVoucher(selectedDetail.id)}
+          onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
+          onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); }}
+          onDelete={deleteResolution && !isLegacySmallExpenseResolution(selectedDetail) && (!viewer || canEditExpense(selectedDetail, viewer)) ? () => removeResolution(selectedDetail.id) : undefined}
+          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && !viewer && selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
+          onPrintArchive={() => openArchivePrint(selectedDetail)}
+          onPrintPreview={() => openPrintPreview(selectedDetail.id, "미리보기")}
+          onProcessPayment={!selectedDetail.workflowTransactionId && (!viewer || viewer.permissions.some((permission) => permission === "ADMIN" || permission === "PAY")) ? () => openPaymentModal(selectedDetail) : undefined}
+          onReject={() => rejectResolution(selectedDetail.id)}
+          onRequestApproval={() => requestApproval(selectedDetail.id)}
+          resolution={selectedDetail}
+          voucherHref={`/finance?resolutionId=${selectedDetail.id}`}
+        />
+      ) : null}
+            {!selectedDetail ? <p className="hidden h-full min-h-64 place-items-center rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] p-6 text-sm text-[var(--color-stone)] xl:grid">{pendingDetailId ? "결의서 상세를 불러오는 중…" : "목록에서 지출결의서를 선택해줘."}</p> : null}
+          </div>
+        </div>
       </div>
 
       {isCreateModalOpen ? (
@@ -4478,38 +4320,6 @@ export function ExpenseResolutionPage({
         />
       ) : null}
 
-      {selectedDetail ? (
-        <ExpenseResolutionDetailModal
-          actionError={saveError}
-          budgetDataError={budgetDataError}
-          canApprove={isCurrentUserApprover(selectedDetail, viewer)}
-          loadCorrectionOptions={viewer?.permissions.includes("ADMIN") ? loadCorrectionOptions : undefined}
-          onCorrect={correctApprovedResolution && canCorrectExpense(selectedDetail, viewer) ? async (input) => {
-            const saved = await correctApprovedResolution(input);
-            setResolutions((current) => current.map((item) => item.id === saved.id
-              ? { ...saved, authorization: item.authorization, workflowTransactionId: item.workflowTransactionId }
-              : item));
-          } : undefined}
-          editHref={!isLegacySmallExpenseResolution(selectedDetail) && viewer && canEditExpense(selectedDetail, viewer) ? `/finance/expense-resolutions?resolutionId=${encodeURIComponent(selectedDetail.id)}&mode=edit` : undefined}
-          linkedApproval={formOptions.approvalDocuments.find((document) => document.id === selectedDetail.approvalDocumentId)}
-          onApprove={() => approveResolution(selectedDetail.id)}
-          onClose={closeDetailModal}
-          onCancelApproval={() => cancelApproval(selectedDetail.id)}
-          onCancelVoucher={() => cancelVoucher(selectedDetail.id)}
-          onConfirmVoucher={selectedDetail.workflowTransactionId ? undefined : () => confirmVoucher(selectedDetail.id)}
-          onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
-          onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); setSelectedDetailId(null); }}
-          onDelete={isLegacySmallExpenseResolution(selectedDetail) ? undefined : () => removeResolution(selectedDetail.id)}
-          onEdit={!isLegacySmallExpenseResolution(selectedDetail) && !viewer && selectedDetail.author === currentUserName && ["작성중", "승인대기", "반려"].includes(selectedDetail.approvalStatus) ? () => openEditModal(selectedDetail) : undefined}
-          onPrintArchive={() => openArchivePrint(selectedDetail)}
-          onPrintPreview={() => openPrintPreview(selectedDetail.id, "미리보기")}
-          onProcessPayment={selectedDetail.workflowTransactionId ? undefined : () => openPaymentModal(selectedDetail)}
-          onReject={() => rejectResolution(selectedDetail.id)}
-          onRequestApproval={() => requestApproval(selectedDetail.id)}
-          resolution={selectedDetail}
-          voucherHref={`/finance?resolutionId=${selectedDetail.id}`}
-        />
-      ) : null}
 
       {factConfirmationTarget ? <ExpenseFactConfirmationModal actorLabel={currentUserName} deleteConfirmation={deleteFactConfirmation} detailItem={factConfirmationTarget.detailItem} listConfirmations={listFactConfirmations} onClose={() => setFactConfirmationTarget(null)} onSave={saveFactConfirmation} onUploadSupportingFile={uploadFactSupportingFile} resolution={factConfirmationTarget.resolution} /> : null}
 

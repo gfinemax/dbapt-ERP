@@ -38,6 +38,14 @@ describe("expense resolution list navigation", () => {
     expect(expenseResolutionListHref(3, "사무 용품")).toBe("/finance/expense-resolutions?page=3&q=%EC%82%AC%EB%AC%B4+%EC%9A%A9%ED%92%88");
   });
 
+  it("keeps the actionable scope through paging, search and sort", () => {
+    const request = parseExpenseResolutionListRequest({ scope: "actionable", page: "2", q: "쿠팡", month: "2026-10", sort: "expense_date_desc" });
+    expect(request).toMatchObject({ scope: "actionable", page: 2, query: "쿠팡" });
+    expect(expenseResolutionListHref(request.page, request.query, request.month, request.sort, request.scope))
+      .toContain("page=2&q=%EC%BF%A0%ED%8C%A1&month=2026-10&sort=expense_date_desc&scope=actionable");
+    expect(parseExpenseResolutionListRequest({ scope: "unknown" })).not.toHaveProperty("scope");
+  });
+
   it("keeps a validated actual-expense month in parsing and navigation", () => {
     expect(parseExpenseResolutionListRequest({ month: "2026-01" })).toMatchObject({ month: "2026-01", page: 1 });
     expect(parseExpenseResolutionListRequest({ month: "2026-13" })).toMatchObject({ month: "" });
