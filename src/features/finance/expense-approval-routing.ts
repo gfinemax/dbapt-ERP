@@ -1,4 +1,4 @@
-import { canApproveOn, canAuthorOn, directorAppointment, seoulToday } from "@/features/approval/approval-effective-policy";
+import { canApproveOn, canAuthorOn, directorAppointment, isIsoDay, seoulToday, type ExpenseApprovalPolicy } from "@/features/approval/approval-effective-policy";
 import { organizationApprovalLine } from "@/features/approval/organization-approval-line";
 
 export type ExpenseApprovalRoute = "SECRETARY_CHAIR" | "DIRECTOR_DELEGATED" | "DIRECTOR_FULL";
@@ -27,9 +27,10 @@ export type RoutedApprovalStep = {
 };
 
 type ExpenseApprovalRouteSnapshot = {
+  author?: string;
   approvalLine: Array<Pick<RoutedApprovalStep, "approver" | "order" | "role">>;
   approvalParticipants?: ExpenseApprovalParticipant[];
-  approvalPolicy?: { referenceDate?: string };
+  approvalPolicy?: Pick<ExpenseApprovalPolicy, "kind" | "referenceDate">;
   approvalRoute?: ExpenseApprovalRoute;
 };
 
@@ -112,7 +113,12 @@ function buildUndatedExpenseApprovalRoute(route: ExpenseApprovalRoute) {
   };
 }
 
-export function inferExpenseApprovalRoute(approvers: Array<{ approver: string }>): ExpenseApprovalRoute {
+function isSecretaryAuthor(author?: string) {
+  return author?.trim().split(/\s+/)[0] === secretaryGeneral.approverLabel;
+}
+
+export function inferExpenseApprovalRoute(approvers: Array<{ approver: string }>, author?: string): ExpenseApprovalRoute {
+  if (isSecretaryAuthor(author)) return "SECRETARY_CHAIR";
   const names = approvers.map((step) => step.approver);
   if (names.length === 1 && names[0] === secretaryGeneral.approverLabel) return "DIRECTOR_DELEGATED";
   if (names.length === 2 && names[0] === secretaryGeneral.approverLabel && names[1] === chair.approverLabel) return "DIRECTOR_FULL";
@@ -126,26 +132,35 @@ export function getExpenseApprovalRouteLabel(route: ExpenseApprovalRoute) {
 export function buildExpenseApprovalRoute(route: ExpenseApprovalRoute, referenceDate = seoulToday()) {
   const result = buildUndatedExpenseApprovalRoute(route);
   const error = route !== "SECRETARY_CHAIR" && !canAuthorOn(directorAppointment.name, referenceDate) ? "장현제 입사일(2026-06-22) 이전에는 장현제 작성 경로를 선택할 수 없습니다." : "";
+  const approvalLine = result.approvalLine.filter(step => canApproveOn(step.approver, referenceDate)).map((step, index) => ({ ...step, order: index + 1 }));
   return {
-    approvalLine: result.approvalLine.filter(step => canApproveOn(step.approver, referenceDate)).map((step, index) => ({ ...step, order: index + 1 })),
-    participants: result.participants.filter(person => person.action === "작성" ? canAuthorOn(person.name, referenceDate) : canApproveOn(person.name, referenceDate)),
+    approvalLine,
+    participants: result.participants
+      .filter(person => person.action === "작성" ? canAuthorOn(person.name, referenceDate) : canApproveOn(person.name, referenceDate))
+      .map(person => ({ ...person, approvalOrder: person.approvalOrder === undefined ? undefined : approvalLine.find(step => step.approver === person.name)?.order })),
     error,
+    referenceDate,
   };
 }
 
-export function getExpectedExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot) {
-  const route = resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine);
-  return buildExpenseApprovalRoute(route, resolution.approvalPolicy?.referenceDate ?? seoulToday());
+function getExpectedExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot, today: string) {
+  const route = resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine, resolution.author);
+  const referenceDate = resolution.approvalPolicy?.kind === "HISTORICAL" ? resolution.approvalPolicy.referenceDate : today;
+  return buildExpenseApprovalRoute(route, referenceDate);
 }
 
-export function getDraftExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot & { approvalStatus: string }) {
-  if (resolution.approvalRoute && ["작성중", "반려"].includes(resolution.approvalStatus)) {
-    return getExpectedExpenseApprovalRoute(resolution);
-  }
+export function getDraftExpenseApprovalRoute(resolution: ExpenseApprovalRouteSnapshot & { approvalStatus: string }, today = seoulToday()) {
+  if (!["작성중", "반려"].includes(resolution.approvalStatus) || (!resolution.approvalRoute && !isSecretaryAuthor(resolution.author))) return;
+  const expected = getExpectedExpenseApprovalRoute(resolution, today);
+  if (isIsoDay(expected.referenceDate) && expected.referenceDate <= today) return expected;
 }
 
-export function hasExpenseApprovalRouteDrift(resolution: ExpenseApprovalRouteSnapshot) {
-  const expected = getExpectedExpenseApprovalRoute(resolution);
+export const expenseApprovalRouteRefreshMessage = "현재 결재 기준일에 맞게 초안을 다시 저장하고 결재자 계정 연결을 확인해 주세요.";
+
+export function hasExpenseApprovalRouteDrift(resolution: ExpenseApprovalRouteSnapshot, today = seoulToday()) {
+  if (!resolution.approvalRoute && !isSecretaryAuthor(resolution.author)) return false;
+  const expected = getExpectedExpenseApprovalRoute(resolution, today);
+  if (expected.referenceDate !== resolution.approvalPolicy?.referenceDate) return true;
   const stepsMatch = resolution.approvalLine.length === expected.approvalLine.length
     && resolution.approvalLine.every((step, index) => {
       const expectedStep = expected.approvalLine[index];

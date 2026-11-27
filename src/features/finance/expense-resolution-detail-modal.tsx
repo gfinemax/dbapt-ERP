@@ -9,7 +9,7 @@ import { Fragment, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import type { ApprovalDocumentCandidate } from "@/features/approval/approval-domain";
 import { policySummary } from "./expense-approval-period";
-import { getDraftExpenseApprovalRoute } from "./expense-approval-routing";
+import { expenseApprovalRouteRefreshMessage, getDraftExpenseApprovalRoute } from "./expense-approval-routing";
 import type { ExpenseFactConfirmation, ExpenseFactConfirmationInput } from "./expense-compliance-repository";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import { normalizeExpenseTiming } from "./expense-resolution-domain";
@@ -126,7 +126,7 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
     ...(draftRoute?.approvalLine ?? approvalLine).map((step) => ({
       complete: step.status === "승인완료",
       current: step.status === "결재대기",
-      label: `${step.approver} ${draftRoute ? step.role : step.status}`,
+      label: `${step.approver} ${draftRoute || step.role === "회계검토" || step.role === "최종결재" ? step.role : step.status}`,
     })),
     { complete: paymentComplete, current: approvalComplete && !paymentComplete, label: "지급" },
     { complete: voucherComplete, current: paymentComplete && !voucherComplete, label: "전표" },
@@ -207,6 +207,7 @@ function ExpenseResolutionDetailWorkspace({
   const budget = resolution.budgetSnapshot;
   const budgetLinked = budget.monthlyBudgetAmount > 0 || budget.currentAnnualBudgetAmount > 0;
   const authorization = getExpenseAuthorizationReadiness(resolution);
+  const draftRoute = getDraftExpenseApprovalRoute(resolution);
   const documentApprovalParticipants = getDocumentApprovalParticipants(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
@@ -282,8 +283,8 @@ function ExpenseResolutionDetailWorkspace({
               <h3 className="text-sm font-bold">결재 진행</h3>
               <ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} />
             </section>
-            {canRequestApproval && resolution.approvalStatus === "작성중" && (!authorization.ready || approvalLineNeedsReview) ? (
-              <p className="mt-3 text-xs font-semibold text-amber-900">{approvalLineNeedsReview ? "원문 결재일과 결재선을 확인해줘." : "승인요청 전 작성자와 결재자의 계정 연결을 확인해줘."}</p>
+            {canRequestApproval && resolution.approvalStatus === "작성중" && (!authorization.routeCurrent || !authorization.ready || approvalLineNeedsReview) ? (
+              <p className="mt-3 text-xs font-semibold text-amber-900">{!authorization.routeCurrent ? expenseApprovalRouteRefreshMessage : approvalLineNeedsReview ? "원문 결재일과 결재선을 확인해줘." : "승인요청 전 작성자와 결재자의 계정 연결을 확인해줘."}</p>
             ) : null}
           </>
         ) : null}
@@ -413,7 +414,7 @@ function ExpenseResolutionDetailWorkspace({
 
       <Inspector className={workspace ? "mx-4 mb-4 rounded-xl border border-[var(--color-soft-border)] bg-white p-3" : "min-h-0 overflow-y-auto border-t border-[var(--color-soft-border)] bg-white p-4 xl:border-t-0 xl:border-l"} aria-label="결재 및 예산 판단">
         {workspace ? <summary className="mb-2 cursor-pointer text-sm font-bold">결재선·예산·지급 정보</summary> : null}
-        {workspace ? <p className="mb-3 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy)}</p> : null}
+        {workspace ? <p className="mb-3 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy, draftRoute?.referenceDate)}</p> : null}
         {nextAction ? (
           <section aria-labelledby="expense-next-action-title" className="sticky top-0 z-10 mb-4 rounded-xl border border-blue-200 bg-blue-50 p-3 shadow-sm">
             <h3 className="text-base font-black text-blue-950" id="expense-next-action-title">다음 할 일</h3>
@@ -423,7 +424,7 @@ function ExpenseResolutionDetailWorkspace({
         ) : null}
         <section aria-labelledby="approval-inspector-title">
           <h3 className="text-base font-black" id="approval-inspector-title">{workspace ? "결재선" : "결재 진행"}</h3>
-          {resolution.approvalParticipants?.length && documentApprovalParticipants.length ? (
+          {(draftRoute || resolution.approvalParticipants?.length) && documentApprovalParticipants.length ? (
             <div className="mt-3 rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-cloud-veil)]/45 p-3">
               <p className="text-xs font-black text-[var(--color-stone)]">문서 표시 · {documentApprovalParticipants.length}명</p>
               <ol className="mt-2 grid gap-2">
@@ -451,7 +452,7 @@ function ExpenseResolutionDetailWorkspace({
             {approvalLineNeedsReview ? (
               <p className="text-xs font-semibold leading-5 text-amber-900">저장된 결재선이 기준일과 맞지 않습니다. 원문 결재일과 결재선을 확인해 주세요.</p>
             ) : null}
-            {canRequestApproval && resolution.approvalStatus === "작성중" && !approvalLineNeedsReview ? (
+            {canRequestApproval && resolution.approvalStatus === "작성중" && authorization.routeCurrent && !approvalLineNeedsReview ? (
               authorization.ready ? (
                 <Button className="w-full rounded-lg bg-[var(--color-pressed-charcoal)] text-white hover:bg-[var(--color-midnight-ink)]" disabled={isApprovalActionPending} onClick={onRequestApproval}>
                   {isApprovalActionPending ? "승인요청 처리 중" : "결재 시작 · 승인요청"}
@@ -678,7 +679,7 @@ export function ExpenseResolutionDetailModal({
         </div>
 
         <div className="flex-none overflow-x-auto border-b border-[var(--color-soft-border)] bg-white">
-          <div><p className="px-5 pt-2 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy)}</p><ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} /></div>
+          <div><p className="px-5 pt-2 text-xs font-semibold text-slate-600">{policySummary(resolution.approvalPolicy, getDraftExpenseApprovalRoute(resolution)?.referenceDate)}</p><ExpenseApprovalFlowStrip approvalLine={approvalLine} resolution={resolution} /></div>
         </div>
         </>}
 
@@ -1049,8 +1050,8 @@ export function ExpenseResolutionDetailModal({
           {resolution.approvalStatus === "작성중" ? (
             <>
               {renderEditAction("수정")}
-              {canRequestApproval ? <Button className={workspace ? "rounded-lg bg-[var(--color-deep-cobalt)] px-5 text-white hover:brightness-90" : "rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]"} disabled={isApprovalActionPending || !authorization.ready || approvalLineNeedsReview} onClick={() => { void handleRequestApproval(); }} title={!authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
-                {approvalLineNeedsReview ? "결재선 확인 필요" : isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
+              {canRequestApproval ? <Button className={workspace ? "rounded-lg bg-[var(--color-deep-cobalt)] px-5 text-white hover:brightness-90" : "rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]"} disabled={isApprovalActionPending || !authorization.routeCurrent || !authorization.ready || approvalLineNeedsReview} onClick={() => { void handleRequestApproval(); }} title={!authorization.routeCurrent ? expenseApprovalRouteRefreshMessage : !authorization.ready ? "작성자·결재선 로그인 계정 연결이 필요합니다." : undefined}>
+                {!authorization.routeCurrent ? "초안 다시 저장 필요" : approvalLineNeedsReview ? "결재선 확인 필요" : isApprovalActionPending ? "처리 중" : authorization.ready ? "승인요청" : "계정 연결 필요"}
               </Button> : null}
             </>
           ) : null}

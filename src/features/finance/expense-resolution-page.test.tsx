@@ -85,11 +85,13 @@ describe("ExpenseResolutionPage", () => {
     ];
     const legacyLine = [{ approver: "안동연", order: 1, role: "최종결재", status: "결재대기" as const }];
     const draft = expenseResolutionFixture({
+      actualExpenseDate: "2026-06-20",
+      author: "오학동 사무국장",
       approvalLine: legacyLine,
       approvalParticipants: legacyParticipants,
-      approvalPolicy: createExpenseApprovalPolicy("CURRENT", "", "2026-11-26"),
-      approvalRoute: "SECRETARY_CHAIR",
+      approvalPolicy: createExpenseApprovalPolicy("CURRENT", "", "2026-06-30"),
       approvalStatus: "작성중",
+      draftedAt: "2026-06-30 06:42",
     });
     expect(getDocumentApprovalParticipants(draft).map((person) => [person.name, person.action, person.statusLabel])).toEqual([
       ["장현제", "회계검토", "서명란"],
@@ -106,6 +108,37 @@ describe("ExpenseResolutionPage", () => {
     ]);
     expect(within(flow).getByText("작성 완료")).toHaveAttribute("aria-current", "step");
     expect(within(flow).getByText("장현제 회계검토")).not.toHaveAttribute("aria-current");
+
+    fireEvent.click(screen.getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "A4 출력 미리보기" }));
+    const preview = within(await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" }));
+    const approvalBox = within(preview.getByRole("region", { name: "결재선" }));
+    expect(approvalBox.getAllByRole("columnheader").slice(1).map(header => header.textContent)).toEqual(["이사", "사무국장", "조합장"]);
+    expect(approvalBox.getByText("장현제").closest("td")).toHaveTextContent("장현제회계검토서명란");
+    expect(approvalBox.getByText("오학동").closest("td")).toHaveTextContent("오학동작성06.30 06:42");
+    expect(approvalBox.getByText("안동연").closest("td")).toHaveTextContent("안동연최종결재서명란");
+  });
+
+  it("prints the saved processing time for a signed step and leaves an unsigned step blank", () => {
+    const resolution = expenseResolutionFixture({
+      approvalPolicy: createExpenseApprovalPolicy("CURRENT", "", "2026-07-01"),
+      approvalRoute: "SECRETARY_CHAIR",
+      approvalStatus: "승인대기",
+      approvalLine: [
+        { approver: "장현제", order: 1, role: "회계검토", status: "승인완료", processedAt: "2026-07-02T10:45:00+09:00" },
+        { approver: "안동연", order: 2, role: "최종결재", status: "결재대기" },
+      ],
+      approvalParticipants: [
+        { name: "장현제", title: "이사", action: "회계검토", approvalOrder: 1 },
+        { name: "오학동", title: "사무국장", action: "작성" },
+        { name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 2 },
+      ],
+    });
+    expect(getDocumentApprovalParticipants(resolution)).toMatchObject([
+      { name: "장현제", statusLabel: "승인완료", processedAt: "2026-07-02T10:45:00+09:00" },
+      { name: "오학동", statusLabel: "작성완료" },
+      { name: "안동연", statusLabel: "서명란", processedAt: undefined },
+    ]);
   });
 
   it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {

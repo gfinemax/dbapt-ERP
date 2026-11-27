@@ -7,6 +7,7 @@ import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
 import { isIsoDay } from "@/features/approval/approval-effective-policy";
+import { getDraftExpenseApprovalRoute } from "./expense-approval-routing";
 import { policySummary } from "./expense-approval-period";
 import { formatExpenseResolutionAmount } from "./expense-resolution-data";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
@@ -664,7 +665,9 @@ function ExpensePrintReasonEvidence({
 
 function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResolution }) {
   const approvalLine = getDocumentApprovalParticipants(resolution);
-  const needsReferenceDate = !isIsoDay(resolution.approvalPolicy?.referenceDate ?? "");
+  const draftReferenceDate = getDraftExpenseApprovalRoute(resolution)?.referenceDate;
+  const savedReferenceDate = resolution.approvalPolicy?.referenceDate;
+  const showReferenceDate = !isIsoDay(savedReferenceDate ?? "") || (draftReferenceDate && draftReferenceDate !== savedReferenceDate);
   return (
     <section aria-labelledby="expense-print-approval-heading" className="expense-resolution-print-approval min-w-0 self-end">
       <h4 className="sr-only" id="expense-print-approval-heading">결재선</h4>
@@ -696,7 +699,7 @@ function ExpenseApprovalBox({ resolution }: { resolution: ManagedExpenseResoluti
           </tr>
         </tbody>
       </table> : null}
-      {needsReferenceDate ? <p className="mt-1 text-right text-[10px]">{policySummary(resolution.approvalPolicy)}</p> : null}
+      {showReferenceDate ? <p className="mt-1 text-right text-[10px]">{policySummary(resolution.approvalPolicy, draftReferenceDate)}</p> : null}
     </section>
   );
 }

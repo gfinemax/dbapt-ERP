@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildExpenseApprovalRoute, hasExpenseApprovalRouteDrift, inferExpenseApprovalRoute } from "./expense-approval-routing";
+import { buildExpenseApprovalRoute, getDraftExpenseApprovalRoute, hasExpenseApprovalRouteDrift, inferExpenseApprovalRoute } from "./expense-approval-routing";
 
 describe("expense approval routing", () => {
   it("requires accounting review before final approval when the secretary authors", () => {
@@ -42,15 +42,34 @@ describe("expense approval routing", () => {
         { name: "오학동", title: "사무국장", action: "작성" },
         { name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 1 },
       ],
-      approvalPolicy: { referenceDate: "2026-11-26" },
+      approvalPolicy: { kind: "CURRENT", referenceDate: "2026-11-26" },
       approvalRoute: "SECRETARY_CHAIR",
-    })).toBe(true);
+    }, "2026-11-26")).toBe(true);
     const current = buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-11-26");
     expect(hasExpenseApprovalRouteDrift({
       approvalLine: current.approvalLine,
       approvalParticipants: current.participants,
-      approvalPolicy: { referenceDate: "2026-11-26" },
+      approvalPolicy: { kind: "CURRENT", referenceDate: "2026-11-26" },
       approvalRoute: "SECRETARY_CHAIR",
-    })).toBe(false);
+    }, "2026-11-26")).toBe(false);
+  });
+
+  it("previews a legacy secretary draft using the new submission date and keeps the confirmed original date for historical drafts", () => {
+    const savedLine = buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-06-30");
+    const draft = {
+      author: "오학동 사무국장",
+      approvalLine: savedLine.approvalLine,
+      approvalParticipants: savedLine.participants,
+      approvalPolicy: { kind: "CURRENT" as const, referenceDate: "2026-06-30" },
+      approvalStatus: "작성중",
+    };
+    expect(getDraftExpenseApprovalRoute(draft, "2026-06-30")?.approvalLine.map(step => step.approver)).toEqual(["안동연"]);
+    expect(getDraftExpenseApprovalRoute(draft, "2026-07-01")?.approvalLine.map(step => step.approver)).toEqual(["장현제", "안동연"]);
+    expect(hasExpenseApprovalRouteDrift(draft, "2026-07-01")).toBe(true);
+
+    const historicalDraft = { ...draft, approvalPolicy: { kind: "HISTORICAL" as const, referenceDate: "2026-06-30" } };
+    expect(getDraftExpenseApprovalRoute(historicalDraft, "2026-07-01")?.participants.map(person => [person.name, person.approvalOrder])).toEqual([["오학동", undefined], ["안동연", 1]]);
+    expect(getDraftExpenseApprovalRoute({ ...draft, approvalStatus: "승인대기" }, "2026-07-01")).toBeUndefined();
+    expect(hasExpenseApprovalRouteDrift(historicalDraft, "2026-07-01")).toBe(false);
   });
 });

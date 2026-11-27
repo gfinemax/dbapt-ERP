@@ -45,6 +45,7 @@ import { hasExtractedEvidenceData, normalizeEvidenceVendorFields, normalizeVendo
 import { transitionExpenseApproval, type ApprovalTransitionRequest, type ApprovalWorkflowCommand } from "./expense-approval-workflow";
 import {
   buildExpenseApprovalRoute,
+  expenseApprovalRouteRefreshMessage,
   getDraftExpenseApprovalRoute,
   hasExpenseApprovalRouteDrift,
   inferExpenseApprovalRoute,
@@ -1584,7 +1585,7 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     approvalDocumentNo: resolution.approvalDocumentNo ?? "",
     approvalSkipReason: resolution.approvalSkipReason ?? "",
     approvalSkipReasonDetail: resolution.approvalSkipReason && !["승인 예산 내 일상 지출", "정기·반복 지출", "기존 계약에 따른 지급", "소액경비 일괄결의"].includes(resolution.approvalSkipReason) ? resolution.approvalSkipReason : "",
-    approvalRoute: resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine),
+    approvalRoute: resolution.approvalRoute ?? inferExpenseApprovalRoute(resolution.approvalLine, resolution.author),
     approvalRecordKind: resolution.approvalPolicy?.kind ?? "CURRENT",
     originalApprovalDate: resolution.approvalPolicy?.kind === "HISTORICAL" ? resolution.approvalPolicy.referenceDate : "",
     originalApprovalReference: resolution.approvalPolicy?.originalReference ?? "",
@@ -1875,7 +1876,7 @@ function getNextResolutionNoForLoadedPage(resolutions: ManagedExpenseResolution[
 
 export function getDisplayApprovalLine(resolution: ManagedExpenseResolution) {
   const useCurrentOrganizationRole = ["작성중", "승인대기", "반려"].includes(resolution.approvalStatus);
-  const steps = resolution.approvalLine.filter((step) => canShowExpenseApprovalParticipant(step.approver, resolution.approvalPolicy?.referenceDate));
+  const steps = resolution.approvalLine.filter((step) => !useCurrentOrganizationRole || canShowExpenseApprovalParticipant(step.approver, resolution.approvalPolicy?.referenceDate));
   return steps.map((step) => {
     const currentApprover = getApproverLabel(step) === resolution.currentApprover;
     const role = useCurrentOrganizationRole
@@ -1896,33 +1897,28 @@ type DocumentApprovalParticipant = ExpenseApprovalParticipant & {
 
 export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolution): DocumentApprovalParticipant[] {
   const expectedDraftRoute = getDraftExpenseApprovalRoute(resolution);
-  const approvalLine = expectedDraftRoute
-    ? expectedDraftRoute.approvalLine.map((expectedStep) => {
-      const savedStep = resolution.approvalLine.find((step) => step.approver === expectedStep.approver && step.role === expectedStep.role);
-      return { ...expectedStep, processedAt: savedStep?.processedAt, status: savedStep?.status ?? "대기" as const };
-    })
-    : resolution.approvalLine;
+  const approvalLine = expectedDraftRoute?.approvalLine ?? getDisplayApprovalLine(resolution);
   const approvalParticipants = expectedDraftRoute?.participants ?? resolution.approvalParticipants;
 
   if (!approvalParticipants?.length) {
-    return getDisplayApprovalLine(resolution).map((step) => ({
+    return approvalLine.map((step) => ({
       action: step.role as ExpenseApprovalParticipant["action"],
       approvalOrder: step.order,
       name: step.approver,
       processedAt: getApprovalProcessedAt(resolution, step),
-      statusLabel: step.status,
+      statusLabel: getDocumentApprovalStatus(step),
       title: step.role,
     }));
   }
 
-  const referenceDate = resolution.approvalPolicy?.referenceDate;
-  const participants = approvalParticipants.filter((participant) => canShowExpenseApprovalParticipant(participant.name, referenceDate));
+  const participants = approvalParticipants.filter((participant) => expectedDraftRoute || resolution.approvalStatus === "승인완료"
+    || canShowExpenseApprovalParticipant(participant.name, resolution.approvalPolicy?.referenceDate));
   return participants.map((participant) => {
     const approvalStep = participant.approvalOrder
-      ? approvalLine.find((step) => step.order === participant.approvalOrder && canShowExpenseApprovalParticipant(step.approver, referenceDate))
+      ? approvalLine.find((step) => step.order === participant.approvalOrder && step.approver === participant.name)
       : undefined;
     const statusLabel = approvalStep
-      ? ["대기", "결재대기"].includes(approvalStep.status) ? "서명란" : approvalStep.status
+      ? getDocumentApprovalStatus(approvalStep)
       : (participant.action === "작성" ? "작성완료"
         : participant.action === "규정상 생략" ? "생략"
           : participant.action === "후열·보고" ? "후열대상" : "대기");
@@ -1932,6 +1928,10 @@ export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolu
       statusLabel,
     };
   });
+}
+
+function getDocumentApprovalStatus(step: ApprovalStep) {
+  return ["대기", "결재대기"].includes(step.status) ? "서명란" : step.status;
 }
 
 export function getRelatedVoucherNo(resolution: ManagedExpenseResolution) {
@@ -2101,7 +2101,8 @@ function createBankTransactionDraftFormState(transaction: BankTransactionResolut
 }
 
 function getApprovalProcessedAt(resolution: ManagedExpenseResolution, step: ApprovalStep) {
-  if (step.processedAt?.includes(" ")) return step.processedAt;
+  if (["대기", "결재대기"].includes(step.status)) return undefined;
+  if (step.processedAt && /[ T]\d{2}:\d{2}/.test(step.processedAt)) return step.processedAt;
   const approvalHistory = resolution.history.find(
     (item) => item.actionType === "APPROVED" && `${item.actorName} ${item.actorTitle}`.trim() === getApproverLabel(step),
   );
@@ -3840,8 +3841,8 @@ export function ExpenseResolutionPage({
   async function runApprovalTransition(resolution: ManagedExpenseResolution, command: ApprovalWorkflowCommand, actorLabel: string, reason?: string) {
     setSaveError("");
     const authorization = getExpenseAuthorizationReadiness(resolution);
-    if (!authorization.routeCurrent) {
-      setSaveError("결재선 규칙이 변경되었습니다. 초안을 다시 저장한 뒤 장현제·안동연 결재 계정을 연결해 주세요.");
+    if (command === "REQUEST" && !authorization.routeCurrent) {
+      setSaveError(expenseApprovalRouteRefreshMessage);
       return false;
     }
     if (!authorization.ready) {

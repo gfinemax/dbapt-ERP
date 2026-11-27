@@ -13,6 +13,6 @@ export function ExpenseApprovalPolicyFields({ kind = "CURRENT", originalDate = "
     </select></label>
     {kind === "HISTORICAL" ? <><label className="block text-xs font-semibold">원문 결재 기준일<input aria-label="원문 결재 기준일" className={field} type="date" max={seoulToday()} value={originalDate} disabled={!canRestore} onChange={event => onDate(event.target.value)} /></label>
     <label className="block text-xs font-semibold">원문 결재일 확인 근거<input aria-label="원문 결재일 확인 근거" className={field} value={originalReference} disabled={!canRestore} placeholder="원문 문서번호·서명일 등 확인한 근거" onChange={event => onReference(event.target.value)} /></label></> : <p className="text-xs">현재 기준일: {seoulToday()} · 지출일과 구분합니다. 상신일이 바뀌면 초안을 다시 저장해주세요.</p>}
-    <p className="text-xs leading-5 text-slate-600">장현제 이사: 입사 2026-06-22 · 결재권한 시작 2026-07-01. 6월 22~30일은 작성만 가능하며, 결재·검토·전결·생략 참여자로 표시하지 않습니다.</p>
+    <p className="text-xs leading-5 text-slate-600">장현제 이사의 회계검토·결재는 기준일이 2026-07-01부터 적용됩니다. 장현제 작성 경로는 2026-06-22부터 선택할 수 있습니다.</p>
   </fieldset>;
 }

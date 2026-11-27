@@ -46,7 +46,8 @@ export function previewExpenseApprovalRepair(record: ManagedExpenseResolution, r
   });
   return { before: record, after, policy, issues, canApply: issues.length === 0, bindingSteps };
 }
-export function policySummary(policy?: ExpenseApprovalPolicy) {
+export function policySummary(policy?: ExpenseApprovalPolicy, draftReferenceDate?: string) {
+  if (draftReferenceDate && policy?.kind !== "HISTORICAL") return "상신 예정일 기준 " + draftReferenceDate;
   if (!policy || !isIsoDay(policy.referenceDate)) return "원문 결재일 확인 필요";
   return (policy.kind === "HISTORICAL" ? "과거 원문 기준 " : "상신일 기준 ") + policy.referenceDate;
 }
@@ -60,7 +61,7 @@ export function prepareExpenseApprovalDraft(record: ManagedExpenseResolution, ex
   const kind = input?.kind ?? "CURRENT";
   if ((kind === "HISTORICAL" || existing?.approvalPolicy?.kind === "HISTORICAL") && !isAdmin && (kind !== existing?.approvalPolicy?.kind || existing?.approvalPolicy?.referenceDate !== input?.referenceDate || existing?.approvalPolicy?.originalReference !== input?.originalReference)) throw new Error("과거 원문 기준일 등록·변경은 관리자만 할 수 있습니다.");
   const approvalPolicy = createExpenseApprovalPolicy(kind, input?.referenceDate, today, input?.originalReference);
-  const route = record.approvalRoute ?? inferExpenseApprovalRoute(record.approvalLine);
+  const route = record.approvalRoute ?? inferExpenseApprovalRoute(record.approvalLine, record.author);
   const routed = buildExpenseApprovalRoute(route, approvalPolicy.referenceDate);
   if (routed.error) throw new Error(routed.error);
   const next = { ...record, approvalPolicy, approvalRoute: route, approvalLine: routed.approvalLine, approvalParticipants: routed.participants };

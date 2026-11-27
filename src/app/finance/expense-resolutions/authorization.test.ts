@@ -13,6 +13,7 @@ vi.mock("@/features/finance/expense-evidence-openai.server", () => ({ extractExp
 vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compressExpenseEvidenceFile: vi.fn() }));
 vi.mock("@/features/finance/budget-profile-repository", () => ({ listExpenseBudgetProfiles: mocks.budgets }));
 import { createExpenseApprovalPolicy, seoulToday } from "@/features/approval/approval-effective-policy";
+import { buildExpenseApprovalRoute } from "@/features/finance/expense-approval-routing";
 import { expenseResolutionFixture } from "@/features/finance/expense-resolution-test-fixture";
 import { budgetProfilePeriodKey } from "@/features/finance/budget-profile-lookup";
 import { transitionExpenseApprovalAction, transitionExpenseApprovalBatchAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
@@ -65,6 +66,29 @@ it("requires rebinding when the saved approval route no longer matches the accou
   mocks.access.mockResolvedValue(access);
   await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("계정 연결");
   expect(mocks.transition).not.toHaveBeenCalled();
+});
+
+it("requires saving the new submission-date route before a legacy secretary draft can be requested", async () => {
+  const oldRoute = buildExpenseApprovalRoute("SECRETARY_CHAIR", "2026-06-30");
+  const resolution = expenseResolutionFixture({
+    id: "r",
+    author: "오학동 사무국장",
+    actualExpenseDate: "2026-06-20",
+    approvalLine: oldRoute.approvalLine,
+    approvalParticipants: oldRoute.participants,
+    approvalPolicy: createExpenseApprovalPolicy("CURRENT", "", "2026-06-30"),
+  });
+  const access = fixture();
+  const draftRequest = { ...request, command: "REQUEST" as const, expectedStatus: "작성중" as const, expectedCurrentApprover: undefined };
+  mocks.access.mockResolvedValue({ ...access, actor: { ...access.actor, user_id: "author" }, resolution });
+  await expect(transitionExpenseApprovalAction(draftRequest)).rejects.toThrow("초안을 다시 저장");
+
+  const newRoute = buildExpenseApprovalRoute("SECRETARY_CHAIR", seoulToday());
+  const saved = { ...resolution, approvalLine: newRoute.approvalLine, approvalParticipants: newRoute.participants, approvalPolicy: createExpenseApprovalPolicy() };
+  mocks.access.mockResolvedValue({ ...access, actor: { ...access.actor, user_id: "author" }, resolution: saved });
+  await expect(transitionExpenseApprovalAction(draftRequest)).rejects.toThrow("계정 연결");
+  expect(mocks.transition).not.toHaveBeenCalled();
+  expect(mocks.commit).not.toHaveBeenCalled();
 });
 
 it("saves fact drafts atomically with the verified author and rejects signature input", async () => {

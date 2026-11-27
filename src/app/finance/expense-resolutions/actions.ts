@@ -1,7 +1,7 @@
 "use server";
 
 import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, prepareExpenseApprovalDraft } from "@/features/finance/expense-approval-period";
-import { hasExpenseApprovalRouteDrift } from "@/features/finance/expense-approval-routing";
+import { expenseApprovalRouteRefreshMessage, hasExpenseApprovalRouteDrift } from "@/features/finance/expense-approval-routing";
 
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
 
@@ -530,7 +530,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (current.approvalStatus !== input.expectedStatus || current.currentApprover !== input.expectedCurrentApprover)
     throw new Error("다른 사용자가 먼저 결재 상태를 변경했습니다. 목록을 새로고침해주세요.");
   if (input.command === "REQUEST" && hasExpenseApprovalRouteDrift(current)) {
-    throw new Error("결재선 규칙이 변경되었습니다. 초안을 다시 저장한 뒤 장현제·안동연 결재 계정을 연결해 주세요.");
+    throw new Error(expenseApprovalRouteRefreshMessage);
   }
   const bindingMatchesCurrentLine = binding?.steps.every((step) => {
     const currentStep = current.approvalLine[step.order - 1];
