@@ -1,4 +1,4 @@
-import { buildExpenseApprovalRoute, inferExpenseApprovalRoute } from "./expense-approval-routing";
+import { buildExpenseApprovalRoute, getDraftExpenseApprovalRoute, inferExpenseApprovalRoute } from "./expense-approval-routing";
 import { approvalPolicyVersion, canApproveOn, canAuthorOn, createExpenseApprovalPolicy, directorAppointment, isDirector, isIsoDay, seoulToday, type ExpenseApprovalPolicy } from "@/features/approval/approval-effective-policy";
 import type { ManagedExpenseResolution } from "./expense-resolution-page";
 
@@ -29,6 +29,25 @@ export function approvalRepairBlockReason(record: ManagedExpenseResolution) {
   if (record.approvalLine.some(step => step.status === "승인완료") || record.history?.some(item => (item.actionType === "APPROVED" || ["승인", "결재승인", "최종승인"].includes(item.actionLabel)))) return "이미 처리된 승인 이력을 보존해야 합니다. 별도 정정 절차를 진행해주세요.";
   return "";
 }
+
+export const pendingExpenseApprovalRefreshMessage = "회계검토가 빠진 결재선입니다. 수정 후 재요청으로 초안을 저장하고 결재자 계정을 확인해 주세요.";
+
+export function getLegacyPendingExpenseApprovalRoute(record: ManagedExpenseResolution, today = seoulToday()) {
+  if (record.approvalStatus !== "승인대기" || record.approvalPolicy || record.approvalRoute !== "SECRETARY_CHAIR") return;
+  if (record.approvalLine.length !== 1 || record.approvalLine[0].role !== "최종결재") return;
+  if (!record.approvalParticipants?.some(person => isDirector(person.name) && person.action === "규정상 생략")) return;
+  if (approvalRepairBlockReason(record)) return;
+
+  const lastRequest = record.history?.findLast(entry => entry.actionType === "REQUESTED_APPROVAL");
+  const referenceDate = lastRequest?.actionAt?.slice(0, 10) ?? "";
+  if (!isIsoDay(referenceDate) || referenceDate > today || !canApproveOn(directorAppointment.name, referenceDate)) return;
+  return buildExpenseApprovalRoute("SECRETARY_CHAIR", referenceDate);
+}
+
+export function getExpenseApprovalPreviewRoute(record: ManagedExpenseResolution) {
+  return getDraftExpenseApprovalRoute(record) ?? getLegacyPendingExpenseApprovalRoute(record);
+}
+
 export function previewExpenseApprovalRepair(record: ManagedExpenseResolution, referenceDate: string, reason: string, today = seoulToday()) {
   const policy = createExpenseApprovalPolicy("HISTORICAL", referenceDate, today, reason);
   const blocked = approvalRepairBlockReason(record);
@@ -46,8 +65,11 @@ export function previewExpenseApprovalRepair(record: ManagedExpenseResolution, r
   });
   return { before: record, after, policy, issues, canApply: issues.length === 0, bindingSteps };
 }
-export function policySummary(policy?: ExpenseApprovalPolicy, draftReferenceDate?: string) {
-  if (draftReferenceDate && policy?.kind !== "HISTORICAL") return "상신 예정일 기준 " + draftReferenceDate;
+export function getExpenseApprovalBasisLabel(record: ManagedExpenseResolution, print = false) {
+  const policy = record.approvalPolicy;
+  const previewDate = getExpenseApprovalPreviewRoute(record)?.referenceDate;
+  if (print && policy && isIsoDay(policy.referenceDate) && (!previewDate || previewDate === policy.referenceDate)) return "";
+  if (previewDate && policy?.kind !== "HISTORICAL") return (record.approvalStatus === "승인대기" ? "상신일 기준 " : "상신 예정일 기준 ") + previewDate;
   if (!policy || !isIsoDay(policy.referenceDate)) return "원문 결재일 확인 필요";
   return (policy.kind === "HISTORICAL" ? "과거 원문 기준 " : "상신일 기준 ") + policy.referenceDate;
 }

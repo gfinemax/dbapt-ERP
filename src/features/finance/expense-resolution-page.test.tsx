@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createExpenseApprovalPolicy } from "@/features/approval/approval-effective-policy";
 import type { ExpenseEvidenceAttachment } from "./expense-evidence";
 import { defaultExpenseComplianceSettings } from "./expense-compliance";
-import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
+import { expenseResolutionFixture, legacyPendingSecretaryExpenseFixture } from "./expense-resolution-test-fixture";
 import { buildExpenseResolutionPdfFileName, createFormState, ExpenseResolutionPage, formatApprovalDateTime, getApprovalTransitionErrorMessage, getDocumentApprovalParticipants, getEvidenceUploadErrorMessage, getExpensePrintEvidenceText, getExpensePrintItemDescription, getExpensePrintPersonName, type BatchExpenseItem } from "./expense-resolution-page";
 import { getEditBankTransactionCandidates } from "./expense-resolution-form-options";
 import { ExpenseResolutionDetailModal } from "./expense-resolution-detail-modal";
@@ -139,6 +139,28 @@ describe("ExpenseResolutionPage", () => {
       { name: "오학동", statusLabel: "작성완료" },
       { name: "안동연", statusLabel: "서명란", processedAt: undefined },
     ]);
+  });
+
+  it("uses the recorded submission date for the progress and print of a legacy pending expense", async () => {
+    vi.useRealTimers();
+    const resolution = legacyPendingSecretaryExpenseFixture();
+    render(<ExpenseResolutionPage initialResolutions={[resolution]} />);
+    fireEvent.click(screen.getByRole("button", { name: /상세보기$/ }));
+    const detail = within(await screen.findByRole("region", { name: "지출결의서 상세" }));
+    const flow = within(detail.getByRole("list", { name: "결의 진행 단계" }));
+    expect(flow.getByText("장현제 회계검토")).toBeInTheDocument();
+    expect(flow.getByText("안동연 최종결재")).not.toHaveAttribute("aria-current");
+    expect(detail.getByText(/회계검토가 빠진 결재선입니다/)).toBeInTheDocument();
+
+    fireEvent.click(detail.getByRole("button", { name: "인쇄하기" }));
+    fireEvent.click(detail.getByRole("menuitem", { name: "A4 출력 미리보기" }));
+    const preview = within(await screen.findByRole("dialog", { name: "지출결의서 출력 미리보기" }));
+    const approvalBox = within(preview.getByRole("region", { name: "결재선" }));
+    expect(approvalBox.getByText("장현제").closest("td")).toHaveTextContent("장현제회계검토서명란");
+    expect(approvalBox.getByText("오학동").closest("td")).toHaveTextContent("오학동작성11.12 09:25");
+    expect(approvalBox.getByText("안동연").closest("td")).toHaveTextContent("안동연최종결재서명란");
+    expect(approvalBox.getByText("상신일 기준 2026-11-14")).toBeInTheDocument();
+    expect(approvalBox.queryByText("규정상 생략")).not.toBeInTheDocument();
   });
 
   it("prints written evidence explanations, attachments, and linked payment sources in priority order", () => {

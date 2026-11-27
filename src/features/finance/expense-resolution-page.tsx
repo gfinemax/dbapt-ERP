@@ -8,7 +8,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, isDirector, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
 import { canApproveExpense, canDeleteExpense, canEditExpense } from "./expense-access-model";
-import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
+import { canShowExpenseApprovalParticipant, getExpenseApprovalPreviewRoute } from "./expense-approval-period";
 import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
 import { getBudgetOverageAmount, getResolutionListSubject, getResolutionOverBudgetAmount } from "./expense-resolution-display";
 import type { ReimbursementMember } from "./reimbursement-domain";
@@ -46,7 +46,6 @@ import { transitionExpenseApproval, type ApprovalTransitionRequest, type Approva
 import {
   buildExpenseApprovalRoute,
   expenseApprovalRouteRefreshMessage,
-  getDraftExpenseApprovalRoute,
   hasExpenseApprovalRouteDrift,
   inferExpenseApprovalRoute,
   type ExpenseApprovalParticipant,
@@ -1896,9 +1895,9 @@ type DocumentApprovalParticipant = ExpenseApprovalParticipant & {
 };
 
 export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolution): DocumentApprovalParticipant[] {
-  const expectedDraftRoute = getDraftExpenseApprovalRoute(resolution);
-  const approvalLine = expectedDraftRoute?.approvalLine ?? getDisplayApprovalLine(resolution);
-  const approvalParticipants = expectedDraftRoute?.participants ?? resolution.approvalParticipants;
+  const previewRoute = getExpenseApprovalPreviewRoute(resolution);
+  const approvalLine = previewRoute?.approvalLine ?? getDisplayApprovalLine(resolution);
+  const approvalParticipants = previewRoute?.participants ?? resolution.approvalParticipants;
 
   if (!approvalParticipants?.length) {
     return approvalLine.map((step) => ({
@@ -1911,7 +1910,7 @@ export function getDocumentApprovalParticipants(resolution: ManagedExpenseResolu
     }));
   }
 
-  const participants = approvalParticipants.filter((participant) => expectedDraftRoute || resolution.approvalStatus === "승인완료"
+  const participants = approvalParticipants.filter((participant) => previewRoute || resolution.approvalStatus === "승인완료"
     || canShowExpenseApprovalParticipant(participant.name, resolution.approvalPolicy?.referenceDate));
   return participants.map((participant) => {
     const approvalStep = participant.approvalOrder

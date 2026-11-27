@@ -14,7 +14,7 @@ vi.mock("@/features/finance/expense-evidence-compression.server", () => ({ compr
 vi.mock("@/features/finance/budget-profile-repository", () => ({ listExpenseBudgetProfiles: mocks.budgets }));
 import { createExpenseApprovalPolicy, seoulToday } from "@/features/approval/approval-effective-policy";
 import { buildExpenseApprovalRoute } from "@/features/finance/expense-approval-routing";
-import { expenseResolutionFixture } from "@/features/finance/expense-resolution-test-fixture";
+import { expenseResolutionFixture, legacyPendingSecretaryExpenseFixture } from "@/features/finance/expense-resolution-test-fixture";
 import { budgetProfilePeriodKey } from "@/features/finance/budget-profile-lookup";
 import { transitionExpenseApprovalAction, transitionExpenseApprovalBatchAction, saveExpenseFactConfirmationAction, deleteExpenseFactConfirmationAction } from "./actions";
 const request = { resolutionId: "r", actorLabel: "위조된 관리자", command: "APPROVE" as const, expectedStatus: "승인대기" as const, expectedCurrentApprover: "이전 이름 담당자", expectedAuthorizationVersion: 2 };
@@ -89,6 +89,25 @@ it("requires saving the new submission-date route before a legacy secretary draf
   await expect(transitionExpenseApprovalAction(draftRequest)).rejects.toThrow("계정 연결");
   expect(mocks.transition).not.toHaveBeenCalled();
   expect(mocks.commit).not.toHaveBeenCalled();
+});
+
+it("blocks single and batch final approval of an unsigned pending route missing accounting review", async () => {
+  const resolution = legacyPendingSecretaryExpenseFixture({ id: "r" });
+  const access = fixture();
+  const binding = { ...access.binding, steps: [{ ...access.binding.steps[0], legacy_step: resolution.approvalLine[0] }] };
+  const pendingRequest = { ...request, expectedCurrentApprover: resolution.currentApprover };
+  mocks.access.mockResolvedValue({ ...access, binding, resolution });
+
+  await expect(transitionExpenseApprovalAction(pendingRequest)).rejects.toThrow("수정 후 재요청");
+  await expect(transitionExpenseApprovalBatchAction({
+    idempotencyKey: "missing-accounting-review",
+    items: [pendingRequest],
+    reason: "최종 승인",
+    referenceDate: seoulToday(),
+  })).rejects.toThrow("수정 후 재요청");
+  expect(mocks.transition).not.toHaveBeenCalled();
+  expect(mocks.commit).not.toHaveBeenCalled();
+  expect(mocks.commitBatch).not.toHaveBeenCalled();
 });
 
 it("saves fact drafts atomically with the verified author and rejects signature input", async () => {

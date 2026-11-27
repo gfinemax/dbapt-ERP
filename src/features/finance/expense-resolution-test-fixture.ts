@@ -15,3 +15,23 @@ export function expenseResolutionFixture(overrides: Partial<ManagedExpenseResolu
     ...overrides,
   };
 }
+
+export function legacyPendingSecretaryExpenseFixture(overrides: Partial<ManagedExpenseResolution> = {}) {
+  return expenseResolutionFixture({
+    actualExpenseDate: "2026-01-26",
+    author: "오학동",
+    createdAt: "2026-11-12",
+    draftedAt: "2026-11-12T09:25:00+09:00",
+    approvalRoute: "SECRETARY_CHAIR",
+    approvalStatus: "승인대기",
+    currentApprover: "안동연 최종결재",
+    approvalLine: [{ approver: "안동연", role: "최종결재", order: 1, status: "결재대기" }],
+    approvalParticipants: [
+      { name: "장현제", title: "이사", action: "규정상 생략" },
+      { name: "오학동", title: "사무국장", action: "작성" },
+      { name: "안동연", title: "조합장", action: "최종결재", approvalOrder: 1 },
+    ],
+    history: [{ id: "requested", actionAt: "2026-11-14 21:52", actionType: "REQUESTED_APPROVAL", actionLabel: "승인요청", actorName: "오학동", actorTitle: "사무국장" }],
+    ...overrides,
+  });
+}

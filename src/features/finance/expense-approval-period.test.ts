@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { createExpenseApprovalPolicy, directorAppointment, seoulToday } from "@/features/approval/approval-effective-policy";
 import { getOrganizationExpenseApprovalLine } from "@/features/approval/organization-approval-line";
 import { buildExpenseApprovalRoute } from "./expense-approval-routing";
-import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, prepareExpenseApprovalDraft, previewExpenseApprovalRepair } from "./expense-approval-period";
-import { expenseResolutionFixture } from "./expense-resolution-test-fixture";
+import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, getLegacyPendingExpenseApprovalRoute, prepareExpenseApprovalDraft, previewExpenseApprovalRepair } from "./expense-approval-period";
+import { expenseResolutionFixture, legacyPendingSecretaryExpenseFixture } from "./expense-resolution-test-fixture";
 
 const originalReference = "원문 지결-2026-0001의 서명일 대조";
 function legacy() {
@@ -19,6 +19,21 @@ function legacy() {
   });
 }
 describe("effective expense approval dates", () => {
+  it("previews an unsigned legacy pending route only with a qualifying recorded submission date", () => {
+    const record = legacyPendingSecretaryExpenseFixture();
+    expect(getLegacyPendingExpenseApprovalRoute(record, "2026-11-27")).toMatchObject({
+      referenceDate: "2026-11-14",
+      approvalLine: [{ approver: "장현제", role: "회계검토", status: "대기" }, { approver: "안동연", role: "최종결재", status: "대기" }],
+    });
+    for (const date of ["", "2026-06-30 23:59", "2026-11-28 00:00"]) {
+      expect(getLegacyPendingExpenseApprovalRoute({ ...record, history: [{ ...record.history[0], actionAt: date }] }, "2026-11-27")).toBeUndefined();
+    }
+    expect(getLegacyPendingExpenseApprovalRoute({ ...record, history: [] }, "2026-11-27")).toBeUndefined();
+    expect(getLegacyPendingExpenseApprovalRoute({ ...record, approvalStatus: "승인완료" }, "2026-11-27")).toBeUndefined();
+    expect(getLegacyPendingExpenseApprovalRoute({ ...record, history: [...record.history, { ...record.history[0], id: "signed", actionType: "APPROVED", actionLabel: "결재승인" }] }, "2026-11-27")).toBeUndefined();
+    expect(record.approvalParticipants?.[0].action).toBe("규정상 생략");
+  });
+
   it.each(["2026-06-21", "2026-06-22", "2026-06-30"])("excludes the director from actual approval on %s", day => {
     expect(getOrganizationExpenseApprovalLine(day).map(step => step.approver)).toEqual(["오학동", "안동연"]);
     expect(buildExpenseApprovalRoute("SECRETARY_CHAIR", day).participants.some(person => person.name === "장현제")).toBe(false);

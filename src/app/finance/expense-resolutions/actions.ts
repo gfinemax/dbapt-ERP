@@ -1,6 +1,6 @@
 "use server";
 
-import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, prepareExpenseApprovalDraft } from "@/features/finance/expense-approval-period";
+import { assertExpenseActorPeriod, assertExpenseApprovalPeriod, getLegacyPendingExpenseApprovalRoute, pendingExpenseApprovalRefreshMessage, prepareExpenseApprovalDraft } from "@/features/finance/expense-approval-period";
 import { expenseApprovalRouteRefreshMessage, hasExpenseApprovalRouteDrift } from "@/features/finance/expense-approval-routing";
 
 import { inferTransactionKind } from "@/features/finance/bank-transaction-import";
@@ -546,6 +546,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   if (input.command === "REQUEST" && binding.author_user_id !== actor.user_id) throw new Error("연결된 작성자만 승인요청할 수 있습니다.");
   if (["APPROVE", "REJECT"].includes(input.command) && assigned?.approver_user_id !== actor.user_id) throw new Error("현재 순서에 연결된 결재자만 처리할 수 있습니다.");
   if (input.command === "CANCEL" && !actor.permissions.includes("ADMIN")) throw new Error("승인취소는 관리자만 처리할 수 있습니다.");
+  if (input.command === "APPROVE" && getLegacyPendingExpenseApprovalRoute(current)) throw new Error(pendingExpenseApprovalRefreshMessage);
   if (input.command === "REQUEST" || input.command === "APPROVE" || input.command === "REJECT") {
     assertExpenseApprovalPeriod(current, input.command === "REQUEST");
     assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, input.command);
@@ -643,6 +644,7 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
     const request = input.items[itemIndex];
     const { resolution: current, binding } = accesses[itemIndex];
     const budgetLookupStatus = budgetView?.lookupStatuses[current.id];
+    if (getLegacyPendingExpenseApprovalRoute(current)) throw new Error(`${current.resolutionNo}: ${pendingExpenseApprovalRefreshMessage}`);
     assertExpenseApprovalPeriod(current);
     assertExpenseActorPeriod(actor.display_name, current.approvalPolicy, "APPROVE");
     if (current.approvalStatus !== request.expectedStatus || current.currentApprover !== request.expectedCurrentApprover) {
