@@ -15,7 +15,7 @@ export function isMissingExpenseBinding(error: { code?: string } | null) {
 
 export async function requireExpenseActor(permission: "READ" | "ADMIN" | "PAY" = "READ") {
   const actor = await requireReimbursementIdentity();
-  const allowed = permission === "READ" ? actor.permissions.some(p => ["ADMIN", "APPROVE", "PAY"].includes(p))
+  const allowed = permission === "READ" ? actor.permissions.some(p => ["ADMIN", "APPROVE", "PAY", "EXPENSE_EDIT"].includes(p))
     : actor.permissions.includes("ADMIN") || actor.permissions.includes(permission);
   if (!allowed) throw new Error("지출결의 업무 권한이 없습니다.");
   return actor;
@@ -42,8 +42,8 @@ export async function requireExpenseRecord(id: string, write = false, actor?: Re
     .select("resolution_data,organization_id").eq("id", id).eq("organization_id", actor.organization_id).is("deleted_at", null).maybeSingle();
   if (error || !data) throw new Error("조회 권한이 있는 지출결의서를 찾을 수 없습니다.");
   const binding = await expenseBinding(id, actor);
-  if (write && !actor.permissions.includes("ADMIN") && binding?.author_user_id !== actor.user_id)
-    throw new Error("연결된 작성자 또는 관리자만 수정할 수 있습니다. 계정 연결을 확인해주세요.");
+  if (write && !actor.permissions.some(permission => ["ADMIN", "EXPENSE_EDIT"].includes(permission)) && binding?.author_user_id !== actor.user_id)
+    throw new Error("연결된 작성자, 지출결의 수정 담당자 또는 관리자만 수정할 수 있습니다. 계정 연결과 권한을 확인해주세요.");
   return { actor, binding, resolution: data.resolution_data as ManagedExpenseResolution };
 }
 

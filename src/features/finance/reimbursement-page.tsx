@@ -27,7 +27,7 @@ const button="rounded-lg bg-[var(--color-deep-cobalt)] px-4 py-2 text-sm font-se
 const secondary="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm disabled:opacity-40";
 const money=(n:number)=>Number(n).toLocaleString("ko-KR")+"원";
 const dateTime=(s:string|null)=>s ? new Date(s).toLocaleString("ko-KR",{timeZone:"Asia/Seoul"}) : "—";
-const permissionLabels={ADMIN:"관리자",APPROVE:"정산·지연 승인",SENIOR:"장기 지연·예산 초과 승인",CLOSE:"월 마감·과거 월 수정",PAY:"지급 연결"};
+const permissionLabels={ADMIN:"관리자",APPROVE:"정산·지연 승인",SENIOR:"장기 지연·예산 초과 승인",CLOSE:"월 마감·과거 월 수정",PAY:"지급 연결",EXPENSE_EDIT:"지출결의 수정"};
 const paymentMethodLabels={PERSONAL_CARD:"개인카드",PERSONAL_TRANSFER:"개인계좌 이체",CASH:"현금 직접 지급"};
 const evidenceKindLabels={RECEIPT:"영수증",CARD_STATEMENT:"개인카드 승인내역",BANK_TRANSFER:"계좌이체 확인증",ORDER_DETAILS:"주문내역",TRANSACTION_STATEMENT:"거래명세서",ITEM_PHOTO:"물품·사용 사진",OTHER_ALTERNATIVE:"기타 대체증빙"};
 function autoSubmissionDeadline(usedOn:string,submissionDay:number) {

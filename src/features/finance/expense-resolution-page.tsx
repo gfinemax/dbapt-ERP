@@ -7,7 +7,7 @@ import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createExpenseApprovalPolicy, isDirector, type ExpenseApprovalPolicy, type ApprovalRecordKind } from "@/features/approval/approval-effective-policy";
-import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import { canApproveExpense, canDeleteExpense, canEditExpense } from "./expense-access-model";
 import { canShowExpenseApprovalParticipant } from "./expense-approval-period";
 import { canCorrectExpense, type ExpenseCorrectionInput, type ExpenseCorrectionOptions } from "./expense-resolution-correction";
 import { getBudgetOverageAmount, getResolutionListSubject, getResolutionOverBudgetAmount } from "./expense-resolution-display";
@@ -2745,7 +2745,7 @@ export function ExpenseResolutionPage({
 
   async function openEditWorkspace(resolution: ManagedExpenseResolution) {
     if (!canEditResolution(resolution)) {
-      setSaveError("작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.");
+      setSaveError("작성중·승인대기·반려 문서는 연결된 작성자, 지출결의 수정 담당자 또는 관리자만 수정할 수 있습니다.");
       setSelectedDetailId(resolution.id);
       return;
     }
@@ -4158,7 +4158,7 @@ export function ExpenseResolutionPage({
         {saveError && !isFormOpen && !selectedDetail ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditResolutionId && initialResolutions !== undefined && !resolutions.some((resolution) => resolution.id === initialEditResolutionId) ? <p role="alert" className="rounded-xl border p-4">수정할 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
-        {initialEditDenied ? <p role="alert" className="rounded-xl border p-4">작성중·승인대기·반려 문서는 연결된 작성자 또는 관리자만 수정할 수 있습니다.</p> : null}
+        {initialEditDenied ? <p role="alert" className="rounded-xl border p-4">작성중·승인대기·반려 문서는 연결된 작성자, 지출결의 수정 담당자 또는 관리자만 수정할 수 있습니다.</p> : null}
         {dataLoadError ? (
           <div className="rounded-xl border border-[var(--color-tangerine)]/30 bg-[var(--color-sunset-soft)] px-4 py-3 text-sm font-semibold text-[var(--color-tangerine)]" role="alert">
             {dataLoadError}
@@ -4305,7 +4305,7 @@ export function ExpenseResolutionPage({
           onPrevious={previousResolution ? () => { void openDetailModal(previousResolution.id); } : undefined}
           onNext={nextResolution ? () => { void openDetailModal(nextResolution.id); } : undefined}
           onOpenEvidence={createEvidenceDownloadUrl ? openDetailEvidence : undefined}
-          canRequestApproval={!viewer || canEditExpense(selectedDetail, viewer)}
+          canRequestApproval={!viewer || (viewer.active && (viewer.permissions.includes("ADMIN") || selectedDetail.authorization?.author_user_id === viewer.user_id))}
           actionError={saveError}
           budgetDataError={budgetDataError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}
@@ -4324,7 +4324,7 @@ export function ExpenseResolutionPage({
           onConfirmVoucher={selectedDetail.workflowTransactionId ? undefined : () => confirmVoucher(selectedDetail.id)}
           onCreateVoucher={selectedDetail.workflowTransactionId ? undefined : () => createVoucher(selectedDetail.id)}
           onCreateFactConfirmation={isLegacySmallExpenseResolution(selectedDetail) ? undefined : (detailItem) => { setFactConfirmationTarget({ detailItem, resolution: selectedDetail }); }}
-          onDelete={deleteResolution && !isLegacySmallExpenseResolution(selectedDetail) && (!viewer || canEditExpense(selectedDetail, viewer)) ? () => removeResolution(selectedDetail.id) : undefined}
+          onDelete={deleteResolution && !isLegacySmallExpenseResolution(selectedDetail) && (!viewer || canDeleteExpense(selectedDetail, viewer)) ? () => removeResolution(selectedDetail.id) : undefined}
           onEdit={canEditResolution(selectedDetail) ? () => { void openEditWorkspace(selectedDetail); } : undefined}
           onPrintArchive={() => openArchivePrint(selectedDetail)}
           onPrintPreview={() => openPrintPreview(selectedDetail.id, "미리보기")}

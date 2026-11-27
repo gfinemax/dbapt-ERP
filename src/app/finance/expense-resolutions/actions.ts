@@ -445,7 +445,10 @@ export async function convertQuickExpenseResolutionAction(sourceId: string, reso
 
 export async function deleteExpenseResolutionAction(resolutionId: string, _actorLabel: string) {
   void _actorLabel;
-  const { resolution, binding } = await requireExpenseRecord(resolutionId, true);
+  const { actor, resolution, binding } = await requireExpenseRecord(resolutionId);
+  if (!actor.permissions.includes("ADMIN") && binding?.author_user_id !== actor.user_id) {
+    throw new Error("연결된 작성자 또는 관리자만 지출결의서를 삭제할 수 있습니다.");
+  }
   await commitExpenseCommand("DELETE", resolutionId, resolution, { reason: "작성자 요청 삭제", expected_binding_version: binding?.version ?? 0 }, randomUUID());
   revalidatePath("/finance/expense-resolutions");
 }

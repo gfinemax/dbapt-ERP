@@ -35,6 +35,11 @@ describe("legacy expense identity boundaries", () => {
     mocks.rows.push({ resolution_data: { id: "r" } }, null);
     await expect(requireExpenseRecord("r", true)).rejects.toThrow("계정 연결");
   });
+  it("permits an explicitly assigned expense editor without changing the author binding", async () => {
+    mocks.identity.mockResolvedValue({ user_id: "editor", organization_id: "org-a", display_name: "수정 담당자", permissions: ["EXPENSE_EDIT"], active: true });
+    mocks.rows.push({ resolution_data: { id: "r" } }, { author_user_id: "uuid-a", steps: [], version: 1 });
+    await expect(requireExpenseRecord("r", true)).resolves.toMatchObject({ binding: { author_user_id: "uuid-a" } });
+  });
   it("rejects a missing or foreign original without returning a binding", async () => {
     mocks.rows.push(null);
     await expect(requireExpenseRecord("foreign")).rejects.toThrow("조회 권한");

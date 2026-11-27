@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ExpenseAuthorizationPage } from "./expense-authorization-page";
-import { canApproveExpense, canEditExpense } from "./expense-access-model";
+import { canApproveExpense, canDeleteExpense, canEditExpense } from "./expense-access-model";
 import { getExpenseAuthorizationReadiness, type ManagedExpenseResolution } from "./expense-resolution-page";
 const mocks = vi.hoisted(() => ({ bind: vi.fn(), refresh: vi.fn() }));
 vi.mock("@/app/finance/expense-authorizations/actions", () => ({ bindExpenseAuthorization: mocks.bind }));
@@ -49,6 +49,8 @@ describe("explicit author and approver account binding", () => {
     expect(canApproveExpense(bound, { ...viewer, user_id: "a" })).toBe(true);
     expect(canEditExpense(bound, viewer)).toBe(false);
     expect(canEditExpense(bound, { ...viewer, user_id: "author" })).toBe(true);
+    expect(canEditExpense(bound, { ...viewer, permissions: ["EXPENSE_EDIT"] })).toBe(true);
+    expect(canDeleteExpense(bound, { ...viewer, permissions: ["EXPENSE_EDIT"] })).toBe(false);
   });
   it("automatically selects unique exact-name accounts including the author as second approver", () => {
     const uniqueMembers = [

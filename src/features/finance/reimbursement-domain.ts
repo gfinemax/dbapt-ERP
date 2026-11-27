@@ -1,4 +1,4 @@
-export const reimbursementPermissions = ["ADMIN", "APPROVE", "SENIOR", "CLOSE", "PAY"] as const;
+export const reimbursementPermissions = ["ADMIN", "APPROVE", "SENIOR", "CLOSE", "PAY", "EXPENSE_EDIT"] as const;
 export type ReimbursementPermission = typeof reimbursementPermissions[number];
 export type ReimbursementMember = { user_id: string; organization_id: string; display_name: string; permissions: ReimbursementPermission[]; active: boolean };
 export type ReimbursementPolicy = { submission_day: number; completion_day: number; long_delay_days: number };

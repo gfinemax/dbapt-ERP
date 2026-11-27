@@ -1,10 +1,10 @@
 begin;
 do $$
-declare org uuid:=gen_random_uuid(); other_org uuid:=gen_random_uuid(); admin_id uuid:=gen_random_uuid(); author uuid:=gen_random_uuid(); approver uuid:=gen_random_uuid(); twin uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); rid text:=gen_random_uuid()::text; foreign_rid text:=gen_random_uuid()::text; doc jsonb; payload jsonb; saved jsonb; nextdoc jsonb; result jsonb; bound jsonb; original jsonb;
+declare org uuid:=gen_random_uuid(); other_org uuid:=gen_random_uuid(); admin_id uuid:=gen_random_uuid(); author uuid:=gen_random_uuid(); editor uuid:=gen_random_uuid(); approver uuid:=gen_random_uuid(); twin uuid:=gen_random_uuid(); outsider uuid:=gen_random_uuid(); rid text:=gen_random_uuid()::text; foreign_rid text:=gen_random_uuid()::text; doc jsonb; payload jsonb; saved jsonb; nextdoc jsonb; result jsonb; bound jsonb; original jsonb;
 begin
  insert into core.organizations(id,name,status) values(org,'Authorization test','active'),(other_org,'Other auth','active');
- insert into auth.users(id) values(admin_id),(author),(approver),(twin),(outsider);
- insert into finance.reimbursement_members values(org,admin_id,'Admin',array['ADMIN'],true),(org,author,'Writer',array['PAY'],true),(org,approver,'Same name',array['APPROVE'],true),(org,twin,'Same name','{}',true),(other_org,outsider,'Foreign',array['ADMIN'],true);
+ insert into auth.users(id) values(admin_id),(author),(editor),(approver),(twin),(outsider);
+ insert into finance.reimbursement_members values(org,admin_id,'Admin',array['ADMIN'],true),(org,author,'Writer',array['PAY'],true),(org,editor,'Expense editor',array['EXPENSE_EDIT'],true),(org,approver,'Same name',array['APPROVE'],true),(org,twin,'Same name','{}',true),(other_org,outsider,'Foreign',array['ADMIN'],true);
  doc:=jsonb_build_object('id',rid,'author','Caller label','approvalStatus','작성중','paymentStatus','지급전','settlementStatus','정산없음','totalPaymentAmount',100,'resolutionType','SINGLE','expenseTiming','ADVANCE','expenseItems','[]'::jsonb,'history','[]'::jsonb,'approvalLine',jsonb_build_array(jsonb_build_object('approver','Same','role','name','status','대기')));
  payload:=jsonb_build_object('row',jsonb_build_object('id',rid,'resolution_no','AUTH-1','author_label','Caller label','approval_status','작성중','payment_status','지급전','total_payment_amount',100,'resolution_data',doc,'actual_paid_amount',null,'voucher_no',null,'voucher_status',null,'disbursed_at',null),'items',jsonb_build_array(jsonb_build_object('id','item-'||rid,'resolution_id',rid,'item_kind','SINGLE','item_no',1,'supply_amount',100,'vat_amount',0,'total_amount',100,'item_data','{}'::jsonb)),'allocations','[]'::jsonb,'evidence','[]'::jsonb,'details','[]'::jsonb);
  begin perform finance.legacy_expense_command(org,author,'SAVE',rid,null,jsonb_set(payload,'{row,disbursed_at}','"2026-03-01"'),'forged-new-paid');raise exception 'TEST: new paid timestamp';exception when others then if sqlerrm not like '%실제 지급 또는 전표%' then raise;end if;end;
@@ -13,11 +13,13 @@ begin
  saved:=finance.legacy_expense_command(org,author,'SAVE',rid,null,payload,'create');
  if saved->>'author'<>'Writer' or (select author_user_id from finance.expense_authorization_bindings where resolution_id=rid)<>author then raise exception 'TEST: authenticated author not bound'; end if;
  if finance.legacy_expense_command(org,author,'SAVE',rid,null,payload,'create')<>saved then raise exception 'TEST: retry changed result'; end if;
+ saved:=finance.legacy_expense_command(org,editor,'SAVE',rid,saved,payload,'assigned-editor-save');
+ begin perform finance.legacy_expense_command(org,editor,'DELETE',rid,saved,'{"reason":"Editor delete"}','assigned-editor-delete'); raise exception 'TEST: assigned editor deleted record'; exception when others then if sqlerrm not like '%작성자 연결%' then raise; end if; end;
  begin perform finance.legacy_expense_command(org,twin,'SAVE',rid,saved,payload,'twin-save'); raise exception 'TEST: same name edited'; exception when others then if sqlerrm not like '%작성자 연결%' then raise; end if; end;
  begin perform finance.legacy_expense_command(other_org,outsider,'DELETE',rid,saved,'{"reason":"foreign"}','foreign-delete'); raise exception 'TEST: foreign edit'; exception when others then if sqlerrm not like '%조직의 지출결의%' then raise; end if; end;
  nextdoc:=saved||jsonb_build_object('approvalStatus','승인대기','currentApprover','Same name','approvalLine',jsonb_build_array(jsonb_build_object('approver','Same','role','name','status','결재대기')),'history',jsonb_build_array(jsonb_build_object('action','request')));
  begin perform finance.legacy_expense_command(org,author,'APPROVAL',rid,saved,jsonb_build_object('command','REQUEST','after',nextdoc),'unbound-request'); raise exception 'TEST: unresolved approver allowed'; exception when others then if sqlerrm not like '%UUID 연결%' then raise; end if; end;
- bound:=finance.legacy_expense_command(org,admin_id,'BIND',rid,saved,jsonb_build_object('author_user_id',author,'steps',jsonb_build_array(jsonb_build_object('order',1,'approver_user_id',approver)),'reason','Verified actual identity','expected_binding_version',1),'bind');
+ bound:=finance.legacy_expense_command(org,admin_id,'BIND',rid,saved,jsonb_build_object('author_user_id',author,'steps',jsonb_build_array(jsonb_build_object('order',1,'approver_user_id',approver)),'reason','Verified actual identity','expected_binding_version',2),'bind');
  if (select resolution_data from finance.expense_resolutions where id=rid)<>saved then raise exception 'TEST: binding rewrote original'; end if;
  saved:=finance.legacy_expense_command(org,author,'APPROVAL',rid,saved,jsonb_build_object('command','REQUEST','after',nextdoc),'request');
  original:=saved;
@@ -57,7 +59,7 @@ declare org uuid:=gen_random_uuid(); actor uuid:=gen_random_uuid(); bank uuid:=g
 begin
  insert into core.organizations(id,name,status) values(org,'Atomic links','active');insert into auth.users(id) values(actor);
  insert into finance.reimbursement_members values(org,actor,'Admin',array['ADMIN'],true);
- insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type) values(acct,org,'Bank','Operating',acct::text,'운영계좌');
+ insert into finance.bank_accounts(id,organization_id,bank_name,account_name,account_no,account_type,opened_at) values(acct,org,'Bank','Operating',acct::text,'운영계좌','2026-01-01');
  insert into finance.bank_transactions(id,organization_id,bank_account_id,transacted_at,description,withdrawal_amount,deposit_amount) values(bank,org,acct,'2026-03-01','Payment',100,0);
  insert into finance.corporate_card_transactions(id,organization_id,transaction_uid,approved_at,amount,card_name,card_last_four) values(card,org,card::text,'2026-03-01',100,'Test','1234');
  doc:=jsonb_build_object('id',rid,'author','Forged','approvalStatus','작성중','paymentStatus','지급전','totalPaymentAmount',100,'bankTransactionId',bank,'cardTransactionId',card,'history',jsonb_build_array(jsonb_build_object('actorName','Forged')),'evidenceStatus','NONE');

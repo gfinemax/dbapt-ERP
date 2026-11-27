@@ -9,5 +9,10 @@ export function canApproveExpense(resolution: ManagedExpenseResolution, viewer: 
 
 export function canEditExpense(resolution: ManagedExpenseResolution, viewer: ReimbursementMember) {
   return viewer.active && ["작성중", "반려", "승인대기"].includes(resolution.approvalStatus) &&
+    (viewer.permissions.includes("ADMIN") || viewer.permissions.includes("EXPENSE_EDIT") || resolution.authorization?.author_user_id === viewer.user_id);
+}
+
+export function canDeleteExpense(resolution: ManagedExpenseResolution, viewer: ReimbursementMember) {
+  return viewer.active && ["작성중", "반려"].includes(resolution.approvalStatus) &&
     (viewer.permissions.includes("ADMIN") || resolution.authorization?.author_user_id === viewer.user_id);
 }
