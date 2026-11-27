@@ -106,6 +106,7 @@ type ErpShellProps = {
   activeLabel?: string;
   activeWorkspaceLabel?: string;
   children: ReactNode;
+  fitDesktopViewport?: boolean;
   userLabel?: string;
   logoutAction?: () => Promise<void>;
   onQuickMenuSelect?: (label: string) => void;
@@ -156,7 +157,7 @@ function WorkspaceNavigation({ badges, menus, selectedWorkspaceLabel, selectedMe
   );
 }
 
-export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
+export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", activeWorkspaceLabel, children, fitDesktopViewport, userLabel = "로그인 필요", logoutAction }: ErpShellProps) {
   const [isSidebarOpen, setIsSidebarOpen] = useState(true);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [financeBadges, setFinanceBadges] = useState<Record<string, number>>({});
@@ -200,7 +201,7 @@ export function ErpShell({ activeDetailLabel, activeLabel = "대시보드", acti
   ));
 
   return (
-    <div className="min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)]">
+    <div className={`min-h-screen bg-[var(--color-sky-wash)] text-[var(--color-midnight-ink)] ${fitDesktopViewport ? "xl:min-h-0" : ""}`}>
       <aside
         aria-label="사이드바"
         className={`fixed bottom-0 left-0 top-16 z-20 hidden overflow-y-auto overscroll-contain border-r border-[var(--color-soft-border)] bg-[var(--color-paper-white)] py-5 transition-[width] duration-200 motion-reduce:transition-none md:block ${

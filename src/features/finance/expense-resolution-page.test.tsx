@@ -533,6 +533,35 @@ describe("ExpenseResolutionPage", () => {
     expect(navigation.push).toHaveBeenCalledWith("/finance/expense-resolutions?page=3");
   });
 
+  it("updates the workspace height on resize while keeping the selected record and result page", async () => {
+    vi.useRealTimers();
+    navigation.push.mockClear();
+    render(<ExpenseResolutionPage
+      initialListPage={{ month: "", page: 2, pageSize: 25, query: "사무용품", sort: "updated_desc", total: 60, totalPages: 3 }}
+      initialResolutions={[expenseResolutionFixture({ subject: "사무용품 구매" })]}
+    />);
+
+    const list = screen.getByRole("region", { name: "지출결의서 검색 및 목록" });
+    const workspace = list.parentElement!;
+    const getWorkspaceRect = vi.spyOn(workspace, "getBoundingClientRect");
+    getWorkspaceRect.mockReturnValue(new DOMRect(0, 180, 1000, 600));
+    fireEvent(window, new Event("resize"));
+    expect(workspace.style.getPropertyValue("--expense-resolution-workspace-top")).toBe("180px");
+
+    const row = within(list).getByRole("button", { name: /상세보기$/ });
+    fireEvent.click(row);
+    const detail = await screen.findByRole("region", { name: "지출결의서 상세" });
+    getWorkspaceRect.mockReturnValue(new DOMRect(0, 224, 1000, 450));
+    fireEvent(window, new Event("resize"));
+
+    expect(workspace.style.getPropertyValue("--expense-resolution-workspace-top")).toBe("224px");
+    expect(screen.getByRole("region", { name: "지출결의서 상세" })).toBe(detail);
+    expect(row).toHaveAttribute("aria-current", "true");
+    expect(within(list).getByRole("textbox", { name: "지출결의서 검색" })).toHaveValue("사무용품");
+    expect(within(list).getByText("2 / 3")).toBeInTheDocument();
+    expect(navigation.push).not.toHaveBeenCalled();
+  });
+
   it("restarts server pagination and preserves the month when expense-date sorting changes", () => {
     render(<ExpenseResolutionPage
       initialListPage={{ month: "2026-01", page: 2, pageSize: 50, query: "", sort: "updated_desc", total: 120, totalPages: 3 }}

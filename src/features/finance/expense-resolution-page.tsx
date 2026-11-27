@@ -2506,6 +2506,8 @@ export function ExpenseResolutionPage({
   const [printWarning, setPrintWarning] = useState<{ resolutionId: string; warnings: string[] } | null>(null);
   const [printPreviewTargetId, setPrintPreviewTargetId] = useState<string | null>(null);
   const [selectedDetailId, setSelectedDetailId] = useState<string | null>(initialEditResolution?.id ?? initialResolutionId ?? null);
+  const workspaceRef = useRef<HTMLDivElement>(null);
+  const workspaceHeaderRef = useRef<HTMLDivElement>(null);
   const detailRequest = useRef(0);
   const [pendingDetailId, setPendingDetailId] = useState<string>();
   const [rejectionForm, setRejectionForm] = useState<RejectionFormState | null>(null);
@@ -2610,6 +2612,32 @@ export function ExpenseResolutionPage({
       setIsFormOptionsLoading(false);
     }
   }
+
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+
+    const updateWorkspaceTop = () => {
+      workspace.style.setProperty("--expense-resolution-workspace-top", `${workspace.getBoundingClientRect().top + window.scrollY}px`);
+    };
+    updateWorkspaceTop();
+    window.addEventListener("resize", updateWorkspaceTop);
+
+    const observer = typeof ResizeObserver === "undefined" ? undefined : new ResizeObserver(updateWorkspaceTop);
+    const headers = [
+      workspaceHeaderRef.current,
+      workspace.closest("main")?.parentElement?.querySelector(":scope > header"),
+      document.querySelector("[data-erp-global-favorites]"),
+    ];
+    for (const header of headers) {
+      if (header) observer?.observe(header);
+    }
+
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", updateWorkspaceTop);
+    };
+  }, []);
 
   useEffect(() => {
     let storedResolutions: ManagedExpenseResolution[] | undefined;
@@ -4148,6 +4176,7 @@ export function ExpenseResolutionPage({
       activeDetailLabel="지출결의서 관리"
       activeLabel="회계·자금"
       activeWorkspaceLabel="전표·증빙"
+      fitDesktopViewport
       onQuickMenuSelect={(label) => {
         if (label === "지출결의 작성") {
           void openCreateModal();
@@ -4155,6 +4184,7 @@ export function ExpenseResolutionPage({
       }}
     >
       <div className="mx-auto flex max-w-[1560px] flex-col gap-3">
+        <div className="flex flex-col gap-3" ref={workspaceHeaderRef}>
         {saveError && !isFormOpen && !selectedDetail ? <p role="alert" className="rounded-xl border border-orange-300 bg-orange-50 p-4">{saveError}</p> : null}
         {selectedDetailId && !selectedDetail ? <p role="alert" className="rounded-xl border p-4">조회된 목록에서 해당 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
         {initialEditResolutionId && initialResolutions !== undefined && !resolutions.some((resolution) => resolution.id === initialEditResolutionId) ? <p role="alert" className="rounded-xl border p-4">수정할 지출결의서를 찾을 수 없습니다. 조회 권한과 원본 상태를 확인해주세요.</p> : null}
@@ -4184,8 +4214,9 @@ export function ExpenseResolutionPage({
             </Button>
           </div>
         </header>
+        </div>
 
-        <div className="grid min-w-0 gap-3 xl:h-[max(26rem,min(48rem,calc(100dvh-13rem)))] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
+        <div ref={workspaceRef} className="grid min-w-0 gap-3 xl:h-[max(26rem,calc(100dvh_-_var(--expense-resolution-workspace-top,13rem)_-_1.5rem))] xl:grid-cols-[minmax(0,1.08fr)_minmax(0,1fr)]">
           <section aria-label="지출결의서 검색 및 목록" className={`min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-[var(--color-soft-border)] bg-[var(--color-paper-white)] ${selectedDetail ? "hidden xl:flex" : "flex"}`}>
             <fieldset className="flex min-h-0 min-w-0 flex-1 flex-col" disabled={isEditingInWorkspace}>
             <div className="max-h-[55%] shrink-0 space-y-3 overflow-y-auto p-4">
@@ -4252,7 +4283,7 @@ export function ExpenseResolutionPage({
                 {monthFilter ? <p className="w-full">실제 지출일이 없는 결의서는 월 검색에서 제외돼.</p> : null}
               </div>
             </div>
-            <div aria-busy={isListNavigationPending} className="max-h-[calc(100dvh-21rem)] min-h-36 flex-1 overflow-auto xl:max-h-none">
+            <div aria-busy={isListNavigationPending} className="max-h-[calc(100dvh-21rem)] min-h-36 flex-1 overflow-auto xl:max-h-none xl:min-h-0">
               <table aria-label="지출결의서 목록" className="w-full table-fixed border-collapse text-left text-sm">
                 <thead className="sticky top-0 z-[1] bg-[var(--color-cloud-veil)] text-xs text-[var(--color-stone)]">
                   <tr>
@@ -4289,7 +4320,7 @@ export function ExpenseResolutionPage({
               </table>
             </div>
             {initialListPage && initialListPage.totalPages > 1 ? (
-              <nav aria-label="지출결의서 페이지" className="flex items-center justify-center gap-3 border-t border-[var(--color-soft-border)] p-3">
+              <nav aria-label="지출결의서 페이지" className="flex shrink-0 items-center justify-center gap-3 border-t border-[var(--color-soft-border)] p-3">
                 <Button disabled={isListNavigationPending || initialListPage.page <= 1} onClick={() => navigateList(initialListPage.page - 1)} size="sm" variant="outline">이전</Button>
                 <span className="text-sm tabular-nums">{initialListPage.page} / {initialListPage.totalPages}</span>
                 <Button disabled={isListNavigationPending || initialListPage.page >= initialListPage.totalPages} onClick={() => navigateList(initialListPage.page + 1)} size="sm" variant="outline">다음</Button>
