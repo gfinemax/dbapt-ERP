@@ -15,7 +15,7 @@ describe("print styles", () => {
     expect(css).toMatch(/\.expense-approval-timestamp \{\r?\n  font-family: Pretendard, "Pretendard Variable", "Noto Sans KR", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;\r?\n  font-style: normal;\r?\n\}/);
     expect(css).toContain(".expense-resolution-print-header h3 {\n    white-space: nowrap !important;");
     expect(css).toContain("width: 210mm !important;");
-    expect(css).toMatch(/\.expense-resolution-document-page,\s*\.expense-resolution-document-probe\s*\{[^}]*--expense-resolution-page-padding: 25mm 20mm 15mm;[^}]*padding: var\(--expense-resolution-page-padding\);/);
+    expect(css).toMatch(/\.expense-resolution-document-page,\s*\.expense-resolution-document-probe\s*\{[^}]*--expense-resolution-page-padding: 20mm 17mm 15mm;[^}]*padding: var\(--expense-resolution-page-padding\);/);
     expect(css).toMatch(/\.expense-resolution-document-page,\s*\.expense-resolution-document-probe\s*\{[^}]*padding: var\(--expense-resolution-page-padding\) !important;/);
     expect(css).toMatch(/\.expense-resolution-evidence-page\s*\{\s*--expense-resolution-page-padding: 14mm 16mm 12mm;\s*\}/);
     expect(css).not.toContain("font-size: 11pt;");

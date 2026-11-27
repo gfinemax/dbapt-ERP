@@ -148,7 +148,7 @@
 
 .expense-resolution-document-page,
 .expense-resolution-document-probe {
-  --expense-resolution-page-padding: 25mm 20mm 15mm;
+  --expense-resolution-page-padding: 20mm 17mm 15mm;
   width: 210mm;
   height: 297mm;
   min-height: 297mm;
