@@ -727,7 +727,7 @@ function ExpensePrintItemsTable({
   const pageTotalAmount = items.reduce((sum, item) => sum + item.totalAmount, 0);
   return (
     <div className="overflow-x-auto border-y border-[var(--color-soft-border)] [border-bottom-style:dashed] [border-top-style:dashed]">
-      <table className="w-full table-fixed border-collapse text-[12px]">
+      <table className="w-full table-fixed border-collapse text-[13px]">
         <colgroup>
           <col className="w-[13%]" />
           <col className="w-[18%]" />
@@ -739,7 +739,7 @@ function ExpensePrintItemsTable({
         <thead className="border-y border-solid border-[#9ca3af] bg-[var(--color-cloud-veil)]">
           <tr>
             {["지출일", "거래처", "내역", "공급가액", "부가세", "합계"].map((label) => (
-              <th className="border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-center text-[11px] [border-bottom-style:dashed] last:border-r-0" key={label}>{label}</th>
+              <th className="border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-center text-[12px] [border-bottom-style:dashed] last:border-r-0" key={label}>{label}</th>
             ))}
           </tr>
         </thead>
@@ -749,9 +749,9 @@ function ExpensePrintItemsTable({
               <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 [border-bottom-style:dashed]">{item.expenseDate || "-"}</td>
               <td className="border-b border-r border-[var(--color-soft-border)] px-1 py-1 font-semibold [border-bottom-style:dashed]">{item.vendorName || "거래처 미입력"}</td>
               <td className="whitespace-pre-wrap break-words border-b border-r border-[var(--color-soft-border)] px-1.5 py-1 text-left leading-snug [border-bottom-style:dashed]">{item.description || "-"}</td>
-              <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[11px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
-              <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[11px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
-              <td className="whitespace-nowrap border-b border-[var(--color-soft-border)] px-1 py-1 text-[11px] font-bold [border-bottom-style:dashed]">{formatExpenseResolutionAmount(item.totalAmount)}</td>
+              <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[12px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.supplyAmount))}</td>
+              <td className="whitespace-nowrap border-b border-r border-[var(--color-soft-border)] px-1 py-1 text-[12px] [border-bottom-style:dashed]">{formatExpenseResolutionAmount(toNumber(item.vatAmount))}</td>
+              <td className="whitespace-nowrap border-b border-[var(--color-soft-border)] px-1 py-1 text-[12px] font-bold [border-bottom-style:dashed]">{formatExpenseResolutionAmount(item.totalAmount)}</td>
             </tr>
           ))}
         </tbody>
@@ -771,8 +771,8 @@ function ExpensePrintItemsTable({
 function PrintCell({ className = "", label, value, valueClassName = "", wide }: { className?: string; label: string; value: ReactNode; valueClassName?: string; wide?: boolean }) {
   return (
     <div className={`grid min-h-[7mm] grid-cols-[26mm_1fr] border-b border-r border-[var(--color-soft-border)] last:border-r-0 ${wide ? "col-span-2 border-r-0" : ""} ${className}`}>
-      <span className="flex items-center bg-[var(--color-cloud-veil)] px-2 py-1.5 text-[12px] font-bold text-[var(--color-stone)]">{label}</span>
-      <span className={`flex items-center justify-center whitespace-normal px-2.5 py-1.5 text-center text-[12px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
+      <span className="flex items-center bg-[var(--color-cloud-veil)] px-2 py-1.5 text-[13px] font-bold text-[var(--color-stone)]">{label}</span>
+      <span className={`flex items-center justify-center whitespace-normal px-2.5 py-1.5 text-center text-[13px] font-semibold text-[var(--color-stone)] ${valueClassName}`}>{value}</span>
     </div>
   );
 }

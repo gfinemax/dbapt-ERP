@@ -1394,18 +1394,21 @@ describe("ExpenseResolutionPage", () => {
     const expenseItemsHeading = within(printDialog).getByRole("heading", { name: "세부 지출내역" });
     expect(expenseItemsHeading).toHaveClass("text-[15px]");
     const expenseItemsTable = expenseItemsHeading.closest("section")?.querySelector("table");
-    expect(expenseItemsTable).toHaveClass("text-[12px]");
+    expect(expenseItemsTable).toHaveClass("text-[13px]");
     expect(expenseItemsTable?.parentElement).toHaveClass("border-y");
     expect(expenseItemsTable?.parentElement).not.toHaveClass("border");
     expect(expenseItemsTable?.parentElement).toHaveClass("[border-bottom-style:dashed]", "[border-top-style:dashed]");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("text-center");
-    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("px-1", "py-1", "text-[11px]");
+    expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("px-1", "py-1", "text-[12px]");
     expect(within(expenseItemsTable as HTMLTableElement).getByRole("columnheader", { name: "거래처" })).toHaveClass("[border-bottom-style:dashed]");
     expect(expenseItemsTable?.querySelectorAll("col")).toHaveLength(6);
     expect(expenseItemsTable?.querySelectorAll("col")[1]).toHaveClass("w-[18%]");
     expect(expenseItemsTable?.querySelectorAll("col")[2]).toHaveClass("w-[34%]");
     expect(expenseItemsTable?.querySelector("tbody tr")).toHaveClass("text-center");
     expect(expenseItemsTable?.querySelectorAll("tbody tr")).toHaveLength(1);
+    for (const cell of Array.from(expenseItemsTable?.querySelectorAll("tbody td:nth-child(n+4)") ?? [])) {
+      expect(cell).toHaveClass("text-[12px]");
+    }
     expect(expenseItemsTable?.querySelector("tbody tr[aria-hidden='true']")).not.toBeInTheDocument();
     expect(expenseItemsTable?.querySelector("thead")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(expenseItemsTable?.querySelector("tfoot")).toHaveClass("border-y", "border-solid", "border-[#9ca3af]", "text-center");
@@ -1429,10 +1432,12 @@ describe("ExpenseResolutionPage", () => {
     const evidenceHeading = within(printDialog).getByRole("heading", { name: "지출사유 및 증빙" });
     expect(evidenceHeading.nextElementSibling).toHaveClass("border-y", "border-solid", "border-[#9ca3af]");
     expect(evidenceHeading.nextElementSibling).not.toHaveClass("border");
-    expect(within(printDialog).getByText("증빙·확인근거")).toBeInTheDocument();
+    const evidenceLabel = within(printDialog).getByText("증빙·확인근거");
+    expect(evidenceLabel).toHaveClass("text-[13px]");
+    expect(evidenceLabel.nextElementSibling).toHaveClass("text-[13px]");
     expect(within(printDialog).getByText("작성자").parentElement).toHaveTextContent("작성자오학동");
-    expect(within(printDialog).getByText("작성자")).toHaveClass("text-[12px]");
-    expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("text-[var(--color-stone)]");
+    expect(within(printDialog).getByText("작성자")).toHaveClass("text-[13px]");
+    expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("text-[13px]", "text-[var(--color-stone)]");
     expect(within(printDialog).getByText("작성자").parentElement?.lastElementChild).toHaveClass("justify-center", "text-center");
     expect(within(printDialog).getByText("작성자").parentElement).not.toHaveTextContent("사무장");
     expect(within(printDialog).queryByRole("heading", { name: "증빙 요약" })).not.toBeInTheDocument();
