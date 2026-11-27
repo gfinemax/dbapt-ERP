@@ -148,13 +148,18 @@
 
 .expense-resolution-document-page,
 .expense-resolution-document-probe {
+  --expense-resolution-page-padding: 25mm 20mm 15mm;
   width: 210mm;
   height: 297mm;
   min-height: 297mm;
   max-height: 297mm;
   overflow: hidden;
-  padding: 14mm 16mm 12mm;
+  padding: var(--expense-resolution-page-padding);
   page: expense-resolution-document;
+}
+
+.expense-resolution-evidence-page {
+  --expense-resolution-page-padding: 14mm 16mm 12mm;
 }
 
 .expense-resolution-pagination-probe {
@@ -297,7 +302,7 @@
     height: 297mm !important;
     min-height: 297mm !important;
     max-height: 297mm !important;
-    padding: 14mm 16mm 12mm !important;
+    padding: var(--expense-resolution-page-padding) !important;
     overflow: hidden !important;
   }
 
