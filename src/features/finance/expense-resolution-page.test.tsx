@@ -834,6 +834,9 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(row);
     const detail = within(screen.getByRole("region", { name: "지출결의서 상세" }));
     expect(detail.getByText("사후결의", { exact: true })).toBeInTheDocument();
+    const flow = within(detail.getByRole("list", { name: "결의 진행 단계" }));
+    expect(flow.getByText("기존 출금 확인")).toBeInTheDocument();
+    expect(flow.queryByText("지급", { exact: true })).not.toBeInTheDocument();
   });
 
   it("does not show a positive remaining budget as an over-budget badge", () => {

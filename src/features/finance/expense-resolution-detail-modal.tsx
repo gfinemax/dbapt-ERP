@@ -121,6 +121,7 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
   const approvalComplete = resolution.approvalStatus === "승인완료";
   const paymentComplete = resolution.paymentStatus === "지급완료";
   const voucherComplete = resolution.voucherStatus === "전표확정";
+  const paymentStepLabel = isPostApprovalResolution(resolution) ? "기존 출금 확인" : "지급";
   const steps = [
     { complete: true, current: resolution.approvalStatus === "작성중", label: "작성 완료" },
     ...(previewRoute?.approvalLine ?? approvalLine).map((step) => ({
@@ -128,7 +129,7 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
       current: step.status === "결재대기",
       label: `${step.approver} ${previewRoute || step.role === "회계검토" || step.role === "최종결재" ? step.role : step.status}`,
     })),
-    { complete: paymentComplete, current: approvalComplete && !paymentComplete, label: "지급" },
+    { complete: paymentComplete, current: approvalComplete && !paymentComplete, label: paymentStepLabel },
     { complete: voucherComplete, current: paymentComplete && !voucherComplete, label: "전표" },
   ];
 
