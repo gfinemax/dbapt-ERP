@@ -1,11 +1,13 @@
 import { beforeEach, expect, it, vi } from "vitest";
-const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), commitBatch: vi.fn(), transition: vi.fn(), settings: vi.fn(), budgets: vi.fn() }));
+const mocks = vi.hoisted(() => ({ access: vi.fn(), actor: vi.fn(), commit: vi.fn(), commitBatch: vi.fn(), transition: vi.fn(), settings: vi.fn(), budgets: vi.fn(), bankSources: vi.fn() }));
 vi.mock("@/features/finance/expense-authorization", () => ({ requireExpenseRecord: mocks.access, requireExpenseFact: mocks.access, requireExpenseActor: mocks.actor }));
 vi.mock("@/features/finance/expense-resolution-repository", () => ({ commitExpenseCommand: mocks.commit, commitExpenseApprovalBatch: mocks.commitBatch }));
 vi.mock("@/features/finance/expense-approval-workflow", () => ({ transitionExpenseApproval: mocks.transition }));
 vi.mock("@/features/finance/expense-compliance-repository", () => ({ getExpenseComplianceSettings: mocks.settings }));
 vi.mock("@/features/finance/expense-resolution-domain", () => ({ validateExpenseResolutionWorkflow: vi.fn(() => ({ errors: [] })) }));
-vi.mock("@/lib/supabase/server", () => ({ getSupabaseServerClient: vi.fn(() => ({})) }));
+vi.mock("@/lib/supabase/server", () => ({ getSupabaseServerClient: vi.fn(() => ({
+  schema: () => ({ from: () => ({ select: () => ({ eq: () => ({ is: () => ({ in: mocks.bankSources }) }) }) }) }),
+})) }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.mock("next/server", () => ({ after: vi.fn() }));
 vi.mock("@/features/finance/expense-evidence-ocr.server", () => ({ extractExpenseEvidenceFile: vi.fn() }));
@@ -215,6 +217,34 @@ it("blocks the same missing budget link at final approval in the batch path", as
     referenceDate: "2026-11-17",
   })).rejects.toThrow("지결-TEST: 공식 예산 세부항목과 귀속월");
   expect(mocks.commitBatch).not.toHaveBeenCalled();
+});
+
+it.each([69000, 69001])("checks the total against the actual withdrawal of %i before final approval", async amount => {
+  const access = fixture();
+  const resolution = expenseResolutionFixture({
+    id: "r",
+    approvalStatus: "승인대기",
+    currentApprover: "이전 이름 담당자",
+    approvalLine: [{ approver: "이전 이름", role: "담당자", status: "결재대기", order: 1 }],
+    resolutionType: "BATCH",
+    expenseKind: "BANK_POST_APPROVAL",
+    bankTransactionId: "bank-1",
+    actualExpenseDate: "2026-01-26",
+    totalPaymentAmount: 69000,
+  });
+  mocks.access.mockResolvedValue({ ...access, resolution, binding: { ...access.binding, steps: [access.binding.steps[0]] } });
+  mocks.bankSources.mockResolvedValue({ data: [{
+    id: "bank-1", transacted_at: "2026-01-26T16:00:00Z", raw_payload: { transaction_date: "2026-01-26" },
+    withdrawal_amount: amount, deposit_amount: 0, transaction_kind: "출금",
+  }] });
+
+  if (amount === 69000) {
+    await transitionExpenseApprovalAction(request);
+    expect(mocks.commit).toHaveBeenCalledOnce();
+  } else {
+    await expect(transitionExpenseApprovalAction(request)).rejects.toThrow("결의금액과 실제 출금일");
+    expect(mocks.commit).not.toHaveBeenCalled();
+  }
 });
 
 function beforeJulyDirectorAccess() {

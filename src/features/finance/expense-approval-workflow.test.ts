@@ -73,7 +73,9 @@ describe("expense approval workflow", () => {
   });
 
   it("completes a bank post-approval without scheduling a duplicate payment", () => {
-    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
+    let resolution = transitionExpenseApproval({ actorLabel: "오학동 사무국장", command: "REQUEST", resolution: createResolution({ actualExpenseDate: "2026-03-15", approvalRoute: "SECRETARY_CHAIR", bankTransactionId: "00000000-0000-0000-0000-000000000001", evidenceKind: "BANK_TRANSFER", evidenceStatus: "GENERAL", expenseKind: "BANK_POST_APPROVAL", postApprovalReason: "과거 미작성 결의 현행화" }) });
+    expect(resolution.history[0]).toMatchObject({ actionType: "REQUESTED_APPROVAL", actionLabel: "작성자 1차결재·상신", actorName: "오학동" });
+    expect(resolution.currentApprover).toBe("장현제 회계검토");
     for (const actorLabel of ["장현제 회계검토", "안동연 최종결재"]) resolution = transitionExpenseApproval({ actorLabel, command: "APPROVE", resolution });
     expect(resolution).toMatchObject({ approvalStatus: "승인완료", paymentStatus: "지급완료" });
   });

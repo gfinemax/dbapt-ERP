@@ -74,12 +74,14 @@ function requestApproval(resolution: ManagedExpenseResolution, actorLabel: strin
   const approvalLine = resetApprovalLine(resolution.approvalLine);
   const firstApprover = approvalLine[0];
   if (!firstApprover) throw new ApprovalWorkflowError("결재선이 설정되지 않았습니다.");
+  const authorConfirmed = resolution.expenseKind === "BANK_POST_APPROVAL" && resolution.approvalRoute === "SECRETARY_CHAIR";
+  const requestLabel = authorConfirmed ? "작성자 1차결재·상신" : isResubmission ? "재상신" : "승인요청";
   return {
     ...resolution,
     approvalLine,
     approvalStatus: "승인대기" as const,
     currentApprover: getApproverLabel(firstApprover),
-    history: [...resolution.history, createHistory(transitionedAt, isResubmission ? "재상신" : "승인요청", "REQUESTED_APPROVAL", actorLabel, isResubmission ? resolution.rejectionReason : undefined)],
+    history: [...resolution.history, createHistory(transitionedAt, requestLabel, "REQUESTED_APPROVAL", actorLabel, isResubmission ? resolution.rejectionReason : undefined)],
     paymentStatus: "지급전" as PaymentStatus,
     rejectionReason: undefined,
   };
@@ -114,7 +116,7 @@ function approveCurrentStep(resolution: ManagedExpenseResolution, actorLabel: st
     history: [
       ...resolution.history,
       approvedHistory,
-      createHistory(transitionedAt, paymentStatus === "지급대기" ? "지급대기 전환" : "지급상태 확인", paymentStatus === "지급대기" ? "PAYMENT_PENDING" : "PAYMENT_COMPLETED", "시스템"),
+      createHistory(transitionedAt, resolution.expenseKind === "BANK_POST_APPROVAL" ? "기존 출금 확인" : paymentStatus === "지급대기" ? "지급대기 전환" : "지급상태 확인", paymentStatus === "지급대기" ? "PAYMENT_PENDING" : "PAYMENT_COMPLETED", "시스템"),
     ],
     paymentStatus,
     settlementStatus,

@@ -148,8 +148,8 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(screen.getByRole("button", { name: /상세보기$/ }));
     const detail = within(await screen.findByRole("region", { name: "지출결의서 상세" }));
     const flow = within(detail.getByRole("list", { name: "결의 진행 단계" }));
-    expect(flow.getByText("장현제 회계검토")).toBeInTheDocument();
-    expect(flow.getByText("안동연 최종결재")).not.toHaveAttribute("aria-current");
+    expect(flow.queryByText("장현제 회계검토")).not.toBeInTheDocument();
+    expect(flow.getByText("안동연 최종결재")).toHaveAttribute("aria-current", "step");
     expect(detail.getByText(/회계검토가 빠진 결재선입니다/)).toBeInTheDocument();
 
     fireEvent.click(detail.getByRole("button", { name: "인쇄하기" }));
@@ -1065,8 +1065,9 @@ describe("ExpenseResolutionPage", () => {
     for (const key of ["accountHolder", "paymentAccountNo", "paymentBank", "budgetOverReason", "relatedContract", "relatedMeeting"] as const) delete sparse[key];
     render(<ExpenseResolutionPage initialEditResolutionId={resolution.id} initialResolutions={[resolution]} persistResolution={persistResolution} />);
     const dialog = within(await screen.findByRole("region", { name: "지출결의서 수정" }));
-    fireEvent.click(dialog.getByRole("button", { name: "지급·거래" }));
-    expect(dialog.getByText(/직접 입력 · 은행 미입력 계좌 미등록/)).toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("button", { name: "출금·거래" }));
+    expect(dialog.getByText(/저장된 출금거래 1건/)).toBeInTheDocument();
+    expect(dialog.queryByLabelText("지급계좌번호")).not.toBeInTheDocument();
     fireEvent.click(dialog.getByRole("button", { name: "승인요청 검토" }));
     expect(dialog.getByRole("heading", { name: "승인 전 확인" })).toBeInTheDocument();
     expect(dialog.getByRole("button", { name: "수정 후 승인요청" })).toBeInTheDocument();
@@ -1369,13 +1370,29 @@ describe("ExpenseResolutionPage", () => {
     fireEvent.click(within(dialog).getByRole("button", { name: "계좌이체" }));
     fireEvent.change(within(dialog).getByLabelText("간편지출 통장 출금거래"), { target: { value: "bank-tx-1" } });
 
-    expect(within(dialog).getByLabelText("실제 지출일")).toHaveValue("2026-08-27");
+    expect(within(dialog).getByLabelText("실제 출금일")).toHaveValue("2026-08-27");
     expect(within(dialog).getByLabelText("거래처명")).toHaveValue("KT");
     expect(within(dialog).getByText("선택한 출금내역의 날짜·금액·거래처를 사용합니다.")).toBeInTheDocument();
 
     fireEvent.click(within(dialog).getByRole("button", { name: "다음 단계" }));
     expect(within(dialog).getByLabelText("품목명 1")).toHaveValue("사무실 인터넷 요금");
     expect(within(dialog).getByLabelText("단가 1")).toHaveValue(55000);
+  });
+
+  it("locks the bank post-approval timing and shows the selected withdrawal instead of a payout", async () => {
+    render(<ExpenseResolutionPage initialBankTransactions={[{
+      id: "withdrawal-1", description: "사무실 인터넷 요금", resolutionStatus: "UNRESOLVED",
+      transactedAt: "2026-08-27T23:00:00Z", sourceTransactionDate: "2026-08-27", withdrawalAmount: 55000,
+    }]} />);
+    fireEvent.click(screen.getByRole("button", { name: "지출결의 작성" }));
+    const dialog = within(await getExpenseResolutionForm("지출결의서 작성"));
+    fireEvent.click(dialog.getByRole("button", { name: "통장 선출금 사후결의" }));
+    expect(dialog.queryByRole("button", { name: "구매·집행 전에 승인을 받습니다" })).not.toBeInTheDocument();
+    expect(dialog.queryByText("지출예정일")).not.toBeInTheDocument();
+    fireEvent.click(dialog.getByRole("checkbox", { name: /사무실 인터넷 요금/ }));
+    expect(dialog.getByLabelText("실제 출금일")).toHaveValue("2026-08-27");
+    expect(dialog.getByLabelText("실제 출금일")).toHaveAttribute("readonly");
+    expect(dialog.getByText("추가 지급 없음", { exact: true })).toBeInTheDocument();
   });
 
   it("shows fields that match the selected expense timing", async () => {

@@ -1,4 +1,5 @@
 import { defaultExpenseComplianceSettings, type ExpenseComplianceSettings } from "./expense-compliance";
+import { organizationApprovalLine } from "@/features/approval/organization-approval-line";
 
 export type ExpenseCreationSource = "DIRECT" | "APPROVAL_LINKED" | "SMALL_EXPENSE" | "CONTRACT_PAYMENT";
 export type DirectExpenseDecision = "ALLOWED" | "RECOMMENDED" | "REQUIRED";
@@ -8,6 +9,7 @@ export type DirectExpensePolicyInput = {
   budgetItem?: string;
   budgetOverReason?: string;
   expenseKind?: string;
+  approvalLine?: ReadonlyArray<{ approver: string; role: string }>;
   relatedContract?: string;
   relatedMeeting?: string;
   subject?: string;
@@ -28,7 +30,13 @@ export function evaluateDirectExpensePolicy(input: DirectExpensePolicyInput, set
   if (input.quickExpense && settings.quickExpenseAllowedBudgetItems?.length && !settings.quickExpenseAllowedBudgetItems.includes(input.budgetItem?.trim() ?? "")) {
     required.push("예산 내 간편처리가 허용된 예산항목이 아닙니다.");
   }
-  if (input.amount > (settings.directExpenseLimit ?? 0)) required.push(`직접 지출 한도 ${(settings.directExpenseLimit ?? 0).toLocaleString("ko-KR")}원을 초과했습니다.`);
+  const [director, , chair] = organizationApprovalLine;
+  const [reviewer, final] = input.approvalLine ?? [];
+  const hasBankPostApprovalReview = input.expenseKind === "BANK_POST_APPROVAL"
+    && input.approvalLine?.length === 2
+    && reviewer?.approver === director.approverLabel && reviewer.role === "회계검토"
+    && final?.approver === chair.approverLabel && final.role === "최종결재";
+  if (!hasBankPostApprovalReview && input.amount > (settings.directExpenseLimit ?? 0)) required.push(`직접 지출 한도 ${(settings.directExpenseLimit ?? 0).toLocaleString("ko-KR")}원을 초과했습니다.`);
   if (input.budgetOverReason?.trim()) required.push("예산 외 또는 예산 초과 지출입니다.");
   if (input.relatedContract?.trim() || /계약|용역/.test(searchable)) required.push("계약 관련 지출입니다.");
   if (input.relatedMeeting?.trim()) required.push("의결과 연결된 지출입니다.");
@@ -38,7 +46,7 @@ export function evaluateDirectExpensePolicy(input: DirectExpensePolicyInput, set
   const recommendedKeywords = (settings.directExpenseRecommendedKeywords ?? []).filter((keyword) => keyword && searchable.includes(keyword));
   if (recommendedKeywords.length) recommended.push(`기안 연결 권장 업무가 포함되어 있습니다: ${recommendedKeywords.join(", ")}`);
   if (!input.budgetItem?.trim()) recommended.push("예산 항목이 지정되지 않아 기안 연결을 권장합니다.");
-  if (input.amount >= (settings.directExpenseLimit ?? 0) * 0.8) recommended.push("직접 지출 한도에 가까운 금액입니다.");
+  if (!hasBankPostApprovalReview && input.amount >= (settings.directExpenseLimit ?? 0) * 0.8) recommended.push("직접 지출 한도에 가까운 금액입니다.");
   return recommended.length ? { decision: "RECOMMENDED", reasons: recommended } : { decision: "ALLOWED", reasons: ["승인 예산 범위 내 일상·정기 지출로 직접 처리할 수 있습니다."] };
 }
 

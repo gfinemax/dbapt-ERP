@@ -91,7 +91,7 @@ async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolut
   // workflow. New and explicitly linked documents are governed end to end.
   if (!resolution.creationSource && !resolution.approvalDocumentId && !resolution.directExpenseDecision) return resolution;
   const source = resolution.creationSource ?? (resolution.approvalDocumentId ? "APPROVAL_LINKED" : "DIRECT");
-  const result = evaluateDirectExpensePolicy({ amount: resolution.totalPaymentAmount, budgetItem: resolution.budgetItem, budgetOverReason: resolution.budgetOverReason, expenseKind: resolution.expenseKind, relatedContract: resolution.relatedContract, relatedMeeting: resolution.relatedMeeting, subject: resolution.subject, reason: resolution.reason, memo: resolution.memo, source }, settings ?? undefined);
+  const result = evaluateDirectExpensePolicy({ approvalLine: resolution.approvalLine, amount: resolution.totalPaymentAmount, budgetItem: resolution.budgetItem, budgetOverReason: resolution.budgetOverReason, expenseKind: resolution.expenseKind, relatedContract: resolution.relatedContract, relatedMeeting: resolution.relatedMeeting, subject: resolution.subject, reason: resolution.reason, memo: resolution.memo, source }, settings ?? undefined);
   let linked: { amount: number | string; approval_status: string; document_no: string } | null = null;
   if (resolution.approvalDocumentId) {
     const lookup = await supabase.schema("approval").from("documents").select("document_no,approval_status,amount").eq("id", resolution.approvalDocumentId).is("deleted_at", null).maybeSingle();
@@ -104,6 +104,35 @@ async function validateDirectExpenseGovernance(resolution: ManagedExpenseResolut
   if (source === "APPROVAL_LINKED" && !linked) throw new Error("승인 완료된 기안을 선택해주세요.");
   if (source === "DIRECT" && !resolution.approvalSkipReason?.trim()) throw new Error("기안 생략 사유가 필요합니다.");
   return { ...resolution, creationSource: source, directExpenseDecision: result.decision, directExpenseReasons: result.reasons, approvalDocumentNo: linked?.document_no ?? resolution.approvalDocumentNo };
+}
+
+async function assertBankPostApprovalSources(resolution: ManagedExpenseResolution, organizationId: string) {
+  if (resolution.expenseKind !== "BANK_POST_APPROVAL") return;
+  const links = resolution.bankTransactions ?? [];
+  const ids = [...new Set([resolution.bankTransactionId, ...links.map(link => link.id)].filter((id): id is string => Boolean(id)))];
+  if (!ids.length) throw new Error("통장 선출금 사후결의는 은행거래를 연결해야 합니다.");
+  const { data, error } = await getSupabaseServerClient()!.schema("finance").from("bank_transactions")
+    .select("id,transacted_at,withdrawal_amount,deposit_amount,transaction_kind,raw_payload")
+    .eq("organization_id", organizationId).is("deleted_at", null).in("id", ids);
+  if (error || data.length !== ids.length) throw new Error("연결된 통장 출금 원본을 확인할 수 없습니다.");
+
+  const sources = new Map(data.map(row => [row.id, {
+    amount: Number(row.withdrawal_amount),
+    date: typeof row.raw_payload?.transaction_date === "string" && row.raw_payload.transaction_date
+      ? row.raw_payload.transaction_date.slice(0, 10)
+      : new Date(row.transacted_at).toLocaleDateString("en-CA", { timeZone: "Asia/Seoul" }),
+    isWithdrawal: Number(row.withdrawal_amount) > 0 && Number(row.deposit_amount) === 0
+      && inferTransactionKind(row.transaction_kind, Number(row.deposit_amount), Number(row.withdrawal_amount)) === "출금",
+  }]));
+  if ([...sources.values()].some(source => !source.isWithdrawal) || links.some(link => {
+    const source = sources.get(link.id);
+    return source?.amount !== link.amount || source?.date !== link.transactionDate;
+  })) throw new Error("연결한 거래의 출금 여부·일자·금액을 통장 원본과 확인해주세요.");
+  const total = [...sources.values()].reduce((sum, source) => sum + source.amount, 0);
+  const lastDate = [...sources.values()].map(source => source.date).sort().at(-1);
+  if (total !== resolution.totalPaymentAmount || lastDate !== resolution.actualExpenseDate) {
+    throw new Error("결의금액과 실제 출금일이 연결된 통장 원본과 일치해야 합니다.");
+  }
 }
 
 export async function ensureBusinessPartnerFromOcrAction(input: BusinessPartnerOcrInput) {
@@ -412,6 +441,9 @@ export async function saveExpenseResolutionAction(resolution: ManagedExpenseReso
     };
   }
   resolution = prepareExpenseApprovalDraft(resolution, existingResolution ?? null, actor.permissions.includes("ADMIN"));
+  if (resolution.expenseKind === "BANK_POST_APPROVAL") {
+    resolution = { ...resolution, expenseTiming: "REIMBURSEMENT", expenseBurdenType: "ORGANIZATION_PAID", paymentFlowType: "사후정산", executionMethod: "AUTHORIZATION_ONLY", isPostApproval: true };
+  }
   const saved = await upsertExpenseResolutionInSupabase(resolution, existingResolution ?? null, randomUUID());
   revalidatePath("/finance/expense-resolutions");
   revalidatePath("/finance/exp");
@@ -563,6 +595,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   const budgetDecision = budgetLookupStatus
     ? createExpenseBudgetDecisionSnapshot(liveBudgetResolution, budgetLookupStatus)
     : undefined;
+  let governedCurrent = current;
   if (input.command === "REQUEST" || input.command === "APPROVE" && isFinal) {
     const budgetLinkError = getExpenseResolutionBudgetLinkError(current, budgetLookupStatus);
     if (budgetLinkError) throw new Error(budgetLinkError);
@@ -580,7 +613,8 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
       throw new Error("실제 법인카드 승인내역을 연결한 후 승인요청할 수 있습니다.");
     }
     if (current.approvalDocumentId) await assertExpenseRelatedRow("documents", current.approvalDocumentId, actor, "approval");
-    await validateDirectExpenseGovernance(current, settings);
+    await assertBankPostApprovalSources(current, actor.organization_id);
+    governedCurrent = await validateDirectExpenseGovernance(current, settings);
   }
   if (input.command === "APPROVE" && isFinal && current.evidenceStatus === "NONE") {
     if (settings && !settings.allowNoEvidenceApproval) throw new Error("설정에 따라 증빙 없는 지출은 승인할 수 없습니다.");
@@ -588,7 +622,7 @@ export async function transitionExpenseApprovalAction(input: ApprovalTransitionR
   }
   // UUID authorizes execution. Legacy labels are used only by the compatibility state calculator.
   const legacyLabel = input.command === "REQUEST" ? current.author : input.command === "CANCEL" ? actor.display_name : current.currentApprover!;
-  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: current, settings: settings ?? undefined });
+  const transitioned = transitionExpenseApproval({ actorLabel: legacyLabel, command: input.command, reason: input.reason, resolution: governedCurrent, settings: settings ?? undefined });
   const history = transitioned.history.map((item, i) => i < current.history.length ? item : { ...item, actorName: actor.display_name, actorTitle: "" });
   if (budgetDecision && history[current.history.length]) history[current.history.length] = { ...history[current.history.length], budgetDecision };
   const saved = await commitExpenseCommand("APPROVAL", input.resolutionId, current, {
@@ -662,6 +696,7 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
     const assigned = binding.steps.find((step) => step.order === activeIndex + 1);
     if (activeIndex < 0 || assigned?.approver_user_id !== actor.user_id) throw new Error(`${current.resolutionNo}: 현재 순서에 연결된 결재자만 처리할 수 있습니다.`);
     const isFinal = activeIndex === current.approvalLine.length - 1;
+    let governedCurrent = current;
     if (isFinal) {
       const budgetLinkError = getExpenseResolutionBudgetLinkError(current, budgetLookupStatus);
       if (budgetLinkError) throw new Error(`${current.resolutionNo}: ${budgetLinkError}`);
@@ -671,7 +706,8 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
         throw new Error(`${current.resolutionNo}: 실제 카드 승인내역을 먼저 연결해주세요.`);
       }
       if (current.approvalDocumentId) await assertExpenseRelatedRow("documents", current.approvalDocumentId, actor, "approval");
-      await validateDirectExpenseGovernance(current, settings);
+      await assertBankPostApprovalSources(current, actor.organization_id);
+      governedCurrent = await validateDirectExpenseGovernance(current, settings);
       if (current.evidenceStatus === "NONE") {
         if (settings && !settings.allowNoEvidenceApproval) throw new Error(`${current.resolutionNo}: 설정에 따라 증빙 없는 지출은 승인할 수 없습니다.`);
         if (settings?.noEvidenceApproverRole && assigned.legacy_step.role !== settings.noEvidenceApproverRole) {
@@ -684,7 +720,7 @@ export async function transitionExpenseApprovalBatchAction(input: BatchApprovalT
       actorLabel: current.currentApprover!,
       command: "APPROVE",
       reason: batchComment,
-      resolution: current,
+      resolution: governedCurrent,
       settings: settings ?? undefined,
     });
     const history = transitioned.history.map((historyItem, historyIndex) => historyIndex < current.history.length

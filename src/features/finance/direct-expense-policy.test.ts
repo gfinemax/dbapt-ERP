@@ -18,6 +18,20 @@ describe("direct expense governance", () => {
     expect(evaluateDirectExpensePolicy({ amount: 200_000, source: "SMALL_EXPENSE" }).decision).toBe("ALLOWED");
   });
 
+  it("waives only the amount threshold for bank post-approval with both review steps", () => {
+    const input = {
+      amount: 5_000_001,
+      budgetItem: "운영비",
+      expenseKind: "BANK_POST_APPROVAL",
+      source: "DIRECT" as const,
+      approvalLine: [{ approver: "장현제", role: "회계검토" }, { approver: "안동연", role: "최종결재" }],
+    };
+    expect(evaluateDirectExpensePolicy(input).decision).toBe("ALLOWED");
+    expect(evaluateDirectExpensePolicy({ ...input, approvalLine: input.approvalLine.slice(1) }).decision).toBe("REQUIRED");
+    expect(evaluateDirectExpensePolicy({ ...input, relatedContract: "기존 계약" }).decision).toBe("REQUIRED");
+    expect(evaluateDirectExpensePolicy({ ...input, budgetOverReason: "예산 외" }).decision).toBe("REQUIRED");
+  });
+
   it("recommends linking a draft for configured advisory work", () => {
     expect(evaluateDirectExpensePolicy({ amount: 300_000, budgetItem: "운영비", reason: "신규 거래처 등록비", source: "DIRECT" }).decision).toBe("RECOMMENDED");
   });

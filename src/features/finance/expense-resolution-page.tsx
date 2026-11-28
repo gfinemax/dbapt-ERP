@@ -1578,6 +1578,7 @@ export function toManagedExpenseResolution(resolution: ExpenseResolution, budget
 }
 
 function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFormState {
+  const bankPost = resolution.expenseKind === "BANK_POST_APPROVAL";
   return {
     creationSource: resolution.creationSource ?? (resolution.approvalDocumentId ? "APPROVAL_LINKED" : "DIRECT"),
     approvalDocumentId: resolution.approvalDocumentId ?? "",
@@ -1635,11 +1636,11 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     evidenceFiles: resolution.evidenceFiles?.map((file) => ({ ...file, ocrData: { ...file.ocrData } })) ?? [],
     evidenceType: resolution.evidenceType ?? "기타",
     expenseType: resolution.expenseType,
-    expenseTiming: normalizeExpenseTiming(resolution),
-    executionMethod: resolution.executionMethod ?? "VENDOR_DIRECT",
-    expenseBurdenType: resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
+    expenseTiming: bankPost ? "REIMBURSEMENT" : normalizeExpenseTiming(resolution),
+    executionMethod: bankPost ? "AUTHORIZATION_ONLY" : resolution.executionMethod ?? "VENDOR_DIRECT",
+    expenseBurdenType: bankPost ? "ORGANIZATION_PAID" : resolution.expenseBurdenType ?? "EMPLOYEE_PREPAID",
     inputMethod: normalizeInputMethod(resolution),
-    quickEntryMode: resolution.cardReconciliationStatus || resolution.cardTransactionId || resolution.bankTransactionId || resolution.bankTransactions?.length ? "BUDGET_DIRECT" : "NONE",
+    quickEntryMode: !bankPost && (resolution.cardReconciliationStatus || resolution.cardTransactionId || resolution.bankTransactionId || resolution.bankTransactions?.length) ? "BUDGET_DIRECT" : "NONE",
     quickPaymentMethod: resolution.expenseBurdenType === "CORPORATE_CARD" || resolution.cardReconciliationStatus || resolution.cardTransactionId
       ? "CORPORATE_CARD"
       : resolution.bankTransactionId
@@ -1656,8 +1657,8 @@ function createEditFormState(resolution: ManagedExpenseResolution): ResolutionFo
     paymentTargetId: getResolutionPaymentTargetId(resolution),
     paymentAccountNo: resolution.paymentAccountNo ?? "",
     paymentBank: resolution.paymentBank ?? "",
-    paymentFlowType: resolution.paymentFlowType,
-    plannedPaymentDate: resolution.plannedPaymentDate,
+    paymentFlowType: bankPost ? "사후정산" : resolution.paymentFlowType,
+    plannedPaymentDate: bankPost ? resolution.actualExpenseDate ?? "" : resolution.plannedPaymentDate,
     postApprovalReason: resolution.postApprovalReason ?? "",
     originalResolutionId: resolution.originalResolutionId ?? "",
     settlementDueDate: resolution.settlementDueDate ?? "",
@@ -2083,14 +2084,20 @@ export function OcrValue({ confirmed = false, label, value }: { confirmed?: bool
 
 function createBankTransactionDraftFormState(transaction: BankTransactionResolutionCandidate, nextNo: string): ResolutionFormState {
   const amount = transaction.withdrawalAmount;
+  const sourceDate = transaction.sourceTransactionDate ?? transaction.transactedAt.slice(0, 10);
   return {
     ...createFormState(nextNo),
-    actualExpenseDate: transaction.transactedAt.slice(0, 10),
+    actualExpenseDate: sourceDate,
     bankTransactionId: transaction.id,
     evidenceKind: "BANK_TRANSFER",
     evidenceStatus: "GENERAL",
     expenseKind: "BANK_POST_APPROVAL",
-    plannedPaymentDate: transaction.transactedAt.slice(0, 10),
+    expenseTiming: "REIMBURSEMENT",
+    expenseBurdenType: "ORGANIZATION_PAID",
+    executionMethod: "AUTHORIZATION_ONLY",
+    paymentFlowType: "사후정산",
+    plannedPaymentDate: sourceDate,
+    accountAllocations: [createAccountAllocation({ amount: String(amount), description: transaction.description })],
     reason: transaction.description,
     singleItems: [createSingleExpenseItem({ itemName: transaction.description, quantity: "1", taxCategory: "NO_VAT", unitPrice: String(amount) })],
     supplyAmount: String(amount),
@@ -2857,6 +2864,30 @@ export function ExpenseResolutionPage({
     setFormState((current) => {
       const normalizedValue = key === "vendorName" && typeof value === "string" ? normalizeVendorName(value) : value;
       const nextState = { ...current, [key]: normalizedValue } as ResolutionFormState;
+      if (key === "expenseKind" && value === "BANK_POST_APPROVAL") {
+        return {
+          ...nextState,
+          expenseTiming: "REIMBURSEMENT",
+          expenseBurdenType: "ORGANIZATION_PAID",
+          executionMethod: "AUTHORIZATION_ONLY",
+          paymentFlowType: "사후정산",
+          quickEntryMode: "NONE",
+          cardTransactionId: "",
+          cardLastFour: "",
+          cardVerificationSource: undefined,
+        };
+      }
+      if (key === "expenseKind" && current.expenseKind === "BANK_POST_APPROVAL") {
+        return {
+          ...nextState,
+          bankTransactionId: "",
+          bankTransactions: [],
+          expenseTiming: value === "PERSONAL_REIMBURSEMENT" ? "REIMBURSEMENT" : "ADVANCE",
+          expenseBurdenType: "EMPLOYEE_PREPAID",
+          executionMethod: "VENDOR_DIRECT",
+          paymentFlowType: value === "PERSONAL_REIMBURSEMENT" ? "사후정산" : "사전결의",
+        };
+      }
       if (key === "createdAt" && typeof value === "string" && (!current.plannedPaymentDate || current.plannedPaymentDate === current.createdAt)) {
         nextState.plannedPaymentDate = value;
       }
@@ -3605,7 +3636,12 @@ export function ExpenseResolutionPage({
         : undefined
       : resolveBudgetProfile(formState.budgetItem, formState.budgetPeriod, initialBudgetProfiles);
     const linkedApproval = formOptions.approvalDocuments.find((document) => document.id === formState.approvalDocumentId);
-    const directPolicy = evaluateDirectExpensePolicy({ amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, formOptions.directExpenseSettings);
+    let approvalPolicy: ExpenseApprovalPolicy;
+    try { approvalPolicy = createExpenseApprovalPolicy(formState.approvalRecordKind, formState.originalApprovalDate, undefined, formState.originalApprovalReference); }
+    catch (error) { setSaveError(error instanceof Error ? error.message : "결재 기준일을 확인해주세요."); return false; }
+    const approvalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalPolicy.referenceDate);
+    if (approvalRoute.error) { setSaveError(approvalRoute.error); return false; }
+    const directPolicy = evaluateDirectExpensePolicy({ approvalLine: approvalRoute.approvalLine, amount: totalPaymentAmount, budgetItem: formState.budgetItem, budgetOverReason: formState.budgetOverReason, expenseKind: formState.expenseKind, relatedContract: formState.relatedContract, relatedMeeting: formState.relatedMeeting, subject: formState.subject, reason: formState.reason, memo: formState.memo, source: formState.creationSource }, formOptions.directExpenseSettings);
     if (mode === "approval-request") {
       if (formState.expenseTiming === "SETTLEMENT") {
         const saved = resolutions.find(resolution => resolution.id === editingResolutionId);
@@ -3645,11 +3681,6 @@ export function ExpenseResolutionPage({
       }
     }
     const approvalStatus: ApprovalStatus = mode === "draft" || viewer ? "작성중" : "승인대기";
-    let approvalPolicy: ExpenseApprovalPolicy;
-    try { approvalPolicy = createExpenseApprovalPolicy(formState.approvalRecordKind, formState.originalApprovalDate, undefined, formState.originalApprovalReference); }
-    catch (error) { setSaveError(error instanceof Error ? error.message : "결재 기준일을 확인해주세요."); return false; }
-    const approvalRoute = buildExpenseApprovalRoute(formState.approvalRoute, approvalPolicy.referenceDate);
-    if (approvalRoute.error) { setSaveError(approvalRoute.error); return false; }
     const firstApprover = approvalRoute.approvalLine[0];
     const isAlreadyPaid = formState.expenseTiming === "REIMBURSEMENT" && (formState.expenseBurdenType === "CORPORATE_CARD" || formState.expenseBurdenType === "ORGANIZATION_PAID");
     const usesAdvanceFields = formState.expenseTiming === "SETTLEMENT" || (formState.expenseTiming === "ADVANCE" && formState.executionMethod === "EMPLOYEE_ADVANCE");
@@ -3657,7 +3688,7 @@ export function ExpenseResolutionPage({
       mode === "approval-request" && !viewer && index === 0 ? { ...step, status: "결재대기" as const } : step,
     );
     const pettyCashTransactions = formState.expenseKind === "PETTY_CASH_BATCH" || formState.expenseKind === "RECURRING_BATCH" ? formState.batchItems.map((item) => ({ accountTitle: item.accountTitle, amount: item.totalAmount, businessPurpose: item.businessPurpose || formState.reason || item.description, evidenceKind: item.evidenceKind, evidenceStatus: item.evidenceStatus, factConfirmationId: item.factConfirmationId, id: item.id, item: item.itemTitle, overrideReason: item.overBudgetReason, spender: item.actualSpender || formState.advancePayer || formState.author, transactionDate: item.expenseDate, vendor: item.vendorName })) : undefined;
-    const compliance = validateExpenseCompliance({ beforeExpense: formState.expenseTiming === "ADVANCE", actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, bankTransactionCount: formState.bankTransactions.length, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason });
+    const compliance = validateExpenseCompliance({ beforeExpense: formState.expenseTiming === "ADVANCE", actualExpenseDate: formState.actualExpenseDate, bankTransactionId: formState.bankTransactionId || undefined, bankTransactionCount: formState.bankTransactions.length, evidenceKind: formState.evidenceKind, evidenceStatus: formState.evidenceStatus, expenseKind: formState.expenseKind, missingEvidenceReason: formState.missingEvidenceReason, pettyCashItems: pettyCashTransactions, postApprovalReason: formState.postApprovalReason, settings: formOptions.directExpenseSettings });
     if (mode === "approval-request" && compliance.errors.length) { setSaveError(compliance.errors.join(" ")); return; }
     const nextResolution: ManagedExpenseResolution = {
       creationSource: formState.creationSource,
@@ -4336,7 +4367,7 @@ export function ExpenseResolutionPage({
           onPrevious={previousResolution ? () => { void openDetailModal(previousResolution.id); } : undefined}
           onNext={nextResolution ? () => { void openDetailModal(nextResolution.id); } : undefined}
           onOpenEvidence={createEvidenceDownloadUrl ? openDetailEvidence : undefined}
-          canRequestApproval={!viewer || (viewer.active && (viewer.permissions.includes("ADMIN") || selectedDetail.authorization?.author_user_id === viewer.user_id))}
+          canRequestApproval={!viewer || (viewer.active && selectedDetail.authorization?.author_user_id === viewer.user_id)}
           actionError={saveError}
           budgetDataError={budgetDataError}
           canApprove={isCurrentUserApprover(selectedDetail, viewer)}

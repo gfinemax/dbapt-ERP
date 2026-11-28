@@ -51,7 +51,6 @@ function cancelVoucher(input: DisbursementTransitionInput) {
 
 function completePayment(input: DisbursementTransitionInput) {
   const { resolution } = input;
-  if (resolution.expenseKind === "BANK_POST_APPROVAL") throw new DisbursementWorkflowError("이미 통장에서 출금된 사후결의는 추가 지급할 수 없습니다.");
   assertPayable(resolution);
   const amount = input.actualPaidAmount ?? resolution.totalPaymentAmount;
   if (amount !== resolution.totalPaymentAmount) throw new DisbursementWorkflowError("일괄 지급액은 총 결의금액과 일치해야 합니다.");
@@ -139,6 +138,7 @@ function confirmVoucher(input: DisbursementTransitionInput) {
 }
 
 function assertPayable(resolution: ManagedExpenseResolution) {
+  if (resolution.expenseKind === "BANK_POST_APPROVAL") throw new DisbursementWorkflowError("이미 통장에서 출금된 사후결의는 추가 지급할 수 없습니다.");
   if (resolution.approvalStatus !== "승인완료" || !["지급대기", "부분지급"].includes(resolution.paymentStatus)) throw new DisbursementWorkflowError("최종 승인된 지급대기 문서만 지급처리할 수 있습니다.");
 }
 

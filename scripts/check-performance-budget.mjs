@@ -17,8 +17,9 @@ const budgets = {
   // The favorites editor is fetched only after the user opens it (up to 9 KB).
   // Approved-document correction and its audit comparison ship with the on-demand detail view.
   // The split workspace adds an on-demand summary, evidence actions, and document navigation.
-  // Measured production output is about 189.2 KB across six chunks.
-  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 190_000),
+  // The bank post-approval editor and detail show the linked withdrawal and its review status.
+  // Measured production output is about 192.1 KB across six chunks.
+  totalAsyncJavaScript: Number(process.env.EXPENSE_RESOLUTION_ASYNC_TOTAL_BUDGET || 193_000),
 };
 
 const routeBudgets = [

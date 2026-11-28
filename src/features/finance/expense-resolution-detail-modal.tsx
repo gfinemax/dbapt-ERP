@@ -121,10 +121,19 @@ function ExpenseApprovalFlowStrip({ approvalLine, resolution }: { approvalLine: 
   const approvalComplete = resolution.approvalStatus === "승인완료";
   const paymentComplete = resolution.paymentStatus === "지급완료";
   const voucherComplete = resolution.voucherStatus === "전표확정";
-  const paymentStepLabel = isPostApprovalResolution(resolution) ? "기존 출금 확인" : "지급";
+  const paymentStepLabel = resolution.expenseKind === "BANK_POST_APPROVAL" ? "기존 출금 확인"
+    : resolution.expenseKind === "PERSONAL_REIMBURSEMENT" ? "환급 지급"
+    : resolution.expenseBurdenType === "CORPORATE_CARD" ? "카드사용 확인"
+    : "지급";
+  const submitted = resolution.approvalStatus !== "작성중"
+    ? resolution.history?.findLast(item => item.actionType === "REQUESTED_APPROVAL")
+    : undefined;
+  const authorStepLabel = submitted?.actionLabel === "작성자 1차결재·상신"
+    ? `${resolution.author.split(/\s+/)[0]} 작성·1차결재 완료`
+    : "작성 완료";
   const steps = [
-    { complete: true, current: resolution.approvalStatus === "작성중", label: "작성 완료" },
-    ...(previewRoute?.approvalLine ?? approvalLine).map((step) => ({
+    { complete: true, current: resolution.approvalStatus === "작성중", label: authorStepLabel },
+    ...((resolution.approvalStatus === "승인대기" ? undefined : previewRoute)?.approvalLine ?? approvalLine).map((step) => ({
       complete: step.status === "승인완료",
       current: step.status === "결재대기",
       label: `${step.approver} ${previewRoute || step.role === "회계검토" || step.role === "최종결재" ? step.role : step.status}`,
@@ -211,14 +220,17 @@ function ExpenseResolutionDetailWorkspace({
   const previewRoute = getExpenseApprovalPreviewRoute(resolution);
   const pendingRouteNeedsRefresh = resolution.approvalStatus === "승인대기" && Boolean(previewRoute);
   const approvalNotice = actionError || (pendingRouteNeedsRefresh ? pendingExpenseApprovalRefreshMessage : "");
+  const bankPost = resolution.expenseKind === "BANK_POST_APPROVAL";
+  const withdrawalCount = resolution.bankTransactions?.length || Number(Boolean(resolution.bankTransactionId));
+  const withdrawalStatus = withdrawalCount ? `기존 출금 연결됨 · ${withdrawalCount}건` : "출금 원본 연결 필요";
   const documentApprovalParticipants = getDocumentApprovalParticipants(resolution);
   const usageRate = Number.isFinite(budget.budgetUsageRate) ? Math.max(0, budget.budgetUsageRate) : 0;
   const hasRelatedInformation = Boolean(resolution.relatedContract || resolution.relatedMeeting || resolution.voucherNo);
   const nextAction = resolution.approvalStatus !== "승인완료"
     ? undefined
-    : resolution.paymentStatus !== "지급완료" && onProcessPayment
+    : !bankPost && resolution.paymentStatus !== "지급완료" && onProcessPayment
       ? { label: "지급처리", onClick: onProcessPayment }
-      : !resolution.voucherNo && onCreateVoucher
+        : resolution.paymentStatus === "지급완료" && !resolution.voucherNo && onCreateVoucher
         ? { label: "전표초안 생성", onClick: onCreateVoucher }
         : resolution.voucherStatus === "전표초안" && onConfirmVoucher
           ? { label: "전표확정", onClick: onConfirmVoucher }
@@ -442,6 +454,7 @@ function ExpenseResolutionDetailWorkspace({
             </div>
           ) : null}
           <p className="mt-3 text-xs font-black text-[var(--color-stone)]">실제 로그인 결재 · {approvalLine.length}명</p>
+          {pendingRouteNeedsRefresh && previewRoute ? <p className="mt-1 text-xs font-semibold text-amber-900">수정 후 결재선 · {previewRoute.approvalLine.map(step => `${step.approver} ${step.role}`).join(" → ")}</p> : null}
           <ol className="mt-3 grid gap-2">
             {approvalLine.map((step, index) => (
               <li className="grid grid-cols-[24px_1fr_auto] items-center gap-2 text-sm" key={step.order}>
@@ -478,7 +491,7 @@ function ExpenseResolutionDetailWorkspace({
             {resolution.approvalStatus === "승인대기" && !canApprove && !approvalLineNeedsReview ? (
               <p className="text-xs font-semibold leading-5 text-[var(--color-stone)]">현재 결재자는 <strong className="text-[var(--color-midnight-ink)]">{resolution.currentApprover ?? approvalLine.find((step) => step.status === "결재대기")?.approver ?? "지정 결재자"}</strong>입니다. 해당 결재자 계정에서 승인·반려할 수 있습니다.</p>
             ) : null}
-            {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">{resolution.paymentStatus === "지급완료" ? "모든 결재와 지급이 완료됐어. 전표 단계로 진행해." : "모든 결재가 완료됐어. 지급 단계로 진행해."}</p> : null}
+            {resolution.approvalStatus === "승인완료" ? <p className="text-xs font-bold text-[var(--color-green-ink)]">{bankPost ? "최종결재 완료 · 기존 출금으로 전표 처리" : resolution.paymentStatus === "지급완료" ? "모든 결재와 지급이 완료됐어. 전표 단계로 진행해." : "모든 결재가 완료됐어. 지급 단계로 진행해."}</p> : null}
             {!workspace && actionError ? <p role="alert" className="mt-2 rounded-md bg-red-50 px-2.5 py-2 text-xs font-bold text-red-700">{actionError}</p> : null}
           </div>
         </section>
@@ -486,10 +499,10 @@ function ExpenseResolutionDetailWorkspace({
         <ExpenseBudgetInspector approvalDocumentId={resolution.approvalDocumentId} approvalDocumentNo={resolution.approvalDocumentNo} budget={budget} budgetDataError={budgetDataError} budgetItem={resolution.budgetItem} budgetOverReason={resolution.budgetOverReason} linkedApproval={linkedApproval} />
 
         <section className="mt-4 border-t border-[var(--color-soft-border)] pt-4" aria-labelledby="payment-inspector-title">
-          <h3 className="text-base font-black" id="payment-inspector-title">지급 · 증빙</h3>
+          <h3 className="text-base font-black" id="payment-inspector-title">{bankPost ? "출금 · 증빙" : "지급 · 증빙"}</h3>
           <dl className="mt-3 grid gap-2 text-sm">
-            <InspectorRow label="지급상태" value={resolution.paymentStatus} />
-            <InspectorRow label="지급예정" value={resolution.plannedPaymentDate || "미정"} />
+            <InspectorRow label={bankPost ? "출금상태" : "지급상태"} value={bankPost ? withdrawalStatus : resolution.paymentStatus} />
+            <InspectorRow label={bankPost ? "실제 출금일" : "지급예정"} value={(bankPost ? resolution.actualExpenseDate : resolution.plannedPaymentDate) || "미정"} />
             <InspectorRow label="증빙자료" value={evidenceRows.length ? `${evidenceRows.length}/${itemCount} 첨부` : "미첨부"} />
             {resolution.bankTransactions?.length ? <InspectorRow label="통장거래" value={`${resolution.bankTransactions.length}/${itemCount} 연결`} /> : resolution.bankTransactionId ? <InspectorRow label="통장거래" value="1건 연결" /> : null}
             {isCorporateCardPayment ? <InspectorRow label="결제수단" value={resolution.cardSettlementMode === "BANK_DIRECT" ? "법인카드 · 통장 건별출금" : "법인카드 · 카드사 합계청구"} /> : null}
@@ -585,6 +598,7 @@ export function ExpenseResolutionDetailModal({
   workspace?: boolean;
 }) {
   const evidenceRows = getEvidenceRows(resolution);
+  const bankPost = resolution.expenseKind === "BANK_POST_APPROVAL";
   const isCorporateCardPayment = normalizeExpenseTiming(resolution) === "REIMBURSEMENT" && resolution.expenseBurdenType === "CORPORATE_CARD";
   const approvalLine = getDisplayApprovalLine(resolution);
   const approvalLineNeedsReview = approvalLine.length !== resolution.approvalLine.length || Boolean(getLegacyPendingExpenseApprovalRoute(resolution));
@@ -818,7 +832,12 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="지출사유" value={resolution.reason || "-"} wide />
           </DetailSection>
 
-          <DetailSection title={isCorporateCardPayment ? "법인카드 결제정보" : "지급정보"}>
+          {bankPost ? <DetailSection title="기존 출금정보">
+            <DetailItem label="실제 출금일" value={resolution.actualExpenseDate || "-"} />
+            <DetailItem label="결의금액" value={formatExpenseResolutionAmount(resolution.totalPaymentAmount)} />
+            <DetailItem label="통장거래" value={resolution.bankTransactions?.length ? `${resolution.bankTransactions.length}건 연결` : resolution.bankTransactionId ? "1건 연결" : "연결 필요"} />
+            <DetailItem label="출금 처리" value="추가 지급 없음" />
+          </DetailSection> : <DetailSection title={isCorporateCardPayment ? "법인카드 결제정보" : "지급정보"}>
             {isCorporateCardPayment ? <><DetailItem label="결제수단" value={resolution.cardSettlementMode === "BANK_DIRECT" ? "법인 체크카드 · 통장 건별출금" : "법인 신용카드 · 카드사 합계청구"} /><DetailItem label="확인 원본" value={resolution.cardVerificationSource === "BANK_TRANSACTION" ? `통장거래 ${resolution.bankTransactions?.length ?? (resolution.bankTransactionId ? 1 : 0)}건` : resolution.cardTransactionId ? "카드 승인내역" : "연결대기"} /><DetailItem label="카드번호" value={resolution.cardLastFour ? `끝 ${resolution.cardLastFour}` : "미입력"} /></> : <><DetailItem label="지급은행" value={resolution.paymentBank || "-"} /><DetailItem label="지급계좌번호" value={resolution.paymentAccountNo || "-"} /><DetailItem label="예금주" value={resolution.accountHolder || "-"} /></>}
             <DetailItem label="지급예정일" value={resolution.plannedPaymentDate || "-"} />
             <DetailItem label="지급일" value={resolution.paidAt ?? "-"} />
@@ -826,7 +845,7 @@ export function ExpenseResolutionDetailModal({
             <DetailItem label="지급상태" value={<Badge value={resolution.paymentStatus} />} />
             <DetailItem label="정산상태" value={resolution.settlementStatus} />
             <DetailItem label="이체확인증 첨부 여부" value={transferReceiptAttached} />
-          </DetailSection>
+          </DetailSection>}
 
           <DetailSection title="예산반영">
             <DetailItem label="예산기간" value={resolution.budgetSnapshot.budgetPeriod} />
@@ -1071,7 +1090,7 @@ export function ExpenseResolutionDetailModal({
               </Button>
             </>
           ) : null}
-          {onProcessPayment && resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus) ? (
+          {!bankPost && onProcessPayment && resolution.approvalStatus === "승인완료" && ["지급대기", "부분지급"].includes(resolution.paymentStatus) ? (
             <><Button className="rounded-full" onClick={onCancelApproval} variant="outline">승인취소</Button><Button className="rounded-full bg-[var(--color-pressed-charcoal)] px-5 text-white hover:bg-[var(--color-midnight-ink)]" onClick={handlePayment}>지급처리</Button></>
           ) : null}
           {onCreateVoucher && resolution.paymentStatus === "지급완료" && !resolution.voucherNo ? (
